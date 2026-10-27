@@ -327,3 +327,48 @@ test('プロダクト内 AI の接続の API: 既定はモック、実モデル�
   assert.equal((await call(`${base}/connection`)).status, 404);
   assert.equal((await call(`${base}/connections`, {})).status, 404);
 });
+
+test('AI の実行の記録の API: 発言と失敗を、次にすることと一緒に返し、Studio 画面から消せる', async (t) => {
+  const { token, sp, host } = await withStudio(t);
+  const base = '/api/projects/sample-job-consult/ai';
+  const headers = { host, 'x-studio-token': token, origin: `http://${host}`, 'content-type': 'application/json' };
+  const call = async (pathname, json, extra = {}) => {
+    const res = await request(sp, {
+      method: json === undefined ? 'GET' : 'POST',
+      pathname,
+      headers: { ...headers, ...extra },
+      body: json === undefined ? undefined : JSON.stringify(json),
+    });
+    return { status: res.status, body: JSON.parse(res.body) };
+  };
+
+  assert.deepEqual((await call(`${base}/trace`)).body.entries, []);
+  await call(`${base}/messages`, { text: 'カフェで働きたい' });
+  const tooLong = await call(`${base}/messages`, { text: 'x'.repeat(501) });
+  assert.equal(tooLong.body.error.code, 'invalid');
+  const badValue = await call(`${base}/corrections`, { changes: { area: '月の裏側' } });
+  assert.equal(badValue.body.error.code, 'invalid');
+
+  const { entries } = (await call(`${base}/trace`)).body;
+  assert.deepEqual(
+    entries.map((e) => [e.type, e.status]),
+    [['correction', 'failed'], ['reply', 'failed'], ['reply', 'ok']],
+  );
+  assert.deepEqual(entries[2].changes, [{ key: 'jobType', label: '職種', from: '未定', to: 'カフェのホール' }]);
+  assert.match(entries[1].error.next, /500 文字まで/);
+
+  // 決まった失敗には、API の応答にも次にすることを付ける
+  await call(`${base}/connection`, { kind: 'mock' });
+  for (let i = 0; i < 99; i += 1) await call(`${base}/messages`, { text: 'こんにちは' });
+  const full = await call(`${base}/messages`, { text: 'こんにちは' });
+  assert.equal(full.body.error.code, 'too-long');
+  assert.match(full.body.error.next, /リセット/);
+
+  // 消すのは POST だけ。AI のない試作品と、鍵と Origin の守りは他の API と同じ
+  assert.equal((await call(`${base}/clear-trace`)).status, 404);
+  assert.equal((await call(`${base}/trace`, {})).status, 404);
+  assert.equal((await call(`${base}/clear-trace`, {}, { origin: 'http://evil.example' })).status, 403);
+  assert.equal((await call(`${base}/trace`, undefined, { 'x-studio-token': 'x' })).status, 401);
+  assert.equal((await call('/api/projects/sample-library/ai/trace')).body.error.code, 'no-ai');
+  assert.deepEqual((await call(`${base}/clear-trace`, {})).body.entries, []);
+});

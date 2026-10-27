@@ -25,8 +25,8 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-function sendError(res, status, code, message) {
-  sendJson(res, status, { error: { code, message } });
+function sendError(res, status, code, message, next) {
+  sendJson(res, status, { error: next ? { code, message, next } : { code, message } });
 }
 
 export function studioCsp(previewPort) {
@@ -166,8 +166,10 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
       if (req.method === 'GET' && !restore) return handleVersions(req, res, id, null);
       if (req.method === 'POST') return handleVersions(req, res, id, restore ? versionId : undefined);
     }
-    const aiMatch = /^\/api\/projects\/([^/]+)\/ai(?:\/(messages|corrections|reset|connections|connection|cancel))?$/.exec(url.pathname);
-    const aiGet = !aiMatch?.[2] || aiMatch[2] === 'connections';
+    const aiMatch = /^\/api\/projects\/([^/]+)\/ai(?:\/(messages|corrections|reset|connections|connection|cancel|trace|clear-trace))?$/.exec(
+      url.pathname,
+    );
+    const aiGet = !aiMatch?.[2] || aiMatch[2] === 'connections' || aiMatch[2] === 'trace';
     if (aiMatch && (aiGet ? req.method === 'GET' : req.method === 'POST')) {
       return handleAi(req, res, aiMatch[1], aiMatch[2]);
     }
@@ -191,7 +193,7 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
   }
 
   // プロダクト内 AI。試作品からの要求は、Studio 画面が形を確かめてから、ここへ送る。
-  // 接続の切り替えと中断(connections、connection、cancel)は、Studio 画面だけが送る。試作品からは届かない
+  // 接続の切り替えと中断(connections、connection、cancel)と実行の記録(trace、clear-trace)は、Studio 画面だけが送る。試作品からは届かない
   async function handleAi(req, res, rawId, action) {
     let id;
     try {
@@ -203,13 +205,18 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
       return sendError(res, 404, 'not-found', `プロジェクトがありません: ${rawId}`);
     }
     // 版の保存と復元の間は、会話を変えない(戻した会話や自動の版から、発言が抜け落ちないように)。
-    // 接続の一覧と中断は会話を変えないので通す。実モデルの応答はいつでも止められる
-    const changesConversation = action && action !== 'connections' && action !== 'cancel';
+    // 接続の一覧と中断、実行の記録は会話を変えないので通す。実モデルの応答はいつでも止められる
+    const changesConversation = action && !['connections', 'cancel', 'trace', 'clear-trace'].includes(action);
     if (changesConversation && store.isVersioning(id)) {
       return sendError(res, 409, 'busy', '版を保存か復元しているところです。終わってから試してください');
     }
     try {
       if (action === 'connections') return sendJson(res, 200, aiSessions.connectionChoices(id));
+      if (action === 'trace') return sendJson(res, 200, aiSessions.trace(id));
+      if (action === 'clear-trace') {
+        await readJson(req);
+        return sendJson(res, 200, aiSessions.clearTrace(id));
+      }
       const body = action ? await readJson(req) : null;
       // 本文を読んでいる間に、版の操作が始まったかもしれない
       if (changesConversation && store.isVersioning(id)) {
@@ -224,7 +231,7 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
       else session = aiSessions.reset(id);
       return sendJson(res, 200, { session });
     } catch (error) {
-      if (error instanceof AiError) return sendError(res, error.status, error.code, error.message);
+      if (error instanceof AiError) return sendError(res, error.status, error.code, error.message, error.next);
       if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
       throw error;
     }

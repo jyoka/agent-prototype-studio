@@ -7,6 +7,8 @@
 //   [上限]   利用の上限に当たったときの結果を出す
 //   [壊れる] 終了コード 2 で止まる
 //   [文だけ] 構造化出力を出さず、本文に JSON を書く(代わりの方法)
+//   [鍵を出す] API キーらしい文字列を含むエラーを出して終了コード 1 で止まる(画面と記録で伏せるか)
+//   [範囲外] 項目の決まりに合わない値と、ない項目を返す(状態に入れないか)
 // FAKE_CLAUDE_LOG があれば、受け取った argv、cwd、stdin、関係する環境変数の「名前」を 1 行ずつ書く(値は書かない)。
 import fs from 'node:fs';
 
@@ -54,6 +56,10 @@ function main() {
     process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: true, result: "You've hit your limit · resets 3am" }));
     process.exit(1);
   }
+  if (text.includes('[鍵を出す]')) {
+    process.stderr.write('Invalid API key: sk-ant-api03-FAKEKEYFAKEKEY1234 (fake)\n');
+    process.exit(1);
+  }
   if (text.includes('[壊れる]')) {
     process.stderr.write('偽の CLI: 途中で止まりました\n');
     process.exit(2);
@@ -75,6 +81,12 @@ function answer(text) {
       const found = numbers.find((n) => (property.minimum ?? -Infinity) <= n && n <= (property.maximum ?? Infinity));
       if (found !== undefined) updates[key] = found;
     }
+  }
+  if (text.includes('[範囲外]')) {
+    for (const [key, property] of Object.entries(schema.properties.updates.properties)) {
+      updates[key] = property.enum ? 'ない選択肢' : (property.maximum ?? 0) + 1;
+    }
+    updates.unknownField = 'x';
   }
   const history = section('これまでの会話').split('\n').filter((line) => line.startsWith('['));
   const corrections = history.filter((line) => line.startsWith('[利用者の修正]')).length;

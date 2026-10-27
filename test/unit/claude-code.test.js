@@ -124,11 +124,16 @@ test('CLI の結果を読む: 構造化出力、本文の JSON、ただの文、
   assert.deepEqual(parseResult(ok({ structured_output: { reply: 'はい', updates: { place: '湖の町' } } })), {
     reply: 'はい',
     updates: { place: '湖の町' },
-    meta: { costUsd: 0.01, structured: true },
+    meta: { costUsd: 0.01, durationMs: null, structured: true, format: 'structured' },
   });
   assert.deepEqual(parseResult(ok({ result: '```json\n{"reply":"本文","updates":{}}\n```' })).reply, '本文');
-  assert.equal(parseResult(ok({ result: '{"reply":"本文","updates":{}}' })).meta.structured, false);
-  assert.deepEqual(parseResult(ok({ result: 'JSON ではない返事' })).updates, {});
+  const textJson = parseResult(ok({ result: '{"reply":"本文","updates":{}}', duration_ms: 1200 })).meta;
+  assert.equal(textJson.structured, false);
+  assert.equal(textJson.format, 'text-json');
+  assert.equal(textJson.durationMs, 1200);
+  const text = parseResult(ok({ result: 'JSON ではない返事' }));
+  assert.deepEqual(text.updates, {});
+  assert.equal(text.meta.format, 'text');
 
   const code = (stdout) => {
     try {
@@ -161,7 +166,7 @@ test('偽の CLI で応答する: 会話の全体を毎回渡し、空の作業�
   const result = await connection.respond({ definition, state: { place: '山の村', nights: null }, messages, text: '3泊したい' });
   assert.equal(result.reply, '偽の Claude Code です。これまでの会話 4 件(修正 1 件)を受け取りました。「3泊したい」への返事です。');
   assert.deepEqual(result.updates, { nights: 3 });
-  assert.deepEqual(result.meta, { costUsd: 0.0012, structured: true });
+  assert.deepEqual(result.meta, { costUsd: 0.0012, durationMs: 5, structured: true, format: 'structured' });
 
   const [call] = await calls();
   assert.match(call.stdin, /\[利用者の修正\] 行き先を「山の村」に直しました。/);

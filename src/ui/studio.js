@@ -56,6 +56,7 @@ const els = {
   reset: $('reset'),
   aiBadge: $('ai-badge'),
   aiStatus: $('ai-status'),
+  aiTrace: $('ai-trace'),
   frameHost: $('frame-host'),
   buildStatus: $('build-status'),
   events: $('events'),
@@ -78,9 +79,11 @@ const els = {
 };
 
 class ApiError extends Error {
-  constructor(code, message) {
+  constructor(code, message, next = '') {
     super(message);
     this.code = code;
+    // サーバーが返す、次にすること
+    this.next = next;
   }
 }
 
@@ -100,6 +103,9 @@ let makeError = null;
 // 詳細の欄に出している、プロダクト内 AI の会話と状態。
 // choices は選べる接続と、実行の前に出す「送るもの」と「費用」。confirm は実モデルへ切り替える前の確認
 const ai = { projectId: null, session: null, choices: null, seq: 0, confirm: null, switching: false };
+// AI の実行の記録(#277)。open は、開いている「渡したもの、受け取ったもの」の記録の ID
+const trace = { projectId: null, entries: null, snapshot: '', seq: 0, timer: null, open: new Set() };
+const TRACE_POLL_MS = 1000;
 // 応答を待っている発言の数を、試作品ごとに数える。開き直しや作り直しの後も「止める」を出し続けるため
 const waitingByProject = new Map();
 const waitingFor = (projectId) => waitingByProject.get(projectId) ?? 0;
@@ -142,7 +148,11 @@ async function api(path, options = {}) {
     // JSON でない応答は下で扱う
   }
   if (!response.ok) {
-    throw new ApiError(body?.error?.code ?? 'http', body?.error?.message ?? `サーバーが ${response.status} を返しました`);
+    throw new ApiError(
+      body?.error?.code ?? 'http',
+      body?.error?.message ?? `サーバーが ${response.status} を返しました`,
+      typeof body?.error?.next === 'string' ? body.error.next : '',
+    );
   }
   return body;
 }
@@ -615,6 +625,8 @@ function renderAi() {
     els.aiStatus.replaceChildren(
       element('p', ai.projectId ? 'この試作品はプロダクト内 AI を使っていません。' : '試作品を開くと、ここに出ます。', 'muted'),
     );
+    renderTrace();
+    syncTracePolling();
     return;
   }
   els.aiBadge.dataset.kind = session.connection.kind;
@@ -656,6 +668,8 @@ function renderAi() {
     list,
   );
   els.aiStatus.replaceChildren(...nodes);
+  renderTrace();
+  syncTracePolling();
 }
 
 async function loadAi(projectId) {
@@ -672,6 +686,7 @@ async function loadAi(projectId) {
     if (seq !== ai.seq) return;
     ai.session = session;
     ai.choices = choices;
+    loadTrace(projectId);
   } catch (error) {
     if (seq !== ai.seq) return;
     if (!(error instanceof ApiError && error.code === 'no-ai')) handleError(error);
@@ -686,6 +701,7 @@ function showAiSession(projectId, session) {
   ai.session = session;
   if (ai.choices) ai.choices.selected = session.connection.kind;
   renderAi();
+  loadTrace(projectId);
   // 会話が変わると、作業中が保存した版と同じかどうかも変わる
   if (projectId === selectedId) loadVersions();
 }
@@ -901,6 +917,215 @@ async function cancelAi() {
   }
 }
 
+// AI の実行の記録。試作品の中の AI に、何を渡し、何が返り、状態がどう変わり、なぜ失敗したかを出す
+const TRACE_STATUS = {
+  running: '応答を待っています…',
+  ok: '終わりました',
+  failed: '失敗しました',
+  cancelled: '止めました',
+};
+const TRACE_FORMATS = {
+  structured: '構造化出力(--json-schema)を読みました',
+  'text-json': '構造化出力がなかったので、本文の JSON を読みました(代わりの方法)',
+  text: 'JSON でなかったので、本文を返事にしました。状態は変えていません',
+};
+
+function connectionNote(connection) {
+  return connection.real ? `${connection.label}(実際の AI モデル)` : `${connection.label}(AI モデルは呼んでいません)`;
+}
+
+function traceTitle(entry) {
+  if (entry.type === 'reply') return `発言 → ${connectionNote(entry.connection)}`;
+  if (entry.type === 'correction') return '条件の修正(試作品から)';
+  if (entry.type === 'connection') return `接続の切り替え: ${entry.previous.label} → ${entry.connection.label}(Studio の画面から)`;
+  return '会話と状態を最初に戻しました(Studio の画面から)';
+}
+
+function changeList(label, changes) {
+  const list = element('ul', undefined, 'trace-changes');
+  list.setAttribute('aria-label', label);
+  list.append(...changes.map((change) => element('li', `${change.label}: ${change.from} → ${change.to}`)));
+  return list;
+}
+
+function labeled(label, text, className) {
+  const p = element('p', undefined, className);
+  p.append(element('strong', `${label}: `), document.createTextNode(text));
+  return p;
+}
+
+// 開いている欄は、記録を描き直しても開いたままにする
+function keepOpen(box, key) {
+  box.open = trace.open.has(key);
+  box.addEventListener('toggle', () => (box.open ? trace.open.add(key) : trace.open.delete(key)));
+}
+
+function preBlock(entry, summary, text) {
+  const box = element('details');
+  keepOpen(box, `${entry.id}:${summary}`);
+  box.append(element('summary', summary), element('pre', text));
+  return box;
+}
+
+// 開発の担当者向け。接続に渡したもの、受け取ったもの
+function traceInternals(entry) {
+  const box = element('details', undefined, 'trace-internals');
+  keepOpen(box, String(entry.id));
+  const { input, output } = entry;
+  // 起動できなかったときは、送っていないことをはっきり出す
+  box.append(
+    element('summary', input.notSent ? 'AI に渡すはずだったもの(起動できなかったので、送っていません)' : 'AI に渡したもの、受け取ったもの(開発向け)'),
+  );
+  box.append(labeled(input.notSent ? '送り先(送っていません)' : '送り先', input.to ?? 'どこにも送りません(Studio の中で応答します)'));
+  if (input.tools) box.append(labeled('使えるツール', input.tools));
+  if (input.rule) box.append(labeled('応答のしかた', input.rule));
+  box.append(labeled('渡した会話', `${input.history} 件と、新しい発言`));
+  if (input.state?.length) box.append(labeled('渡した状態', input.state.map((s) => `${s.label}「${s.value}」`).join('、')));
+  if (input.command) {
+    const command = labeled('起動の形', '');
+    command.append(element('code', input.command.join(' ')));
+    box.append(command);
+  }
+  if (input.systemPrompt) box.append(preBlock(entry, '指示(--system-prompt)の全文', input.systemPrompt));
+  if (input.stdin) box.append(preBlock(entry, '本文(標準入力)の全文', input.stdin));
+  if (output) {
+    if (output.format) box.append(labeled('応答の形', TRACE_FORMATS[output.format] ?? output.format));
+    box.append(labeled('受け取った updates', output.updates));
+    if (Number.isFinite(output.costUsd)) box.append(labeled('費用の目安(CLI の報告)', `$${output.costUsd.toFixed(4)}`));
+    if (Number.isFinite(output.durationMs)) box.append(labeled('処理の時間(CLI の報告)', formatSeconds(output.durationMs)));
+  }
+  return box;
+}
+
+function traceItem(entry) {
+  const li = element('li', undefined, 'trace-entry');
+  li.dataset.type = entry.type;
+  li.dataset.status = entry.status;
+  li.dataset.real = String(Boolean(entry.connection?.real));
+  const head = element('p', undefined, 'trace-head');
+  head.append(element('time', formatTime(entry.at)), element('strong', traceTitle(entry)));
+  const status = [TRACE_STATUS[entry.status] ?? entry.status];
+  if (Number.isFinite(entry.elapsedMs) && entry.status !== 'running') status.push(formatSeconds(entry.elapsedMs));
+  head.append(element('span', status.join('、'), 'trace-status'));
+  li.append(head);
+  if (entry.type === 'reply') {
+    li.append(labeled('発言', entry.text || '(空)'));
+    if (entry.output) li.append(labeled('返事', entry.output.reply || '(空)'));
+  }
+  if (entry.type === 'correction' && entry.requested.length > 0) {
+    li.append(labeled('直そうとした値', entry.requested.map((r) => `${r.key}「${r.value}」`).join('、')));
+  }
+  if (entry.type === 'reset') li.append(labeled('最初の状態', entry.state.map((s) => `${s.label}「${s.value}」`).join('、')));
+  if (entry.status === 'ok' && entry.changes) {
+    if (entry.changes.length > 0) li.append(element('p', '状態の変化:'), changeList('状態の変化', entry.changes));
+    else li.append(element('p', '状態の変化: なし', 'muted'));
+  }
+  if (entry.rejected?.length) {
+    li.append(
+      labeled(
+        '状態に入れなかった値',
+        entry.rejected.map((r) => `${r.label ?? r.key}「${r.value}」(${r.reason})`).join('、'),
+        'notice',
+      ),
+    );
+  }
+  if (entry.error) {
+    li.append(labeled('理由', entry.error.message, 'failed'), labeled('次にすること', entry.error.next, 'trace-next'));
+  }
+  if (entry.type === 'reply' && entry.input) li.append(traceInternals(entry));
+  return li;
+}
+
+function renderTrace() {
+  const { session } = ai;
+  if (!session) {
+    els.aiTrace.replaceChildren(element('p', 'プロダクト内 AI を使う試作品を開くと、ここに出ます。', 'muted'));
+    return;
+  }
+  const current = ai.choices?.options.find((o) => o.kind === session.connection.kind);
+  const nodes = [
+    labeled('今の接続', connectionNote({ label: session.connection.label, real: Boolean(current?.billing) })),
+    labeled('AI が使えるツール', current?.tools ?? '不明'),
+    labeled('試作品から AI への操作', '会話を読む、発言を送る、条件を直す。接続の切り替えと「応答を止める」は Studio の画面だけでできます。'),
+    element(
+      'p',
+      '記録は Studio のメモリーにだけ置き、Studio を止めると消えます。メールアドレス、電話番号、鍵らしい文字列は、伏せて記録します(AI に送る中身は変えません)。',
+      'muted',
+    ),
+  ];
+  const entries = trace.projectId === ai.projectId ? trace.entries : null;
+  const scrollTop = els.aiTrace.querySelector('.trace-list')?.scrollTop ?? 0;
+  if (!entries) {
+    nodes.push(element('p', '読み込んでいます…', 'muted'));
+  } else if (entries.length === 0) {
+    nodes.push(element('p', 'まだ記録はありません。試作品の中で AI に話しかけると、ここに出ます。', 'muted'));
+  } else {
+    const list = element('ol', undefined, 'trace-list');
+    list.setAttribute('aria-label', 'AI の実行の記録');
+    list.append(...entries.map(traceItem));
+    const clear = element('button', '記録を消す');
+    clear.type = 'button';
+    clear.addEventListener('click', clearTrace);
+    nodes.push(list, clear);
+  }
+  els.aiTrace.replaceChildren(...nodes);
+  const shown = els.aiTrace.querySelector('.trace-list');
+  if (shown) shown.scrollTop = scrollTop;
+}
+
+async function loadTrace(projectId) {
+  const seq = ++trace.seq;
+  if (trace.projectId !== projectId) {
+    trace.projectId = projectId;
+    trace.entries = null;
+    trace.snapshot = '';
+    trace.open.clear();
+  }
+  if (!projectId) return renderTrace();
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(projectId)}/ai/trace`);
+    if (seq !== trace.seq) return;
+    const snapshot = JSON.stringify(data.entries);
+    if (snapshot === trace.snapshot && trace.entries) return;
+    trace.snapshot = snapshot;
+    trace.entries = data.entries;
+  } catch (error) {
+    if (seq !== trace.seq) return;
+    // 次に読めたとき、同じ中身でも描き直す
+    trace.snapshot = '';
+    if (error instanceof ApiError && error.code === 'no-ai') trace.entries = [];
+    else {
+      // つながらない間は、前に読めた記録を出したままにする
+      handleError(error);
+      trace.entries ??= [];
+    }
+  }
+  renderTrace();
+}
+
+// 応答を待つ間は、記録を読み直し続ける(待っている発言と、渡したものが見える)
+function syncTracePolling() {
+  const waiting = ai.projectId && waitingFor(ai.projectId) > 0;
+  if (waiting && !trace.timer) {
+    trace.timer = setInterval(() => loadTrace(ai.projectId), TRACE_POLL_MS);
+    loadTrace(ai.projectId);
+  } else if (!waiting && trace.timer) {
+    clearInterval(trace.timer);
+    trace.timer = null;
+  }
+}
+
+async function clearTrace() {
+  const projectId = ai.projectId;
+  if (!projectId) return;
+  try {
+    await api(`/api/projects/${encodeURIComponent(projectId)}/ai/clear-trace`, { method: 'POST' });
+  } catch (error) {
+    handleError(error);
+  }
+  await loadTrace(projectId);
+}
+
 function clearEvents() {
   els.events.replaceChildren();
   els.eventsEmpty.hidden = false;
@@ -1038,8 +1263,9 @@ function createAiRelay(iframe, port, projectId) {
     } catch (error) {
       const code = error instanceof ApiError ? error.code : 'internal';
       if (code === 'offline' || code === 'token') handleError(error);
-      else addEvent('warning', `AI への要求に失敗しました: ${error.message}`);
+      else addEvent('warning', `AI への要求に失敗しました: ${error.message}`, error.next ? `次にすること: ${error.next}` : '');
       reply({ id: data.id, ok: false, error: { code, message: error.message } });
+      if (ai.projectId === projectId) loadTrace(projectId);
     } finally {
       inFlight -= 1;
       if (waiting) {
