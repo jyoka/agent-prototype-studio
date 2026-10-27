@@ -1,0 +1,253 @@
+# ADR-0001: ローカル実行と隔離の方式
+
+- 状態: **仮採用**(2026-10-28)。#273 以降はこの方式で進める。利用者が 2026-10-28 の朝に確かめ、変えるなら別のカードで直す。
+- 出典のタスク: jyoka/tasks#272(親 PRD: jyoka/tasks#269、前提の調査: jyoka/tasks#270)
+- 確認日: 2026-10-28。Claude Code の記述は公式ドキュメント([cli-reference](https://code.claude.com/docs/en/cli-reference)、[permissions](https://code.claude.com/docs/en/permissions)、[permission-modes](https://code.claude.com/docs/en/permission-modes)、[headless](https://code.claude.com/docs/en/headless))と、手元の `claude --help`(v2.1.311)で確かめた。実モデルは呼んでいない。
+
+## 決定(仮採用)
+
+利用者の PC で、loopback(127.0.0.1)だけで待ち受けるローカルのサーバーを動かし、既定のブラウザで操作する。守りを 3 つの層に分ける。
+
+| 層 | 何を閉じ込めるか | 方法 |
+|---|---|---|
+| 1. 作る AI(Claude Code) | ファイルの読み書きを、そのプロジェクトの `app/` だけにする。コマンド実行と Web 取得はさせない | 未改変の `claude -p` を `--restricted` で起動する。作業ディレクトリは `app/`、使えるツールは読み書きだけにする |
+| 2. 生成コード | ブラウザの中だけで動かす。サーバー側では実行しない。ネットワーク、Studio の API、他のプロジェクトに触れさせない | 別ポートから配信し、`sandbox` 属性つきの iframe(opaque origin)と CSP で表示する。外とのやり取りは親画面経由の決まったメッセージだけにする。残る危険は「生成コードの隔離」の節に書く |
+| 3. Studio のサーバー | 他の PC、他の Web サイト、他のローカルのプロセスから操作させない | 127.0.0.1 だけで待ち受ける。Host と Origin を確かめ、起動ごとのトークンを要求する |
+
+その上で、AI の判断と、決まった手順で必ず行う処理を分ける。決まった手順とは、パスの検査、ビルド、診断、版の保存を指す。Stripe の Minions の考え方に合わせている。
+
+## 背景と前提
+
+- 親 PRD(#269): 独立した汎用ツール。最初は利用者自身の PC で動かす。生成コードとエージェントのファイル・ネットワーク・外部コマンドは、脅威モデルに基づいて制限する。「ブラウザ内実行だけで安全とみなさない」。実データは使わず、架空データを使う。
+- 接続先(#269 のコメント、2026-10-27 に利用者が決めた): 最初の作る AI は Claude Code。
+- #270 で確かめた条件(#274 の Ready conditions に転記済み):
+  - 未改変の CLI を、利用者本人のログインで動かす。
+  - ツールは資格情報を集めない、保存しない、仲介しない。
+  - `ANTHROPIC_API_KEY` があると API 課金になる。
+  - `-p` は `--bare` なしだと、作業ディレクトリの `.claude/settings.json` の hooks と `.mcp.json` を、信頼の確認なしに動かす。ただし `--bare` は OAuth を読まないので、本人ログインと両立しない。
+  - Claude Code のサンドボックスはシェルだけが対象で、ネイティブ Windows では効かない。
+- 2026-10-28 に確かめた新しい事実: Claude Code v2.1.248 以降に `--restricted` がある([cli-reference](https://code.claude.com/docs/en/cli-reference))。#270 の「安全と本人認証がぶつかる」を解く鍵になる。詳しくは「作る AI の起動」の節に書く。
+
+## 構成要素
+
+```
+ブラウザ(既定のブラウザ)
+├─ Studio 画面  http://127.0.0.1:<studio-port>    … 作る会話、試す画面の枠、詳細
+│   └─ iframe   http://localhost:<preview-port>/p/<project>/<build>/
+│                 sandbox="allow-scripts allow-forms"(allow-same-origin なし)
+│                 … 生成された試作品
+│
+Studio サーバー(Node.js、1 プロセス、利用者の権限で動く)
+├─ Studio API(127.0.0.1:<studio-port>)  … トークン必須
+├─ プレビュー配信(<preview-port>)       … 静的ファイルだけ。API なし
+├─ ビルド(esbuild を API として使う)    … 生成コードを実行しない
+├─ 作る AI の接続(Claude Code の子プロセス、または偽接続)
+└─ プロダクト内 AI の接続(モック、または実モデル)
+
+データの置き場: ~/PrototypeStudio/projects/<project-id>/
+├─ app/       … 作る AI が書ける唯一の場所。Claude Code の作業ディレクトリ
+└─ .studio/   … ツールだけが書く。設定、ビルド結果、版、ログ
+```
+
+- サーバーの言語は Node.js(LTS、22 以上を想定)にする。理由は 3 つある。
+  - ビルド(esbuild)とブラウザの E2E(Playwright)が同じ言語で揃う。
+  - macOS と Windows で同じコードが動く。
+  - 手元の Mac には Node v23 がある。
+- データの置き場は `~/PrototypeStudio`(Windows は `%USERPROFILE%\PrototypeStudio`)を既定にする。環境変数 `STUDIO_HOME` で変えられるようにする。
+  - Finder から見える場所にする。非エンジニアが自分のファイルを見つけられるようにするため。
+  - `~/Documents`、`~/Desktop`、`~/Downloads` は避ける。macOS の保護フォルダーで、アクセスの許可を求められることがある([permissions](https://code.claude.com/docs/en/permissions) の Working directories 節)。OneDrive で同期されるフォルダーも避ける。
+
+## データの経路(ブラウザの操作からプレビューまで)
+
+### 作る(試作品を変える)
+
+1. 利用者が Studio 画面の作る欄に依頼を書く。
+2. 画面が `POST /api/projects/<id>/build-requests` を送る。ヘッダーに起動ごとのトークンを付ける(すべての API で必須。層 3)。
+3. サーバーが検査する(決まった処理)。
+   - Host、Origin、トークン。
+   - プロジェクト ID の形(`[a-z0-9-]` だけ)。
+   - 同じプロジェクトで実行中の依頼がないこと(1 プロジェクト 1 実行)。
+4. サーバーが作る AI を起動する。偽接続のときは偽の CLI を起動する。作業ディレクトリは `projects/<id>/app/`。
+5. AI の出力(stream-json)を、サーバーが画面に流す。画面は `fetch` の応答をストリームで読む。`EventSource` はヘッダーにトークンを付けられないので使わない。AI の文章は、画面では文字として出す(HTML として埋め込まない)。
+6. AI が `app/` のファイルを読み書きする。Anthropic に送られるのは、依頼の文、AI が読んだ `app/` のファイル、会話、Claude Code のシステムプロンプトになる。システムプロンプトには、作業ディレクトリの絶対パスや OS の情報も入る。
+   - AI のツールは `app/` の外を読めない(層 1)。
+   - ただし、`--bare` なしの `-p` は、`~/.claude/CLAUDE.md` などの CLAUDE.md、skills、auto memory を自動で読み込む(headless)。`--restricted` が外すのは設定ファイルだけなので、これらは送られ得る。`--safe-mode` で止める(下の「作る AI の起動」)。
+7. AI の実行が終わったら、サーバーが決まった手順を行う。
+   - `app/` の検査: シンボリックリンク、許可しない名前(`.claude/`、`.mcp.json`、`.git`、`CLAUDE.md` など)、大きさとファイル数の上限。`CLAUDE.md` は保護されたパスではないので、AI が書けてしまう。書かれると、次の実行の指示に混ざる。
+   - ビルド: esbuild で `app/` を 1 つの classic script(IIFE)に束ね、`.studio/builds/<build-id>/` に置く。`<build-id>` は推測できない乱数にする。import の解決先は、`app/` の中と、Studio が同梱するライブラリだけに限る。プロジェクトの `tsconfig.json` やビルドの設定は読まない。ES modules にしないのは、opaque origin からの module の読み込みが CORS の要求(`Origin: null`)になり、`Access-Control-Allow-Origin` を付ける必要が出るため。
+   - 診断: コンパイルのエラーを集める。
+8. 画面がプレビューの iframe を新しいビルドに切り替える。
+9. 試作品の実行時エラーと console は、iframe から親画面へメッセージで送る。親画面がサーバーに渡し、詳細の欄に出す。次の依頼で、AI に診断として渡せる。
+
+### 試す(試作品を操作する)
+
+1. 利用者が iframe の中の試作品を操作する。
+2. 試作品からプロダクト内 AI を呼ぶときは、Studio が配る小さな runtime を使う。試作品は `fetch` を使えない(CSP の `connect-src 'none'`)。
+3. 親画面と試作品は `MessageChannel` でやり取りする。
+   - 親画面は、自分が iframe に読み込ませた直後の `load` でだけ、port を 1 つ渡す。それ以外の `load`(試作品が自分で別の URL へ移動した場合)が来たら、iframe を作り直して警告を出す。
+   - 理由: opaque origin なので `event.origin` は `"null"` になり、判定に使えない。`event.source` が iframe の `contentWindow` かどうかの判定も、iframe が自分で移動すると移動先のページでも通ってしまう。
+   - 親画面はメッセージの形を確かめてからサーバーへ送る。`postMessage(..., '*')` で返事をしない。
+4. サーバーが、モック(既定)か実モデルに渡し、結果を親画面経由で iframe に返す。
+5. 状態(会話、架空データ)は、サーバー側のプロジェクトごとの場所に置く。試作品の `localStorage` は使えない(opaque origin)。こうすると、リセット、状態の表示、版の保存をツール側で決まった手順として扱える。
+
+試作品から届くメッセージで、作る AI は動かない。作る AI を動かせるのは、利用者が作る欄に書いた依頼だけにする。PRD の「作る AI への指示と、プロダクト内 AI への発話を混同しない」に合わせる。
+
+## 作る AI(Claude Code)の起動
+
+偽接続でも実接続でも、組み立てる引数は同じにする。偽接続では、実行ファイルを偽の CLI に差し替えるだけにする。
+
+```
+claude -p
+  --restricted                         # 下の箇条書き
+  --safe-mode                          # CLAUDE.md、skills、plugins、hooks、MCP、auto memory を読まない
+  --tools "Read,Edit,Write,Glob,Grep"  # コマンド実行と Web を名前で入れない
+  --permission-mode dontAsk            # 確認が要る操作は拒否する
+  --permission-prompts none            # 誰も答えない。拒否を AI に伝え、再試行させない
+  --allowedTools "Read,Edit,Write,Glob,Grep"
+  --strict-mcp-config                  # .mcp.json を読まない(--mcp-config は渡さない)
+  --output-format stream-json --verbose
+  --max-turns <上限>
+  --append-system-prompt <Studio の制約: 使えるライブラリ、runtime の使い方など>
+stdin: <利用者の依頼>                  # argv に入れない
+cwd: ~/PrototypeStudio/projects/<id>/app/
+```
+
+- 依頼の文は stdin で渡す。argv に入れると、`-` で始まる依頼がフラグとして読まれる。Windows で npm 版の `claude.cmd` を起動するときは cmd.exe を通るので、argv の文字がコマンドとして解釈される恐れもある。
+- `--safe-mode` は、CLAUDE.md、skills、installed plugins、hooks、MCP servers などを外し、認証と組み込みのツールと権限はそのまま動かす(`claude --help`)。`--restricted` と一緒に使えるかは要実機。
+- 「作る」会話の続きを `--resume` で持つか、ツールが会話を持って毎回渡すかは #274 で決める。後者なら `--no-session-persistence` で、`~/.claude/projects/` に会話を残さずに済む。
+
+`--restricted` について公式に書かれていること(cli-reference、permission-modes):
+
+- 命令やコードを実行する組み込みツール(Bash、PowerShell など)と WebFetch を外す。`--tools` で個別に名前を挙げたときだけ戻る。
+- 組み込みのファイル操作を、作業ディレクトリ(と `--add-dir`)の中に閉じ込める。
+- 読み込む設定は managed settings と `--settings` だけ。利用者とプロジェクトの設定ファイルは読まない。したがって、`app/.claude/settings.json` の hooks は読まれない。
+- `bypassPermissions` を拒む。保護されたパス(`.git`、`.claude`、`.mcp.json`、`.npmrc` など)への書き込みを、分類器が許すこともない。`dontAsk` では、保護されたパスへの書き込みは拒否される。
+- シンボリックリンク: 許可のルールは、要求したパスと実体の両方が合うときだけ効く。Edit と Write は、シンボリックリンクそのものへの書き込みを拒む。
+
+公式に書かれていないので実機で確かめること(#274):
+
+- `--restricted` が本人の OAuth ログインを使うか。`--bare` と違い、認証を変えるとは書かれていない。私は使うと推測している。
+- 作業ディレクトリの外への読み書きが、実際に拒否されるか。
+- `--safe-mode` で、`~/.claude/CLAUDE.md` と `app/CLAUDE.md` が読み込まれなくなるか。
+- 本人が入れた mod が動かないか。`dontAsk` でも「入れた mod は一部の呼び出しを許可できる」と書かれている(permission-modes)。`--safe-mode` で外れると推測している。
+- managed settings(組織の管理者の設定)は、`--restricted` でも読まれ、どのフラグよりも優先される。組織の設定は信頼する前提にする。
+
+方式全体で守ること:
+
+- 起動するのは利用者が入れた `claude` そのもので、改変しない。シェルの alias は効かない(子プロセスとして直接起動するため)。場所は PATH で探し、`STUDIO_CLAUDE_BIN` で変えられるようにする。偽接続はこの変数で差し替える。
+- 資格情報は扱わない。環境変数は利用者のものをそのまま渡す。ただし、ログに出さない。`ANTHROPIC_API_KEY` の有無は、実行の前に画面に出す(#274)。
+- 時間の上限を超えたら止める。macOS では、SIGINT、少し待って SIGTERM、最後にプロセスグループごと強制終了する。CLI は SIGTERM で 143 を返す(headless)。Windows にはシグナルとプロセスグループがないので、`taskkill /T /F` でプロセスの木ごと止める。
+- 自動で直すのは 1 回までにする。コンパイルのエラーを AI に返して直させるのは 1 回だけで、それでも直らなければ利用者に返す。Minions の考え方に合わせる。
+
+## 生成コードの隔離(層 2)
+
+| 守り | 中身 | 防ぐもの |
+|---|---|---|
+| サーバーで実行しない | `npm install`、package.json の scripts、プロジェクトのビルド設定は使わない。使えるライブラリは Studio が同梱するもの(React など)だけ | 依存パッケージやスクリプト経由で PC 上でコードが動くこと |
+| 別ポートから配信 | プレビューは `<preview-port>` から、静的ファイルだけを配信する。Studio の API はこのポートに置かない | 試作品が Studio の API を同一 origin として呼ぶこと |
+| iframe の `sandbox` | `allow-scripts allow-forms`。`allow-same-origin`、`allow-top-navigation`、`allow-popups` は付けない | 親画面の DOM とストレージへのアクセス、ページの乗っ取り、新しいウィンドウ |
+| 試作品の CSP ヘッダー | `sandbox allow-scripts allow-forms; default-src 'none'; script-src <そのビルドの URL>; style-src <そのビルドの URL> 'unsafe-inline'; img-src <そのビルドの URL> data: blob:; connect-src 'none'; form-action 'none'; frame-ancestors http://127.0.0.1:<studio-port>`。CSP の `sandbox` は、プレビューの URL を直接開いても効く。`'self'` ではなくパスつきの URL にするのは、他のプロジェクトのビルドを読ませないため | 外部への通信(fetch、XHR、WebSocket、sendBeacon)、外部の画像やスクリプト、他のプロジェクトのファイル、Studio 以外の画面への埋め込み |
+| Studio 画面の CSP ヘッダー | `frame-src http://localhost:<preview-port>`、`frame-ancestors 'none'` | 試作品が iframe ごと外部の URL へ移動して、URL にデータを載せて送ること。Studio 画面が他のサイトに埋め込まれること |
+| 配信の検査 | Host ヘッダーを確かめる。URL のパスを実パスに直し、`.studio/builds/<build-id>/` の中だけを返す。シンボリックリンクはたどらない | DNS rebinding、パス・トラバーサル、リンク経由での PC のファイルの読み出し |
+| 親画面のメッセージ検査 | `MessageChannel` の port を、親画面が始めた読み込みにだけ渡す。形を確かめ、回数を制限する | 試作品からの実モデルの連打、移動先のページからのなりすまし、作る AI の起動 |
+
+この表の守りでも防げない通信がある(残る危険)。WebRTC(STUN への接続)は `connect-src` で止まらない。DNS の先読みで、ホスト名にデータを載せられる恐れもある。漏れ得るのは試作品の中にあるもの、つまり架空データと試作の設計だけになる。PC のファイルと資格情報は試作品から見えない。
+
+プロジェクト間の隔離:
+
+- ファイル: 作る AI の作業ディレクトリは、そのプロジェクトの `app/` だけ。
+- ブラウザ: opaque origin なので、プロジェクトどうしでストレージを共有しない。CSP のパスと、推測できない `<build-id>` で、他のプロジェクトのビルドを読ませない。
+- 状態: サーバーがプロジェクト ID ごとに分けて置く。
+
+## Studio サーバーの守り(層 3)
+
+- 待ち受けは loopback だけにする(`127.0.0.1`、プレビューは `localhost` で引けるよう `::1` も)。`0.0.0.0` にはしない。同じネットワークの他の PC から届かないようにするため。
+- Host ヘッダーは、自分の `127.0.0.1:<port>` と `localhost:<port>` だけを受ける。Studio とプレビューの両方のポートで確かめる。DNS rebinding で、外のサイトに localhost を呼ばせないようにするため。
+- Studio の API は、読むだけのものも含めて、すべて `X-Studio-Token` ヘッダーを要求する。状態を変える API は、Origin が Studio 画面であることも確かめる。CORS は許可しない。
+  - トークンは起動ごとに乱数で作る。起動時に開く URL のフラグメント(`#token=`)で画面に渡す。フラグメントはサーバーにもログにも届かない。画面は読んだ後に `history.replaceState` でフラグメントを消し、履歴に残さない。
+  - Cookie は使わない。Cookie はポートで分かれないので、プレビューのポートに届いてしまうため。
+- AI の文章、ファイル名、試作品からのエラー文は、Studio 画面で文字として出す。Studio 画面はトークンを持つ特権の画面なので、ここでの XSS が一番危ない。
+
+## 脅威モデル
+
+守るもの: 利用者のファイル(ホームディレクトリ)、Claude の資格情報、他のプロジェクト、サブスクの枠と費用、Studio そのもの、試作のアイデア(社内情報)。
+
+| # | 脅威(誰が、何を) | 主な守り | 残る危険 |
+|---|---|---|---|
+| T1 | 作る AI が `app/` の外へ書く、または外を読んで送る(AI の誤り、取り込んだファイルの prompt injection) | `--restricted`、`--safe-mode`、`--tools` を読み書きだけにする、`dontAsk`。AI の実行後に `CLAUDE.md` などを検査する | Claude Code の実装の不具合。要実機(#274) |
+| T2 | プロジェクトに置かれた設定が、PC で命令を動かす(`.claude/settings.json` の hooks、`.mcp.json`、git hooks、npm scripts) | `--restricted` は利用者とプロジェクトの設定を読まない。`--strict-mcp-config`。保護されたパスへの書き込みは拒否。ツールは npm を動かさない。版の保存で git を使うなら、git のディレクトリを `app/` の外に置き、`core.hooksPath` を無効にする | 将来、外から試作品を取り込むときの検査。未設計 |
+| T3 | 生成コードが Studio の API、他のプロジェクト、外部へ届く | 層 2 の表 | WebRTC と DNS の先読みによる外部への通信(架空データと試作の設計が漏れ得る)。ブラウザの不具合 |
+| T4 | 他の Web サイトや同じネットワークの PC が、Studio を操作する(CSRF、DNS rebinding) | 層 3 | 同じ利用者の権限で動くマルウェアは対象外 |
+| T5 | 生成コードやメッセージが、Studio 画面で XSS を起こす | 文字として出す。試作品は別ポートかつ opaque origin | Markdown の表示を足すときに、無害化が要る |
+| T6 | 意図しない課金、枠の使い切り | 既定はモック。実モデルは利用者が明示して切り替える。`ANTHROPIC_API_KEY` の有無を画面に出す。`--max-turns`、時間の上限、メッセージの回数制限。API キーで動くときは `--max-budget-usd` も付ける(手元の見積もりによる上限) | サブスクの枠は量が非公開で、事前に見積もれない(#270) |
+| T7 | 資格情報の漏れ | ツールは資格情報を読まない、保存しない、ログに環境変数を出さない。`--restricted` は `app/` の外を読ませない | Claude Code の会話の記録(`~/.claude/projects/`)に試作の中身が残る。利用者の PC の中に限る |
+| T8 | 暴走(大量のファイル、無限ループ) | AI の実行後に、大きさと数の上限を確かめる。時間の上限。試作品の無限ループには、iframe の作り直しで対処 | 試作品が Studio 画面と同じプロセスで動くと、画面ごと固まる。プレビューを別ホスト名(`localhost`)にすると、Chrome のサイト分離で別プロセスになると推測している。要実機 |
+
+対象外: 同じ利用者の権限で動くマルウェア、PC への物理的なアクセス、Claude Code や Anthropic そのものが悪意を持つ場合。
+
+## macOS と Windows
+
+| 項目 | macOS | Windows |
+|---|---|---|
+| Studio サーバー | Node.js で動く | 同じコードで動く(パスは `path` で扱う) |
+| 作る AI の閉じ込め | `--restricted` は Claude Code 自身の制限で、OS のサンドボックスに頼らない | 同じ。ネイティブ Windows で Claude Code のサンドボックスが効かないこと(#270)の影響を受けない(推測。要実機) |
+| パスの検査 | 実パス(`realpath`)で比べる。APFS は既定で大文字と小文字を区別しない | 大文字と小文字、`\` と `/`、ジャンクション、8.3 形式の短い名前に注意する。Claude Code はジャンクションもシンボリックリンクとして扱う(permissions の Symlinks 節) |
+| ファイアウォール | loopback だけの待ち受けなら、受信の許可を求められないと推測している | 同じ(推測) |
+| 起動 | ターミナルで `npm start`。後に、ダブルクリックで起動するファイルを用意する | 同じ。`.cmd` を用意する |
+| 確かめ | 手元の Mac で確かめる | CI(windows-latest)で単体と偽接続の E2E を回す。実機の Claude Code は未確認 |
+
+## 非エンジニアの導入(段階)
+
+| 段階 | 中身 | 利用者の手間 |
+|---|---|---|
+| 0(2026-10-28 の朝) | リポジトリを clone して `npm install`、`npm start`。ブラウザが開く。固定のサンプルを偽接続とモックで触る | ターミナルが要る。Claude Code は要らない |
+| 1(#274 以降) | 起動時に「前提の確認」の画面を出す。Node、`claude` の有無と版(2.1.248 以上)、ログインの状態(`claude auth status --json` を候補にする。モデルを呼ぶかは要確認)、`ANTHROPIC_API_KEY` の有無を見せる。ダブルクリックで起動するファイルを用意する | Claude Code の導入と最初のログインは、まだターミナルが要る |
+| 2(未決) | 署名つきのアプリにする(Electron、Tauri、Node の単一実行ファイルなど)。中の隔離の方式は同じ | ターミナルが要らない。Claude Code の導入は残る |
+
+## 検討した候補とトレードオフ
+
+| 候補 | 長所 | 短所 | 判断 |
+|---|---|---|---|
+| A. ローカルのサーバーとブラウザ、`--restricted` の CLI、sandbox の iframe(この ADR) | 追加の導入なし。macOS と Windows で同じ。本人ログインと両立する(推測)。偽接続で E2E を組める | `--restricted` と iframe の仕組みに頼る。OS のレベルの隔離ではない | **仮採用** |
+| B. A に、OS のサンドボックス(macOS の Seatbelt など)で CLI を包む | ファイルの閉じ込めが二重になる | macOS だけ。`sandbox-exec` は非推奨。Claude Code のキーチェーンの読み出しとぶつかる恐れ | 後の強化の候補 |
+| C. プロジェクトごとのコンテナや VM(Docker、Lima、devcontainer) | 隔離が最も強い。Minions の devbox に近い | Docker Desktop の導入と契約。管理者権限、資源。本人のログインをコンテナに持ち込むと、資格情報を仲介する形になる(#270 の条件に触れる恐れ) | 今は採らない |
+| D. デスクトップアプリ(Electron、Tauri) | 非エンジニアが導入しやすい | 配布、署名、更新の手間。隔離の方式は A と同じ | A の配布の形として段階 2 で検討 |
+| E. クラウドで動かす(Harbor 型) | 導入がない | PRD は「最初は利用者の PC」。ホストする形は Claude の規約の条件が重い(#270) | 範囲外 |
+| F. ブラウザだけ(WebContainers など) | サーバーが要らない | 作る AI の CLI はブラウザで動かない | 採らない |
+| A'. A で、作る AI に Bash を許す(acceptEdits と Claude Code のサンドボックス) | AI が自分でテストやビルドを回せる | ネイティブ Windows でサンドボックスが効かない。サンドボックスが起動できないと隔離なしで動く(#270) | 採らない。ビルドと診断はツールが決まった手順で行う |
+
+## テストの方法
+
+実モデルは呼ばない。作る AI は偽の CLI に差し替える。
+
+| 層 | テスト | 確かめること |
+|---|---|---|
+| 単体 | パスの検査 | `..`、絶対パス、シンボリックリンク、Windows の区切りと大文字小文字で、`app/` と builds の外に出られない |
+| 単体 | CLI の引数の組み立て | `--restricted`、`--safe-mode`、`--tools`、`--permission-mode dontAsk`、`--strict-mcp-config`、cwd が必ず入る。依頼の文が argv に入らない。`--dangerously-skip-permissions`、`bypassPermissions` が入らない |
+| 結合 | Studio サーバーの守り | Host が違えば 403。Origin とトークンがなければ 403。待ち受けが loopback だけ(LAN のアドレスからつながらない) |
+| 結合 | 偽の CLI | 偽の CLI が stream-json を出し、ファイルを書き、受け取った argv、cwd、環境変数の名前を記録する。成功、失敗、時間切れ、拒否(`permission_denied`)、中断を再現する |
+| ブラウザ E2E(Playwright) | 作る、試す | 依頼、偽の CLI による変更、プレビューへの反映、エラーの表示 |
+| ブラウザ E2E | 悪意のある試作品 | 見本の試作品が、Studio の API への `fetch`、外部の画像、`localStorage`、`window.top` の書き換え、親画面の DOM の読み出し、自分自身の外部への移動、他のプロジェクトのビルドの読み込みを試みる。すべて失敗する。移動したときは iframe が作り直され、警告が出る |
+| ビルド | import の制限 | `app/` の外のファイルや、同梱していないパッケージを import すると、ビルドが失敗する |
+| 実機(許可と予算があるときだけ。#274) | Claude Code | 本人ログインで `--restricted` と `--safe-mode` が一緒に動く。`app/` の外への読み書きが拒否される。`app/.claude/settings.json` の hooks と `CLAUDE.md` が読まれない。中断の挙動 |
+
+## Stripe の設計思想と範囲
+
+- Harbor と Drydock: 「成果物(複数ファイル)」と「描画・実行の能力」の間の境界をはっきりさせる。この ADR では、ビルド結果と runtime のメッセージがその境界になる。プレビューは特定の製品や題材に依存しない。
+- Minions: AI の判断(ファイルの編集)と、決まった手順(検査、ビルド、診断、版)を分ける。隔離した作業場所で、渡すツールを小さく選び、直す回数に上限を置く。
+- 範囲: 求人、LINE、aica を前提にしない。プロジェクトは汎用のディレクトリで、題材ごとの差は `app/` の中身だけにする。Stripe の内部の実装は推測していない。
+
+## 未決事項
+
+| 未決事項 | 決める人・場所 |
+|---|---|
+| この ADR の仮採用を正式にするか | 利用者(2026-10-28 の朝) |
+| `--restricted` と `--safe-mode` が本人ログインで一緒に動くか、閉じ込めが実際に効くか | #274 の実機確認(許可と予算が要る) |
+| WebRTC と DNS の先読みの残る危険を受け入れるか | 利用者(実データを使う前に) |
+| 作る AI の権限の確認を画面で受けるか(SDK の `canUseTool` など)、`dontAsk` で拒否だけにするか | #274 |
+| プロダクト内 AI を実モデルで動かすときの起動の形(`--tools ""` と `--json-schema` を候補にする) | #276 |
+| 版の保存の方式(git を `app/` の外に置くか、ファイルの写しか) | #278 |
+| 同梱するライブラリの範囲(React だけか、UI 部品まで入れるか) | #273、#274 |
+| AI が試作品の画面を見て操作する閉ループ(ヘッドレスのブラウザ) | 後のカード |
+| 配布の形(段階 2) | 利用者 |
+| 外から試作品を取り込むときの検査 | 共有を扱うカード |
