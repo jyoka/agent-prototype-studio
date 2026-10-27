@@ -1,0 +1,191 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import http from 'node:http';
+import net from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+import { HomeNotWritableError, startStudio } from '../../src/server/index.js';
+
+// fetch は Host を書き換えさせないので、http.request で送る。
+function request(port, { method = 'GET', pathname = '/', headers = {} } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, method, path: pathname, headers }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => (body += chunk));
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body }));
+    });
+    req.setTimeout(5000, () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function withStudio(t) {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-server-'));
+  const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false });
+  t.after(async () => {
+    await studio.close();
+    await fs.rm(home, { recursive: true, force: true });
+  });
+  const token = new URL(studio.url).hash.slice('#token='.length);
+  const { studio: sp, preview: pp } = studio.ports;
+  return { home, studio, token, sp, pp, host: `127.0.0.1:${sp}` };
+}
+
+test('Studio 画面と API の守り(Host、トークン、Origin)', async (t) => {
+  const { token, sp, host } = await withStudio(t);
+
+  const page = await request(sp, { headers: { host } });
+  assert.equal(page.status, 200);
+  assert.match(page.headers['content-security-policy'], /frame-ancestors 'none'/);
+  assert.match(page.headers['content-security-policy'], /frame-src http:\/\/localhost:\d+/);
+
+  assert.equal((await request(sp, { headers: { host: `evil.example:${sp}` } })).status, 403);
+  assert.equal((await request(sp, { pathname: '/api/projects', headers: { host: `evil.example:${sp}`, 'x-studio-token': token } })).status, 403);
+
+  const noToken = await request(sp, { pathname: '/api/projects', headers: { host } });
+  assert.equal(noToken.status, 401);
+  assert.equal(JSON.parse(noToken.body).error.code, 'token');
+
+  const ok = await request(sp, { pathname: '/api/projects', headers: { host, 'x-studio-token': token } });
+  assert.equal(ok.status, 200);
+  const [sample] = JSON.parse(ok.body).projects;
+  assert.equal(sample.id, 'sample-library');
+  assert.match(sample.previewUrl, /^http:\/\/localhost:\d+\/p\/sample-library\/[a-f0-9]{32}\/$/);
+
+  const buildPath = '/api/projects/sample-library/builds';
+  assert.equal((await request(sp, { method: 'POST', pathname: buildPath, headers: { host, 'x-studio-token': token } })).status, 403);
+  assert.equal(
+    (await request(sp, { method: 'POST', pathname: buildPath, headers: { host, 'x-studio-token': token, origin: 'http://evil.example' } })).status,
+    403,
+  );
+  const rebuilt = await request(sp, { method: 'POST', pathname: buildPath, headers: { host, 'x-studio-token': token, origin: `http://${host}` } });
+  assert.equal(rebuilt.status, 200);
+  assert.notEqual(JSON.parse(rebuilt.body).project.previewUrl, sample.previewUrl);
+
+  const missing = await request(sp, { method: 'POST', pathname: '/api/projects/..%2Fx/builds', headers: { host, 'x-studio-token': token, origin: `http://${host}` } });
+  assert.equal(missing.status, 404);
+});
+
+test('プレビューは表示中の版の静的ファイルだけを、CSP つきで返す', async (t) => {
+  const { studio, sp, pp } = await withStudio(t);
+  const buildId = studio.store.previewBuildId('sample-library');
+  const host = `localhost:${pp}`;
+  const base = `/p/sample-library/${buildId}/`;
+
+  const index = await request(pp, { pathname: base, headers: { host } });
+  assert.equal(index.status, 200);
+  const csp = index.headers['content-security-policy'];
+  assert.match(csp, /^sandbox allow-scripts allow-forms;/);
+  assert.match(csp, new RegExp(`script-src http://${host}${base};`));
+  assert.match(csp, /connect-src 'none'/);
+  assert.match(csp, new RegExp(`frame-ancestors http://127.0.0.1:${sp} http://localhost:${sp}$`));
+  assert.equal(index.headers['access-control-allow-origin'], undefined);
+
+  const script = await request(pp, { pathname: `${base}app.js`, headers: { host, origin: 'null' } });
+  assert.equal(script.status, 200);
+  assert.equal(script.headers['access-control-allow-origin'], 'null');
+  const fromSite = await request(pp, { pathname: `${base}app.js`, headers: { host, origin: 'http://evil.example' } });
+  assert.equal(fromSite.headers['access-control-allow-origin'], undefined);
+
+  assert.equal((await request(pp, { pathname: base, headers: { host: `evil.example:${pp}` } })).status, 403);
+  assert.equal((await request(pp, { pathname: `/p/sample-library/${'0'.repeat(32)}/`, headers: { host } })).status, 404);
+  for (const pathname of [`${base}..%2F..%2Fapp%2Fmain.jsx`, `${base}../../app/main.jsx`, `${base}.hidden`, '/api/projects']) {
+    assert.equal((await request(pp, { pathname, headers: { host } })).status, 404, pathname);
+  }
+  assert.equal((await request(pp, { method: 'POST', pathname: base, headers: { host } })).status, 405);
+});
+
+test('待ち受けは loopback だけ', async (t) => {
+  const { sp, pp } = await withStudio(t);
+  const lan = Object.values(os.networkInterfaces())
+    .flat()
+    .find((info) => info && info.family === 'IPv4' && !info.internal);
+  if (!lan) {
+    t.skip('LAN のアドレスがない');
+    return;
+  }
+  for (const port of [sp, pp]) {
+    const error = await new Promise((resolve) => {
+      const socket = net.connect({ host: lan.address, port, timeout: 2000 });
+      socket.on('connect', () => {
+        socket.destroy();
+        resolve(null);
+      });
+      socket.on('timeout', () => {
+        socket.destroy();
+        resolve(new Error('timeout'));
+      });
+      socket.on('error', resolve);
+    });
+    assert.ok(error, `${lan.address}:${port} につながってしまった`);
+  }
+});
+
+test('ポートが使われていれば、どのポートかわかるエラーで止まる', async (t) => {
+  const blocker = net.createServer();
+  await new Promise((resolve) => blocker.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => blocker.close(resolve)));
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-server-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const port = blocker.address().port;
+  await assert.rejects(startStudio({ home, studioPort: port, previewPort: 0, openBrowser: false }), {
+    name: 'Error',
+    message: `ポート ${port} は使われています`,
+    envName: 'STUDIO_PORT',
+  });
+});
+
+test('::1 の同じポートを他のプロセスが使っていれば、起動せずに知らせる', async (t) => {
+  const squatter = net.createServer();
+  const listened = await new Promise((resolve) => {
+    squatter.once('error', () => resolve(false));
+    squatter.listen(0, '::1', () => resolve(true));
+  });
+  if (!listened) {
+    t.skip('::1 で待ち受けられない環境');
+    return;
+  }
+  t.after(() => new Promise((resolve) => squatter.close(resolve)));
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-server-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const port = squatter.address().port;
+  await assert.rejects(startStudio({ home, studioPort: 0, previewPort: port, openBrowser: false }), {
+    envName: 'STUDIO_PREVIEW_PORT',
+  });
+});
+
+test('壊れたプロジェクトがあっても、他の試作品は開ける', { skip: process.platform === 'win32' }, async (t) => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-server-'));
+  // app/ がファイル
+  await fs.mkdir(path.join(home, 'projects', 'app-is-file'), { recursive: true });
+  await fs.writeFile(path.join(home, 'projects', 'app-is-file', 'app'), '');
+  // 読めないフォルダーがある
+  const locked = path.join(home, 'projects', 'locked', 'app', 'private');
+  await fs.mkdir(locked, { recursive: true });
+  await fs.writeFile(path.join(home, 'projects', 'locked', 'app', 'main.js'), 'console.log(1);\n');
+  await fs.chmod(locked, 0o000);
+  t.after(async () => {
+    await fs.chmod(locked, 0o700);
+    await fs.rm(home, { recursive: true, force: true });
+  });
+
+  const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false });
+  t.after(() => studio.close());
+  const projects = await studio.store.list();
+  assert.deepEqual(projects.map((p) => p.id), ['locked', 'sample-library']);
+  const locked_ = projects.find((p) => p.id === 'locked');
+  assert.equal(locked_.lastBuild.ok, false);
+  assert.match(locked_.lastBuild.errors[0].text, /ビルドの途中で問題が起きました/);
+  assert.ok(studio.store.previewBuildId('sample-library'));
+});
+
+test('データの置き場がふつうのファイルのときは、書き込めないことを知らせる', async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-home-file-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const home = path.join(dir, 'file');
+  await fs.writeFile(home, '');
+  await assert.rejects(startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false }), HomeNotWritableError);
+});

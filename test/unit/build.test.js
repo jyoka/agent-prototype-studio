@@ -1,0 +1,94 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+import { buildApp } from '../../src/server/build.js';
+import { STUDIO_ROOT } from '../../src/server/config.js';
+
+async function makeApp(t, files) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-build-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const appDir = path.join(root, 'project', 'app');
+  for (const [name, content] of Object.entries(files)) {
+    await fs.mkdir(path.dirname(path.join(appDir, name)), { recursive: true });
+    await fs.writeFile(path.join(appDir, name), content);
+  }
+  await fs.mkdir(appDir, { recursive: true });
+  return { root, appDir, buildsDir: path.join(root, 'project', '.studio', 'builds') };
+}
+
+test('サンプルは React ごと 1 つの script に束ねられる', async (t) => {
+  const { buildsDir } = await makeApp(t, {});
+  const result = await buildApp({ appDir: path.join(STUDIO_ROOT, 'samples', 'library', 'app'), buildsDir });
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  const files = (await fs.readdir(path.join(buildsDir, result.buildId))).sort();
+  assert.deepEqual(files, ['app.css', 'app.js', 'index.html', 'runtime.js']);
+  const html = await fs.readFile(path.join(buildsDir, result.buildId, 'index.html'), 'utf8');
+  assert.match(html, /<script src="runtime.js" crossorigin="anonymous"><\/script>\s*<script src="app.js"/);
+  assert.match(html, /href="app.css"/);
+});
+
+test('文法の誤りは、app/ からのパスと行で返す', async (t) => {
+  const { appDir, buildsDir } = await makeApp(t, { 'main.js': 'import { x } from "./part.js";\nconsole.log(x);\n', 'part.js': 'export const x = (;\n' });
+  const result = await buildApp({ appDir, buildsDir });
+  assert.equal(result.ok, false);
+  assert.equal(result.errors[0].file, 'app/part.js');
+  assert.equal(result.errors[0].line, 1);
+  assert.equal(await fs.readdir(buildsDir).catch(() => []).then((d) => d.length), 0);
+});
+
+test('入口のファイルがなければ、置くべき名前を返す', async (t) => {
+  const { appDir, buildsDir } = await makeApp(t, { 'other.js': '' });
+  const result = await buildApp({ appDir, buildsDir });
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0].text, /app\/main\.jsx/);
+});
+
+test('同梱していないライブラリと、app/ の外のファイルは読み込めない', async (t) => {
+  const { root, appDir, buildsDir } = await makeApp(t, {
+    'main.js': 'import "lodash";\nimport "../secret.js";\nimport "/etc/hosts";\nimport "https://example.com/x.js";\n',
+  });
+  await fs.writeFile(path.join(root, 'project', 'secret.js'), 'export default 1;');
+  const result = await buildApp({ appDir, buildsDir });
+  assert.equal(result.ok, false);
+  const texts = result.errors.map((e) => e.text).join('\n');
+  assert.match(texts, /「lodash」は使えません/);
+  assert.match(texts, /app\/ の外のファイルは読み込めません: \.\.\/secret\.js/);
+  assert.match(texts, /app\/ の外のファイルは読み込めません: \/etc\/hosts/);
+  assert.match(texts, /外部の URL は読み込めません/);
+});
+
+test('同梱のライブラリの中の import は解決できる', async (t) => {
+  const { appDir, buildsDir } = await makeApp(t, {
+    'main.jsx': 'import { createRoot } from "react-dom/client";\ncreateRoot(document.body).render(<p>hi</p>);\n',
+  });
+  const result = await buildApp({ appDir, buildsDir });
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+});
+
+test('日本語や空白の名前の画像も、配信できる名前で出力する', async (t) => {
+  const { appDir, buildsDir } = await makeApp(t, {
+    'main.js': 'import url from "./写真 1.png";\nconsole.log(url);\n',
+    '写真 1.png': 'not really a png',
+  });
+  const result = await buildApp({ appDir, buildsDir });
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  const files = await fs.readdir(path.join(buildsDir, result.buildId));
+  const asset = files.find((name) => name.endsWith('.png'));
+  assert.match(asset, /^asset-[A-Z0-9]+\.png$/);
+});
+
+test('app/ の検査で問題があれば、ビルドしない', { skip: process.platform === 'win32' }, async (t) => {
+  const { root, appDir, buildsDir } = await makeApp(t, { 'main.js': 'console.log(1);\n', 'CLAUDE.md': 'x' });
+  await fs.symlink(path.join(root, 'outside.txt'), path.join(appDir, 'link.txt'));
+  await fs.mkdir(path.join(appDir, '.claude'));
+  const result = await buildApp({ appDir, buildsDir });
+  assert.equal(result.ok, false);
+  const found = result.errors.map((e) => `${e.file} ${e.text}`).sort();
+  assert.deepEqual(found, [
+    'app/.claude この名前のファイルやフォルダーは app/ に置けません',
+    'app/CLAUDE.md この名前のファイルやフォルダーは app/ に置けません',
+    'app/link.txt シンボリックリンクは使えません',
+  ]);
+});
