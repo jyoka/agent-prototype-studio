@@ -413,3 +413,4 @@ test/                  unit、integration、e2e。fixtures/ に偽の Claude Cod
 
 - [ADR-0001: ローカル実行と隔離の方式](docs/adr/0001-local-runtime-and-isolation.md)(仮採用)
 - [引き継ぎの形(handoff、形式 1)](docs/handoff.md)(仮)
+- [初見で分かる画面の設計](docs/design/ux-redesign.md)(設計。実装は別のカード)
