@@ -6,6 +6,52 @@ export const SESSION_LIMITS = {
   maxMessages: 200,
 };
 
+function freshSession(definition, key) {
+  return {
+    key,
+    definition,
+    busy: false,
+    state: { ...definition.initialState },
+    messages: definition.mock.greeting ? [{ role: 'assistant', text: definition.mock.greeting }] : [],
+  };
+}
+
+const MESSAGE_ROLES = new Set(['user', 'assistant', 'correction']);
+
+// ディスクから読んだ会話と状態を、設定の決まりで確かめ直す。版のファイルは手で直され得るため
+function checkSnapshot(definition, snapshot) {
+  const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (!isObject(snapshot) || !isObject(snapshot.state) || !Array.isArray(snapshot.messages)) return null;
+  if (snapshot.messages.length > SESSION_LIMITS.maxMessages) return null;
+  const state = { ...definition.initialState };
+  for (const [key, value] of Object.entries(snapshot.state)) {
+    const field = definition.fields.find((f) => f.key === key);
+    const normalized = field ? normalizeValue(field, value) : undefined;
+    if (normalized === undefined) return null;
+    state[key] = normalized;
+  }
+  const messages = [];
+  for (const message of snapshot.messages) {
+    if (!isObject(message) || !MESSAGE_ROLES.has(message.role) || typeof message.text !== 'string' || message.text.length > 4000) return null;
+    if (message.role !== 'correction') {
+      messages.push({ role: message.role, text: message.text });
+      continue;
+    }
+    if (!Array.isArray(message.changes)) return null;
+    const changes = [];
+    for (const change of message.changes) {
+      const field = isObject(change) ? definition.fields.find((f) => f.key === change.key) : null;
+      if (!field) return null;
+      const from = change.from === undefined ? null : normalizeValue(field, change.from);
+      const to = normalizeValue(field, change.to);
+      if (from === undefined || to === undefined) return null;
+      changes.push({ key: field.key, label: field.label, from, to });
+    }
+    messages.push({ role: 'correction', text: message.text, changes });
+  }
+  return { state, messages };
+}
+
 export class AiError extends Error {
   constructor(status, code, message) {
     super(message);
@@ -16,7 +62,7 @@ export class AiError extends Error {
 
 // プロダクト内 AI の会話と状態を、プロジェクトごとにサーバーで持つ(ADR-0001 の「試す」)。
 // 応答の中身は接続(モック、後に実モデル)が決め、値の検査、状態の更新、記録、リセットはここで必ず行う。
-// 会話はメモリーにだけ置く。Studio を止めると消える。
+// 作業中の会話はメモリーにだけ置く。Studio を止めると消える。残すときは版として保存する(versions.js)。
 export class AiSessions {
   constructor({ definitionOf, connection = createMockConnection() }) {
     this.definitionOf = definitionOf;
@@ -38,15 +84,41 @@ export class AiSessions {
     const key = JSON.stringify(definition);
     const current = this.sessions.get(projectId);
     if (current && current.key === key) return current;
-    const session = {
-      key,
-      definition,
-      busy: false,
-      state: { ...definition.initialState },
-      messages: definition.mock.greeting ? [{ role: 'assistant', text: definition.mock.greeting }] : [],
-    };
+    const session = freshSession(definition, key);
     this.sessions.set(projectId, session);
     return session;
+  }
+
+  // 版の保存に入れる会話と状態。definition は保存するファイルの設定で、今の会話がその設定のものでなければ、
+  // あるいは最初のままなら null(復元すると、その設定の初期状態から始まる)
+  snapshot(projectId, definition = this.definitionOf(projectId)) {
+    if (!definition) return null;
+    const key = JSON.stringify(definition);
+    const current = this.sessions.get(projectId);
+    if (!current || current.key !== key) return null;
+    const snapshot = { state: { ...current.state }, messages: current.messages.map((message) => structuredClone(message)) };
+    const fresh = freshSession(definition, key);
+    if (JSON.stringify(snapshot) === JSON.stringify({ state: fresh.state, messages: fresh.messages })) return null;
+    return snapshot;
+  }
+
+  // 版の会話と状態に置き換える。表示中の版の設定の決まりで確かめ、合わなければ初期状態にして false を返す。
+  // 応答を待っている途中でも置き換える。届いた応答は捨てる(リセットと同じ)
+  restore(projectId, snapshot) {
+    this.sessions.delete(projectId);
+    const definition = this.definitionOf(projectId);
+    if (!definition) return snapshot === null;
+    const session = this.session(projectId);
+    if (snapshot === null) return true;
+    const checked = checkSnapshot(definition, snapshot);
+    if (!checked) return false;
+    session.state = checked.state;
+    session.messages = checked.messages;
+    return true;
+  }
+
+  isBusy(projectId) {
+    return Boolean(this.sessions.get(projectId)?.busy);
   }
 
   view(projectId) {

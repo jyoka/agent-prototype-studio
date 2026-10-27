@@ -68,6 +68,13 @@ const els = {
   cancel: $('cancel'),
   examples: $('examples'),
   exampleList: $('example-list'),
+  workBadge: $('work-badge'),
+  workingStatus: $('working-status'),
+  saveForm: $('save-form'),
+  versionName: $('version-name'),
+  saveVersion: $('save-version'),
+  versionsMessage: $('versions-message'),
+  versionList: $('version-list'),
 };
 
 class ApiError extends Error {
@@ -92,6 +99,8 @@ let sending = null;
 let makeError = null;
 // 詳細の欄に出している、プロダクト内 AI の会話と状態
 const ai = { projectId: null, session: null, seq: 0 };
+// 詳細の欄の「版」。保存した版の一覧と、作業中がどの版と同じか
+const versions = { projectId: null, data: null, seq: 0, busy: false, message: null };
 
 // URL のフラグメントから鍵を読み、履歴に残さないよう消す(ADR-0001 の層 3)。
 function takeTokenFromHash() {
@@ -176,11 +185,14 @@ async function refresh() {
     clearBanner();
     agent = data.agent;
     const snapshot = JSON.stringify(data.projects);
-    if (snapshot === lastSnapshot) return;
-    lastSnapshot = snapshot;
-    projects = data.projects;
-    render();
-    await syncConversation();
+    if (snapshot !== lastSnapshot) {
+      lastSnapshot = snapshot;
+      projects = data.projects;
+      render();
+      await syncConversation();
+    }
+    // 作業中のファイルは、Studio の外でも変わり得るので、毎回確かめる
+    await loadVersions();
   } catch (error) {
     if (seq < appliedSeq) return;
     handleError(error);
@@ -200,9 +212,10 @@ function render() {
   els.title.textContent = project ? project.title : '試作品がありません';
   els.reopen.disabled = !project?.previewUrl;
   els.reset.disabled = !project?.previewUrl;
-  els.rebuild.disabled = !project || project.building || project.running;
+  els.rebuild.disabled = !project || project.building || project.running || project.versioning;
   renderBuild(project);
   renderMake(project);
+  renderVersions(project);
   if (!project) {
     showPlaceholder('試作品がありません。');
   } else if (!project.previewUrl) {
@@ -231,7 +244,9 @@ function renderList() {
     state.dataset.state = failed ? 'error' : 'ok';
     state.textContent = project.running
       ? '作る AI が作業中'
-      : project.building
+      : project.versioning
+        ? '版を保存か復元しています'
+        : project.building
         ? 'ビルド中'
         : failed
           ? 'ビルドに失敗'
@@ -243,8 +258,10 @@ function renderList() {
       if (selectedId === project.id) return;
       selectedId = project.id;
       makeError = null;
+      versions.message = null;
       render();
       syncConversation();
+      loadVersions();
     });
     li.append(button);
     return li;
@@ -368,7 +385,7 @@ function renderMake(project) {
   renderAgentStatus();
   renderExamples();
   const running = Boolean(project?.running || sending?.projectId === project?.id || (project && runningRun(project.id)));
-  const ready = Boolean(project && agent?.ready && !running && !project.building && !sending);
+  const ready = Boolean(project && agent?.ready && !running && !project.building && !project.versioning && !sending);
   els.requestText.disabled = !ready;
   els.send.disabled = !ready;
   els.cancel.hidden = !(project && runningRun(project.id));
@@ -547,6 +564,180 @@ function showAiSession(projectId, session) {
   ai.seq += 1;
   ai.session = session;
   renderAi();
+  // 会話が変わると、作業中が保存した版と同じかどうかも変わる
+  if (projectId === selectedId) loadVersions();
+}
+
+function versionLabel(version) {
+  return `v${version.number}${version.name ? `「${version.name}」` : ''}`;
+}
+
+// 文の中で、後ろに言葉が続くとき。「」で終わらないときだけ空白を入れる
+function versionSubject(version) {
+  return version.name ? versionLabel(version) : `${versionLabel(version)} `;
+}
+
+// 作業中(今の app/ と、メモリーにある会話と状態)と、保存した版を分けて見せる
+function workingView(data) {
+  const { working } = data;
+  const version = data.versions.find((v) => v.id === working.versionId);
+  const base = data.versions.find((v) => v.id === working.baseVersionId);
+  if (working.files === 'none') {
+    return {
+      state: 'unsaved',
+      badge: '作業中(まだ保存していません)',
+      text: '作業中: まだ保存した版はありません。良い状態になったら保存してください。',
+    };
+  }
+  if (working.files === 'changed' || !version) {
+    return {
+      state: 'changed',
+      badge: '作業中(保存していない変更あり)',
+      text: `作業中には、保存していない変更があります${base ? `(保存版 ${versionSubject(base)}から)` : ''}。`,
+    };
+  }
+  if (working.conversation === 'changed') {
+    return {
+      state: 'partly',
+      badge: `作業中(会話が v${version.number} から変わっています)`,
+      text: `作業中のファイルは保存版 ${versionSubject(version)}と同じです。会話と状態は、保存したときから変わっています。`,
+    };
+  }
+  if (working.conversation === 'initial') {
+    return {
+      state: 'partly',
+      badge: `作業中(ファイルは v${version.number} と同じ)`,
+      text: `作業中のファイルは保存版 ${versionSubject(version)}と同じです。会話と状態は最初のままです。保存したときの会話から続けるには、その版の「復元」を押してください。`,
+    };
+  }
+  return { state: 'saved', badge: `作業中 = 保存版 v${version.number}`, text: `作業中は保存版 ${versionSubject(version)}と同じです。` };
+}
+
+function versionItem(project, version, working, locked) {
+  const li = element('li', undefined, 'version');
+  li.dataset.versionId = version.id;
+  const head = element('p', undefined, 'version-head');
+  head.append(element('strong', `v${version.number}`));
+  if (version.name) head.append(element('span', version.name, 'version-name'));
+  if (version.kind === 'auto') head.append(element('span', '自動', 'tag'));
+  if (working.files === 'saved' && working.versionId === version.id) head.append(element('span', '作業中と同じ', 'tag current'));
+  const conversation = version.ai ? `会話: 発言 ${version.ai.userMessages} 件` : '会話は最初のまま';
+  const meta = [new Date(version.savedAt).toLocaleString('ja-JP'), `ファイル ${version.fileCount} 個`, conversation];
+  if (!version.builds) meta.push('ビルドできない状態');
+  const button = element('button', '復元');
+  button.type = 'button';
+  button.disabled = locked;
+  button.setAttribute('aria-label', `v${version.number} を復元`);
+  button.title = 'この版のファイルと会話に戻します。今の作業中がどの版とも違えば、先に自動で保存します';
+  button.addEventListener('click', () => restoreVersion(project, version));
+  li.append(head, element('p', meta.join('・'), 'muted'), button);
+  return li;
+}
+
+function renderVersions(project) {
+  const data = project && versions.projectId === project.id ? versions.data : null;
+  const locked = !project || project.running || project.building || project.versioning || versions.busy;
+  els.versionName.disabled = locked;
+  els.saveVersion.disabled = locked;
+  els.versionsMessage.hidden = !versions.message;
+  els.versionsMessage.textContent = versions.message?.text ?? '';
+  els.versionsMessage.dataset.kind = versions.message?.kind ?? '';
+  if (!data) {
+    els.workBadge.hidden = true;
+    els.workingStatus.textContent = project ? '読み込んでいます…' : '';
+    els.versionList.replaceChildren();
+    return;
+  }
+  const view = workingView(data);
+  els.workBadge.hidden = false;
+  els.workBadge.dataset.state = view.state;
+  els.workBadge.textContent = view.badge;
+  els.workingStatus.dataset.state = view.state;
+  els.workingStatus.textContent = view.text;
+  els.versionList.replaceChildren(...data.versions.map((version) => versionItem(project, version, data.working, locked)));
+}
+
+function applyVersions(projectId, data) {
+  // 先に送った一覧の読み込みの結果で、上書きしない
+  versions.seq += 1;
+  versions.projectId = projectId;
+  versions.data = { versions: data.versions, working: data.working };
+}
+
+async function loadVersions() {
+  const projectId = selectedProject()?.id ?? null;
+  const seq = ++versions.seq;
+  if (!projectId) {
+    versions.projectId = null;
+    versions.data = null;
+    renderVersions(null);
+    return;
+  }
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(projectId)}/versions`);
+    if (seq !== versions.seq || projectId !== selectedId) return;
+    const changed = versions.projectId !== projectId || JSON.stringify(data) !== JSON.stringify(versions.data);
+    versions.projectId = projectId;
+    versions.data = data;
+    if (changed) renderVersions(selectedProject());
+  } catch (error) {
+    if (seq !== versions.seq) return;
+    handleError(error);
+  }
+}
+
+function versionsFailed(error, what) {
+  if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+  versions.message = { kind: 'failed', text: `${what}: ${error.message}` };
+}
+
+async function saveVersion() {
+  const project = selectedProject();
+  if (!project || versions.busy) return;
+  versions.busy = true;
+  versions.message = null;
+  renderVersions(project);
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(project.id)}/versions`, {
+      method: 'POST',
+      json: { name: els.versionName.value },
+    });
+    if (selectedId === project.id) applyVersions(project.id, data);
+    els.versionName.value = '';
+    versions.message = { kind: 'ok', text: `${versionSubject(data.version)}として保存しました。` };
+  } catch (error) {
+    versionsFailed(error, '保存できませんでした');
+  } finally {
+    versions.busy = false;
+    if (selectedId !== project.id) versions.message = null;
+    renderVersions(selectedProject());
+  }
+}
+
+// 版のファイルと会話に戻す。サーバーがビルドし直すので、試す画面は新しいビルドで開き直す
+async function restoreVersion(project, version) {
+  if (versions.busy) return;
+  versions.busy = true;
+  versions.message = null;
+  renderVersions(project);
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(project.id)}/versions/${version.id}/restore`, { method: 'POST' });
+    if (selectedId === project.id) applyVersions(project.id, data);
+    let text = `${versionSubject(data.restored)}に戻しました。`;
+    if (data.autoSaved) text += `戻す前の作業中は v${data.autoSaved.number}(自動)に保存しました。`;
+    if (data.setAside) text += `戻す前の作業中は大きすぎて版にできないので、${data.setAside} に移しました。`;
+    if (!data.build.ok) text += 'ただし、ビルドに失敗しました。試す画面は前の版のままです。「ビルド」の欄を見てください。';
+    else if (data.conversation === 'initial') text += '保存した会話は今の AI の設定に合わないので、会話は最初から始めます。';
+    versions.message = { kind: data.build.ok ? 'ok' : 'failed', text };
+  } catch (error) {
+    versionsFailed(error, '戻せませんでした');
+  } finally {
+    versions.busy = false;
+    if (selectedId !== project.id) versions.message = null;
+    lastSnapshot = '';
+    await refresh();
+    render();
+  }
 }
 
 function clearEvents() {
@@ -766,6 +957,11 @@ els.rebuild.addEventListener('click', async () => {
   await refresh();
   // つながらないときも、ボタンと詳細の欄を元に戻す
   render();
+});
+
+els.saveForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  saveVersion();
 });
 
 els.requestForm.addEventListener('submit', (event) => {

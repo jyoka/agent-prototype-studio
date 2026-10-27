@@ -26,6 +26,8 @@ export function projectPaths(home, id) {
     app: path.join(root, 'app'),
     studio: path.join(root, '.studio'),
     builds: path.join(root, '.studio', 'builds'),
+    versions: path.join(root, '.studio', 'versions'),
+    working: path.join(root, '.studio', 'working.json'),
     meta: path.join(root, '.studio', 'project.json'),
   };
 }
