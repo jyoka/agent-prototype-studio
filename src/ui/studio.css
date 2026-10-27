@@ -119,6 +119,21 @@ button { font: inherit; }
 .events li[data-kind="warning"] { border-left-color: #c77700; background: var(--warn-bg); }
 .events time { display: block; font-size: 0.75rem; color: var(--muted); }
 
+.ai-badge {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid #c77700;
+  border-radius: 999px;
+  background: var(--warn-bg);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.ai-status p { margin: 0 0 0.4rem; }
+.ai-connection { padding: 0.4rem 0.6rem; background: var(--warn-bg); border-radius: 4px; }
+.ai-name { font-weight: 600; }
+.ai-state { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.8rem; margin: 0; }
+.ai-state dt { color: var(--muted); }
+.ai-state dd { margin: 0; }
+
 @media (max-width: 1000px) {
   .layout { grid-template-columns: 1fr; }
 }
