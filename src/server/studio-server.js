@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { STUDIO_ROOT } from './config.js';
 import { isAllowedHost, tokensEqual } from './security.js';
+import { AiError } from './product-ai/session.js';
 import { BusyError, NotFoundError } from './store.js';
 
 const UI_DIR = path.join(STUDIO_ROOT, 'src', 'ui');
@@ -38,6 +39,26 @@ export function studioCsp(previewPort) {
   ].join('; ');
 }
 
+const MAX_BODY_BYTES = 16 * 1024;
+
+class BodyError extends Error {}
+
+async function readJson(req) {
+  let size = 0;
+  const chunks = [];
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_BODY_BYTES) throw new BodyError(`送る内容が大きすぎます(上限 ${MAX_BODY_BYTES} バイト)`);
+    chunks.push(chunk);
+  }
+  if (size === 0) return {};
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw new BodyError('送る内容が JSON として読めません');
+  }
+}
+
 function projectView(project, previewPort) {
   return {
     id: project.id,
@@ -52,7 +73,7 @@ function projectView(project, previewPort) {
 }
 
 // Studio 画面と API。API はすべてトークンを要求する(ADR-0001 の層 3)。
-export function createStudioHandler({ store, token, ports }) {
+export function createStudioHandler({ store, aiSessions, token, ports }) {
   async function handleApi(req, res, url) {
     if (!tokensEqual(req.headers['x-studio-token'], token)) {
       return sendError(res, 401, 'token', '鍵が合いません。ターミナルに表示された URL から開き直してください');
@@ -80,7 +101,37 @@ export function createStudioHandler({ store, token, ports }) {
       const project = (await store.list()).find((p) => p.id === id);
       return sendJson(res, 200, { project: projectView(project, ports.preview) });
     }
+    const aiMatch = /^\/api\/projects\/([^/]+)\/ai(?:\/(messages|corrections|reset))?$/.exec(url.pathname);
+    if (aiMatch && (aiMatch[2] ? req.method === 'POST' : req.method === 'GET')) {
+      return handleAi(req, res, aiMatch[1], aiMatch[2]);
+    }
     return sendError(res, 404, 'not-found', 'その API はありません');
+  }
+
+  // プロダクト内 AI。試作品からの要求は、Studio 画面が形を確かめてから、ここへ送る
+  async function handleAi(req, res, rawId, action) {
+    let id;
+    try {
+      id = decodeURIComponent(rawId);
+    } catch {
+      id = null;
+    }
+    if (!(await store.list()).some((p) => p.id === id)) {
+      return sendError(res, 404, 'not-found', `プロジェクトがありません: ${rawId}`);
+    }
+    try {
+      const body = action ? await readJson(req) : null;
+      let session;
+      if (!action) session = aiSessions.view(id);
+      else if (action === 'messages') session = await aiSessions.send(id, body?.text);
+      else if (action === 'corrections') session = aiSessions.correct(id, body?.changes);
+      else session = aiSessions.reset(id);
+      return sendJson(res, 200, { session });
+    } catch (error) {
+      if (error instanceof AiError) return sendError(res, error.status, error.code, error.message);
+      if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
+      throw error;
+    }
   }
 
   return async (req, res) => {

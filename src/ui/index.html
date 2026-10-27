@@ -23,7 +23,9 @@
     <section class="preview" aria-labelledby="project-title">
       <div class="toolbar">
         <h2 id="project-title">試作品を選んでください</h2>
-        <button type="button" id="reopen" disabled>開き直す</button>
+        <span id="ai-badge" class="ai-badge" hidden></span>
+        <button type="button" id="reopen" disabled title="画面だけを読み直します。会話と状態はそのまま">開き直す</button>
+        <button type="button" id="reset" disabled title="会話と状態を最初に戻して、開き直します">リセット</button>
         <button type="button" id="rebuild" disabled>作り直す</button>
       </div>
       <div id="frame-host" class="frame-host">
@@ -35,6 +37,10 @@
       <section aria-labelledby="build-heading">
         <h3 id="build-heading">ビルド</h3>
         <div id="build-status" class="build-status"></div>
+      </section>
+      <section aria-labelledby="ai-heading">
+        <h3 id="ai-heading">プロダクト内 AI</h3>
+        <div id="ai-status" class="ai-status"></div>
       </section>
       <section aria-labelledby="events-heading">
         <h3 id="events-heading">試作品からの知らせ</h3>

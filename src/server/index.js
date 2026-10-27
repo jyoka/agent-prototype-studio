@@ -3,7 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { STUDIO_ROOT } from './config.js';
 import { createPreviewHandler } from './preview-server.js';
-import { ensureSampleProject, projectsDir } from './projects.js';
+import { AiSessions } from './product-ai/session.js';
+import { ensureSampleProjects, projectsDir } from './projects.js';
 import { createToken } from './security.js';
 import { createStudioHandler } from './studio-server.js';
 import { ProjectStore } from './store.js';
@@ -51,8 +52,8 @@ async function listenOrExplain(server, port, host, envName) {
 export async function startStudio(config, { log = () => {} } = {}) {
   try {
     await fs.mkdir(projectsDir(config.home), { recursive: true });
-    if (await ensureSampleProject(config.home, path.join(STUDIO_ROOT, 'samples'))) {
-      log('サンプルの試作品を用意しました');
+    for (const id of await ensureSampleProjects(config.home, path.join(STUDIO_ROOT, 'samples'))) {
+      log(`サンプルの試作品を用意しました: ${id}`);
     }
   } catch (error) {
     // ENOTDIR と EEXIST は、置き場の途中にふつうのファイルがあるとき
@@ -67,7 +68,8 @@ export async function startStudio(config, { log = () => {} } = {}) {
   const ports = { studio: config.studioPort, preview: config.previewPort };
   const servers = [];
 
-  const studioServer = http.createServer(createStudioHandler({ store, token, ports }));
+  const aiSessions = new AiSessions({ definitionOf: (id) => store.aiDefinition(id) });
+  const studioServer = http.createServer(createStudioHandler({ store, aiSessions, token, ports }));
   servers.push(studioServer);
   const previewHandler = createPreviewHandler({ home: config.home, store, ports });
   const previewServer = http.createServer(previewHandler);
@@ -98,6 +100,7 @@ export async function startStudio(config, { log = () => {} } = {}) {
     url,
     ports,
     store,
+    aiSessions,
     async close() {
       await Promise.all(
         servers.map(

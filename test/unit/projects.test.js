@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { STUDIO_ROOT } from '../../src/server/config.js';
-import { ensureSampleProject, isValidProjectId, listProjects, projectPaths } from '../../src/server/projects.js';
+import { ensureSampleProjects, isValidProjectId, listProjects, projectPaths } from '../../src/server/projects.js';
 
 test('プロジェクト ID は英小文字、数字、ハイフンだけ', () => {
   assert.equal(isValidProjectId('sample-library'), true);
@@ -19,16 +19,24 @@ test('サンプルは初回だけ写し、利用者の変更を上書きしな�
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const samples = path.join(STUDIO_ROOT, 'samples');
 
-  assert.equal(await ensureSampleProject(home, samples), true);
+  assert.deepEqual(await ensureSampleProjects(home, samples), ['sample-library', 'sample-job-consult']);
   const main = path.join(home, 'projects', 'sample-library', 'app', 'main.jsx');
   await fs.writeFile(main, '// changed');
-  assert.equal(await ensureSampleProject(home, samples), false);
+  assert.deepEqual(await ensureSampleProjects(home, samples), []);
+  assert.equal(await fs.readFile(main, 'utf8'), '// changed');
+
+  // 後から足したサンプルだけを写す(前の版で起動したことのある置き場)
+  await fs.rm(path.join(home, 'projects', 'sample-job-consult'), { recursive: true });
+  assert.deepEqual(await ensureSampleProjects(home, samples), ['sample-job-consult']);
   assert.equal(await fs.readFile(main, 'utf8'), '// changed');
 
   const projects = await listProjects(home);
   assert.deepEqual(
     projects.map((p) => [p.id, p.title]),
-    [['sample-library', 'サンプル: 架空の図書室']],
+    [
+      ['sample-job-consult', 'サンプル: 架空の求人相談(モック AI)'],
+      ['sample-library', 'サンプル: 架空の図書室'],
+    ],
   );
 });
 

@@ -3,6 +3,7 @@ import path from 'node:path';
 import * as esbuild from 'esbuild';
 import { STUDIO_ROOT } from './config.js';
 import { inspectApp } from './inspect.js';
+import { readAiDefinition } from './product-ai/definition.js';
 import { createBuildId } from './security.js';
 
 // 試作品が import できる、Studio が同梱するライブラリ。
@@ -125,7 +126,7 @@ async function findEntry(appDir) {
 }
 
 // app/ を 1 つの classic script(IIFE)に束ね、builds/<build-id>/ に置く。
-// 生成コードはここでは実行しない。
+// 生成コードはここでは実行しない。成功したら、検査済みの AI の設定(なければ null)を ai で返す。
 export async function buildApp({ appDir, buildsDir }) {
   const started = Date.now();
   const finish = (fields) => ({ ...fields, durationMs: Date.now() - started, finishedAt: new Date().toISOString() });
@@ -133,6 +134,11 @@ export async function buildApp({ appDir, buildsDir }) {
   const problems = await inspectApp(appDir);
   if (problems.length > 0) {
     return finish({ ok: false, errors: problems.map((p) => ({ ...p, line: null, column: null, lineText: null })) });
+  }
+  // プロダクト内 AI の設定も、ビルドのたびに同じ決まりで検査する
+  const ai = await readAiDefinition(appDir);
+  if (ai.errors.length > 0) {
+    return finish({ ok: false, errors: ai.errors.map((p) => ({ ...p, line: null, column: null, lineText: null })) });
   }
   const entry = await findEntry(appDir);
   if (!entry) {
@@ -191,6 +197,7 @@ export async function buildApp({ appDir, buildsDir }) {
   return finish({
     ok: true,
     buildId,
+    ai: ai.definition,
     errors: [],
     warnings: result.warnings.map((m) => toBuildError(appDir, m)),
   });

@@ -8,7 +8,7 @@ import test from 'node:test';
 import { HomeNotWritableError, startStudio } from '../../src/server/index.js';
 
 // fetch は Host を書き換えさせないので、http.request で送る。
-function request(port, { method = 'GET', pathname = '/', headers = {} } = {}) {
+function request(port, { method = 'GET', pathname = '/', headers = {}, body } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port, method, path: pathname, headers }, (res) => {
       let body = '';
@@ -18,7 +18,7 @@ function request(port, { method = 'GET', pathname = '/', headers = {} } = {}) {
     });
     req.setTimeout(5000, () => req.destroy(new Error('timeout')));
     req.on('error', reject);
-    req.end();
+    req.end(body);
   });
 }
 
@@ -51,7 +51,7 @@ test('Studio 画面と API の守り(Host、トークン、Origin)', async (t) =
 
   const ok = await request(sp, { pathname: '/api/projects', headers: { host, 'x-studio-token': token } });
   assert.equal(ok.status, 200);
-  const [sample] = JSON.parse(ok.body).projects;
+  const sample = JSON.parse(ok.body).projects.find((p) => p.id === 'sample-library');
   assert.equal(sample.id, 'sample-library');
   assert.match(sample.previewUrl, /^http:\/\/localhost:\d+\/p\/sample-library\/[a-f0-9]{32}\/$/);
 
@@ -175,7 +175,7 @@ test('壊れたプロジェクトがあっても、他の試作品は開ける',
   const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false });
   t.after(() => studio.close());
   const projects = await studio.store.list();
-  assert.deepEqual(projects.map((p) => p.id), ['locked', 'sample-library']);
+  assert.deepEqual(projects.map((p) => p.id), ['locked', 'sample-job-consult', 'sample-library']);
   const locked_ = projects.find((p) => p.id === 'locked');
   assert.equal(locked_.lastBuild.ok, false);
   assert.match(locked_.lastBuild.errors[0].text, /ビルドの途中で問題が起きました/);
@@ -188,4 +188,55 @@ test('データの置き場がふつうのファイルのときは、書き込�
   const home = path.join(dir, 'file');
   await fs.writeFile(home, '');
   await assert.rejects(startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false }), HomeNotWritableError);
+});
+
+test('プロダクト内 AI の API: 会話、修正、リセットと、その守り', async (t) => {
+  const { token, sp, host } = await withStudio(t);
+  const base = '/api/projects/sample-job-consult/ai';
+  const headers = { host, 'x-studio-token': token, origin: `http://${host}`, 'content-type': 'application/json' };
+  const call = async (pathname, json, extra = {}) => {
+    const res = await request(sp, {
+      method: json === undefined ? 'GET' : 'POST',
+      pathname,
+      headers: { ...headers, ...extra },
+      body: json === undefined ? undefined : typeof json === 'string' ? json : JSON.stringify(json),
+    });
+    return { status: res.status, body: JSON.parse(res.body) };
+  };
+
+  const initial = await call(base);
+  assert.equal(initial.status, 200);
+  assert.equal(initial.body.session.connection.kind, 'mock');
+  assert.deepEqual(initial.body.session.state, { jobType: null, employmentType: null, area: null, wage: null });
+  assert.equal(initial.body.session.messages.length, 1);
+
+  const sent = await call(`${base}/messages`, { text: 'しおかぜ町でカフェのアルバイト。時給1100円以上' });
+  assert.equal(sent.status, 200);
+  assert.deepEqual(sent.body.session.state, { jobType: 'カフェのホール', employmentType: 'アルバイト・パート', area: 'しおかぜ町', wage: 1100 });
+
+  const corrected = await call(`${base}/corrections`, { changes: { area: 'もみじ台' } });
+  assert.equal(corrected.body.session.state.area, 'もみじ台');
+  const next = await call(`${base}/messages`, { text: 'お願いします' });
+  assert.match(next.body.session.messages.at(-1).text, /^直していただいた勤務地「もみじ台」で進めます。/);
+
+  assert.equal((await call(`${base}/corrections`, { changes: { area: '月の裏側' } })).body.error.code, 'invalid');
+  assert.equal((await call(`${base}/messages`, '{')).status, 400);
+  assert.equal((await call(`${base}/messages`, { text: 'x'.repeat(501) })).body.error.code, 'invalid');
+  assert.equal((await call(`${base}/messages`, { text: 'x'.repeat(20_000) })).status, 400);
+
+  const reset = await call(`${base}/reset`, {});
+  assert.deepEqual(reset.body.session, initial.body.session);
+
+  // AI を使わない試作品、ない試作品
+  const library = await call('/api/projects/sample-library/ai');
+  assert.equal(library.status, 404);
+  assert.equal(library.body.error.code, 'no-ai');
+  assert.equal((await call('/api/projects/nothing/ai')).body.error.code, 'not-found');
+  assert.equal((await call('/api/projects/..%2Fx/ai/reset', {})).status, 404);
+
+  // トークンと Origin
+  assert.equal((await call(base, undefined, { 'x-studio-token': 'x' })).status, 401);
+  assert.equal((await call(`${base}/reset`, {}, { origin: 'http://evil.example' })).status, 403);
+  // GET 以外では状態を変えない
+  assert.equal((await call(`${base}/reset`)).status, 404);
 });
