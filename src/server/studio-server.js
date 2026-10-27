@@ -2,7 +2,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { STUDIO_ROOT } from './config.js';
 import { isAllowedHost, tokensEqual } from './security.js';
+import { AgentUnavailableError, RequestError } from './build-requests.js';
 import { BusyError, NotFoundError } from './store.js';
+
+const MAX_BODY_BYTES = 64 * 1024;
 
 const UI_DIR = path.join(STUDIO_ROOT, 'src', 'ui');
 const UI_FILES = {
@@ -38,12 +41,34 @@ export function studioCsp(previewPort) {
   ].join('; ');
 }
 
-function projectView(project, previewPort) {
+class BodyError extends Error {}
+
+async function readJson(req) {
+  if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) {
+    throw new BodyError('Content-Type は application/json にしてください');
+  }
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_BODY_BYTES) throw new BodyError('送られた内容が大きすぎます');
+    chunks.push(chunk);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw new BodyError('送られた内容が JSON ではありません');
+  }
+}
+
+function projectView(project, previewPort, runs) {
   return {
     id: project.id,
     title: project.title,
     appDir: project.appDir,
     building: project.building,
+    running: runs.running,
+    runsVersion: runs.version,
     lastBuild: project.lastBuild,
     previewUrl: project.previewBuildId
       ? `http://localhost:${previewPort}/p/${project.id}/${project.previewBuildId}/`
@@ -52,7 +77,40 @@ function projectView(project, previewPort) {
 }
 
 // Studio 画面と API。API はすべてトークンを要求する(ADR-0001 の層 3)。
-export function createStudioHandler({ store, token, ports }) {
+export function createStudioHandler({ store, requests, agent, token, ports }) {
+  const view = (project) => projectView(project, ports.preview, requests.summary(project.id));
+
+  // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
+  // EventSource はヘッダーにトークンを付けられないので、画面は fetch の応答をストリームで読む(ADR-0001)。
+  async function handleBuildRequest(req, res, id) {
+    let started;
+    try {
+      const body = await readJson(req);
+      started = await requests.start(id, body?.request);
+    } catch (error) {
+      if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', `プロジェクトがありません: ${id}`);
+      if (error instanceof BusyError) return sendError(res, 409, 'busy', error.message);
+      if (error instanceof RequestError || error instanceof BodyError) return sendError(res, 400, 'request', error.message);
+      if (error instanceof AgentUnavailableError) return sendError(res, 503, 'agent', error.message);
+      throw error;
+    }
+    res.writeHead(200, {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    const write = (run) => {
+      if (!res.writableEnded) res.write(`${JSON.stringify({ run })}\n`);
+    };
+    write(started.run);
+    // 画面を閉じても、実行は続ける。結果は一覧の API で読める
+    const unsubscribe = started.subscribe(write, (run) => {
+      write(run);
+      res.end();
+    });
+    res.on('close', unsubscribe);
+  }
+
   async function handleApi(req, res, url) {
     if (!tokensEqual(req.headers['x-studio-token'], token)) {
       return sendError(res, 401, 'token', '鍵が合いません。ターミナルに表示された URL から開き直してください');
@@ -62,7 +120,24 @@ export function createStudioHandler({ store, token, ports }) {
     }
     if (req.method === 'GET' && url.pathname === '/api/projects') {
       const projects = await store.list();
-      return sendJson(res, 200, { projects: projects.map((p) => projectView(p, ports.preview)) });
+      return sendJson(res, 200, { projects: projects.map(view), agent });
+    }
+    const requestsMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/build-requests$/.exec(url.pathname);
+    if (requestsMatch && req.method === 'GET') {
+      try {
+        await store.requireProject(requestsMatch[1]);
+      } catch (error) {
+        if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', error.message);
+        throw error;
+      }
+      return sendJson(res, 200, { runs: requests.list(requestsMatch[1]) });
+    }
+    if (requestsMatch && req.method === 'POST') return handleBuildRequest(req, res, requestsMatch[1]);
+    const cancelMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/build-requests\/([a-f0-9]{16})\/cancel$/.exec(url.pathname);
+    if (cancelMatch && req.method === 'POST') {
+      const run = requests.cancel(cancelMatch[1], cancelMatch[2]);
+      if (!run) return sendError(res, 409, 'not-running', 'その依頼は、もう動いていません');
+      return sendJson(res, 200, { run });
     }
     const buildMatch = /^\/api\/projects\/([^/]+)\/builds$/.exec(url.pathname);
     if (req.method === 'POST' && buildMatch) {
@@ -78,7 +153,7 @@ export function createStudioHandler({ store, token, ports }) {
         throw error;
       }
       const project = (await store.list()).find((p) => p.id === id);
-      return sendJson(res, 200, { project: projectView(project, ports.preview) });
+      return sendJson(res, 200, { project: view(project) });
     }
     return sendError(res, 404, 'not-found', 'その API はありません');
   }

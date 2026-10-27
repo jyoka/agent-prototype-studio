@@ -65,13 +65,28 @@ function waitForUrl(child, output) {
   });
 }
 
+// 作る AI の接続と認証に関わる変数。利用者の環境に何があっても、テストの結果を変えない
+const AGENT_ENV = [
+  'STUDIO_AGENT',
+  'STUDIO_CLAUDE_BIN',
+  'STUDIO_MAX_BUDGET_USD',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_USE_FOUNDRY',
+];
+
 // 利用者と同じ手順(npm start、または node bin/studio.js)で起動し、表示された URL を返す。
-export async function launchStudio(home, { useNpm = false } = {}) {
+export async function launchStudio(home, { useNpm = false, env: extraEnv = {} } = {}) {
   const command = useNpm ? (process.platform === 'win32' ? 'npm.cmd' : 'npm') : process.execPath;
   const args = useNpm ? ['start'] : ['bin/studio.js'];
+  const env = { ...process.env, STUDIO_HOME: home, STUDIO_NO_OPEN: '1', STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0' };
+  for (const name of AGENT_ENV) delete env[name];
   const child = spawn(command, args, {
     cwd: ROOT,
-    env: { ...process.env, STUDIO_HOME: home, STUDIO_NO_OPEN: '1', STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0' },
+    env: { ...env, ...extraEnv },
     detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
     shell: useNpm && process.platform === 'win32',
@@ -98,6 +113,15 @@ export async function launchStudio(home, { useNpm = false } = {}) {
     async api(pathname) {
       const response = await fetch(`${origin}${pathname}`, { headers: { 'X-Studio-Token': token } });
       return response.json();
+    },
+    // 画面と同じく、Origin とトークンを付けて送る
+    async post(pathname, body) {
+      const response = await fetch(`${origin}${pathname}`, {
+        method: 'POST',
+        headers: { 'X-Studio-Token': token, Origin: origin, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      return { status: response.status, text: await response.text() };
     },
     stop: () => stopChild(child),
   };

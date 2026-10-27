@@ -1,6 +1,8 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { connectionView, resolveConnection } from './agent-connection.js';
+import { BuildRequests } from './build-requests.js';
 import { STUDIO_ROOT } from './config.js';
 import { createPreviewHandler } from './preview-server.js';
 import { ensureSampleProject, projectsDir } from './projects.js';
@@ -48,7 +50,8 @@ async function listenOrExplain(server, port, host, envName) {
 }
 
 // Studio を起動する。待ち受けは loopback だけ(0.0.0.0 にはしない)。
-export async function startStudio(config, { log = () => {} } = {}) {
+// env は作る AI に渡す環境変数。既定は利用者のもの(ADR-0001: そのまま渡し、値は読まない)。
+export async function startStudio(config, { log = () => {}, env = process.env } = {}) {
   try {
     await fs.mkdir(projectsDir(config.home), { recursive: true });
     if (await ensureSampleProject(config.home, path.join(STUDIO_ROOT, 'samples'))) {
@@ -62,12 +65,22 @@ export async function startStudio(config, { log = () => {} } = {}) {
     throw error;
   }
 
+  const connection = await resolveConnection(config, env);
   const token = createToken();
   const store = new ProjectStore(config.home, log);
+  const requests = new BuildRequests({
+    store,
+    connection,
+    env,
+    log,
+    maxBudgetUsd: config.maxBudgetUsd,
+  });
   const ports = { studio: config.studioPort, preview: config.previewPort };
   const servers = [];
 
-  const studioServer = http.createServer(createStudioHandler({ store, token, ports }));
+  const studioServer = http.createServer(
+    createStudioHandler({ store, requests, agent: connectionView(connection), token, ports }),
+  );
   servers.push(studioServer);
   const previewHandler = createPreviewHandler({ home: config.home, store, ports });
   const previewServer = http.createServer(previewHandler);
@@ -98,7 +111,10 @@ export async function startStudio(config, { log = () => {} } = {}) {
     url,
     ports,
     store,
+    requests,
+    connection,
     async close() {
+      await requests.closeAll();
       await Promise.all(
         servers.map(
           (server) =>

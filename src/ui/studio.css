@@ -45,7 +45,8 @@ h3 { font-size: 0.9rem; margin: 1rem 0 0.4rem; }
 .layout {
   flex: 1;
   display: grid;
-  grid-template-columns: 220px 1fr 320px;
+  grid-template-columns: 200px minmax(300px, 360px) 1fr 280px;
+  grid-template-areas: "nav make try details";
   gap: 1rem;
   padding: 1rem;
   min-height: 0;
@@ -119,6 +120,76 @@ button { font: inherit; }
 .events li[data-kind="warning"] { border-left-color: #c77700; background: var(--warn-bg); }
 .events time { display: block; font-size: 0.75rem; color: var(--muted); }
 
+
+/* 作る */
+.projects { grid-area: nav; }
+.make { grid-area: make; }
+.preview { grid-area: try; }
+.details { grid-area: details; }
+.make {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.8rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+.make > .muted { font-size: 0.85rem; }
+.eyebrow { margin: 0 0 0.2rem; font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+.agent-status { padding: 0.5rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+.agent-status p { margin: 0.15rem 0; }
+.agent-status .agent-name { font-weight: 600; }
+.agent-status .failed { color: var(--error); }
+.agent-status[data-kind="claude"][data-billing="api-key"] .billing,
+.agent-status[data-kind="claude"][data-billing="auth-token"] .billing,
+.agent-status[data-kind="claude"][data-billing="cloud"] .billing { padding: 0.3rem 0.4rem; background: var(--warn-bg); border-radius: 4px; }
+.conversation { list-style: none; margin: 0; padding: 0; flex: 1; min-height: 120px; max-height: 45vh; overflow: auto; }
+.conversation .empty { padding: 0.5rem 0; }
+.run { padding: 0.4rem 0 0.6rem; border-bottom: 1px solid var(--line); }
+.run .steps { list-style: none; margin: 0.3rem 0 0; padding: 0; }
+.run .steps li { margin: 0.25rem 0; padding: 0.25rem 0.4rem; border-left: 3px solid var(--line); }
+.run .steps li .who { display: block; font-size: 0.75rem; color: var(--muted); }
+.run .steps li[data-kind="denied"],
+.run .steps li[data-kind="cancelled"],
+.run .steps li[data-kind="hint"] { border-left-color: #c77700; background: var(--warn-bg); }
+.run .steps li[data-kind="failed"],
+.run .steps li[data-kind="tool-error"],
+.run .steps li[data-kind="build-failed"] { border-left-color: var(--error); background: var(--error-bg); }
+.run .steps li[data-kind="build-ok"] { border-left-color: var(--ok); }
+.run .text { white-space: pre-wrap; word-break: break-word; }
+.bubble p { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.bubble .who { display: block; font-size: 0.75rem; color: var(--muted); }
+.bubble.user { padding: 0.4rem 0.6rem; background: #eef3fd; border-radius: 6px; }
+.run .steps li.bubble.agent { border-left-color: var(--accent); }
+.run-status { margin: 0.3rem 0 0; font-size: 0.8rem; color: var(--muted); }
+.run[data-status="failed"] .run-status, .run[data-status="timed-out"] .run-status { color: var(--error); }
+.run[data-status="done"] .run-status { color: var(--ok); }
+.make-error { color: var(--error); padding: 0.4rem 0; }
+.request-form { display: flex; flex-direction: column; gap: 0.3rem; }
+.request-form label { font-weight: 600; }
+.request-form textarea { font: inherit; padding: 0.4rem; border: 1px solid var(--line); border-radius: 6px; resize: vertical; }
+.request-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.request-actions button, .examples button {
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.request-actions button[type="submit"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.request-actions button:disabled { opacity: 0.5; cursor: default; }
+.request-actions .muted { font-size: 0.75rem; }
+.examples ul { list-style: none; margin: 0.3rem 0 0; padding: 0; }
+.examples li { margin: 0.25rem 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.examples button { text-align: left; padding: 0.2rem 0.5rem; font-size: 0.85rem; }
+.examples li .muted { font-size: 0.75rem; }
+
+@media (max-width: 1400px) {
+  .layout { grid-template-columns: 200px minmax(280px, 340px) 1fr; grid-template-areas: "nav make try" "nav make details"; }
+}
 @media (max-width: 1000px) {
-  .layout { grid-template-columns: 1fr; }
+  .layout { grid-template-columns: 1fr; grid-template-areas: "nav" "make" "try" "details"; }
 }

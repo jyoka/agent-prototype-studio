@@ -20,7 +20,27 @@
       <h2>試作品</h2>
       <ul id="project-list"></ul>
     </nav>
+    <section class="make" aria-labelledby="make-heading">
+      <h2 id="make-heading">作る</h2>
+      <p class="muted">作る AI に、試作品の変え方を頼みます。試作品の中の操作は、隣の「試す」で行います。</p>
+      <div id="agent-status" class="agent-status"></div>
+      <ol id="conversation" class="conversation" aria-label="作る会話"></ol>
+      <form id="request-form" class="request-form">
+        <label for="request-text">依頼</label>
+        <textarea id="request-text" rows="3" maxlength="4000" placeholder="例: 見出しを「ひだまり図書室」にして" disabled></textarea>
+        <div class="request-actions">
+          <button type="submit" id="send" disabled>送る</button>
+          <button type="button" id="cancel" hidden>中断</button>
+          <span class="muted">Ctrl+Enter(Mac は ⌘+Enter)でも送れます</span>
+        </div>
+      </form>
+      <div id="examples" class="examples" hidden>
+        <p class="muted">偽接続で試せる依頼(押すと依頼の欄に入ります):</p>
+        <ul id="example-list"></ul>
+      </div>
+    </section>
     <section class="preview" aria-labelledby="project-title">
+      <p class="eyebrow">試す</p>
       <div class="toolbar">
         <h2 id="project-title">試作品を選んでください</h2>
         <button type="button" id="reopen" disabled>開き直す</button>

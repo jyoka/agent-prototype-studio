@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_MAX_BUDGET_USD } from './claude-args.js';
 
 export const STUDIO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -18,6 +19,17 @@ function parsePort(value, fallback, name) {
   return port;
 }
 
+const AGENTS = ['fake', 'claude'];
+
+function parseBudget(value) {
+  if (value === undefined || value === '') return DEFAULT_MAX_BUDGET_USD;
+  const budget = Number(value);
+  if (!Number.isFinite(budget) || budget <= 0 || budget > 100) {
+    throw new ConfigError(`STUDIO_MAX_BUDGET_USD は 0 より大きく 100 以下の数で指定してください(今の値: ${value})`);
+  }
+  return budget;
+}
+
 // 設定は環境変数だけから読む。データの置き場は ADR-0001 の既定(~/PrototypeStudio)。
 export function loadConfig(env = process.env) {
   const studioPort = parsePort(env.STUDIO_PORT, DEFAULT_STUDIO_PORT, 'STUDIO_PORT');
@@ -25,10 +37,19 @@ export function loadConfig(env = process.env) {
   if (studioPort !== 0 && studioPort === previewPort) {
     throw new ConfigError('STUDIO_PORT と STUDIO_PREVIEW_PORT には別の番号を指定してください');
   }
+  const agent = env.STUDIO_AGENT || 'fake';
+  if (!AGENTS.includes(agent)) {
+    throw new ConfigError(`STUDIO_AGENT は ${AGENTS.join(' か ')} で指定してください(今の値: ${agent})`);
+  }
   return {
     home: path.resolve(env.STUDIO_HOME || path.join(os.homedir(), 'PrototypeStudio')),
     studioPort,
     previewPort,
     openBrowser: env.STUDIO_NO_OPEN !== '1',
+    // 作る AI。既定は偽接続で、Claude Code とモデルは呼ばない
+    agent,
+    claudeBin: env.STUDIO_CLAUDE_BIN || null,
+    // API キーなど、サブスクの枠でないときに 1 回の依頼に付ける費用の上限
+    maxBudgetUsd: parseBudget(env.STUDIO_MAX_BUDGET_USD),
   };
 }
