@@ -1,0 +1,83 @@
+# 実モデル(Claude Code)を使う
+
+Studio の 2 つの AI は、既定では実モデルを呼びません。作る AI は偽接続、プロダクト内 AI はモックで動きます。このページは、どちらかを Claude Code(実際の AI モデル)に切り替えるときの手順と決まりです。
+
+## 実モデル(Claude Code)と話す(許可したときだけ)
+
+同じ試作品のまま、プロダクト内 AI の接続をモックから Claude Code に切り替えられる。会話と条件はそのまま引き継ぐ。
+
+先に確かめること:
+
+- 社内の利用条件とデータの扱い。会社として Claude の Commercial Terms に同意するかが決まるまでは、切り替えない。
+- 架空のデータだけで試すこと。発言、会話の全体、`app/ai.json` の指示は Anthropic に送られる。
+- 費用。環境変数 `ANTHROPIC_API_KEY` があると、API の従量課金になる。なければ、Claude Code にログインしている本人のアカウントで動く。Pro や Max のサブスクリプションならその枠を、Console のアカウントなら API の従量課金を使う。Studio はログインの情報を読まないので、どちらかは画面に出せない。`CLAUDE_CODE_USE_BEDROCK`、`CLAUDE_CODE_USE_VERTEX`、`CLAUDE_CODE_USE_FOUNDRY`、`ANTHROPIC_BASE_URL`、`ANTHROPIC_AUTH_TOKEN` があるときは、送り先と課金がその設定に従うことを出す。
+
+要るもの:
+
+- Claude Code 2.1.248 以上(`--restricted` を使うため)。ターミナルで `claude --version` を実行して確かめる。
+- Claude Code へのログイン。ターミナルで一度 `claude` を起動し、本人のアカウントでログインしておく。Studio はログインの情報を読まない、保存しない、渡さない。
+
+手順:
+
+1. Studio を、実モデルを許す印を付けて起動する。
+   - macOS のターミナル: `STUDIO_ALLOW_CLAUDE_CODE=1 npm start`
+   - Windows の PowerShell: `$env:STUDIO_ALLOW_CLAUDE_CODE=1; npm start`
+2. 「サンプル: 架空の求人相談(プロダクト内 AI)」を選ぶ。
+3. 右の「詳細」の「接続を選ぶ」で「Claude Code」を選ぶ。送り先、送るもの、送らないもの、費用が出る。「送る指示の全文を見る」で、AI に渡す指示を全部読める。
+4. 確かめたら、チェックを入れて「Claude Code に切り替える」を押す。「試す」の上が「AI: Claude Code」になる。
+5. 試作品の欄に、自由な文で希望を書いて送る。例: `駅の近くで、本に囲まれて働けたらうれしいです`。各応答には「モック」か「Claude Code」の印が付く。右の「詳細」に、最後の応答にかかった秒数と、費用の目安(CLI が返したもの)が出る。
+6. 応答を待つ間は、右の「詳細」に「応答を止める」が出る。押すと Claude Code を止め、その発言は会話に残らない。書いた文は欄に残る。
+7. モックに戻すときは、「接続を選ぶ」で「モック」を選ぶ。
+
+決まり:
+
+- 1 回の応答は 90 秒まで。超えたら止める。
+- 1 回の応答の費用の上限として、$0.1 を Claude Code に渡す(`--max-budget-usd`)。
+- Claude Code の応答は、1 つの会話で 30 回まで。試作品のコードが勝手に送り続けても、ここで止まる。「リセット」で数え直す。
+- Studio を止めると(Ctrl+C)、応答を待っている Claude Code も止める。
+- 接続の選択は試作品ごとに覚える。「リセット」しても変わらない。Studio を止めると、モックに戻る。
+- 試作品の中のコードからは、接続を切り替えられない。切り替えと「応答を止める」は Studio の画面だけでできる。
+
+Claude Code の起動のしかた(どれも Claude Code の CLI のフラグで、CLI は改変しない):
+
+| フラグ | 理由 |
+|---|---|
+| `-p --output-format json --json-schema=…` | 1 回ずつ応答させ、`{ reply, updates }` の形で受け取る。形は `ai.json` の `fields` から作る。形どおりでないときは、本文の JSON を読み、それもなければ本文を返事にして条件は変えない |
+| `--system-prompt=…` | `ai.json` の `instructions` に、Studio の決まり(覚える項目、本人の修正を優先する、など)を足して渡す |
+| `--tools ""` | ツールを渡さない。ファイルもコマンドも Web も使わせない |
+| `--restricted --safe-mode --strict-mcp-config --permission-mode dontAsk` | 利用者とプロジェクトの設定、CLAUDE.md、skills、plugins、hooks、MCP を読ませない |
+| `--no-session-persistence` | `~/.claude/projects/` に会話を残さない。会話は Studio が持ち、毎回すべてを渡す |
+
+発言と会話は argv に入れず、標準入力で渡す。作業フォルダーは、空の一時フォルダーにする。
+
+## 作る AI を Claude Code に切り替える
+
+実モデルを呼ぶので、次の 2 つが決まるまでは切り替えないでください。会社として Anthropic の Commercial Terms に同意するか。社内の利用条件とデータの扱い。試作には架空のデータだけを使ってください。
+
+1. Claude Code 2.1.248 以上を入れ、ターミナルで `claude` を起動して、本人のアカウントでログインしておく。
+2. `STUDIO_AGENT=claude npm start`(Windows の PowerShell は `$env:STUDIO_AGENT='claude'; npm start`)で起動する。
+3. 「作る」欄の上の枠で、版と「認証と課金」を確かめてから送る。
+   - 環境に `ANTHROPIC_API_KEY` があると、サブスクの枠ではなく API の料金がかかる。枠にそう出る。そのときは 1 回の依頼に費用の上限(`STUDIO_MAX_BUDGET_USD`)を付ける。
+   - 見込みは環境変数の有無だけから出す。Console(API)のアカウントで `claude` にログインしているときも API の料金がかかるが、送る前には見分けられない。
+   - 実際にどれで動いたかは、会話の各依頼の終わりに「認証の報告」として出る(Claude Code が報告する `apiKeySource`)。
+
+Studio が Claude Code をどう動かすか:
+
+- 利用者が入れた `claude` を、改変せずに子プロセスとして起動する。ログインは Claude Code 自身のものを使う。Studio は資格情報やトークンを読まない、保存しない、仲介しない。環境変数は利用者のものをそのまま渡す。
+- `claude -p --restricted --safe-mode --tools Read,Edit,Write,Glob,Grep --permission-mode dontAsk --permission-prompts none --strict-mcp-config --no-session-persistence --output-format stream-json` で起動する。作業ディレクトリは試作品の `app/`。依頼の文は stdin で渡す。
+- 読み書きを `app/` の中に限り、コマンドの実行と Web の取得をさせない設定で起動する。権限の確認は Claude Code が行い、確認が要る操作は断られる。断られた操作は会話に出す。この守りが実機で効くかは、まだ確かめていない([下の「実機で確かめる」](#実機で確かめる))。
+- 依頼ごとに新しい会話で動かす。前の依頼の内容は、`app/` のファイルを通じて引き継がれる。
+- 1 回の依頼は 10 分、やりとりは 30 回まで。中断や時間切れでは、SIGINT、SIGTERM、強制終了の順に止める。本体が終わった後に残った子のプロセスも止める。Studio を止めたとき(Ctrl+C、ターミナルを閉じたとき)も、動いている作る AI を止める。
+
+Windows の npm 版(`claude.cmd`)は使えない。ネイティブ版の `claude.exe` を入れる。
+
+### 実機で確かめる
+
+`--restricted` などの守りが実機で効くかを、架空のデータだけで確かめるスクリプトがある。実モデルを呼ぶので、上の 2 つが決まってから実行する。
+
+```sh
+npm run check:claude            # 何を確かめるかを出すだけ
+npm run check:claude -- --run   # 実機で確かめる
+```
+
+確かめること: 本人のログインのまま非対話で動くか、`app/CLAUDE.md` と `app/.claude/settings.json` の hooks が効かないか、`app/` の外への書き込みと読み出しが止まるか、断られたことが出るか、中断で止まるか。API の料金がかかる見込みのときは、`--allow-api-billing` を付けない限り止まる。
