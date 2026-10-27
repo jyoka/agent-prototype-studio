@@ -24,8 +24,8 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-function sendError(res, status, code, message) {
-  sendJson(res, status, { error: { code, message } });
+function sendError(res, status, code, message, next) {
+  sendJson(res, status, { error: next ? { code, message, next } : { code, message } });
 }
 
 export function studioCsp(previewPort) {
@@ -158,8 +158,10 @@ export function createStudioHandler({ store, requests, agent, aiSessions, token,
       const project = (await store.list()).find((p) => p.id === id);
       return sendJson(res, 200, { project: view(project) });
     }
-    const aiMatch = /^\/api\/projects\/([^/]+)\/ai(?:\/(messages|corrections|reset|connections|connection|cancel))?$/.exec(url.pathname);
-    const aiGet = !aiMatch?.[2] || aiMatch[2] === 'connections';
+    const aiMatch = /^\/api\/projects\/([^/]+)\/ai(?:\/(messages|corrections|reset|connections|connection|cancel|trace|clear-trace))?$/.exec(
+      url.pathname,
+    );
+    const aiGet = !aiMatch?.[2] || aiMatch[2] === 'connections' || aiMatch[2] === 'trace';
     if (aiMatch && (aiGet ? req.method === 'GET' : req.method === 'POST')) {
       return handleAi(req, res, aiMatch[1], aiMatch[2]);
     }
@@ -167,7 +169,7 @@ export function createStudioHandler({ store, requests, agent, aiSessions, token,
   }
 
   // プロダクト内 AI。試作品からの要求は、Studio 画面が形を確かめてから、ここへ送る。
-  // 接続の切り替えと中断(connections、connection、cancel)は、Studio 画面だけが送る。試作品からは届かない
+  // 接続の切り替えと中断(connections、connection、cancel)と実行の記録(trace、clear-trace)は、Studio 画面だけが送る。試作品からは届かない
   async function handleAi(req, res, rawId, action) {
     let id;
     try {
@@ -180,6 +182,11 @@ export function createStudioHandler({ store, requests, agent, aiSessions, token,
     }
     try {
       if (action === 'connections') return sendJson(res, 200, aiSessions.connectionChoices(id));
+      if (action === 'trace') return sendJson(res, 200, aiSessions.trace(id));
+      if (action === 'clear-trace') {
+        await readJson(req);
+        return sendJson(res, 200, aiSessions.clearTrace(id));
+      }
       const body = action ? await readJson(req) : null;
       let session;
       if (!action) session = aiSessions.view(id);
@@ -190,7 +197,7 @@ export function createStudioHandler({ store, requests, agent, aiSessions, token,
       else session = aiSessions.reset(id);
       return sendJson(res, 200, { session });
     } catch (error) {
-      if (error instanceof AiError) return sendError(res, error.status, error.code, error.message);
+      if (error instanceof AiError) return sendError(res, error.status, error.code, error.message, error.next);
       if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
       throw error;
     }

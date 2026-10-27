@@ -223,6 +223,29 @@ button { font: inherit; }
 .ai-state dt { color: var(--muted); }
 .ai-state dd { margin: 0; }
 
+.ai-trace p { margin: 0 0 0.3rem; word-break: break-word; }
+.trace-list { list-style: none; margin: 0.4rem 0; padding: 0; max-height: 50vh; overflow: auto; }
+.trace-entry { margin: 0 0 0.4rem; padding: 0.4rem 0.5rem; border-left: 3px solid var(--line); background: var(--bg); }
+.trace-entry[data-real="true"] { border-left-color: var(--accent); }
+.trace-entry[data-status="failed"] { border-left-color: var(--error); background: var(--error-bg); }
+.trace-entry[data-status="cancelled"], .trace-entry[data-status="running"] { border-left-color: #c77700; background: var(--warn-bg); }
+.trace-head { display: flex; flex-wrap: wrap; gap: 0 0.5rem; align-items: baseline; }
+.trace-head time, .trace-status { font-size: 0.75rem; color: var(--muted); }
+.trace-entry .failed { color: var(--error); }
+.trace-next { padding: 0.3rem 0.5rem; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; }
+.trace-changes { margin: 0 0 0.3rem; padding-left: 1.1rem; }
+.trace-internals { margin-top: 0.3rem; font-size: 0.85rem; }
+.trace-internals details { margin: 0.2rem 0; }
+.trace-internals pre { white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; background: var(--panel); padding: 0.3rem; max-height: 12rem; overflow: auto; }
+.trace-internals code { word-break: break-all; font-size: 0.75rem; }
+.ai-trace > button {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
 @media (max-width: 1400px) {
   .layout { grid-template-columns: 200px minmax(280px, 340px) 1fr; grid-template-areas: "nav make try" "nav make details"; }
 }
