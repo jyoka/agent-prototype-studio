@@ -118,6 +118,7 @@ button { font: inherit; }
 .events { list-style: none; margin: 0; padding: 0; }
 .events li { padding: 0.4rem 0.5rem; border-left: 3px solid var(--error); background: var(--error-bg); margin-bottom: 0.4rem; }
 .events li[data-kind="warning"] { border-left-color: #c77700; background: var(--warn-bg); }
+.events li[data-kind="info"] { border-left-color: var(--accent); background: #eef3fd; }
 .events time { display: block; font-size: 0.75rem; color: var(--muted); }
 
 
@@ -195,8 +196,28 @@ button { font: inherit; }
   font-size: 0.8rem;
   white-space: nowrap;
 }
+.ai-badge[data-kind="claude-code"] { border-color: var(--error); background: var(--error-bg); }
 .ai-status p { margin: 0 0 0.4rem; }
 .ai-connection { padding: 0.4rem 0.6rem; background: var(--warn-bg); border-radius: 4px; }
+.ai-connection[data-kind="claude-code"] { background: var(--error-bg); }
+.ai-picker { margin: 0 0 0.6rem; padding: 0.4rem 0.6rem; border: 1px solid var(--line); border-radius: 4px; }
+.ai-picker label { display: block; padding: 0.15rem 0; }
+.ai-picker .hint { margin: 0 0 0.3rem 1.4rem; font-size: 0.8rem; color: var(--muted); }
+.ai-sends, .ai-confirm { margin: 0 0 0.6rem; padding: 0.5rem 0.6rem; border: 1px solid var(--line); border-radius: 4px; }
+.ai-sends ul { margin: 0 0 0.4rem; padding-left: 1.1rem; }
+.ai-billing { padding: 0.3rem 0.5rem; background: var(--warn-bg); border-radius: 4px; }
+.ai-sends pre { white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; background: var(--bg); padding: 0.3rem; max-height: 12rem; overflow: auto; }
+.ai-check { display: block; margin: 0.4rem 0; }
+.ai-buttons, .ai-waiting { display: flex; gap: 0.5rem; align-items: center; margin: 0 0 0.6rem; }
+.ai-buttons button, .ai-waiting button {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.ai-buttons button:disabled { opacity: 0.5; cursor: default; }
+.ai-waiting { padding: 0.4rem 0.6rem; background: #eef3fd; border-radius: 4px; justify-content: space-between; }
 .ai-name { font-weight: 600; }
 .ai-state { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.8rem; margin: 0; }
 .ai-state dt { color: var(--muted); }

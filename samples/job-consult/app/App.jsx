@@ -4,6 +4,7 @@ import { matchJobs } from './jobs.js';
 // プロダクト内 AI は、Studio の runtime が配る window.studio.ai から呼ぶ。
 // 会話と希望条件は Studio が持つので、この画面は受け取った session を描くだけにする。
 const ai = window.studio?.ai;
+const VIA = { mock: 'モック', 'claude-code': 'Claude Code' };
 
 function formatValue(field, value) {
   if (value === null || value === undefined) return '未定';
@@ -17,7 +18,10 @@ function Message({ message }) {
   const mine = message.role === 'user';
   return (
     <li className={mine ? 'user' : 'assistant'}>
-      <span className="who">{mine ? 'あなた' : '案内役'}</span>
+      <span className="who">
+        {mine ? 'あなた' : '案内役'}
+        {message.via && <span className="via">{VIA[message.via] ?? message.via}</span>}
+      </span>
       <p>{message.text}</p>
     </li>
   );
@@ -75,11 +79,14 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState(ai ? '' : 'Studio の runtime がありません。Studio の画面から開いてください。');
   const logRef = useRef(null);
 
   useEffect(() => {
     ai?.session().then(setSession, (e) => setError(e.message));
+    // Studio の画面で接続(モック、Claude Code)を切り替えたら、表示を変える
+    return ai?.onChange?.(setSession);
   }, []);
 
   useEffect(() => {
@@ -104,7 +111,10 @@ export default function App() {
     event.preventDefault();
     const text = draft.trim();
     if (!text) return;
-    if (await run(() => ai.send(text))) setDraft('');
+    setSending(true);
+    const ok = await run(() => ai.send(text));
+    setSending(false);
+    if (ok) setDraft('');
   }
 
   const jobs = session ? matchJobs(session.state) : [];
@@ -116,7 +126,10 @@ export default function App() {
         <h1>しおかぜ求人相談</h1>
         <p className="note">
           架空のサービスと架空の求人です。実在の企業や人とは関係ありません。
-          {session && (isMock ? ' 案内役の AI はモックで、決まった応答を返します。' : ` 案内役の AI: ${session.connection.label}`)}
+          {session &&
+            (isMock
+              ? ' 案内役の AI はモックで、決まった応答を返します。'
+              : ` 案内役の AI は ${session.connection.label}(実際の AI モデル)です。送った文は AI の提供元に送られます。`)}
         </p>
       </header>
 
@@ -131,6 +144,11 @@ export default function App() {
           <ul className="log" ref={logRef}>
             {session?.messages.map((message, i) => <Message key={i} message={message} />)}
           </ul>
+          {sending && (
+            <p className="thinking" role="status">
+              案内役が考えています…
+            </p>
+          )}
           <form onSubmit={send}>
             <label>
               <span className="sr">メッセージ</span>

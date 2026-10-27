@@ -158,14 +158,16 @@ export function createStudioHandler({ store, requests, agent, aiSessions, token,
       const project = (await store.list()).find((p) => p.id === id);
       return sendJson(res, 200, { project: view(project) });
     }
-    const aiMatch = /^\/api\/projects\/([^/]+)\/ai(?:\/(messages|corrections|reset))?$/.exec(url.pathname);
-    if (aiMatch && (aiMatch[2] ? req.method === 'POST' : req.method === 'GET')) {
+    const aiMatch = /^\/api\/projects\/([^/]+)\/ai(?:\/(messages|corrections|reset|connections|connection|cancel))?$/.exec(url.pathname);
+    const aiGet = !aiMatch?.[2] || aiMatch[2] === 'connections';
+    if (aiMatch && (aiGet ? req.method === 'GET' : req.method === 'POST')) {
       return handleAi(req, res, aiMatch[1], aiMatch[2]);
     }
     return sendError(res, 404, 'not-found', 'その API はありません');
   }
 
-  // プロダクト内 AI。試作品からの要求は、Studio 画面が形を確かめてから、ここへ送る
+  // プロダクト内 AI。試作品からの要求は、Studio 画面が形を確かめてから、ここへ送る。
+  // 接続の切り替えと中断(connections、connection、cancel)は、Studio 画面だけが送る。試作品からは届かない
   async function handleAi(req, res, rawId, action) {
     let id;
     try {
@@ -177,9 +179,12 @@ export function createStudioHandler({ store, requests, agent, aiSessions, token,
       return sendError(res, 404, 'not-found', `プロジェクトがありません: ${rawId}`);
     }
     try {
+      if (action === 'connections') return sendJson(res, 200, aiSessions.connectionChoices(id));
       const body = action ? await readJson(req) : null;
       let session;
       if (!action) session = aiSessions.view(id);
+      else if (action === 'connection') session = aiSessions.select(id, body?.kind, { confirmed: body?.confirmed === true });
+      else if (action === 'cancel') session = aiSessions.cancel(id);
       else if (action === 'messages') session = await aiSessions.send(id, body?.text);
       else if (action === 'corrections') session = aiSessions.correct(id, body?.changes);
       else session = aiSessions.reset(id);

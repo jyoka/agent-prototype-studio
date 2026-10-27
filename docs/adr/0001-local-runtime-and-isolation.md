@@ -179,7 +179,7 @@ cwd: ~/PrototypeStudio/projects/<id>/app/
 | T3 | 生成コードが Studio の API、他のプロジェクト、外部へ届く | 層 2 の表 | WebRTC と DNS の先読みによる外部への通信(架空データと試作の設計が漏れ得る)。ブラウザの不具合 |
 | T4 | 他の Web サイトや同じネットワークの PC が、Studio を操作する(CSRF、DNS rebinding) | 層 3 | 同じ利用者の権限で動くマルウェアは対象外 |
 | T5 | 生成コードやメッセージが、Studio 画面で XSS を起こす | 文字として出す。試作品は別ポートかつ opaque origin | Markdown の表示を足すときに、無害化が要る |
-| T6 | 意図しない課金、枠の使い切り | 既定はモック。実モデルは利用者が明示して切り替える。`ANTHROPIC_API_KEY` の有無を画面に出す。`--max-turns`、時間の上限、メッセージの回数制限。API キーで動くときは `--max-budget-usd` も付ける(手元の見積もりによる上限) | サブスクの枠は量が非公開で、事前に見積もれない(#270) |
+| T6 | 意図しない課金、枠の使い切り | 既定はモック。実モデルは利用者が明示して切り替える。`ANTHROPIC_API_KEY` の有無を画面に出す。`--max-turns`、時間の上限、メッセージの回数制限。プロダクト内 AI の Claude Code は、`--max-budget-usd` を付け、1 つの会話で 30 回までにする(#276) | サブスクの枠は量が非公開で、事前に見積もれない(#270) |
 | T7 | 資格情報の漏れ | ツールは資格情報を読まない、保存しない、ログに環境変数を出さない。`--restricted` は `app/` の外を読ませない | Claude Code の会話の記録(`~/.claude/projects/`)に試作の中身が残る。利用者の PC の中に限る |
 | T8 | 暴走(大量のファイル、無限ループ) | AI の実行後に、大きさと数の上限を確かめる。時間の上限。試作品の無限ループには、iframe の作り直しで対処 | 試作品が Studio 画面と同じプロセスで動くと、画面ごと固まる。プレビューを別ホスト名(`localhost`)にすると、Chrome のサイト分離で別プロセスになると推測している。要実機 |
 
@@ -294,6 +294,37 @@ AiSessions(決まった処理)  値の検査、状態の更新、会話の記録
 - モックは、時刻にも乱数にも依存しない。同じ設定、同じ順の入力なら、いつも同じ応答になる。
 - 上限: 発言は 500 文字、会話は 200 件まで。超えたら理由と次の手順(リセット)を返す。
 
+## #276 で決めたこと(2026-10-28、仮)
+
+#275 の口(`respond({ definition, state, messages, text }) -> { reply, updates }`)に、Claude Code の接続をつないだ。実モデルは呼んでいない。偽の CLI で確かめた。
+
+```
+Studio 画面  接続を選ぶ(試作品ごと)、送るものと費用の確認、応答を止める
+  │ /api/projects/<id>/ai/connections(GET)、/connection、/cancel(POST)… Studio 画面だけが送る
+AiSessions  選んだ接続に渡す。失敗と中断でも会話を変えない。応答した接続を発言に残す(via)
+  │ respond({ …, signal })
+Claude Code の接続  未改変の claude -p を、発言ごとに 1 回起動する
+```
+
+- 起動の形: `claude -p --restricted --safe-mode --tools "" --strict-mcp-config --permission-mode dontAsk --no-session-persistence --output-format json --json-schema=<fields から作る> --system-prompt=<instructions と Studio の決まり>`。`--max-budget-usd 0.1` はいつも付ける。`ANTHROPIC_API_KEY` がなくても、Console のアカウントでログインしていれば従量課金になり、Studio はログインの種類を読めない(資格情報を読まない)ため。Bedrock、Vertex、Foundry、`ANTHROPIC_BASE_URL`、`ANTHROPIC_AUTH_TOKEN` の環境変数があるときは送り先も変わるので、画面の送り先をその環境変数の名前にする(値は読まない)。
+  - 発言と会話は stdin で渡す。`--json-schema` と `--system-prompt` は `=` でつなぎ、`-` で始まる指示がフラグとして読まれないようにした。
+  - cwd は空の一時フォルダー(`os.tmpdir()` の下)。ツールを渡さないので、ファイルは読ませない。
+  - `--system-prompt` で Claude Code の既定のシステムプロンプトを置き換える。作業ディレクトリや OS の情報を送らず、コーディング用の指示も混ぜないため。サブスクのログインで置き換えが効くかは要実機。
+- 履歴: Studio が会話を持ち、毎回すべてを stdin で渡す。`--resume` は使わない。理由は 3 つある。
+  - モックとの会話と本人の修正を、そのまま引き継げる。
+  - `~/.claude/projects/` に試作の中身を残さない(T7)。
+  - リセットと版の保存(#278)をツール側の決まった処理にできる。
+  - 代わりに、会話が長くなるほど 1 回に送る量と費用が増える。上限は会話 200 件、発言 500 文字(#275)のまま。
+- 構造化出力: `--json-schema` の `structured_output` を優先する。なければ本文を JSON として読む。それもなければ本文を返事にして、状態は変えない。値は AiSessions が項目の決まりで検査してから状態に入れる(#275 と同じ)。
+- 実モデルを使えるようにする印: 環境変数 `STUDIO_ALLOW_CLAUDE_CODE=1`。ない限り、Claude Code は選べない。会社として Commercial Terms に同意するかが決まるまで実モデルを呼ばない、という条件(#276 の Ready conditions)を、既定で守るため。
+- 実行の前に出すもの: 送り先、送るもの(指示の全文を含む)、送らないもの、費用(`ANTHROPIC_API_KEY` があれば API 課金。なければログインしているアカウントで、サブスクの枠か Console の従量課金かは分からないと書く)。切り替えには、確認のチェックが要る。Claude Code を選んでいる間は、送り先と費用をいつも出す。モックへ戻すのに確認は要らない。
+- 中断: Studio 画面の「応答を止める」、リセット、Studio の停止で、CLI を止める。macOS と Linux はプロセスグループに SIGINT、1.5 秒後に SIGTERM、さらに 1.5 秒後に SIGKILL。Windows は `taskkill /T /F`。Studio の停止では、CLI が終わるまで(最長 4 秒)待ってから終了する。1 回の応答は 90 秒まで。
+- 回数: 費用のかかる接続の応答は、1 つの会話で 30 回まで。試作品のコードは利用者の操作なしに `studio.ai.send()` を呼べるので、その上限にした(T6)。
+- 失敗の分け方: 利用の上限(`limit`)、費用の上限(`budget`)、ログイン(`auth`)、見つからない(`not-found`)、時間切れ(`timeout`)、中断(`cancelled`)、その他(`connection`)。上限とログインは、CLI の出力の文で見分ける。本物の文は要実機。
+- 接続の切り替えを、試作品(iframe)からはできないようにした。費用のかかる接続を、生成コードが勝手に選ばないため(T6)。切り替えは `studio.ai.onChange` で試作品に知らせる。
+- Windows で npm 版の `claude.cmd` は起動しない(cmd.exe を通すと argv が解釈されるため)。ネイティブ版の `claude.exe` を前提にする。要実機。
+- 作る AI(#274)とは別の接続で、別に切り替える。作る AI は `STUDIO_AGENT=claude`、プロダクト内 AI は `STUDIO_ALLOW_CLAUDE_CODE=1` と画面での確認で、Claude Code を使う。Claude Code の場所(`STUDIO_CLAUDE_BIN`)は両方で共用する。
+
 ## 未決事項
 
 | 未決事項 | 決める人・場所 |
@@ -302,7 +333,8 @@ AiSessions(決まった処理)  値の検査、状態の更新、会話の記録
 | `--restricted` と `--safe-mode` が本人ログインで一緒に動くか、閉じ込めが実際に効くか | 利用者が `npm run check:claude -- --run` で確かめる(会社の利用条件が決まってから) |
 | WebRTC と DNS の先読みの残る危険を受け入れるか | 利用者(実データを使う前に) |
 | 作る AI の権限の確認を画面で受けるか(SDK の `canUseTool` など)、`dontAsk` で拒否だけにするか | #274 で `dontAsk` で拒否だけに仮決め。利用者が確かめる |
-| プロダクト内 AI を実モデルで動かすときの起動の形(`--tools ""` と `--json-schema` を候補にする)。`ai.json` の `fields` から JSON スキーマを作り、`updates` を受け取る形を候補にする | #276 |
+| プロダクト内 AI の Claude Code の起動の形(#276 で仮に決めた)が、実機で動くか。`--restricted` と `--safe-mode` と `--tools ""` と `--json-schema` を一緒に使えるか、`--system-prompt` がサブスクのログインで効くか、応答の速さ、上限に当たったときの出力 | 実機の確認(許可と予算が要る) |
+| 会社として Claude の Commercial Terms に同意するか(それまで `STUDIO_ALLOW_CLAUDE_CODE` を付けず、`STUDIO_AGENT=claude` にしない) | 社内 |
 | プロダクト内 AI の会話と状態を保存するか、版と一緒に戻すか | #278 |
 | `ai.json` の形(項目の種類を `choice` と `number` から増やすか) | 別の題材で使ってから(#281) |
 | 版の保存の方式(git を `app/` の外に置くか、ファイルの写しか) | #278 |

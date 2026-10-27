@@ -127,7 +127,7 @@ test('決まりに合わない入力と、接続が返した決まりに合わ�
       return { reply: 'はい', updates: { place: '海の町', nights: 3, unknown: 'x' } };
     },
   };
-  const sessions = new AiSessions({ definitionOf: () => definition, connection });
+  const sessions = new AiSessions({ definitionOf: () => definition, connections: [connection] });
   const view = await sessions.send('p', 'どこでも');
   assert.deepEqual(view.state, { place: null, nights: 3 });
 
@@ -157,7 +157,7 @@ test('応答を待つ間は次の発言を断り、リセットされたら届�
     ...createMockConnection(),
     respond: () => new Promise((resolve) => (release = () => resolve({ reply: '遅い応答', updates: { nights: 2 } }))),
   };
-  const sessions = new AiSessions({ definitionOf: () => travel(), connection });
+  const sessions = new AiSessions({ definitionOf: () => travel(), connections: [connection] });
   const first = sessions.send('p', '湖');
   await assert.rejects(sessions.send('p', '山'), { code: 'busy' });
   assert.throws(() => sessions.correct('p', { nights: 3 }), { code: 'busy' });
@@ -169,7 +169,7 @@ test('応答を待つ間は次の発言を断り、リセットされたら届�
 
 test('接続が失敗したら、会話を変えずに理由を返す', async () => {
   const connection = { ...createMockConnection(), respond: async () => Promise.reject(new Error('つながらない')) };
-  const sessions = new AiSessions({ definitionOf: () => travel(), connection });
+  const sessions = new AiSessions({ definitionOf: () => travel(), connections: [connection] });
   await assert.rejects(sessions.send('p', '湖'), { code: 'connection', message: /つながらない/ });
   assert.equal(sessions.view('p').messages.length, 1);
 });

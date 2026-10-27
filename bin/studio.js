@@ -98,6 +98,11 @@ if (connection.kind === 'fake') {
   console.log(`作る AI: Claude Code ${connection.version}(${connection.command})`);
   console.log(`  ${connection.billing.text}`);
 }
+if (config.allowClaudeCode) {
+  console.log('プロダクト内 AI に Claude Code(実モデル)を選べます。切り替える前に、送るものと費用が画面に出ます。');
+} else {
+  console.log('プロダクト内 AI はモックだけで動きます(Claude Code を選ぶには STUDIO_ALLOW_CLAUDE_CODE=1)。');
+}
 console.log('止めるときは、このターミナルで Ctrl+C を押してください。');
 console.log('');
 if (config.openBrowser) openBrowser(studio.url);

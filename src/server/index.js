@@ -5,6 +5,8 @@ import { connectionView, resolveConnection } from './agent-connection.js';
 import { BuildRequests } from './build-requests.js';
 import { STUDIO_ROOT } from './config.js';
 import { createPreviewHandler } from './preview-server.js';
+import { createClaudeCodeConnection } from './product-ai/claude-code.js';
+import { createMockConnection } from './product-ai/mock.js';
 import { AiSessions } from './product-ai/session.js';
 import { ensureSampleProjects, projectsDir } from './projects.js';
 import { createToken } from './security.js';
@@ -51,7 +53,7 @@ async function listenOrExplain(server, port, host, envName) {
 }
 
 // Studio を起動する。待ち受けは loopback だけ(0.0.0.0 にはしない)。
-// env は作る AI に渡す環境変数。既定は利用者のもの(ADR-0001: そのまま渡し、値は読まない)。
+// env は作る AI とプロダクト内 AI に渡す環境変数。既定は利用者のもの(ADR-0001: そのまま渡し、値は読まない)。
 export async function startStudio(config, { log = () => {}, env = process.env } = {}) {
   try {
     await fs.mkdir(projectsDir(config.home), { recursive: true });
@@ -79,7 +81,11 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
   const ports = { studio: config.studioPort, preview: config.previewPort };
   const servers = [];
 
-  const aiSessions = new AiSessions({ definitionOf: (id) => store.aiDefinition(id) });
+  // プロダクト内 AI の接続の既定はモック。Claude Code は、利用者が画面で送るものと費用を確かめてから切り替える
+  const aiSessions = new AiSessions({
+    definitionOf: (id) => store.aiDefinition(id),
+    connections: [createMockConnection(), createClaudeCodeConnection({ env, allowed: config.allowClaudeCode === true })],
+  });
   const studioServer = http.createServer(
     createStudioHandler({ store, requests, agent: connectionView(connection), aiSessions, token, ports }),
   );
@@ -103,6 +109,7 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
     }
   } catch (error) {
     await Promise.all(servers.map((server) => new Promise((resolve) => server.close(() => resolve()))));
+    await aiSessions.close();
     throw error;
   }
 
@@ -117,7 +124,8 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
     connection,
     aiSessions,
     async close() {
-      await requests.closeAll();
+      // 作る AI と、応答を待っているプロダクト内 AI の Claude Code を止め、終わるまで待つ
+      await Promise.all([requests.closeAll(), aiSessions.close()]);
       await Promise.all(
         servers.map(
           (server) =>
