@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prototype Studio</title>
+  <link rel="stylesheet" href="/studio.css">
+  <script type="module" src="/studio.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Prototype Studio</h1>
+    <span id="connection" class="connection" data-state="checking">確かめています…</span>
+  </header>
+  <div id="banner" class="banner" role="alert" hidden>
+    <p id="banner-text"></p>
+  </div>
+  <main class="layout">
+    <nav class="projects" aria-label="試作品の一覧">
+      <h2>試作品</h2>
+      <ul id="project-list"></ul>
+    </nav>
+    <section class="preview" aria-labelledby="project-title">
+      <div class="toolbar">
+        <h2 id="project-title">試作品を選んでください</h2>
+        <button type="button" id="reopen" disabled>開き直す</button>
+        <button type="button" id="rebuild" disabled>作り直す</button>
+      </div>
+      <div id="frame-host" class="frame-host">
+        <p id="frame-placeholder" class="placeholder">読み込んでいます…</p>
+      </div>
+    </section>
+    <aside class="details" aria-label="詳細">
+      <h2>詳細</h2>
+      <section aria-labelledby="build-heading">
+        <h3 id="build-heading">ビルド</h3>
+        <div id="build-status" class="build-status"></div>
+      </section>
+      <section aria-labelledby="events-heading">
+        <h3 id="events-heading">試作品からの知らせ</h3>
+        <p id="events-empty" class="muted">まだありません</p>
+        <ul id="events" class="events"></ul>
+      </section>
+    </aside>
+  </main>
+</body>
+</html>

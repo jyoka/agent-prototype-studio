@@ -1,0 +1,27 @@
+{
+  "name": "agent-prototype-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prototype and explore AI agent product experiences",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "prototype-studio": "bin/studio.js"
+  },
+  "scripts": {
+    "start": "node bin/studio.js",
+    "test": "node --test \"test/unit/*.test.js\" \"test/integration/*.test.js\"",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "esbuild": "0.28.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

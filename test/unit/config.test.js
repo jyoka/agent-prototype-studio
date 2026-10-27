@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+import { ConfigError, loadConfig } from '../../src/server/config.js';
+
+test('既定はホームの PrototypeStudio と 4317、4318 番', () => {
+  const config = loadConfig({});
+  assert.equal(config.home, path.join(os.homedir(), 'PrototypeStudio'));
+  assert.equal(config.studioPort, 4317);
+  assert.equal(config.previewPort, 4318);
+  assert.equal(config.openBrowser, true);
+});
+
+test('環境変数で置き場とポートを変えられる', () => {
+  const config = loadConfig({ STUDIO_HOME: 'tmp/studio', STUDIO_PORT: '5000', STUDIO_PREVIEW_PORT: '0', STUDIO_NO_OPEN: '1' });
+  assert.equal(config.home, path.resolve('tmp/studio'));
+  assert.equal(config.studioPort, 5000);
+  assert.equal(config.previewPort, 0);
+  assert.equal(config.openBrowser, false);
+});
+
+test('ポートの値が正しくなければ、わかる文で止める', () => {
+  assert.throws(() => loadConfig({ STUDIO_PORT: 'abc' }), ConfigError);
+  assert.throws(() => loadConfig({ STUDIO_PORT: '70000' }), ConfigError);
+  assert.throws(() => loadConfig({ STUDIO_PORT: '5000', STUDIO_PREVIEW_PORT: '5000' }), /別の番号/);
+});
