@@ -43,7 +43,7 @@ test('モックの実行の記録: 発言、返事、状態の変化、修正、
 
     await expect(trace).toContainText('今の接続: モック(AI モデルは呼んでいません)');
     await expect(trace).toContainText('AI が使えるツール: モックにはツールがありません');
-    await expect(trace).toContainText('試作品から AI への操作: 会話を読む、発言を送る、条件を直す');
+    await expect(trace).toContainText('試作品から AI への操作: 会話を読む、発言を送る、状態を直す');
     await expect(trace).toContainText('まだ記録はありません');
 
     await say('カフェで働きたいです');
@@ -64,7 +64,7 @@ test('モックの実行の記録: 発言、返事、状態の変化、修正、
 
     // 本人の修正
     await app.getByLabel('勤務地を直す').selectOption('もみじ台');
-    await expect(entries.first()).toContainText('条件の修正(試作品から)');
+    await expect(entries.first()).toContainText('状態の修正(試作品から)');
     await expect(entries.first().getByRole('list', { name: '状態の変化' })).toHaveText('勤務地: 未定 → もみじ台');
     // 開いた中身は、記録が増えても開いたまま
     await expect(entries.nth(1)).toContainText('送り先: どこにも送りません');
@@ -194,7 +194,7 @@ test('試作品のコードが決まりに合わない要求を送ったら、�
 
     await app.getByRole('button', { name: '海の町に直す' }).click();
     await expect(app.locator('output')).toHaveText('エラー: invalid');
-    await expect(entries.first()).toContainText('条件の修正(試作品から)');
+    await expect(entries.first()).toContainText('状態の修正(試作品から)');
     await expect(entries.first()).toContainText('直そうとした値: place「海の町」');
     await expect(entries.first()).toContainText('理由: 行き先に「海の町」は使えません');
     await expect(entries.first()).toContainText('次にすること: 選べる値に直してください。試作品の画面が選べない値を送っているときは、「作る」欄で直す依頼をするか');

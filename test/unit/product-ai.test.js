@@ -452,3 +452,15 @@ test('試し直しの発言と修正は Studio 画面から送ったものとし
     ],
   );
 });
+
+test('学習相談のサンプル(#281)の設定は検査に通り、README の例の文から項目を読み取る', async () => {
+  const source = await fs.readFile(path.join(STUDIO_ROOT, 'samples', 'study-consult', 'app', 'ai.json'), 'utf8');
+  const { definition, errors } = parseAiDefinition(source);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(extractUpdates(definition, 'プログラミングを本で学びたいです'), { subject: 'プログラミング', style: '本で学ぶ' });
+  assert.deepEqual(extractUpdates(definition, '初めてなので、教室に通いたい'), { level: 'はじめて', style: '教室に通う' });
+  assert.deepEqual(extractUpdates(definition, '毎日45分なら使えます'), { minutes: 45 });
+  // 「1日」の 1 は単位(分)が続かないので読まない。単位の換算はしない
+  assert.deepEqual(extractUpdates(definition, '1日30分くらい'), { minutes: 30 });
+  assert.deepEqual(extractUpdates(definition, '1時間くらい'), {});
+});

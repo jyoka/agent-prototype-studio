@@ -190,7 +190,7 @@ async function readAiFile() {
   const stat = await fs.lstat(file).catch(() => null);
   const text = stat?.isFile() ? await fs.readFile(file, 'utf8').catch(() => null) : null;
   if (stat && !stat.isFile()) return { problem: 'app/ai.json がふつうのファイルではないので、変えずにおきます。' };
-  if (text === null) return { problem: 'この試作品には app/ai.json がないので、プロダクト内 AI の振る舞いは変えられません。AI を使う試作品(例: サンプル: 架空の求人相談)を選んでください。' };
+  if (text === null) return { problem: 'この試作品には app/ai.json がないので、プロダクト内 AI の振る舞いは変えられません。AI を使う試作品(例: サンプル: 架空の求人相談、サンプル: 架空の学習相談)を選んでください。' };
   try {
     const json = JSON.parse(text);
     if (json && typeof json === 'object' && Array.isArray(json.fields)) return { file, text, json };
@@ -325,7 +325,7 @@ async function main() {
   if (/直/.test(request)) return repairApp();
   if (/見出し/.test(request)) return changeHeading(request);
 
-  const text = '偽接続なので、決まった依頼だけを扱えます。例: 見出しを「ひだまり図書室」にして、案内役が「時給の下限」を先に聞くようにして、読み取れなかったときは例を出して聞き返すようにして、app/ の外にメモを書いて、壊して、直して、失敗して、ゆっくり進めて';
+  const text = '偽接続なので、決まった依頼だけを扱えます。例: 見出しを「ひだまり図書室」にして、「項目の名前」を先に聞くようにして、読み取れなかったときは例を出して聞き返すようにして、app/ の外にメモを書いて、壊して、直して、失敗して、ゆっくり進めて';
   await say(text);
   return finish({ text });
 }
