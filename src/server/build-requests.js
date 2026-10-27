@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import { startAgentProcess, STOP_STEPS_MS } from './agent-process.js';
 import { diffSnapshots, MAX_SNAPSHOT_ENTRIES, snapshotApp } from './app-snapshot.js';
 import { buildClaudeArgs, DEFAULT_MAX_BUDGET_USD, MAX_TURNS } from './claude-args.js';
+import { AI_FILE, describeDefinitionChanges } from './product-ai/definition.js';
 import { readMessage } from './stream-json.js';
 
 export const MAX_REQUEST_CHARS = 4000;
@@ -120,6 +121,8 @@ export class BuildRequests {
     const { run } = active;
     const label = this.connection.label;
     const before = await snapshotApp(paths.app);
+    // 表示中の版のプロダクト内 AI の設定。実行の後の設定と比べる
+    const aiBefore = this.store.aiDefinition(id);
     const appDirs = [paths.app, await fs.realpath(paths.app)];
     let result = null;
 
@@ -208,7 +211,32 @@ export class BuildRequests {
     } else {
       this.addItem(id, run, 'build-failed', 'ビルドに失敗しました。試す画面は、前にビルドできた版のままです。詳細の欄で場所を確かめ、直す依頼を送ってください。');
     }
+    this.reportAiChanges(id, run, aiBefore, build.ok);
     this.log(`作る AI の実行が終わりました: ${id}(${run.status}、変わったファイル ${run.changedFiles.length} 個)`);
+  }
+
+  // 決まった手順: プロダクト内 AI の設定が変わったかを、Studio がビルドした設定どうしで確かめて出す。
+  // 作る AI が書いたのは設定(app/ai.json)で、試す画面で応答するのはプロダクト内 AI。2 つを混ぜないよう、作る会話には設定の変化だけを出す
+  reportAiChanges(id, run, aiBefore, buildOk) {
+    const touched = run.changedFiles.some((change) => change.file === `app/${AI_FILE}`);
+    if (!buildOk) {
+      if (touched) this.addItem(id, run, 'ai-settings', `app/${AI_FILE} が変わりましたが、ビルドに失敗したので、プロダクト内 AI は前の設定のままです。`);
+      return;
+    }
+    const lines = describeDefinitionChanges(aiBefore, this.store.aiDefinition(id));
+    if (lines.length === 0) {
+      if (touched) this.addItem(id, run, 'ai-settings', `app/${AI_FILE} は変わりましたが、プロダクト内 AI の振る舞いに関わるところは変わっていません。`);
+      return;
+    }
+    const after = this.store.aiDefinition(id)
+      ? '試す画面の会話は、新しい設定で最初から始まります。設定を変える前に試す画面で話していたときは、試す画面の上の「前の発言で試し直す」で、同じ発言を新しい設定に送り直せます。'
+      : '';
+    this.addItem(
+      id,
+      run,
+      'ai-settings',
+      [`プロダクト内 AI の設定(app/${AI_FILE})が変わりました。Studio が前の設定と比べた結果:`, ...lines.map((line) => `- ${line}`), after].filter(Boolean).join('\n'),
+    );
   }
 
   failureText(result, exit) {

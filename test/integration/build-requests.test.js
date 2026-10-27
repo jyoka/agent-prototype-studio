@@ -178,3 +178,62 @@ test('依頼の文は stdin だけで渡し、引数には入れない。作業�
   // 環境変数は利用者のものをそのまま渡す(足しも隠しもしない)
   assert.deepEqual(record.envNames.filter((name) => name !== '__CF_USER_TEXT_ENCODING').sort(), Object.keys(env).sort());
 });
+
+test('作る欄でプロダクト内 AI の設定を変えると、変化を作る会話に出し、前の会話を新しい設定で試し直せる', async (t) => {
+  const { studio, sp, headers, post } = await withStudio(t);
+  const AI = '/api/projects/sample-job-consult/ai';
+  const get = async (pathname) => JSON.parse((await request(sp, { pathname, headers })).body);
+  const say = async (text) => JSON.parse((await post(`${AI}/messages`, { text })).body);
+
+  // 前の設定で話す(モック)
+  await say('カフェで働きたいです');
+  await post(`${AI}/corrections`, { changes: { area: 'もみじ台' } });
+  const before = await get(AI);
+  assert.equal(before.retry.available, false);
+  assert.match(before.session.messages.at(2).text, /働き方の希望はありますか/);
+
+  // 作る AI(偽接続)が app/ai.json を書き換える。応答するのはプロダクト内 AI で、作る AI はここだけで動く
+  const response = await post('/api/projects/sample-job-consult/build-requests', { request: '案内役が「時給の下限」を先に聞くようにして' });
+  const run = JSON.parse(response.body.trim().split('\n').at(-1)).run;
+  assert.equal(run.status, 'done');
+  assert.deepEqual(run.changedFiles, [{ file: 'app/ai.json', change: 'modified' }]);
+  const settings = run.items.find((item) => item.kind === 'ai-settings');
+  assert.ok(settings, JSON.stringify(run.items));
+  assert.match(settings.text, /聞く順と項目の並び: 職種、雇用区分、勤務地、時給の下限 → 時給の下限、職種、雇用区分、勤務地/);
+  assert.match(settings.text, /実モデルへの指示\(instructions\)に足した文: 「足りない項目は、「時給の下限」から先に聞いてください。」/);
+  assert.deepEqual(studio.store.aiDefinition('sample-job-consult').fields.map((f) => f.key), ['wage', 'jobType', 'employmentType', 'area']);
+
+  // 設定が変わったので、会話は最初から。前の会話は試し直せる
+  const changed = await get(AI);
+  assert.deepEqual(changed.session.messages.map((m) => m.role), ['assistant']);
+  assert.deepEqual(changed.retry, {
+    available: true,
+    name: 'しおかぜ求人相談の案内役(架空)',
+    userMessages: 1,
+    corrections: 1,
+    retrying: false,
+    result: null,
+  });
+
+  const retried = JSON.parse((await post(`${AI}/retry`)).body);
+  assert.deepEqual(retried.session.messages.map((m) => m.role), ['assistant', 'user', 'assistant', 'correction']);
+  assert.equal(retried.session.state.area, 'もみじ台');
+  const [reply] = retried.retry.result.replies;
+  assert.equal(reply.text, 'カフェで働きたいです');
+  assert.match(reply.before, /働き方の希望はありますか/);
+  assert.equal(reply.after, '職種「カフェのホール」と理解しました。時給はいくら以上を希望しますか?');
+  assert.equal(reply.afterVia, 'mock');
+  // 試し直しで、作る AI は動かない
+  assert.equal(studio.requests.list('sample-job-consult').length, 1);
+});
+
+test('AI の設定がない試作品では、振る舞いの依頼を断り、ファイルを変えない', async (t) => {
+  const { post } = await withStudio(t);
+  const response = await post(RUNS, { request: '案内役が「時給の下限」を先に聞くようにして' });
+  const run = JSON.parse(response.body.trim().split('\n').at(-1)).run;
+  assert.equal(run.status, 'done');
+  assert.deepEqual(run.changedFiles, []);
+  assert.ok(run.items.some((item) => item.kind === 'assistant' && /app\/ai\.json がない/.test(item.text)));
+  assert.ok(!run.items.some((item) => item.kind === 'ai-settings'));
+  assert.equal((await post('/api/projects/sample-library/ai/retry')).status, 404);
+});
