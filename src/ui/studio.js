@@ -25,6 +25,12 @@ const ITEM_LABELS = {
   'build-ok': 'ビルド',
   'build-failed': 'ビルド',
 };
+// 試作品からプロダクト内 AI への要求。連打で実モデルを呼び続けないよう、数を絞る
+const AI_WINDOW_MS = 5000;
+const MAX_AI_REQUESTS_PER_WINDOW = 10;
+const MAX_AI_IN_FLIGHT = 3;
+const MAX_AI_TEXT = 2000;
+const MAX_AI_CHANGES = 20;
 const EVENT_LABELS = {
   'runtime-error': '実行時エラー',
   'console-error': 'console.error',
@@ -47,6 +53,9 @@ const els = {
   title: $('project-title'),
   reopen: $('reopen'),
   rebuild: $('rebuild'),
+  reset: $('reset'),
+  aiBadge: $('ai-badge'),
+  aiStatus: $('ai-status'),
   frameHost: $('frame-host'),
   buildStatus: $('build-status'),
   events: $('events'),
@@ -75,12 +84,14 @@ let selectedId = null;
 let pollTimer = null;
 let refreshSeq = 0;
 let appliedSeq = 0;
-const preview = { frame: null, url: null, expectingLoad: false, unexpectedLoads: [], port: null };
+const preview = { frame: null, url: null, projectId: null, expectingLoad: false, unexpectedLoads: [], port: null };
 // 作る会話。プロジェクトごとに、サーバーの版の番号と実行の一覧を持つ
 let agent = null;
 const conversations = new Map();
 let sending = null;
 let makeError = null;
+// 詳細の欄に出している、プロダクト内 AI の会話と状態
+const ai = { projectId: null, session: null, seq: 0 };
 
 // URL のフラグメントから鍵を読み、履歴に残さないよう消す(ADR-0001 の層 3)。
 function takeTokenFromHash() {
@@ -97,7 +108,13 @@ function readToken() {
 
 async function send(path, options = {}) {
   try {
-    return await fetch(path, { ...options, headers: { ...options.headers, 'X-Studio-Token': token ?? '' } });
+    const { json, ...rest } = options;
+    const headers = { ...rest.headers, 'X-Studio-Token': token ?? '' };
+    if (json !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      rest.body = JSON.stringify(json);
+    }
+    return await fetch(path, { ...rest, headers });
   } catch {
     throw new ApiError('offline', MESSAGES.offline);
   }
@@ -182,6 +199,7 @@ function render() {
   const project = selectedProject();
   els.title.textContent = project ? project.title : '試作品がありません';
   els.reopen.disabled = !project?.previewUrl;
+  els.reset.disabled = !project?.previewUrl;
   els.rebuild.disabled = !project || project.building || project.running;
   renderBuild(project);
   renderMake(project);
@@ -191,8 +209,11 @@ function render() {
     showPlaceholder('表示できる版がありません。右の「詳細」を見てください。');
   } else if (project.previewUrl !== preview.url) {
     clearEvents();
-    showPreview(project.previewUrl);
+    showPreview(project.previewUrl, project.id);
+    // 版が変わると AI の設定も変わり得るので、読み直す
+    loadAi(project.id);
   }
+  if (!project?.previewUrl && ai.projectId !== null) loadAi(null);
 }
 
 function renderList() {
@@ -439,8 +460,7 @@ async function submitRequest() {
   try {
     const response = await send(`/api/projects/${encodeURIComponent(project.id)}/build-requests`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ request: text }),
+      json: { request: text },
     });
     if (!response.ok) {
       const body = await response.json().catch(() => null);
@@ -468,6 +488,67 @@ async function submitRequest() {
   }
 }
 
+function formatAiValue(field, value) {
+  if (value === null || value === undefined) return '未定';
+  return field.type === 'number' ? `${Number(value).toLocaleString('ja-JP')}${field.unit ?? ''}` : String(value);
+}
+
+// プロダクト内 AI の接続(モックか実モデルか)と、AI が理解した状態を出す
+function renderAi() {
+  const { session } = ai;
+  els.aiBadge.hidden = !session;
+  if (!session) {
+    els.aiStatus.replaceChildren(
+      element('p', ai.projectId ? 'この試作品はプロダクト内 AI を使っていません。' : '試作品を開くと、ここに出ます。', 'muted'),
+    );
+    return;
+  }
+  els.aiBadge.dataset.kind = session.connection.kind;
+  els.aiBadge.textContent = `AI: ${session.connection.label}`;
+  els.aiBadge.title = session.connection.description;
+  const connection = element('p', undefined, 'ai-connection');
+  connection.dataset.kind = session.connection.kind;
+  connection.append(element('strong', `接続: ${session.connection.label}`), document.createTextNode(` ${session.connection.description}`));
+  const list = element('dl', undefined, 'ai-state');
+  list.setAttribute('aria-label', 'AI が理解した状態');
+  for (const field of session.fields) {
+    list.append(element('dt', field.label), element('dd', formatAiValue(field, session.state[field.key])));
+  }
+  const count = session.messages.filter((m) => m.role === 'user').length;
+  els.aiStatus.replaceChildren(
+    connection,
+    element('p', '架空のデータで試してください。実在の人や会社の情報は入れないでください。', 'muted'),
+    element('p', session.name, 'ai-name'),
+    element('p', `利用者の発言: ${count} 件`, 'muted'),
+    list,
+  );
+}
+
+async function loadAi(projectId) {
+  const seq = ++ai.seq;
+  ai.projectId = projectId;
+  ai.session = null;
+  renderAi();
+  if (!projectId) return;
+  try {
+    const { session } = await api(`/api/projects/${encodeURIComponent(projectId)}/ai`);
+    if (seq !== ai.seq) return;
+    ai.session = session;
+  } catch (error) {
+    if (seq !== ai.seq) return;
+    if (!(error instanceof ApiError && error.code === 'no-ai')) handleError(error);
+  }
+  renderAi();
+}
+
+function showAiSession(projectId, session) {
+  if (ai.projectId !== projectId) return;
+  // 先に送った読み込みの結果で、新しい状態を上書きしない
+  ai.seq += 1;
+  ai.session = session;
+  renderAi();
+}
+
 function clearEvents() {
   els.events.replaceChildren();
   els.eventsEmpty.hidden = false;
@@ -492,11 +573,12 @@ function showPlaceholder(text) {
   disconnect();
   preview.frame = null;
   preview.url = null;
+  preview.projectId = null;
   els.frameHost.replaceChildren(element('p', text, 'placeholder'));
 }
 
 // 試作品は sandbox の iframe(allow-same-origin なし)で、別ポートから開く(ADR-0001 の層 2)。
-function showPreview(url) {
+function showPreview(url, projectId) {
   disconnect();
   const iframe = document.createElement('iframe');
   iframe.title = '試作品';
@@ -507,6 +589,7 @@ function showPreview(url) {
   iframe.src = url;
   preview.frame = iframe;
   preview.url = url;
+  preview.projectId = projectId;
   preview.expectingLoad = true;
   els.frameHost.replaceChildren(iframe);
 }
@@ -528,16 +611,93 @@ function onFrameLoad(iframe) {
     return;
   }
   addEvent('warning', '試作品が別のページへ移動しようとしたので、最初から開き直しました。試作品は Studio の外へ移動できません。');
-  showPreview(preview.url);
+  showPreview(preview.url, preview.projectId);
+}
+
+const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+// 試作品からの AI への要求の形を確かめる。サーバーでも、もう一度確かめる
+function validAiRequest(data) {
+  if (!Number.isSafeInteger(data.id)) return false;
+  if (data.op === 'session') return true;
+  if (data.op === 'send') return typeof data.text === 'string' && data.text.length <= MAX_AI_TEXT;
+  if (data.op === 'correct') {
+    if (!isPlainObject(data.changes)) return false;
+    const entries = Object.entries(data.changes);
+    return (
+      entries.length > 0 &&
+      entries.length <= MAX_AI_CHANGES &&
+      entries.every(
+        ([key, value]) =>
+          key.length <= 64 && (value === null || Number.isFinite(value) || (typeof value === 'string' && value.length <= 200)),
+      )
+    );
+  }
+  return false;
+}
+
+// 試作品は自分のプロジェクトの AI だけを呼べる。どのプロジェクトかは、親画面が決める
+function createAiRelay(iframe, port, projectId) {
+  let windowStart = Date.now();
+  let count = 0;
+  let inFlight = 0;
+  let warned = false;
+  const reply = (message) => {
+    if (iframe === preview.frame) port.postMessage({ type: 'ai-response', ...message });
+  };
+  return async (data) => {
+    if (!validAiRequest(data)) {
+      if (Number.isSafeInteger(data.id)) reply({ id: data.id, ok: false, error: { code: 'invalid', message: 'AI への要求の形が正しくありません' } });
+      return;
+    }
+    const now = Date.now();
+    if (now - windowStart > AI_WINDOW_MS) {
+      windowStart = now;
+      count = 0;
+      warned = false;
+    }
+    count += 1;
+    if (count > MAX_AI_REQUESTS_PER_WINDOW || inFlight >= MAX_AI_IN_FLIGHT) {
+      if (!warned) addEvent('warning', '試作品から AI への要求が多すぎるので、しばらく断ります。');
+      warned = true;
+      reply({ id: data.id, ok: false, error: { code: 'rate', message: 'AI への要求が多すぎます。少し待ってから試してください' } });
+      return;
+    }
+    const base = `/api/projects/${encodeURIComponent(projectId)}/ai`;
+    const request =
+      data.op === 'send'
+        ? api(`${base}/messages`, { method: 'POST', json: { text: data.text } })
+        : data.op === 'correct'
+          ? api(`${base}/corrections`, { method: 'POST', json: { changes: data.changes } })
+          : api(base);
+    inFlight += 1;
+    try {
+      const { session } = await request;
+      showAiSession(projectId, session);
+      reply({ id: data.id, ok: true, session });
+    } catch (error) {
+      const code = error instanceof ApiError ? error.code : 'internal';
+      if (code === 'offline' || code === 'token') handleError(error);
+      else addEvent('warning', `AI への要求に失敗しました: ${error.message}`);
+      reply({ id: data.id, ok: false, error: { code, message: error.message } });
+    } finally {
+      inFlight -= 1;
+    }
+  };
 }
 
 function connect(iframe) {
   const channel = new MessageChannel();
   const port = channel.port1;
+  const relayAi = createAiRelay(iframe, port, preview.projectId);
   let windowStart = Date.now();
   let count = 0;
   port.onmessage = (event) => {
     if (iframe !== preview.frame) return;
+    if (isPlainObject(event.data) && event.data.type === 'ai-request') {
+      relayAi(event.data);
+      return;
+    }
     const now = Date.now();
     if (now - windowStart > MESSAGE_WINDOW_MS) {
       windowStart = now;
@@ -563,7 +723,33 @@ els.reopen.addEventListener('click', () => {
   if (!project?.previewUrl) return;
   preview.unexpectedLoads = [];
   clearEvents();
-  showPreview(project.previewUrl);
+  showPreview(project.previewUrl, project.id);
+});
+
+// 会話と状態を、AI の設定にある初期状態に戻してから、開き直す
+els.reset.addEventListener('click', async () => {
+  const project = selectedProject();
+  if (!project?.previewUrl) return;
+  els.reset.disabled = true;
+  try {
+    try {
+      const { session } = await api(`/api/projects/${encodeURIComponent(project.id)}/ai/reset`, { method: 'POST' });
+      showAiSession(project.id, session);
+    } catch (error) {
+      // AI を使わない試作品は、開き直すだけにする
+      if (!(error instanceof ApiError && error.code === 'no-ai')) throw error;
+    }
+    // 待つ間に別の試作品が選ばれたら、そちらを開いたままにする
+    if (selectedId === project.id) {
+      preview.unexpectedLoads = [];
+      clearEvents();
+      showPreview(project.previewUrl, project.id);
+    }
+  } catch (error) {
+    handleError(error);
+  } finally {
+    els.reset.disabled = !selectedProject()?.previewUrl;
+  }
 });
 
 els.rebuild.addEventListener('click', async () => {

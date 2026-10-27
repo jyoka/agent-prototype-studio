@@ -14,7 +14,9 @@ export class ProjectStore {
   }
 
   entry(id) {
-    if (!this.state.has(id)) this.state.set(id, { building: false, running: false, lastBuild: null, previewBuildId: null });
+    if (!this.state.has(id)) {
+      this.state.set(id, { building: false, running: false, lastBuild: null, previewBuildId: null, ai: null });
+    }
     return this.state.get(id);
   }
 
@@ -36,6 +38,11 @@ export class ProjectStore {
 
   previewBuildId(id) {
     return this.state.get(id)?.previewBuildId ?? null;
+  }
+
+  // 表示中の版の AI の設定。失敗したビルドの設定は使わない
+  aiDefinition(id) {
+    return this.state.get(id)?.ai ?? null;
   }
 
   async requireProject(id) {
@@ -81,9 +88,11 @@ export class ProjectStore {
           finishedAt: new Date().toISOString(),
         };
       }
-      entry.lastBuild = result;
+      const { ai = null, ...summary } = result;
+      entry.lastBuild = summary;
       if (result.ok) {
         entry.previewBuildId = result.buildId;
+        entry.ai = ai;
         await removeBuildsExcept(paths.builds, [result.buildId]);
         this.log(`ビルド成功: ${id}(${result.durationMs}ms)`);
       } else {
@@ -93,7 +102,7 @@ export class ProjectStore {
           this.log(`  ${where} ${error.text}`);
         }
       }
-      return result;
+      return summary;
     } finally {
       entry.building = false;
     }

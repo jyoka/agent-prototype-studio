@@ -3,8 +3,11 @@ import path from 'node:path';
 
 export const PROJECT_ID_PATTERN = /^[a-z0-9-]{1,64}$/;
 
-export const SAMPLE_PROJECT_ID = 'sample-library';
-const SAMPLE_TITLE = 'サンプル: 架空の図書室';
+// 初回の起動で写すサンプル。dir は samples/ の下のフォルダー
+export const SAMPLES = [
+  { id: 'sample-library', dir: 'library', title: 'サンプル: 架空の図書室' },
+  { id: 'sample-job-consult', dir: 'job-consult', title: 'サンプル: 架空の求人相談(モック AI)' },
+];
 
 export function isValidProjectId(id) {
   return typeof id === 'string' && PROJECT_ID_PATTERN.test(id);
@@ -36,14 +39,18 @@ async function exists(file) {
   }
 }
 
-// 初回だけサンプルを写す。利用者が手を入れた後は上書きしない。
-export async function ensureSampleProject(home, samplesRoot) {
-  const paths = projectPaths(home, SAMPLE_PROJECT_ID);
-  if (await exists(paths.root)) return false;
-  await fs.mkdir(paths.studio, { recursive: true });
-  await fs.cp(path.join(samplesRoot, 'library', 'app'), paths.app, { recursive: true });
-  await fs.writeFile(paths.meta, `${JSON.stringify({ title: SAMPLE_TITLE }, null, 2)}\n`);
-  return true;
+// まだないサンプルだけを写し、写した ID を返す。利用者が手を入れた後は上書きしない。
+export async function ensureSampleProjects(home, samplesRoot) {
+  const copied = [];
+  for (const sample of SAMPLES) {
+    const paths = projectPaths(home, sample.id);
+    if (await exists(paths.root)) continue;
+    await fs.mkdir(paths.studio, { recursive: true });
+    await fs.cp(path.join(samplesRoot, sample.dir, 'app'), paths.app, { recursive: true });
+    await fs.writeFile(paths.meta, `${JSON.stringify({ title: sample.title }, null, 2)}\n`);
+    copied.push(sample.id);
+  }
+  return copied;
 }
 
 async function readTitle(paths, id) {

@@ -5,7 +5,8 @@ import { connectionView, resolveConnection } from './agent-connection.js';
 import { BuildRequests } from './build-requests.js';
 import { STUDIO_ROOT } from './config.js';
 import { createPreviewHandler } from './preview-server.js';
-import { ensureSampleProject, projectsDir } from './projects.js';
+import { AiSessions } from './product-ai/session.js';
+import { ensureSampleProjects, projectsDir } from './projects.js';
 import { createToken } from './security.js';
 import { createStudioHandler } from './studio-server.js';
 import { ProjectStore } from './store.js';
@@ -54,8 +55,8 @@ async function listenOrExplain(server, port, host, envName) {
 export async function startStudio(config, { log = () => {}, env = process.env } = {}) {
   try {
     await fs.mkdir(projectsDir(config.home), { recursive: true });
-    if (await ensureSampleProject(config.home, path.join(STUDIO_ROOT, 'samples'))) {
-      log('サンプルの試作品を用意しました');
+    for (const id of await ensureSampleProjects(config.home, path.join(STUDIO_ROOT, 'samples'))) {
+      log(`サンプルの試作品を用意しました: ${id}`);
     }
   } catch (error) {
     // ENOTDIR と EEXIST は、置き場の途中にふつうのファイルがあるとき
@@ -78,8 +79,9 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
   const ports = { studio: config.studioPort, preview: config.previewPort };
   const servers = [];
 
+  const aiSessions = new AiSessions({ definitionOf: (id) => store.aiDefinition(id) });
   const studioServer = http.createServer(
-    createStudioHandler({ store, requests, agent: connectionView(connection), token, ports }),
+    createStudioHandler({ store, requests, agent: connectionView(connection), aiSessions, token, ports }),
   );
   servers.push(studioServer);
   const previewHandler = createPreviewHandler({ home: config.home, store, ports });
@@ -113,6 +115,7 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
     store,
     requests,
     connection,
+    aiSessions,
     async close() {
       await requests.closeAll();
       await Promise.all(

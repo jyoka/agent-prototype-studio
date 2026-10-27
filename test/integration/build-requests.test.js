@@ -7,7 +7,7 @@ import test from 'node:test';
 import { BuildRequests } from '../../src/server/build-requests.js';
 import { describeBilling } from '../../src/server/claude-args.js';
 import { startStudio } from '../../src/server/index.js';
-import { ensureSampleProject } from '../../src/server/projects.js';
+import { ensureSampleProjects } from '../../src/server/projects.js';
 import { STUDIO_ROOT } from '../../src/server/config.js';
 import { ProjectStore } from '../../src/server/store.js';
 
@@ -81,8 +81,9 @@ test('依頼を流しながら返し、変わったファイルをビルドし�
   assert.deepEqual(list.runs.map((r) => r.id), [last.id]);
   const projects = JSON.parse((await request(sp, { pathname: '/api/projects', headers })).body);
   assert.equal(projects.agent.kind, 'fake');
-  assert.equal(projects.projects[0].running, false);
-  assert.ok(projects.projects[0].runsVersion > 0);
+  const library = projects.projects.find((p) => p.id === 'sample-library');
+  assert.equal(library.running, false);
+  assert.ok(library.runsVersion > 0);
 });
 
 test('作業中は同じプロジェクトの依頼と作り直しを断り、中断できる', async (t) => {
@@ -146,7 +147,7 @@ test('Claude Code が使えないときは 503 で理由を返す', async (t) =>
 test('依頼の文は stdin だけで渡し、引数には入れない。作業ディレクトリは app/', async (t) => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-requests-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
-  await ensureSampleProject(home, path.join(STUDIO_ROOT, 'samples'));
+  await ensureSampleProjects(home, path.join(STUDIO_ROOT, 'samples'));
   const recordFile = path.join(home, 'record.json');
   const recorder = path.join(home, 'recorder.mjs');
   await fs.writeFile(
