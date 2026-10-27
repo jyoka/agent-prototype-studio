@@ -5,6 +5,26 @@ const MESSAGE_WINDOW_MS = 5000;
 const MAX_MESSAGES_PER_WINDOW = 20;
 const MAX_UNEXPECTED_LOADS = 3;
 const MAX_EVENTS = 50;
+const RUN_STATUS = {
+  running: (run) => `${run.agent}が作業しています…`,
+  done: () => '終わりました',
+  failed: () => '失敗しました',
+  cancelled: () => '中断しました',
+  'timed-out': () => '時間の上限を超えたので止めました',
+};
+const ITEM_LABELS = {
+  tool: '操作',
+  'tool-error': 'ツールの失敗',
+  denied: '断られた操作',
+  failed: '失敗',
+  cancelled: '中断',
+  hint: 'すること',
+  changes: '確かめた結果',
+  info: 'Studio',
+  skipped: 'Studio',
+  'build-ok': 'ビルド',
+  'build-failed': 'ビルド',
+};
 // 試作品からプロダクト内 AI への要求。連打で実モデルを呼び続けないよう、数を絞る
 const AI_WINDOW_MS = 5000;
 const MAX_AI_REQUESTS_PER_WINDOW = 10;
@@ -40,6 +60,14 @@ const els = {
   buildStatus: $('build-status'),
   events: $('events'),
   eventsEmpty: $('events-empty'),
+  agentStatus: $('agent-status'),
+  conversation: $('conversation'),
+  requestForm: $('request-form'),
+  requestText: $('request-text'),
+  send: $('send'),
+  cancel: $('cancel'),
+  examples: $('examples'),
+  exampleList: $('example-list'),
 };
 
 class ApiError extends Error {
@@ -57,6 +85,11 @@ let pollTimer = null;
 let refreshSeq = 0;
 let appliedSeq = 0;
 const preview = { frame: null, url: null, projectId: null, expectingLoad: false, unexpectedLoads: [], port: null };
+// 作る会話。プロジェクトごとに、サーバーの版の番号と実行の一覧を持つ
+let agent = null;
+const conversations = new Map();
+let sending = null;
+let makeError = null;
 // 詳細の欄に出している、プロダクト内 AI の会話と状態
 const ai = { projectId: null, session: null, seq: 0 };
 
@@ -73,19 +106,22 @@ function readToken() {
   return takeTokenFromHash() ?? sessionStorage.getItem(TOKEN_KEY);
 }
 
-async function api(path, options = {}) {
-  let response;
+async function send(path, options = {}) {
   try {
-    const headers = { 'X-Studio-Token': token ?? '' };
-    let body;
-    if (options.json !== undefined) {
+    const { json, ...rest } = options;
+    const headers = { ...rest.headers, 'X-Studio-Token': token ?? '' };
+    if (json !== undefined) {
       headers['Content-Type'] = 'application/json';
-      body = JSON.stringify(options.json);
+      rest.body = JSON.stringify(json);
     }
-    response = await fetch(path, { method: options.method, headers, body });
+    return await fetch(path, { ...rest, headers });
   } catch {
     throw new ApiError('offline', MESSAGES.offline);
   }
+}
+
+async function api(path, options = {}) {
+  const response = await send(path, options);
   let body = null;
   try {
     body = await response.json();
@@ -138,11 +174,13 @@ async function refresh() {
     if (seq < appliedSeq) return;
     appliedSeq = seq;
     clearBanner();
+    agent = data.agent;
     const snapshot = JSON.stringify(data.projects);
     if (snapshot === lastSnapshot) return;
     lastSnapshot = snapshot;
     projects = data.projects;
     render();
+    await syncConversation();
   } catch (error) {
     if (seq < appliedSeq) return;
     handleError(error);
@@ -162,8 +200,9 @@ function render() {
   els.title.textContent = project ? project.title : '試作品がありません';
   els.reopen.disabled = !project?.previewUrl;
   els.reset.disabled = !project?.previewUrl;
-  els.rebuild.disabled = !project || project.building;
+  els.rebuild.disabled = !project || project.building || project.running;
   renderBuild(project);
+  renderMake(project);
   if (!project) {
     showPlaceholder('試作品がありません。');
   } else if (!project.previewUrl) {
@@ -190,12 +229,22 @@ function renderList() {
     state.className = 'state';
     const failed = project.lastBuild && !project.lastBuild.ok;
     state.dataset.state = failed ? 'error' : 'ok';
-    state.textContent = project.building ? 'ビルド中' : failed ? 'ビルドに失敗' : project.previewUrl ? '開けます' : '';
+    state.textContent = project.running
+      ? '作る AI が作業中'
+      : project.building
+        ? 'ビルド中'
+        : failed
+          ? 'ビルドに失敗'
+          : project.previewUrl
+            ? '開けます'
+            : '';
     button.append(name, state);
     button.addEventListener('click', () => {
       if (selectedId === project.id) return;
       selectedId = project.id;
+      makeError = null;
       render();
+      syncConversation();
     });
     li.append(button);
     return li;
@@ -253,6 +302,190 @@ function renderBuild(project) {
     }
   }
   els.buildStatus.replaceChildren(...nodes);
+}
+
+// 作る欄。接続の種類と、どの認証で動くかを、送る前に見せる(#274 の Ready conditions)
+function renderAgentStatus() {
+  const nodes = [];
+  if (!agent) {
+    els.agentStatus.replaceChildren();
+    return;
+  }
+  els.agentStatus.dataset.kind = agent.kind;
+  els.agentStatus.dataset.billing = agent.billing.mode;
+  els.agentStatus.dataset.ready = String(agent.ready);
+  if (agent.kind === 'fake') {
+    nodes.push(element('p', '接続: 偽接続', 'agent-name'));
+    nodes.push(element('p', '決まった応答だけを返します。Claude Code もモデルも呼ばないので、料金はかかりません。'));
+    nodes.push(element('p', `Claude Code に切り替えたときの認証の見込み: ${agent.billing.text}`, 'muted'));
+  } else {
+    nodes.push(element('p', `接続: Claude Code${agent.version ? ` ${agent.version}` : ''}`, 'agent-name'));
+    if (agent.problem) {
+      nodes.push(element('p', agent.problem, 'failed'));
+    } else {
+      const billing = element('p', `認証と課金: ${agent.billing.text}`, 'billing');
+      nodes.push(billing);
+      nodes.push(
+        element(
+          'p',
+          '読み書きを app/ の中に限り、コマンドと Web を使わせない設定で起動します。権限の確認で断られた操作は、会話に出します。この守りが実機で効くかは、まだ確かめていません(README の「実機で確かめる」)。',
+          'muted',
+        ),
+      );
+    }
+    if (agent.command) {
+      const where = element('p', '実行ファイル: ', 'muted');
+      where.append(element('code', agent.command));
+      nodes.push(where);
+    }
+  }
+  els.agentStatus.replaceChildren(...nodes);
+}
+
+function renderExamples() {
+  const examples = agent?.examples ?? [];
+  els.examples.hidden = examples.length === 0;
+  els.exampleList.replaceChildren(
+    ...examples.map((example) => {
+      const li = document.createElement('li');
+      const button = element('button', example.text);
+      button.type = 'button';
+      button.addEventListener('click', () => {
+        els.requestText.value = example.text;
+        els.requestText.focus();
+      });
+      li.append(button, element('span', example.note, 'muted'));
+      return li;
+    }),
+  );
+}
+
+function runningRun(projectId) {
+  return conversations.get(projectId)?.runs.find((run) => run.status === 'running') ?? null;
+}
+
+function renderMake(project) {
+  renderAgentStatus();
+  renderExamples();
+  const running = Boolean(project?.running || sending?.projectId === project?.id || (project && runningRun(project.id)));
+  const ready = Boolean(project && agent?.ready && !running && !project.building && !sending);
+  els.requestText.disabled = !ready;
+  els.send.disabled = !ready;
+  els.cancel.hidden = !(project && runningRun(project.id));
+  renderConversation(project);
+}
+
+function renderConversation(project) {
+  const runs = project ? conversations.get(project.id)?.runs ?? [] : [];
+  const nodes = runs.map((run) => {
+    const li = document.createElement('li');
+    li.className = 'run';
+    li.dataset.status = run.status;
+    const request = element('div', undefined, 'bubble user');
+    request.append(element('span', 'あなた', 'who'), element('p', run.request));
+    li.append(request);
+    const steps = element('ul', undefined, 'steps');
+    for (const item of run.items) {
+      const step = document.createElement('li');
+      step.dataset.kind = item.kind;
+      if (item.kind === 'assistant') {
+        step.className = 'bubble agent';
+        step.append(element('span', run.agent, 'who'), element('p', item.text));
+      } else {
+        step.append(element('span', ITEM_LABELS[item.kind] ?? item.kind, 'who'), element('span', item.text, 'text'));
+      }
+      steps.append(step);
+    }
+    li.append(steps);
+    const status = element('p', (RUN_STATUS[run.status] ?? (() => run.status))(run), 'run-status');
+    if (run.auth) status.append(element('span', `(認証の報告: ${run.auth})`, 'muted'));
+    li.append(status);
+    return li;
+  });
+  if (makeError) nodes.push(element('li', makeError, 'make-error'));
+  if (nodes.length === 0) nodes.push(element('li', 'まだ依頼はありません。', 'muted empty'));
+  const atBottom = els.conversation.scrollHeight - els.conversation.scrollTop - els.conversation.clientHeight < 40;
+  els.conversation.replaceChildren(...nodes);
+  if (atBottom || sending) els.conversation.scrollTop = els.conversation.scrollHeight;
+}
+
+function upsertRun(projectId, run) {
+  const conversation = conversations.get(projectId) ?? { version: -1, runs: [] };
+  const index = conversation.runs.findIndex((r) => r.id === run.id);
+  if (index === -1) conversation.runs.push(run);
+  else conversation.runs[index] = run;
+  conversations.set(projectId, conversation);
+  if (projectId === selectedId) renderMake(selectedProject());
+}
+
+// 一覧の版の番号が変わったら、会話を読み直す(再読み込みや、別のタブで送った依頼)
+async function syncConversation() {
+  const project = selectedProject();
+  if (!project || sending?.projectId === project.id) return;
+  const cached = conversations.get(project.id);
+  if (cached && cached.version === project.runsVersion) return;
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(project.id)}/build-requests`);
+    conversations.set(project.id, { version: project.runsVersion, runs: data.runs });
+    if (project.id === selectedId) renderMake(selectedProject());
+  } catch (error) {
+    handleError(error);
+  }
+}
+
+async function readRuns(response, projectId) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+    let newline;
+    while ((newline = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, newline);
+      buffer = buffer.slice(newline + 1);
+      if (line.trim()) upsertRun(projectId, JSON.parse(line).run);
+    }
+    if (done) return;
+  }
+}
+
+async function submitRequest() {
+  const project = selectedProject();
+  const text = els.requestText.value.trim();
+  if (!project || !text || sending) return;
+  sending = { projectId: project.id };
+  makeError = null;
+  renderMake(project);
+  try {
+    const response = await send(`/api/projects/${encodeURIComponent(project.id)}/build-requests`, {
+      method: 'POST',
+      json: { request: text },
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new ApiError(body?.error?.code ?? 'http', body?.error?.message ?? `サーバーが ${response.status} を返しました`);
+    }
+    els.requestText.value = '';
+    await readRuns(response, project.id);
+  } catch (error) {
+    if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) {
+      makeError = `送れませんでした: ${error.message}`;
+    } else if (error instanceof ApiError) {
+      handleError(error);
+    } else {
+      // 読んでいる途中で切れた。実行はサーバーで続くので、一覧から読み直す
+      makeError = `様子を受け取れなくなりました。少し待つと、会話を読み直します(${error.message})`;
+    }
+  } finally {
+    sending = null;
+    // 次の一覧で、サーバーの会話を読み直させる
+    const conversation = conversations.get(project.id);
+    if (conversation) conversation.version = -1;
+    lastSnapshot = '';
+    await refresh();
+    render();
+  }
 }
 
 function formatAiValue(field, value) {
@@ -533,6 +766,38 @@ els.rebuild.addEventListener('click', async () => {
   await refresh();
   // つながらないときも、ボタンと詳細の欄を元に戻す
   render();
+});
+
+els.requestForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  submitRequest();
+});
+
+els.requestText.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    submitRequest();
+  }
+});
+
+els.cancel.addEventListener('click', async () => {
+  const project = selectedProject();
+  const run = project && runningRun(project.id);
+  if (!run) return;
+  els.cancel.disabled = true;
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(project.id)}/build-requests/${run.id}/cancel`, { method: 'POST' });
+    upsertRun(project.id, data.run);
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'not-running') {
+      lastSnapshot = '';
+      await refresh();
+    } else {
+      handleError(error);
+    }
+  } finally {
+    els.cancel.disabled = false;
+  }
 });
 
 // 案内のとおり同じタブに URL を貼ると、フラグメントだけが変わり、画面は読み直されない。

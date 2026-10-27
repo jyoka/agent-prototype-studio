@@ -89,6 +89,15 @@ console.log('Prototype Studio を起動しました。');
 console.log('ブラウザで次の URL を開いてください(自動で開かないとき):');
 console.log(`  ${studio.url}`);
 console.log(`データの置き場: ${config.home}`);
+const { connection } = studio;
+if (connection.kind === 'fake') {
+  console.log('作る AI: 偽接続(決まった応答だけ。Claude Code とモデルは呼びません)');
+} else if (connection.problem) {
+  console.log(`作る AI: Claude Code を使えません。${connection.problem}`);
+} else {
+  console.log(`作る AI: Claude Code ${connection.version}(${connection.command})`);
+  console.log(`  ${connection.billing.text}`);
+}
 console.log('止めるときは、このターミナルで Ctrl+C を押してください。');
 console.log('');
 if (config.openBrowser) openBrowser(studio.url);
@@ -103,3 +112,7 @@ async function stop() {
 }
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
+// ターミナルを閉じたとき
+process.on('SIGHUP', stop);
+// 例外などで、止める手順を待たずに終わるとき。作る AI は別のプロセスグループなので、残さず止める
+process.on('exit', () => studio.requests.killAllSync());
