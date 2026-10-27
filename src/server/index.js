@@ -12,6 +12,7 @@ import { ensureSampleProjects, projectsDir } from './projects.js';
 import { createToken } from './security.js';
 import { createStudioHandler } from './studio-server.js';
 import { ProjectStore } from './store.js';
+import { ProjectVersions, recoverInterrupted } from './versions.js';
 
 function listen(server, port, host) {
   return new Promise((resolve, reject) => {
@@ -60,6 +61,7 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
     for (const id of await ensureSampleProjects(config.home, path.join(STUDIO_ROOT, 'samples'))) {
       log(`サンプルの試作品を用意しました: ${id}`);
     }
+    await recoverInterrupted(config.home, log);
   } catch (error) {
     // ENOTDIR と EEXIST は、置き場の途中にふつうのファイルがあるとき
     if (['EACCES', 'EPERM', 'EROFS', 'ENOTDIR', 'EEXIST'].includes(error.code)) {
@@ -86,8 +88,9 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
     definitionOf: (id) => store.aiDefinition(id),
     connections: [createMockConnection(), createClaudeCodeConnection({ env, allowed: config.allowClaudeCode === true })],
   });
+  const versions = new ProjectVersions({ store, aiSessions, log });
   const studioServer = http.createServer(
-    createStudioHandler({ store, requests, agent: connectionView(connection), aiSessions, token, ports }),
+    createStudioHandler({ store, requests, agent: connectionView(connection), aiSessions, versions, token, ports }),
   );
   servers.push(studioServer);
   const previewHandler = createPreviewHandler({ home: config.home, store, ports });
@@ -123,6 +126,7 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
     requests,
     connection,
     aiSessions,
+    versions,
     async close() {
       // 作る AI と、応答を待っているプロダクト内 AI の Claude Code を止め、終わるまで待つ
       await Promise.all([requests.closeAll(), aiSessions.close()]);
