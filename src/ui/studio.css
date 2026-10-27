@@ -97,6 +97,12 @@ button { font: inherit; }
 }
 .frame-host iframe { flex: 1; border: 0; width: 100%; background: #fff; }
 .placeholder { margin: auto; padding: 1rem; color: var(--muted); text-align: center; }
+.retry-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; margin-bottom: 0.6rem; padding: 0.4rem 0.6rem; border: 1px solid #7a3fb4; border-radius: 6px; background: #f5effb; font-size: 0.9rem; }
+.retry-bar[hidden] { display: none; }
+.retry-bar p { margin: 0; flex: 1 1 20rem; }
+.retry-bar .retry-cost { color: var(--error); }
+.retry-bar button { padding: 0.35rem 0.8rem; border: 1px solid #7a3fb4; border-radius: 6px; background: var(--panel); cursor: pointer; }
+.retry-bar button:disabled { opacity: 0.5; cursor: default; }
 
 .details { overflow: auto; font-size: 0.9rem; }
 .muted { color: var(--muted); margin: 0; }
@@ -160,6 +166,7 @@ button { font: inherit; }
 .run .steps li[data-kind="tool-error"],
 .run .steps li[data-kind="build-failed"] { border-left-color: var(--error); background: var(--error-bg); }
 .run .steps li[data-kind="build-ok"] { border-left-color: var(--ok); }
+.run .steps li[data-kind="ai-settings"] { border-left-color: #7a3fb4; background: #f5effb; }
 .run .text { white-space: pre-wrap; word-break: break-word; }
 .bubble p { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .bubble .who { display: block; font-size: 0.75rem; color: var(--muted); }
@@ -222,6 +229,14 @@ button { font: inherit; }
 .ai-state { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.8rem; margin: 0; }
 .ai-state dt { color: var(--muted); }
 .ai-state dd { margin: 0; }
+.ai-retry { margin-top: 0.8rem; }
+.ai-retry ol { margin: 0; padding-left: 1.1rem; }
+.ai-retry li { margin-bottom: 0.5rem; }
+.ai-retry li p { margin: 0.1rem 0; }
+.ai-retry li[data-changed="true"] .retry-after { font-weight: 600; }
+.ai-retry .retry-before { color: var(--muted); }
+.ai-retry .hint { color: #8a5300; }
+.ai-retry .failed { color: var(--error); }
 
 @media (max-width: 1400px) {
   .layout { grid-template-columns: 200px minmax(280px, 340px) 1fr; grid-template-areas: "nav make try" "nav make details"; }

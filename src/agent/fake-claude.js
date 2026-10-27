@@ -183,6 +183,98 @@ async function repairApp() {
   return finish({ text });
 }
 
+// プロダクト内 AI の設定(app/ai.json)。作る AI が変えるのは設定のファイルで、応答するのはプロダクト内 AI
+async function readAiFile() {
+  const file = path.join(process.cwd(), 'ai.json');
+  // シンボリックリンクの先(app/ の外かもしれない)には書かない
+  const stat = await fs.lstat(file).catch(() => null);
+  const text = stat?.isFile() ? await fs.readFile(file, 'utf8').catch(() => null) : null;
+  if (stat && !stat.isFile()) return { problem: 'app/ai.json がふつうのファイルではないので、変えずにおきます。' };
+  if (text === null) return { problem: 'この試作品には app/ai.json がないので、プロダクト内 AI の振る舞いは変えられません。AI を使う試作品(例: サンプル: 架空の求人相談)を選んでください。' };
+  try {
+    const json = JSON.parse(text);
+    if (json && typeof json === 'object' && Array.isArray(json.fields)) return { file, text, json };
+  } catch {
+    // 下で同じく扱う
+  }
+  return { problem: 'app/ai.json が読めない形なので、変えずにおきます。詳細の欄のビルドの結果を見てください。' };
+}
+
+async function writeAiFile(target, json) {
+  if (!insideCwd(target.file)) throw new Error('作業ディレクトリの外です');
+  await useTool('Read', { file_path: target.file }, { result: `${target.text.split('\n').length} 行を読みました` });
+  const content = `${JSON.stringify(json, null, 2)}\n`;
+  await fs.writeFile(target.file, content);
+  await useTool('Write', { file_path: target.file, content }, { result: `File created successfully at: ${target.file}` });
+}
+
+// 実モデル向けの指示にも、同じ振る舞いを書き足す(モックは指示を読まない)
+function addInstruction(json, sentence) {
+  const current = typeof json.instructions === 'string' ? json.instructions.trimEnd() : '';
+  if (current.includes(sentence)) return;
+  json.instructions = current ? `${current}\n${sentence}` : sentence;
+}
+
+async function askFirst(request) {
+  const target = await readAiFile();
+  if (target.problem) {
+    await say(target.problem);
+    return finish({ text: '変えていません' });
+  }
+  const labels = target.json.fields.map((field) => field?.label).filter((label) => typeof label === 'string');
+  const wanted = /「([^」]{1,40})」/.exec(request)?.[1];
+  if (!wanted) {
+    await say(`先に聞く項目の名前を「」で囲んで書いてください。項目: ${labels.join('、')}`);
+    return finish({ text: '変えていません' });
+  }
+  const at = target.json.fields.findIndex((field) => field?.label === wanted || field?.key === wanted);
+  if (at === -1) {
+    await say(`「${wanted}」という項目は app/ai.json にありません。項目: ${labels.join('、')}`);
+    return finish({ text: '変えていません' });
+  }
+  const field = target.json.fields[at];
+  if (at === 0) {
+    await say(`「${field.label}」は、もう最初に聞くようになっています。`);
+    return finish({ text: '変えていません' });
+  }
+  target.json.fields.splice(at, 1);
+  target.json.fields.unshift(field);
+  addInstruction(target.json, `足りない項目は、「${field.label}」から先に聞いてください。`);
+  await writeAiFile(target, target.json);
+  const text = `プロダクト内 AI が「${field.label}」を先に聞くように、app/ai.json の項目の並びと指示を変えました。`;
+  await say(text);
+  return finish({ text });
+}
+
+async function clarifyWithExamples() {
+  const target = await readAiFile();
+  if (target.problem) {
+    await say(target.problem);
+    return finish({ text: '変えていません' });
+  }
+  const { json } = target;
+  // 例は、設定の選択肢から作る(題材に依存しない)
+  const examples = json.fields
+    .filter((field) => Array.isArray(field?.options) && typeof field.options[0]?.value === 'string')
+    .slice(0, 3)
+    .map((field) => `「${field.options[0].value}」`)
+    .join('');
+  const reply = examples
+    ? `すみません、うまく読み取れませんでした。たとえば${examples}のように、短く教えてください。`
+    : 'すみません、うまく読み取れませんでした。もう少し短く、言い換えて教えてください。';
+  const mock = json.mock && typeof json.mock === 'object' && !Array.isArray(json.mock) ? json.mock : {};
+  if (mock.notUnderstood === reply) {
+    await say('もう、例を出して聞き返すようになっています。');
+    return finish({ text: '変えていません' });
+  }
+  json.mock = { ...mock, notUnderstood: reply };
+  addInstruction(json, '読み取れなかったときは、選べる値の例を挙げて聞き返してください。');
+  await writeAiFile(target, json);
+  const text = 'プロダクト内 AI が読み取れなかったときに例を出して聞き返すように、app/ai.json のモックの返事と指示を変えました。';
+  await say(text);
+  return finish({ text });
+}
+
 async function slow() {
   for (let step = 1; step <= SLOW_STEPS; step += 1) {
     await sleep(SLOW_STEP_MS);
@@ -227,11 +319,13 @@ async function main() {
   }
   if (/外/.test(request)) return writeOutside();
   if (/ゆっくり/.test(request)) return slow();
+  if (/先に聞/.test(request)) return askFirst(request);
+  if (/聞き返/.test(request)) return clarifyWithExamples();
   if (/壊/.test(request)) return breakApp();
   if (/直/.test(request)) return repairApp();
   if (/見出し/.test(request)) return changeHeading(request);
 
-  const text = '偽接続なので、決まった依頼だけを扱えます。例: 見出しを「ひだまり図書室」にして、app/ の外にメモを書いて、壊して、直して、失敗して、ゆっくり進めて';
+  const text = '偽接続なので、決まった依頼だけを扱えます。例: 見出しを「ひだまり図書室」にして、案内役が「時給の下限」を先に聞くようにして、読み取れなかったときは例を出して聞き返すようにして、app/ の外にメモを書いて、壊して、直して、失敗して、ゆっくり進めて';
   await say(text);
   return finish({ text });
 }

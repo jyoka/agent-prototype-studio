@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { buildApp } from '../../src/server/build.js';
 import { STUDIO_ROOT } from '../../src/server/config.js';
-import { parseAiDefinition } from '../../src/server/product-ai/definition.js';
+import { describeDefinitionChanges, parseAiDefinition } from '../../src/server/product-ai/definition.js';
 import { createMockConnection, extractUpdates } from '../../src/server/product-ai/mock.js';
 import { AiSessions, SESSION_LIMITS } from '../../src/server/product-ai/session.js';
 
@@ -204,4 +204,184 @@ test('ビルドは AI の設定を検査し、誤りがあれば失敗として�
   assert.equal(broken.ok, false);
   assert.equal(broken.errors[0].file, 'app/ai.json');
   assert.match(broken.errors[0].text, /fields/);
+});
+
+function parse(raw) {
+  const { definition, errors } = parseAiDefinition(JSON.stringify(raw));
+  assert.deepEqual(errors, []);
+  return definition;
+}
+
+test('設定の前後を比べ、振る舞いの変わったところを利用者向けの文で返す', () => {
+  const before = travel();
+  assert.deepEqual(describeDefinitionChanges(before, travel()), []);
+  const after = parse({
+    ...TRAVEL,
+    instructions: '追加の指示',
+    fields: [TRAVEL.fields[1], { ...TRAVEL.fields[0], question: 'どちらへ?' }],
+    mock: { ...TRAVEL.mock, notUnderstood: 'もう一度お願いします。' },
+  });
+  assert.deepEqual(describeDefinitionChanges(before, after), [
+    '実モデルへの指示(instructions)を書き換えました(0 文字 → 5 文字)',
+    '聞く順と項目の並び: 行き先、泊数 → 泊数、行き先',
+    '行き先を聞く文: 「どこへ行きたいですか?」 → 「どちらへ?」',
+    'モックの読み取れなかったときの返事: 「すみません、条件として読み取れませんでした。」 → 「もう一度お願いします。」',
+  ]);
+  const fewer = parse({ ...TRAVEL, fields: [TRAVEL.fields[0]], initialState: {} });
+  assert.deepEqual(describeDefinitionChanges(before, fewer), ['なくした項目: 泊数']);
+  assert.deepEqual(describeDefinitionChanges(before, parse({ ...TRAVEL, initialState: { nights: 2 } })), ['項目の最初の値を変えました']);
+  assert.match(describeDefinitionChanges(null, before)[0], /設定ができました/);
+  // 足した項目を前に入れると、聞く順も変わる
+  const budget = { key: 'budget', label: '予算', type: 'number', unit: '円', min: 1 };
+  assert.deepEqual(describeDefinitionChanges(before, parse({ ...TRAVEL, fields: [budget, ...TRAVEL.fields] })), [
+    '足した項目: 予算',
+    '聞く順と項目の並び: 行き先、泊数 → 予算、行き先、泊数',
+  ]);
+  assert.deepEqual(describeDefinitionChanges(before, parse({ ...TRAVEL, fields: [...TRAVEL.fields, budget] })), ['足した項目: 予算']);
+});
+
+// 設定を差し替えられる AiSessions。作る AI が app/ai.json を書き換えてビルドした後と同じ状態を作る
+function switchable(connections) {
+  const holder = { definition: travel() };
+  const sessions = new AiSessions({ definitionOf: () => holder.definition, ...(connections ? { connections } : {}) });
+  return { sessions, holder };
+}
+
+test('設定が変わると会話は最初に戻り、前の発言と修正を新しい設定で試し直して、前後の応答を並べる', async () => {
+  const { sessions, holder } = switchable();
+  assert.equal(sessions.retryInfo('p').available, false);
+  await assert.rejects(sessions.retry('p'), { code: 'no-previous' });
+  await sessions.send('p', '湖に行きたい');
+  sessions.correct('p', { nights: 3 });
+  await sessions.send('p', 'よろしく');
+
+  // 泊数を先に聞き、読み取れないときの返事を変えた設定
+  holder.definition = parse({
+    ...TRAVEL,
+    fields: [TRAVEL.fields[1], TRAVEL.fields[0]],
+    initialState: {},
+    mock: { ...TRAVEL.mock, notUnderstood: '例: 「湖」「2泊」。' },
+  });
+  const fresh = sessions.view('p');
+  assert.deepEqual(fresh.messages, [{ role: 'assistant', text: 'ようこそ。' }]);
+  assert.deepEqual(sessions.retryInfo('p'), {
+    available: true,
+    name: '旅の相談(架空)',
+    userMessages: 2,
+    corrections: 1,
+    retrying: false,
+    result: null,
+  });
+  // 何も話さずにリセットしても、前の会話は残る
+  sessions.reset('p');
+  assert.equal(sessions.retryInfo('p').available, true);
+
+  const view = await sessions.retry('p');
+  assert.deepEqual(view.messages.map((m) => m.role), ['assistant', 'user', 'assistant', 'correction', 'user', 'assistant']);
+  assert.deepEqual(view.state, { nights: 3, place: '湖の町' });
+  const { result } = sessions.retryInfo('p');
+  assert.equal(result.stopped, null);
+  assert.deepEqual(
+    result.replies.map((r) => [r.text, r.before, r.after]),
+    [
+      ['湖に行きたい', '行き先「湖の町」と理解しました。行き先「湖の町」、泊数「1泊」で考えます。', '行き先「湖の町」と理解しました。泊数を教えてください。'],
+      [
+        'よろしく',
+        '直していただいた泊数「3泊」で進めます。行き先「湖の町」、泊数「3泊」で考えます。',
+        '直していただいた泊数「3泊」で進めます。泊数「3泊」、行き先「湖の町」で考えます。',
+      ],
+    ],
+  );
+  // もう一度試し直せる。結果はリセットで消える
+  assert.equal((await sessions.retry('p')).messages.length, 6);
+  sessions.reset('p');
+  assert.equal(sessions.retryInfo('p').result, null);
+});
+
+test('試し直しは、今の設定にない修正を飛ばして知らせ、途中の割り込みを断り、止められる', async () => {
+  let release;
+  const slow = {
+    ...createMockConnection(),
+    respond: (input) =>
+      new Promise((resolve, reject) => {
+        release = () => resolve(createMockConnection().respond(input));
+        input.signal.addEventListener('abort', () => reject(Object.assign(new Error('止めました'), { name: 'AbortError' })));
+      }),
+  };
+  const { sessions, holder } = switchable();
+  await sessions.send('p', '湖');
+  sessions.correct('p', { nights: 4 });
+  await sessions.send('p', '山');
+  holder.definition = parse({ ...TRAVEL, fields: [TRAVEL.fields[0]], initialState: {} });
+  sessions.view('p');
+  sessions.connections.set('mock', slow);
+
+  const retrying = sessions.retry('p');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sessions.retryInfo('p').retrying, true);
+  await assert.rejects(sessions.send('p', '湖'), { code: 'busy' });
+  await assert.rejects(sessions.retry('p'), { code: 'busy' });
+  release();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.throws(() => sessions.correct('p', { place: '山の村' }), { code: 'busy' });
+  // 2 つ目の発言を待つ間に止める
+  sessions.cancel('p');
+  const view = await retrying;
+  const { result } = sessions.retryInfo('p');
+  assert.deepEqual(result.skipped, ['泊数を「4」に直す修正']);
+  assert.equal(result.replies.length, 1);
+  assert.ok(result.stopped);
+  assert.deepEqual(view.messages.map((m) => m.role), ['assistant', 'user', 'assistant']);
+  assert.equal(sessions.retryInfo('p').retrying, false);
+});
+
+test('試し直しの途中でリセットされたら、新しい会話に書き足さない', async () => {
+  let release;
+  const slow = {
+    ...createMockConnection(),
+    respond: (input) => new Promise((resolve) => (release = () => resolve(createMockConnection().respond(input)))),
+  };
+  const { sessions, holder } = switchable([slow]);
+  release = null;
+  const first = sessions.send('p', '湖');
+  release();
+  await first;
+  holder.definition = parse({ ...TRAVEL, name: '別の設定' });
+  sessions.view('p');
+  const retrying = sessions.retry('p');
+  await new Promise((resolve) => setImmediate(resolve));
+  sessions.reset('p');
+  release();
+  await assert.rejects(retrying, { code: 'reset' });
+  assert.deepEqual(sessions.view('p').messages.map((m) => m.role), ['assistant']);
+});
+
+test('試し直しの途中で設定が変わったら、止めて、元の前の会話を残す', async () => {
+  let release;
+  const slow = {
+    ...createMockConnection(),
+    respond: (input) =>
+      new Promise((resolve, reject) => {
+        release = () => resolve({ reply: `${input.definition.name}: ${input.text}`, updates: {} });
+        input.signal.addEventListener('abort', () => reject(Object.assign(new Error('止めました'), { name: 'AbortError' })));
+      }),
+  };
+  const { sessions, holder } = switchable();
+  for (const text of ['一', '二', '三']) await sessions.send('p', text);
+  holder.definition = parse({ ...TRAVEL, name: '二つ目の設定' });
+  sessions.view('p');
+  sessions.connections.set('mock', slow);
+  const retrying = sessions.retry('p');
+  await new Promise((resolve) => setImmediate(resolve));
+  release();
+  await new Promise((resolve) => setImmediate(resolve));
+  // 2 つ目を待つ間に、作る AI が設定を変えた
+  holder.definition = parse({ ...TRAVEL, name: '三つ目の設定' });
+  release();
+  await assert.rejects(retrying, { code: 'reset' });
+  const info = sessions.retryInfo('p');
+  assert.equal(info.name, '旅の相談(架空)');
+  assert.equal(info.userMessages, 3);
+  assert.equal(info.retrying, false);
+  assert.deepEqual(sessions.view('p').messages.map((m) => m.role), ['assistant']);
 });

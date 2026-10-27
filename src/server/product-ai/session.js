@@ -31,6 +31,7 @@ const CONNECTION_ERRORS = {
 // 応答の中身は接続(モック、Claude Code)が決め、値の検査、状態の更新、記録、リセットはここで必ず行う。
 // 接続はプロジェクトごとに選ぶ。既定はモック。切り替えても会話と状態はそのまま引き継ぐ。
 // 会話はメモリーにだけ置く。Studio を止めると消える。
+// 設定が変わって会話が最初に戻ったら、前の会話を 1 つ覚えておき、同じ発言と修正を新しい設定で送り直せる(試し直す、#279)。
 export class AiSessions {
   constructor({ definitionOf, connections = [createMockConnection()] }) {
     this.definitionOf = definitionOf;
@@ -39,6 +40,8 @@ export class AiSessions {
     this.sessions = new Map();
     // 選んだ接続は、リセットしても変えない
     this.selected = new Map();
+    // 設定が変わる前の、最後の会話。リセットしても消さない
+    this.previous = new Map();
   }
 
   connectionOf(projectId) {
@@ -80,6 +83,8 @@ export class AiSessions {
   // 応答を待っている途中なら止める。止めた発言は会話に残さない
   cancel(projectId) {
     const session = this.session(projectId);
+    // 試し直しの途中なら、残りの発言も送らない
+    if (session.retrying) session.stopRetry = true;
     session.controller?.abort();
     return this.view(projectId);
   }
@@ -105,6 +110,10 @@ export class AiSessions {
     const current = this.sessions.get(projectId);
     if (current && current.key === key) return current;
     current?.controller?.abort();
+    // 試し直しの途中の会話は、送り直しきれていないので覚えない。元の前の会話を残す
+    if (!current?.retrying && current?.messages.some((m) => m.role === 'user' || m.role === 'correction')) {
+      this.previous.set(projectId, { name: current.definition.name, messages: current.messages.map((m) => structuredClone(m)) });
+    }
     const session = {
       key,
       definition,
@@ -153,13 +162,87 @@ export class AiSessions {
     }
   }
 
-  async send(projectId, text) {
+  // Studio の画面だけに出す。試し直せる前の会話と、最後に試し直した結果
+  retryInfo(projectId) {
+    const session = this.session(projectId);
+    const previous = this.previous.get(projectId);
+    const count = (role) => previous?.messages.filter((m) => m.role === role).length ?? 0;
+    return {
+      available: Boolean(previous),
+      name: previous?.name ?? null,
+      userMessages: count('user'),
+      corrections: count('correction'),
+      retrying: Boolean(session.retrying),
+      result: session.retried ? structuredClone(session.retried) : null,
+    };
+  }
+
+  // 前の会話の発言と修正を、今の設定と今の接続で、最初から順に送り直す。今の会話は最初に戻る。
+  // 応答は今の接続が返す(作る AI は動かない)。送り直すたびに、前の応答と今の応答を並べて残す
+  async retry(projectId) {
+    const current = this.session(projectId);
+    const previous = this.previous.get(projectId);
+    if (!previous) {
+      throw new AiError(409, 'no-previous', '試し直す会話がありません。設定を変える前に、試す画面で AI と話してください');
+    }
+    if (current.busy || current.retrying) throw new AiError(409, 'busy', 'AI が応答しています。止めるか、終わってから試し直してください');
+    const connection = this.connectionOf(projectId);
+    const users = previous.messages.filter((m) => m.role === 'user').length;
+    if (connection.billing && users > SESSION_LIMITS.maxPaidReplies) {
+      throw new AiError(
+        429,
+        'paid-limit',
+        `${connection.label} への発言は、1 つの会話で ${SESSION_LIMITS.maxPaidReplies} 回までです。試し直す発言が ${users} 件あるので、接続をモックに戻してください`,
+      );
+    }
+    this.sessions.delete(projectId);
+    const session = this.session(projectId);
+    session.retrying = true;
+    const result = { from: previous.name, via: connection.kind, replies: [], skipped: [], stopped: null };
+    session.retried = result;
+    try {
+      for (const [index, message] of previous.messages.entries()) {
+        // session() で確かめる。設定が変わっていたら、ここで新しい会話に替わる(古い会話に、新しい設定の応答を書き足さない)
+        if (this.session(projectId) !== session) throw new AiError(409, 'reset', '試し直す間に会話が最初に戻ったか、設定が変わりました');
+        if (session.stopRetry) {
+          result.stopped = '試し直しを止めました';
+          break;
+        }
+        if (message.role === 'user') {
+          const before = previous.messages[index + 1]?.role === 'assistant' ? previous.messages[index + 1] : null;
+          await this.send(projectId, message.text, { replaying: true });
+          const after = session.messages.at(-1);
+          result.replies.push({ text: message.text, before: before?.text ?? null, beforeVia: before?.via ?? null, after: after.text, afterVia: after.via });
+        } else if (message.role === 'correction') {
+          const changes = {};
+          for (const change of message.changes ?? []) {
+            const field = session.definition.fields.find((f) => f.key === change.key);
+            // 今の設定にない項目や、今の決まりに合わない値は、直さずに知らせる
+            if (field && normalizeValue(field, change.to) !== undefined) changes[change.key] = change.to;
+            else result.skipped.push(`${change.label}を「${change.to ?? '未定'}」に直す修正`);
+          }
+          if (Object.keys(changes).length > 0) this.correct(projectId, changes, { replaying: true });
+        }
+      }
+    } catch (error) {
+      // 途中で止まっても、そこまでの結果は残す。リセットや設定の切り替えで会話が替わったら、そちらを伝える
+      if (!(error instanceof AiError) || this.sessions.get(projectId) !== session) throw error;
+      result.stopped = error.message;
+    } finally {
+      session.retrying = false;
+      session.stopRetry = false;
+    }
+    return this.view(projectId);
+  }
+
+  async send(projectId, text, { replaying = false } = {}) {
     if (typeof text !== 'string' || text.trim() === '') throw new AiError(400, 'invalid', '話す内容を書いてください');
     if (text.length > SESSION_LIMITS.maxTextLength) {
       throw new AiError(400, 'invalid', `${SESSION_LIMITS.maxTextLength} 文字までにしてください`);
     }
     const session = this.session(projectId);
     if (session.busy) throw new AiError(409, 'busy', 'AI が前の発言に応答しています。少し待ってください');
+    if (session.retrying && !replaying) throw new AiError(409, 'busy', '前の会話を試し直しています。終わるまで待ってください');
     this.checkRoom(session, 2);
     const connection = this.connectionOf(projectId);
     if (connection.billing) {
@@ -216,12 +299,13 @@ export class AiSessions {
   }
 
   // 本人が、AI の理解した条件を直す。次の応答はこの記録を踏まえる。
-  correct(projectId, changes) {
+  correct(projectId, changes, { replaying = false } = {}) {
     if (changes === null || typeof changes !== 'object' || Array.isArray(changes) || Object.keys(changes).length === 0) {
       throw new AiError(400, 'invalid', '直す項目を { 項目の key: 値 } の形で渡してください');
     }
     const session = this.session(projectId);
     if (session.busy) throw new AiError(409, 'busy', 'AI が応答しています。終わってから直してください');
+    if (session.retrying && !replaying) throw new AiError(409, 'busy', '前の会話を試し直しています。終わるまで待ってください');
     const { fields } = session.definition;
     const applied = [];
     for (const [key, value] of Object.entries(changes)) {
