@@ -166,8 +166,9 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
       if (req.method === 'GET' && !restore) return handleVersions(req, res, id, null);
       if (req.method === 'POST') return handleVersions(req, res, id, restore ? versionId : undefined);
     }
-    const aiMatch = /^\/api\/projects\/([^/]+)\/ai(?:\/(messages|corrections|reset))?$/.exec(url.pathname);
-    if (aiMatch && (aiMatch[2] ? req.method === 'POST' : req.method === 'GET')) {
+    const aiMatch = /^\/api\/projects\/([^/]+)\/ai(?:\/(messages|corrections|reset|connections|connection|cancel))?$/.exec(url.pathname);
+    const aiGet = !aiMatch?.[2] || aiMatch[2] === 'connections';
+    if (aiMatch && (aiGet ? req.method === 'GET' : req.method === 'POST')) {
       return handleAi(req, res, aiMatch[1], aiMatch[2]);
     }
     return sendError(res, 404, 'not-found', 'その API はありません');
@@ -189,7 +190,8 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
     }
   }
 
-  // プロダクト内 AI。試作品からの要求は、Studio 画面が形を確かめてから、ここへ送る
+  // プロダクト内 AI。試作品からの要求は、Studio 画面が形を確かめてから、ここへ送る。
+  // 接続の切り替えと中断(connections、connection、cancel)は、Studio 画面だけが送る。試作品からは届かない
   async function handleAi(req, res, rawId, action) {
     let id;
     try {
@@ -200,18 +202,23 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
     if (!(await store.list()).some((p) => p.id === id)) {
       return sendError(res, 404, 'not-found', `プロジェクトがありません: ${rawId}`);
     }
-    // 版の保存と復元の間は、会話を変えない(戻した会話や自動の版から、発言が抜け落ちないように)
-    if (action && store.isVersioning(id)) {
+    // 版の保存と復元の間は、会話を変えない(戻した会話や自動の版から、発言が抜け落ちないように)。
+    // 接続の一覧と中断は会話を変えないので通す。実モデルの応答はいつでも止められる
+    const changesConversation = action && action !== 'connections' && action !== 'cancel';
+    if (changesConversation && store.isVersioning(id)) {
       return sendError(res, 409, 'busy', '版を保存か復元しているところです。終わってから試してください');
     }
     try {
+      if (action === 'connections') return sendJson(res, 200, aiSessions.connectionChoices(id));
       const body = action ? await readJson(req) : null;
       // 本文を読んでいる間に、版の操作が始まったかもしれない
-      if (action && store.isVersioning(id)) {
+      if (changesConversation && store.isVersioning(id)) {
         return sendError(res, 409, 'busy', '版を保存か復元しているところです。終わってから試してください');
       }
       let session;
       if (!action) session = aiSessions.view(id);
+      else if (action === 'connection') session = aiSessions.select(id, body?.kind, { confirmed: body?.confirmed === true });
+      else if (action === 'cancel') session = aiSessions.cancel(id);
       else if (action === 'messages') session = await aiSessions.send(id, body?.text);
       else if (action === 'corrections') session = aiSessions.correct(id, body?.changes);
       else session = aiSessions.reset(id);

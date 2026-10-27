@@ -254,7 +254,8 @@ test('版の操作は、作る AI の実行やビルドと重ならない。知�
 
   // AI が応答を待っている間は、戻さない(自動の版に、その発言を入れそこねないため)
   let release;
-  studio.aiSessions.connection = { ...studio.aiSessions.connection, respond: () => new Promise((resolve) => (release = resolve)) };
+  const mock = studio.aiSessions.connections.get('mock');
+  studio.aiSessions.connections.set('mock', { ...mock, respond: () => new Promise((resolve) => (release = resolve)) });
   const pending = studio.aiSessions.send('travel', '湖');
   await assert.rejects(studio.versions.restore('travel', good.version.id), /AI が応答しているところ/);
   release({ reply: 'はい', updates: {} });

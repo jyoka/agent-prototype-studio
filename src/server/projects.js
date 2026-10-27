@@ -6,7 +6,7 @@ export const PROJECT_ID_PATTERN = /^[a-z0-9-]{1,64}$/;
 // 初回の起動で写すサンプル。dir は samples/ の下のフォルダー
 export const SAMPLES = [
   { id: 'sample-library', dir: 'library', title: 'サンプル: 架空の図書室' },
-  { id: 'sample-job-consult', dir: 'job-consult', title: 'サンプル: 架空の求人相談(モック AI)' },
+  { id: 'sample-job-consult', dir: 'job-consult', title: 'サンプル: 架空の求人相談(プロダクト内 AI)' },
 ];
 
 export function isValidProjectId(id) {

@@ -292,3 +292,38 @@ test('版の API: 保存、一覧、復元と、その守り', async (t) => {
   assert.equal((await call('/api/projects/sample-job-consult/ai')).status, 200);
   studio.store.releaseVersions('sample-job-consult');
 });
+
+test('プロダクト内 AI の接続の API: 既定はモック、実モデルは許されるまで選べず、Studio 画面以外からは切り替えられない', async (t) => {
+  const { token, sp, host } = await withStudio(t);
+  const base = '/api/projects/sample-job-consult/ai';
+  const headers = { host, 'x-studio-token': token, origin: `http://${host}`, 'content-type': 'application/json' };
+  const call = async (pathname, json, extra = {}) => {
+    const res = await request(sp, {
+      method: json === undefined ? 'GET' : 'POST',
+      pathname,
+      headers: { ...headers, ...extra },
+      body: json === undefined ? undefined : JSON.stringify(json),
+    });
+    return { status: res.status, body: JSON.parse(res.body) };
+  };
+
+  const choices = await call(`${base}/connections`);
+  assert.equal(choices.status, 200);
+  assert.equal(choices.body.selected, 'mock');
+  const claude = choices.body.options.find((o) => o.kind === 'claude-code');
+  assert.equal(claude.available, false);
+  assert.match(claude.reason, /STUDIO_ALLOW_CLAUDE_CODE=1/);
+  assert.ok(['subscription', 'api-key'].includes(claude.billing.kind));
+  assert.match(claude.sends.systemPrompt, /しおかぜ求人相談/);
+
+  const refused = await call(`${base}/connection`, { kind: 'claude-code', confirmed: true });
+  assert.equal(refused.status, 403);
+  assert.equal(refused.body.error.code, 'unavailable');
+  assert.equal((await call(`${base}/connection`, { kind: 'claude-code', confirmed: true }, { origin: 'http://localhost:1' })).status, 403);
+  assert.equal((await call(`${base}/connection`, { kind: 'mock' })).body.session.connection.kind, 'mock');
+  // 待っている応答がなくても、止める要求は会話を変えない
+  assert.equal((await call(`${base}/cancel`, {})).body.session.messages.length, 1);
+  // 状態を変える要求は POST だけ
+  assert.equal((await call(`${base}/connection`)).status, 404);
+  assert.equal((await call(`${base}/connections`, {})).status, 404);
+});

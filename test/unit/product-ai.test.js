@@ -127,7 +127,7 @@ test('決まりに合わない入力と、接続が返した決まりに合わ�
       return { reply: 'はい', updates: { place: '海の町', nights: 3, unknown: 'x' } };
     },
   };
-  const sessions = new AiSessions({ definitionOf: () => definition, connection });
+  const sessions = new AiSessions({ definitionOf: () => definition, connections: [connection] });
   const view = await sessions.send('p', 'どこでも');
   assert.deepEqual(view.state, { place: null, nights: 3 });
 
@@ -157,7 +157,7 @@ test('応答を待つ間は次の発言を断り、リセットされたら届�
     ...createMockConnection(),
     respond: () => new Promise((resolve) => (release = () => resolve({ reply: '遅い応答', updates: { nights: 2 } }))),
   };
-  const sessions = new AiSessions({ definitionOf: () => travel(), connection });
+  const sessions = new AiSessions({ definitionOf: () => travel(), connections: [connection] });
   const first = sessions.send('p', '湖');
   await assert.rejects(sessions.send('p', '山'), { code: 'busy' });
   assert.throws(() => sessions.correct('p', { nights: 3 }), { code: 'busy' });
@@ -167,9 +167,43 @@ test('応答を待つ間は次の発言を断り、リセットされたら届�
   assert.deepEqual(sessions.view('p').messages, [{ role: 'assistant', text: 'ようこそ。' }]);
 });
 
+test('版から戻した会話は、応答した接続と時間と費用を残し、決まりに合わなければ初期状態から始める', async () => {
+  const sessions = new AiSessions({ definitionOf: () => travel() });
+  await sessions.send('p', '湖');
+  const snapshot = sessions.snapshot('p');
+  snapshot.messages[2].costUsd = 0.01;
+  sessions.reset('p');
+  assert.equal(sessions.restore('p', JSON.parse(JSON.stringify(snapshot))), true);
+  assert.deepEqual(sessions.snapshot('p'), snapshot);
+  assert.equal(sessions.view('p').messages.at(-1).via, 'mock');
+
+  for (const bad of [{ via: 'Bad Kind!' }, { via: 1 }, { elapsedMs: -1 }, { costUsd: 'x' }]) {
+    const broken = structuredClone(snapshot);
+    Object.assign(broken.messages[2], bad);
+    assert.equal(sessions.restore('p', broken), false);
+    assert.equal(sessions.view('p').messages.length, 1);
+  }
+});
+
+test('版を戻すと、応答を待っている実行を止める', async () => {
+  let signal;
+  const connection = {
+    ...createMockConnection(),
+    respond: (input) => new Promise((resolve, reject) => {
+      signal = input.signal;
+      signal.addEventListener('abort', () => reject(new Error('止めた')));
+    }),
+  };
+  const sessions = new AiSessions({ definitionOf: () => travel(), connections: [connection] });
+  const pending = sessions.send('p', '湖');
+  sessions.restore('p', null);
+  assert.equal(signal.aborted, true);
+  await assert.rejects(pending, { code: 'reset' });
+});
+
 test('接続が失敗したら、会話を変えずに理由を返す', async () => {
   const connection = { ...createMockConnection(), respond: async () => Promise.reject(new Error('つながらない')) };
-  const sessions = new AiSessions({ definitionOf: () => travel(), connection });
+  const sessions = new AiSessions({ definitionOf: () => travel(), connections: [connection] });
   await assert.rejects(sessions.send('p', '湖'), { code: 'connection', message: /つながらない/ });
   assert.equal(sessions.view('p').messages.length, 1);
 });

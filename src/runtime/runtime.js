@@ -5,7 +5,8 @@
   'use strict';
   var MAX_QUEUE = 50;
   var MAX_TEXT = 4000;
-  var AI_TIMEOUT_MS = 60000;
+  // 実モデルの応答は、サーバーの上限(90 秒)まで待つ
+  var AI_TIMEOUT_MS = 120000;
   var port = null;
   var queue = [];
   var pending = {};
@@ -45,8 +46,23 @@
     });
   });
 
+  var listeners = [];
+
   function onReply(event) {
     var data = event.data;
+    // Studio の画面で接続を切り替えたときなど、試作品が頼んでいない変化の知らせ
+    if (data && data.type === 'ai-session' && data.session) {
+      listeners.slice().forEach(function (listener) {
+        try {
+          listener(data.session);
+        } catch (e) {
+          setTimeout(function () {
+            throw e;
+          });
+        }
+      });
+      return;
+    }
     if (!data || data.type !== 'ai-response' || !Object.prototype.hasOwnProperty.call(pending, data.id)) return;
     var request = pending[data.id];
     delete pending[data.id];
@@ -94,8 +110,17 @@
   //   session():         今の会話と状態
   //   send(text):        利用者の発言を送り、AI の応答を受け取る
   //   correct(changes):  AI が理解した状態を本人が直す。例: correct({ area: 'もみじ台' })。null は「未定」
+  //   onChange(listener): Studio の画面で接続が切り替わったとき、新しい session を受け取る。戻り値で受け取りをやめる
   window.studio = Object.freeze({
     ai: Object.freeze({
+      onChange: function (listener) {
+        if (typeof listener !== 'function') throw new TypeError('onChange には関数を渡してください');
+        listeners.push(listener);
+        return function () {
+          var at = listeners.indexOf(listener);
+          if (at >= 0) listeners.splice(at, 1);
+        };
+      },
       session: function () {
         return requestAi('session', {});
       },

@@ -46,6 +46,8 @@ export function loadConfig(env = process.env) {
     studioPort,
     previewPort,
     openBrowser: env.STUDIO_NO_OPEN !== '1',
+    // プロダクト内 AI の実モデル(Claude Code)は、社内の利用条件を確かめた人が明示して許すまで選べない
+    allowClaudeCode: env.STUDIO_ALLOW_CLAUDE_CODE === '1',
     // 作る AI。既定は偽接続で、Claude Code とモデルは呼ばない
     agent,
     claudeBin: env.STUDIO_CLAUDE_BIN || null,
