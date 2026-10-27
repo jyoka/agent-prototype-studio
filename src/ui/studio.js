@@ -24,6 +24,7 @@ const ITEM_LABELS = {
   skipped: 'Studio',
   'build-ok': 'ビルド',
   'build-failed': 'ビルド',
+  'ai-settings': 'プロダクト内 AI の設定(Studio が確かめた結果)',
 };
 // 試作品からプロダクト内 AI への要求。連打で実モデルを呼び続けないよう、数を絞る
 const AI_WINDOW_MS = 5000;
@@ -56,6 +57,7 @@ const els = {
   reset: $('reset'),
   aiBadge: $('ai-badge'),
   aiStatus: $('ai-status'),
+  retryBar: $('retry-bar'),
   aiTrace: $('ai-trace'),
   frameHost: $('frame-host'),
   buildStatus: $('build-status'),
@@ -101,8 +103,11 @@ const conversations = new Map();
 let sending = null;
 let makeError = null;
 // 詳細の欄に出している、プロダクト内 AI の会話と状態。
-// choices は選べる接続と、実行の前に出す「送るもの」と「費用」。confirm は実モデルへ切り替える前の確認
-const ai = { projectId: null, session: null, choices: null, seq: 0, confirm: null, switching: false };
+// choices は選べる接続と、実行の前に出す「送るもの」と「費用」。confirm は実モデルへ切り替える前の確認。
+// retry は設定が変わる前の会話と、試し直しの結果(Studio の画面だけに出す。試作品には渡さない)
+const ai = { projectId: null, session: null, choices: null, seq: 0, confirm: null, switching: false, retry: null };
+// 試し直している試作品。別の試作品を選んでも、その試作品の欄には出さない
+const retryingProjects = new Set();
 // AI の実行の記録(#277)。open は、開いている「渡したもの、受け取ったもの」の記録の ID
 const trace = { projectId: null, entries: null, snapshot: '', seq: 0, timer: null, open: new Set() };
 const TRACE_POLL_MS = 1000;
@@ -617,9 +622,69 @@ function connectionPicker(session) {
   return box;
 }
 
+function viaLabel(kind) {
+  return kind ? `(${ai.choices?.options.find((o) => o.kind === kind)?.label ?? kind})` : '';
+}
+
+// 試し直しの結果。同じ発言への、前の設定の応答と今の設定の応答を並べる
+function retryResultBlock(result) {
+  const box = element('section', undefined, 'ai-retry');
+  box.setAttribute('aria-label', '試し直しの結果');
+  box.append(element('p', '試し直しの結果(前の設定 → 今の設定)', 'ai-name'));
+  const list = element('ol');
+  for (const reply of result.replies) {
+    const li = document.createElement('li');
+    const changed = reply.before !== reply.after;
+    li.dataset.changed = String(changed);
+    li.append(
+      element('p', `あなた: ${reply.text}`, 'retry-user'),
+      element('p', `前${viaLabel(reply.beforeVia)}: ${reply.before ?? '(応答なし)'}`, 'retry-before'),
+      element('p', `今${viaLabel(reply.afterVia)}: ${reply.after}`, 'retry-after'),
+      element('p', changed ? '応答が変わりました' : '同じ応答です', 'muted'),
+    );
+    list.append(li);
+  }
+  box.append(list);
+  if (result.skipped.length > 0) {
+    box.append(element('p', `送り直さなかった修正(今の設定にない項目か、決まりに合わない値): ${result.skipped.join('、')}`, 'hint'));
+  }
+  if (result.stopped) box.append(element('p', `途中で止まりました: ${result.stopped}`, 'failed'));
+  return box;
+}
+
+// 試す画面の上。プロダクト内 AI の設定が変わった後に、前の会話の発言と修正を、今の設定で送り直す。
+// 応答するのはプロダクト内 AI で、作る AI は動かない
+function renderRetry() {
+  const info = ai.session && ai.projectId === selectedId ? ai.retry : null;
+  els.retryBar.hidden = !info?.available;
+  if (!info?.available) {
+    els.retryBar.replaceChildren();
+    return;
+  }
+  const counts = `発言 ${info.userMessages} 件${info.corrections > 0 ? `、修正 ${info.corrections} 件` : ''}`;
+  const fresh = !ai.session.messages.some((m) => m.role === 'user' || m.role === 'correction');
+  const busy = info.retrying || retryingProjects.has(ai.projectId);
+  let text;
+  if (busy) text = `前の会話(${counts})を、今の設定で送り直しています…`;
+  else if (info.result) text = `前の会話(${counts})を、今の設定で送り直しました。前と今の応答は、右の「詳細」の「試し直しの結果」で比べられます。`;
+  else if (fresh) text = `プロダクト内 AI の設定が変わったので、会話は新しい設定で最初から始まっています。前の会話(${counts})を、今の設定で送り直せます。`;
+  else text = `設定が変わる前の会話(${counts})を、今の設定で送り直せます。今の会話は最初に戻ります。`;
+  const nodes = [element('p', text)];
+  const option = ai.choices?.options.find((o) => o.kind === ai.session.connection.kind);
+  if (option?.billing) {
+    nodes.push(element('p', `接続は ${option.label} です。送り直す発言ごとに実際の AI モデルを呼び、費用がかかります(${info.userMessages} 回)。`, 'retry-cost'));
+  }
+  const button = element('button', info.result ? 'もう一度試し直す' : '前の発言で試し直す');
+  button.type = 'button';
+  button.disabled = busy || ai.switching || waitingFor(ai.projectId) > 0;
+  button.addEventListener('click', retryAi);
+  els.retryBar.replaceChildren(...nodes, button);
+}
+
 // プロダクト内 AI の接続(モックか実モデルか)と、AI が理解した状態を出す
 function renderAi() {
   const { session } = ai;
+  renderRetry();
   els.aiBadge.hidden = !session;
   if (!session) {
     els.aiStatus.replaceChildren(
@@ -667,6 +732,7 @@ function renderAi() {
     element('p', `利用者の発言: ${count} 件`, 'muted'),
     list,
   );
+  if (ai.retry?.result) nodes.push(retryResultBlock(ai.retry.result));
   els.aiStatus.replaceChildren(...nodes);
   renderTrace();
   syncTracePolling();
@@ -678,13 +744,15 @@ async function loadAi(projectId) {
   ai.session = null;
   ai.choices = null;
   ai.confirm = null;
+  ai.retry = null;
   renderAi();
   if (!projectId) return;
   try {
     const base = `/api/projects/${encodeURIComponent(projectId)}/ai`;
-    const [{ session }, choices] = await Promise.all([api(base), api(`${base}/connections`)]);
+    const [{ session, retry }, choices] = await Promise.all([api(base), api(`${base}/connections`)]);
     if (seq !== ai.seq) return;
     ai.session = session;
+    ai.retry = retry ?? null;
     ai.choices = choices;
     loadTrace(projectId);
   } catch (error) {
@@ -694,11 +762,12 @@ async function loadAi(projectId) {
   renderAi();
 }
 
-function showAiSession(projectId, session) {
+function showAiSession(projectId, session, retry) {
   if (ai.projectId !== projectId) return;
   // 先に送った読み込みの結果で、新しい状態を上書きしない
   ai.seq += 1;
   ai.session = session;
+  if (retry !== undefined) ai.retry = retry;
   if (ai.choices) ai.choices.selected = session.connection.kind;
   renderAi();
   loadTrace(projectId);
@@ -884,14 +953,14 @@ async function selectConnection(kind, confirmed) {
   ai.switching = true;
   renderAi();
   try {
-    const { session } = await api(`/api/projects/${encodeURIComponent(projectId)}/ai/connection`, {
+    const { session, retry } = await api(`/api/projects/${encodeURIComponent(projectId)}/ai/connection`, {
       method: 'POST',
       json: { kind, confirmed },
     });
     if (ai.projectId !== projectId) return;
     ai.confirm = null;
     addEvent('info', `プロダクト内 AI の接続を「${session.connection.label}」にしました。会話と状態はそのまま引き継ぎます。`);
-    showAiSession(projectId, session);
+    showAiSession(projectId, session, retry);
     // 試作品にも知らせる(studio.ai.onChange)
     if (preview.projectId === projectId) preview.port?.postMessage({ type: 'ai-session', session });
   } catch (error) {
@@ -903,6 +972,45 @@ async function selectConnection(kind, confirmed) {
   } finally {
     ai.switching = false;
     renderAi();
+  }
+}
+
+// 設定が変わる前の会話の発言と修正を、今の設定と今の接続で送り直し、試作品を開き直す
+async function retryAi() {
+  const projectId = ai.projectId;
+  if (!projectId || retryingProjects.has(projectId)) return;
+  retryingProjects.add(projectId);
+  waitingByProject.set(projectId, waitingFor(projectId) + 1);
+  renderAi();
+  try {
+    const { session, retry } = await api(`/api/projects/${encodeURIComponent(projectId)}/ai/retry`, { method: 'POST' });
+    showAiSession(projectId, session, retry);
+    const result = retry.result;
+    if (result?.stopped) addEvent('warning', `試し直しが途中で止まりました: ${result.stopped}`);
+    else addEvent('info', `前の会話の発言 ${result?.replies.length ?? 0} 件を、今の設定で送り直しました。`);
+    // 試作品は、送り直した会話で開き直す(リセットと同じ)
+    const project = selectedProject();
+    if (project?.id === projectId && project.previewUrl) {
+      preview.unexpectedLoads = [];
+      showPreview(project.previewUrl, project.id);
+    }
+  } catch (error) {
+    if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) {
+      addEvent('warning', `試し直せませんでした: ${error.message}`);
+      // 途中まで送った会話と、試し直せる会話を読み直す
+      try {
+        const { session, retry } = await api(`/api/projects/${encodeURIComponent(projectId)}/ai`);
+        showAiSession(projectId, session, retry);
+      } catch {
+        // 読めなければ、次に開いたときに読む
+      }
+    } else {
+      handleError(error);
+    }
+  } finally {
+    retryingProjects.delete(projectId);
+    waitingByProject.set(projectId, Math.max(0, waitingFor(projectId) - 1));
+    if (ai.projectId === projectId) renderAi();
   }
 }
 
@@ -1255,8 +1363,8 @@ function createAiRelay(iframe, port, projectId) {
       if (ai.projectId === projectId) renderAi();
     }
     try {
-      const { session } = await request;
-      showAiSession(projectId, session);
+      const { session, retry } = await request;
+      showAiSession(projectId, session, retry);
       reply({ id: data.id, ok: true, session });
       // 待つ間に開き直していたら、新しく開いた試作品に知らせる(studio.ai.onChange)
       if (iframe !== preview.frame && preview.projectId === projectId) preview.port?.postMessage({ type: 'ai-session', session });
@@ -1323,8 +1431,8 @@ els.reset.addEventListener('click', async () => {
   els.reset.disabled = true;
   try {
     try {
-      const { session } = await api(`/api/projects/${encodeURIComponent(project.id)}/ai/reset`, { method: 'POST' });
-      showAiSession(project.id, session);
+      const { session, retry } = await api(`/api/projects/${encodeURIComponent(project.id)}/ai/reset`, { method: 'POST' });
+      showAiSession(project.id, session, retry);
     } catch (error) {
       // AI を使わない試作品は、開き直すだけにする
       if (!(error instanceof ApiError && error.code === 'no-ai')) throw error;

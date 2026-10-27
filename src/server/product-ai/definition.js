@@ -219,3 +219,67 @@ export async function readAiDefinition(appDir) {
   if (!stat.isFile()) return { definition: null, errors: [{ file: SHOWN, text: '普通のファイルにしてください' }] };
   return parseAiDefinition(await fs.readFile(file, 'utf8'));
 }
+
+const MOCK_LABELS = {
+  greeting: '最初のあいさつ',
+  understood: '読み取れたときの返事',
+  afterCorrection: '本人の修正を受けたときの返事',
+  notUnderstood: '読み取れなかったときの返事',
+  complete: '条件がそろったときの返事',
+};
+
+const quote = (value) => {
+  const text = String(value ?? '');
+  return `「${text.length > 200 ? `${text.slice(0, 200)}…` : text}」`;
+};
+
+// 前と後の設定を比べ、プロダクト内 AI の振る舞いのどこが変わったかを、利用者向けの文で返す。
+// 作る AI の報告ではなく、Studio がビルドできた設定どうしを比べる(決まった手順)。
+export function describeDefinitionChanges(before, after) {
+  if (!before && !after) return [];
+  if (!before) return [`プロダクト内 AI の設定ができました(${after.name})`];
+  if (!after) return ['プロダクト内 AI の設定がなくなりました'];
+  const lines = [];
+  if (before.name !== after.name) lines.push(`名前: ${quote(before.name)} → ${quote(after.name)}`);
+  if (before.instructions !== after.instructions) {
+    const added = before.instructions && after.instructions.startsWith(before.instructions)
+      ? after.instructions.slice(before.instructions.length).trim()
+      : '';
+    lines.push(
+      added
+        ? `実モデルへの指示(instructions)に足した文: ${quote(added)}`
+        : `実モデルへの指示(instructions)を書き換えました(${before.instructions.length} 文字 → ${after.instructions.length} 文字)`,
+    );
+  }
+  const keysBefore = before.fields.map((field) => field.key);
+  const keysAfter = after.fields.map((field) => field.key);
+  const labelOf = (key) => (after.fields.find((f) => f.key === key) ?? before.fields.find((f) => f.key === key)).label;
+  const removed = keysBefore.filter((key) => !keysAfter.includes(key));
+  const added = keysAfter.filter((key) => !keysBefore.includes(key));
+  if (removed.length > 0) lines.push(`なくした項目: ${removed.map(labelOf).join('、')}`);
+  if (added.length > 0) lines.push(`足した項目: ${added.map(labelOf).join('、')}`);
+  const common = (keys) => keys.filter((key) => keysBefore.includes(key) && keysAfter.includes(key));
+  // 前からある項目の順が変わったときと、足した項目を前からある項目より前に入れたとき
+  const lastCommon = Math.max(-1, ...common(keysAfter).map((key) => keysAfter.indexOf(key)));
+  const addedInFront = added.some((key) => keysAfter.indexOf(key) < lastCommon);
+  if (common(keysBefore).join() !== common(keysAfter).join() || addedInFront) {
+    // モックは、未定の項目を並びの順に聞く
+    lines.push(`聞く順と項目の並び: ${keysBefore.map(labelOf).join('、')} → ${keysAfter.map(labelOf).join('、')}`);
+  }
+  for (const key of common(keysAfter)) {
+    const was = before.fields.find((f) => f.key === key);
+    const now = after.fields.find((f) => f.key === key);
+    if (was.label !== now.label) lines.push(`項目の名前: ${quote(was.label)} → ${quote(now.label)}`);
+    if (was.question !== now.question) lines.push(`${now.label}を聞く文: ${quote(was.question)} → ${quote(now.question)}`);
+    const rest = ({ label, question, ...other }) => JSON.stringify(other);
+    if (rest(was) !== rest(now)) lines.push(`${now.label}の読み取り方(選択肢、言葉、数の範囲など)を変えました`);
+  }
+  // 項目の並びが変わっても、値が同じなら変わったとしない
+  const initialChanged = common(keysAfter).some((key) => before.initialState[key] !== after.initialState[key])
+    || added.some((key) => after.initialState[key] !== null);
+  if (initialChanged) lines.push('項目の最初の値を変えました');
+  for (const [key, label] of Object.entries(MOCK_LABELS)) {
+    if (before.mock[key] !== after.mock[key]) lines.push(`モックの${label}: ${quote(before.mock[key])} → ${quote(after.mock[key])}`);
+  }
+  return lines;
+}
