@@ -7,6 +7,8 @@ export const PROJECT_ID_PATTERN = /^[a-z0-9-]{1,64}$/;
 export const SAMPLES = [
   { id: 'sample-library', dir: 'library', title: 'サンプル: 架空の図書室' },
   { id: 'sample-job-consult', dir: 'job-consult', title: 'サンプル: 架空の求人相談(プロダクト内 AI)' },
+  // 求人ではない題材で、同じ作成・試行・変更・引き継ぎの流れが通るかを確かめるサンプル(#281)
+  { id: 'sample-study-consult', dir: 'study-consult', title: 'サンプル: 架空の学習相談(プロダクト内 AI)' },
 ];
 
 export function isValidProjectId(id) {

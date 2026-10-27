@@ -387,16 +387,24 @@ function renderAgentStatus() {
   els.agentStatus.replaceChildren(...nodes);
 }
 
+// 例の文に、選んでいる試作品の AI の項目の名前を入れる。最初の項目は、もう最初に聞くので最後の項目にする
+function exampleText(example) {
+  const fields = ai.projectId === selectedId ? ai.session?.fields ?? [] : [];
+  if (!example.fieldTemplate || fields.length < 2) return example.text;
+  return example.fieldTemplate.replace('{field}', () => fields.at(-1).label);
+}
+
 function renderExamples() {
   const examples = agent?.examples ?? [];
   els.examples.hidden = examples.length === 0;
   els.exampleList.replaceChildren(
     ...examples.map((example) => {
       const li = document.createElement('li');
-      const button = element('button', example.text);
+      const text = exampleText(example);
+      const button = element('button', text);
       button.type = 'button';
       button.addEventListener('click', () => {
-        els.requestText.value = example.text;
+        els.requestText.value = text;
         els.requestText.focus();
       });
       li.append(button, element('span', example.note, 'muted'));
@@ -694,6 +702,7 @@ function renderRetry() {
 function renderAi() {
   const { session } = ai;
   renderRetry();
+  renderExamples();
   els.aiBadge.hidden = !session;
   if (!session) {
     els.aiStatus.replaceChildren(
@@ -1156,7 +1165,7 @@ function connectionNote(connection) {
 
 function traceTitle(entry) {
   if (entry.type === 'reply') return `発言 → ${connectionNote(entry.connection)}`;
-  if (entry.type === 'correction') return '条件の修正(試作品から)';
+  if (entry.type === 'correction') return '状態の修正(試作品から)';
   if (entry.type === 'connection') return `接続の切り替え: ${entry.previous.label} → ${entry.connection.label}(Studio の画面から)`;
   return '会話と状態を最初に戻しました(Studio の画面から)';
 }
@@ -1266,7 +1275,7 @@ function renderTrace() {
   const nodes = [
     labeled('今の接続', connectionNote({ label: session.connection.label, real: Boolean(current?.billing) })),
     labeled('AI が使えるツール', current?.tools ?? '不明'),
-    labeled('試作品から AI への操作', '会話を読む、発言を送る、条件を直す。接続の切り替えと「応答を止める」は Studio の画面だけでできます。'),
+    labeled('試作品から AI への操作', '会話を読む、発言を送る、状態を直す。接続の切り替えと「応答を止める」は Studio の画面だけでできます。'),
     element(
       'p',
       '記録は Studio のメモリーにだけ置き、Studio を止めると消えます。メールアドレス、電話番号、鍵らしい文字列は、伏せて記録します(AI に送る中身は変えません)。',

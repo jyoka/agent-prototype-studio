@@ -19,7 +19,7 @@ test('サンプルは初回だけ写し、利用者の変更を上書きしな�
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const samples = path.join(STUDIO_ROOT, 'samples');
 
-  assert.deepEqual(await ensureSampleProjects(home, samples), ['sample-library', 'sample-job-consult']);
+  assert.deepEqual(await ensureSampleProjects(home, samples), ['sample-library', 'sample-job-consult', 'sample-study-consult']);
   const main = path.join(home, 'projects', 'sample-library', 'app', 'main.jsx');
   await fs.writeFile(main, '// changed');
   assert.deepEqual(await ensureSampleProjects(home, samples), []);
@@ -36,6 +36,7 @@ test('サンプルは初回だけ写し、利用者の変更を上書きしな�
     [
       ['sample-job-consult', 'サンプル: 架空の求人相談(プロダクト内 AI)'],
       ['sample-library', 'サンプル: 架空の図書室'],
+      ['sample-study-consult', 'サンプル: 架空の学習相談(プロダクト内 AI)'],
     ],
   );
 });

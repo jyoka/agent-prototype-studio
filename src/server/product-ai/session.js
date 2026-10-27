@@ -553,7 +553,7 @@ export class AiSessions {
     return this.view(projectId);
   }
 
-  // 本人が、AI の理解した条件を直す。次の応答はこの記録を踏まえる。成功も失敗も、実行の記録に残す
+  // 本人が、AI の理解した状態を直す。次の応答はこの記録を踏まえる。成功も失敗も、実行の記録に残す
   correct(projectId, changes, { replaying = false } = {}) {
     this.definition(projectId);
     const entry = this.record(projectId, {
