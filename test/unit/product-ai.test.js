@@ -167,6 +167,40 @@ test('応答を待つ間は次の発言を断り、リセットされたら届�
   assert.deepEqual(sessions.view('p').messages, [{ role: 'assistant', text: 'ようこそ。' }]);
 });
 
+test('版から戻した会話は、応答した接続と時間と費用を残し、決まりに合わなければ初期状態から始める', async () => {
+  const sessions = new AiSessions({ definitionOf: () => travel() });
+  await sessions.send('p', '湖');
+  const snapshot = sessions.snapshot('p');
+  snapshot.messages[2].costUsd = 0.01;
+  sessions.reset('p');
+  assert.equal(sessions.restore('p', JSON.parse(JSON.stringify(snapshot))), true);
+  assert.deepEqual(sessions.snapshot('p'), snapshot);
+  assert.equal(sessions.view('p').messages.at(-1).via, 'mock');
+
+  for (const bad of [{ via: 'Bad Kind!' }, { via: 1 }, { elapsedMs: -1 }, { costUsd: 'x' }]) {
+    const broken = structuredClone(snapshot);
+    Object.assign(broken.messages[2], bad);
+    assert.equal(sessions.restore('p', broken), false);
+    assert.equal(sessions.view('p').messages.length, 1);
+  }
+});
+
+test('版を戻すと、応答を待っている実行を止める', async () => {
+  let signal;
+  const connection = {
+    ...createMockConnection(),
+    respond: (input) => new Promise((resolve, reject) => {
+      signal = input.signal;
+      signal.addEventListener('abort', () => reject(new Error('止めた')));
+    }),
+  };
+  const sessions = new AiSessions({ definitionOf: () => travel(), connections: [connection] });
+  const pending = sessions.send('p', '湖');
+  sessions.restore('p', null);
+  assert.equal(signal.aborted, true);
+  await assert.rejects(pending, { code: 'reset' });
+});
+
 test('接続が失敗したら、会話を変えずに理由を返す', async () => {
   const connection = { ...createMockConnection(), respond: async () => Promise.reject(new Error('つながらない')) };
   const sessions = new AiSessions({ definitionOf: () => travel(), connections: [connection] });
@@ -384,4 +418,37 @@ test('試し直しの途中で設定が変わったら、止めて、元の前�
   assert.equal(info.userMessages, 3);
   assert.equal(info.retrying, false);
   assert.deepEqual(sessions.view('p').messages.map((m) => m.role), ['assistant']);
+});
+
+test('試し直しの発言と修正は Studio 画面から送ったものとして記録し、途中は版の復元を断る応答中とみなす', async () => {
+  let release;
+  const slow = {
+    ...createMockConnection(),
+    respond: (input) =>
+      new Promise((resolve) => {
+        release = () => resolve({ reply: `${input.definition.name}: ${input.text}`, updates: {} });
+      }),
+  };
+  const { sessions, holder } = switchable();
+  await sessions.send('p', '湖に行きたい');
+  sessions.correct('p', { nights: 3 });
+  holder.definition = parse({ ...TRAVEL, name: '二つ目の設定' });
+  sessions.view('p');
+  sessions.connections.set('mock', slow);
+  const retrying = sessions.retry('p');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sessions.isBusy('p'), true);
+  release();
+  await retrying;
+  assert.equal(sessions.isBusy('p'), false);
+  const entries = sessions.trace('p').entries.reverse();
+  assert.deepEqual(
+    entries.map((e) => [e.type, e.from, e.status]),
+    [
+      ['reply', 'prototype', 'ok'],
+      ['correction', 'prototype', 'ok'],
+      ['reply', 'studio', 'ok'],
+      ['correction', 'studio', 'ok'],
+    ],
+  );
 });

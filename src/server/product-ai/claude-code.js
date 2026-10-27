@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { redact } from '../redact.js';
 import { formatValue } from './definition.js';
 
 // プロダクト内 AI を、利用者が入れた Claude Code(未改変の CLI)で動かす接続(#276)。
@@ -180,7 +181,9 @@ const LIMIT_PATTERN = /usage limit|rate.?limit|hit your limit|limit reached|too 
 const AUTH_PATTERN = /not logged in|please run .*login|invalid api key|authentication|unauthorized|\b401\b/i;
 
 function failure(text, fallback) {
-  const detail = String(text ?? '').trim().slice(0, 300);
+  // CLI の出力は画面と記録に出るので、秘密らしい文字列を伏せる
+  // 先に伏せてから短くする。切った端に、鍵の一部が残らないように
+  const detail = redact(String(text ?? '').trim().slice(0, 4000)).slice(0, 300);
   if (LIMIT_PATTERN.test(detail)) {
     return new ConnectionError('limit', `Claude Code の利用の上限に当たりました(${detail})。時間をおいて試すか、接続をモックに戻してください`);
   }
@@ -213,20 +216,24 @@ export function parseResult(stdout) {
     }
     throw failure(result.result ?? result.subtype, 'Claude Code がエラーを返しました');
   }
-  const meta = { costUsd: Number.isFinite(result.total_cost_usd) ? result.total_cost_usd : null };
+  const meta = {
+    costUsd: Number.isFinite(result.total_cost_usd) ? result.total_cost_usd : null,
+    durationMs: Number.isFinite(result.duration_ms) ? result.duration_ms : null,
+  };
+  // format: どの形で読んだか(実行の記録に出す)。structured は構造化出力、text-json は本文の JSON、text は本文だけ
   let output = result.structured_output;
-  let structured = true;
+  let format = 'structured';
   if (output === null || typeof output !== 'object' || Array.isArray(output)) {
     output = parseJsonObject(result.result);
-    structured = false;
+    format = 'text-json';
   }
   if (output && typeof output.reply === 'string') {
     const updates = output.updates !== null && typeof output.updates === 'object' && !Array.isArray(output.updates) ? output.updates : {};
-    return { reply: output.reply, updates, meta: { ...meta, structured } };
+    return { reply: output.reply, updates, meta: { ...meta, structured: format === 'structured', format } };
   }
   // JSON で返さなかったときは、本文を返事として使い、状態は変えない
   if (typeof result.result === 'string' && result.result.trim()) {
-    return { reply: result.result.trim(), updates: {}, meta: { ...meta, structured: false } };
+    return { reply: result.result.trim(), updates: {}, meta: { ...meta, structured: false, format: 'text' } };
   }
   throw new ConnectionError('failed', 'Claude Code の応答が空でした');
 }
@@ -242,6 +249,15 @@ function signalTree(child, name) {
   } catch {
     // すでに終わっている
   }
+}
+
+// 記録に出す引数。長い値(指示と応答の形)は、別に出すので短くする
+export function shownArgs(args) {
+  return args.map((arg) => {
+    const at = arg.indexOf('=');
+    if (at > 0 && arg.startsWith('--') && arg.length > 80) return `${arg.slice(0, at + 1)}…(${arg.length - at - 1} 文字)`;
+    return arg;
+  });
 }
 
 // 1 回の応答のために CLI を起動し、終わるか、止めるか、時間切れまで待つ
@@ -358,6 +374,7 @@ export function createClaudeCodeConnection({ env = process.env, allowed = false,
     label: 'Claude Code',
     description: '利用者が入れた Claude Code を、本人のログインで動かします。発言のたびに実際の AI モデルを呼びます。',
     billing,
+    tools: 'Claude Code にはツールを渡していません(--tools "")。ファイル、コマンド、Web は使えません。',
     // 選べるか。選べないときは、理由と次の手順を返す
     availability() {
       if (!allowed) {
@@ -389,6 +406,16 @@ export function createClaudeCodeConnection({ env = process.env, allowed = false,
         ],
         notSent: 'app/ の他のファイル、他の試作品、PC のファイルは送りません。Claude Code にはツールを渡しません。',
         systemPrompt: systemPrompt(definition),
+      };
+    },
+    // 実行の記録に出す。この接続が CLI に渡すもの(送る前に作る。失敗しても見られるように)
+    describe({ definition, state, messages, text }) {
+      return {
+        to: this.sends(definition).to,
+        tools: this.tools,
+        command: [path.basename(binName), ...shownArgs(buildArgs(definition))],
+        systemPrompt: systemPrompt(definition),
+        stdin: conversationPrompt({ definition, state, messages, text }),
       };
     },
     async respond({ definition, state, messages, text, signal }) {

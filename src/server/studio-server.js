@@ -5,6 +5,7 @@ import { isAllowedHost, tokensEqual } from './security.js';
 import { AgentUnavailableError, RequestError } from './build-requests.js';
 import { AiError } from './product-ai/session.js';
 import { BusyError, NotFoundError } from './store.js';
+import { VersionError } from './versions.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -24,8 +25,8 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-function sendError(res, status, code, message) {
-  sendJson(res, status, { error: { code, message } });
+function sendError(res, status, code, message, next) {
+  sendJson(res, status, { error: next ? { code, message, next } : { code, message } });
 }
 
 export function studioCsp(previewPort) {
@@ -70,6 +71,7 @@ function projectView(project, previewPort, runs) {
     title: project.title,
     appDir: project.appDir,
     building: project.building,
+    versioning: project.versioning,
     running: runs.running,
     runsVersion: runs.version,
     lastBuild: project.lastBuild,
@@ -80,7 +82,7 @@ function projectView(project, previewPort, runs) {
 }
 
 // Studio 画面と API。API はすべてトークンを要求する(ADR-0001 の層 3)。
-export function createStudioHandler({ store, requests, agent, aiSessions, token, ports }) {
+export function createStudioHandler({ store, requests, agent, aiSessions, versions, token, ports }) {
   const view = (project) => projectView(project, ports.preview, requests.summary(project.id));
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
@@ -158,16 +160,40 @@ export function createStudioHandler({ store, requests, agent, aiSessions, token,
       const project = (await store.list()).find((p) => p.id === id);
       return sendJson(res, 200, { project: view(project) });
     }
-    const aiMatch = /^\/api\/projects\/([^/]+)\/ai(?:\/(messages|corrections|reset|connections|connection|cancel|retry))?$/.exec(url.pathname);
-    const aiGet = !aiMatch?.[2] || aiMatch[2] === 'connections';
+    const versionsMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/versions(?:\/([^/]+)\/(restore))?$/.exec(url.pathname);
+    if (versionsMatch) {
+      const [, id, versionId, restore] = versionsMatch;
+      if (req.method === 'GET' && !restore) return handleVersions(req, res, id, null);
+      if (req.method === 'POST') return handleVersions(req, res, id, restore ? versionId : undefined);
+    }
+    const aiMatch = /^\/api\/projects\/([^/]+)\/ai(?:\/(messages|corrections|reset|connections|connection|cancel|retry|trace|clear-trace))?$/.exec(
+      url.pathname,
+    );
+    const aiGet = !aiMatch?.[2] || aiMatch[2] === 'connections' || aiMatch[2] === 'trace';
     if (aiMatch && (aiGet ? req.method === 'GET' : req.method === 'POST')) {
       return handleAi(req, res, aiMatch[1], aiMatch[2]);
     }
     return sendError(res, 404, 'not-found', 'その API はありません');
   }
 
+  // 版。versionId が null なら一覧、undefined なら保存、文字列ならその版の復元
+  async function handleVersions(req, res, id, versionId) {
+    try {
+      if (versionId === null) return sendJson(res, 200, await versions.list(id));
+      const body = await readJson(req);
+      if (versionId === undefined) return sendJson(res, 200, await versions.save(id, { name: body?.name }));
+      return sendJson(res, 200, await versions.restore(id, versionId));
+    } catch (error) {
+      if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', error.message);
+      if (error instanceof BusyError) return sendError(res, 409, 'busy', error.message);
+      if (error instanceof VersionError) return sendError(res, error.status, error.code, error.message);
+      if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
+      throw error;
+    }
+  }
+
   // プロダクト内 AI。試作品からの要求は、Studio 画面が形を確かめてから、ここへ送る。
-  // 接続の切り替えと中断と試し直し(connections、connection、cancel、retry)は、Studio 画面だけが送る。試作品からは届かない。
+  // 接続の切り替えと中断と試し直し(connections、connection、cancel、retry)と実行の記録(trace、clear-trace)は、Studio 画面だけが送る。試作品からは届かない。
   // retry は試し直せる会話と結果で、Studio 画面だけが使う(画面は試作品に session だけを渡す)
   async function handleAi(req, res, rawId, action) {
     let id;
@@ -179,9 +205,24 @@ export function createStudioHandler({ store, requests, agent, aiSessions, token,
     if (!(await store.list()).some((p) => p.id === id)) {
       return sendError(res, 404, 'not-found', `プロジェクトがありません: ${rawId}`);
     }
+    // 版の保存と復元の間は、会話を変えない(戻した会話や自動の版から、発言が抜け落ちないように)。
+    // 接続の一覧と中断、実行の記録は会話を変えないので通す。実モデルの応答はいつでも止められる
+    const changesConversation = action && !['connections', 'cancel', 'trace', 'clear-trace'].includes(action);
+    if (changesConversation && store.isVersioning(id)) {
+      return sendError(res, 409, 'busy', '版を保存か復元しているところです。終わってから試してください');
+    }
     try {
       if (action === 'connections') return sendJson(res, 200, aiSessions.connectionChoices(id));
+      if (action === 'trace') return sendJson(res, 200, aiSessions.trace(id));
+      if (action === 'clear-trace') {
+        await readJson(req);
+        return sendJson(res, 200, aiSessions.clearTrace(id));
+      }
       const body = action ? await readJson(req) : null;
+      // 本文を読んでいる間に、版の操作が始まったかもしれない
+      if (changesConversation && store.isVersioning(id)) {
+        return sendError(res, 409, 'busy', '版を保存か復元しているところです。終わってから試してください');
+      }
       let session;
       if (!action) session = aiSessions.view(id);
       else if (action === 'connection') session = aiSessions.select(id, body?.kind, { confirmed: body?.confirmed === true });
@@ -192,7 +233,7 @@ export function createStudioHandler({ store, requests, agent, aiSessions, token,
       else session = aiSessions.reset(id);
       return sendJson(res, 200, { session, retry: aiSessions.retryInfo(id) });
     } catch (error) {
-      if (error instanceof AiError) return sendError(res, error.status, error.code, error.message);
+      if (error instanceof AiError) return sendError(res, error.status, error.code, error.message, error.next);
       if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
       throw error;
     }

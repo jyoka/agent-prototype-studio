@@ -105,6 +105,15 @@ export function createMockConnection() {
     kind: 'mock',
     label: 'モック',
     description: '決まった規則で応答します。実際の AI モデルは呼びません。同じ入力には、いつも同じ応答を返します。',
+    tools: 'モックにはツールがありません。app/ai.json の言葉と応答の型だけで応答します。',
+    // 実行の記録に出す。モックは外へ何も送らない
+    describe() {
+      return {
+        to: null,
+        tools: this.tools,
+        rule: 'app/ai.json の各項目の選択肢と keywords が発言の中にあるかで値を読み取り、mock の型に当てはめて返事を作ります。',
+      };
+    },
     async respond({ definition, state, messages, text }) {
       return mockReply(definition, state, messages, text);
     },

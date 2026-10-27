@@ -43,6 +43,7 @@
       <p class="eyebrow">試す</p>
       <div class="toolbar">
         <h2 id="project-title">試作品を選んでください</h2>
+        <span id="work-badge" class="work-badge" hidden></span>
         <span id="ai-badge" class="ai-badge" hidden></span>
         <button type="button" id="reopen" disabled title="画面だけを読み直します。会話と状態はそのまま">開き直す</button>
         <button type="button" id="reset" disabled title="会話と状態を最初に戻して、開き直します">リセット</button>
@@ -55,6 +56,18 @@
     </section>
     <aside class="details" aria-label="詳細">
       <h2>詳細</h2>
+      <section aria-labelledby="versions-heading">
+        <h3 id="versions-heading">版</h3>
+        <p id="working-status" class="working-status"></p>
+        <form id="save-form" class="save-form">
+          <label for="version-name">版の名前(なくてもよい)</label>
+          <input id="version-name" type="text" maxlength="60" autocomplete="off" disabled>
+          <button type="submit" id="save-version" disabled>今の作業中を保存</button>
+        </form>
+        <p id="versions-message" class="versions-message" role="status" hidden></p>
+        <ol id="version-list" class="version-list" aria-label="保存した版"></ol>
+        <p class="muted">保存すると、app/ のファイルと、プロダクト内 AI の会話と状態を残します。作業中の会話は Studio を止めると消えますが、保存した版は残ります。</p>
+      </section>
       <section aria-labelledby="build-heading">
         <h3 id="build-heading">ビルド</h3>
         <div id="build-status" class="build-status"></div>
@@ -62,6 +75,10 @@
       <section aria-labelledby="ai-heading">
         <h3 id="ai-heading">プロダクト内 AI</h3>
         <div id="ai-status" class="ai-status"></div>
+      </section>
+      <section aria-labelledby="trace-heading">
+        <h3 id="trace-heading">AI の実行の記録</h3>
+        <div id="ai-trace" class="ai-trace"></div>
       </section>
       <section aria-labelledby="events-heading">
         <h3 id="events-heading">試作品からの知らせ</h3>
