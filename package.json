@@ -14,7 +14,8 @@
   "scripts": {
     "start": "node bin/studio.js",
     "test": "node --test \"test/unit/*.test.js\" \"test/integration/*.test.js\"",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "check:claude": "node scripts/check-claude-code.js"
   },
   "dependencies": {
     "esbuild": "0.28.2",

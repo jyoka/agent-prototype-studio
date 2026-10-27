@@ -14,7 +14,9 @@ export class ProjectStore {
   }
 
   entry(id) {
-    if (!this.state.has(id)) this.state.set(id, { building: false, lastBuild: null, previewBuildId: null, ai: null });
+    if (!this.state.has(id)) {
+      this.state.set(id, { building: false, running: false, lastBuild: null, previewBuildId: null, ai: null });
+    }
     return this.state.get(id);
   }
 
@@ -27,6 +29,7 @@ export class ProjectStore {
         title: project.title,
         appDir: project.paths.app,
         building: entry.building,
+        running: entry.running,
         lastBuild: entry.lastBuild,
         previewBuildId: entry.previewBuildId,
       };
@@ -42,14 +45,35 @@ export class ProjectStore {
     return this.state.get(id)?.ai ?? null;
   }
 
-  async build(id) {
+  async requireProject(id) {
     if (!isValidProjectId(id)) throw new NotFoundError(`プロジェクトがありません: ${id}`);
     const paths = projectPaths(this.home, id);
     const appStat = await fs.lstat(paths.app).catch(() => null);
     if (!appStat?.isDirectory()) throw new NotFoundError(`プロジェクトがありません: ${id}`);
+    return paths;
+  }
+
+  // 作る AI の実行を始める印。ビルド中や実行中なら断る(1 プロジェクト 1 実行)
+  claimRun(id) {
+    const entry = this.entry(id);
+    if (entry.running) throw new BusyError('このプロジェクトでは今、作る AI が作業中です。終わるか中断するまで待ってください');
+    if (entry.building) throw new BusyError('このプロジェクトは今ビルド中です。終わるまで待ってください');
+    entry.running = true;
+  }
+
+  releaseRun(id) {
+    this.entry(id).running = false;
+  }
+
+  // byRun: 作る AI の実行の後に、その実行の中から呼ぶとき
+  async build(id, { byRun = false } = {}) {
+    const paths = await this.requireProject(id);
     const entry = this.entry(id);
     // 1 プロジェクト 1 実行
     if (entry.building) throw new BusyError('このプロジェクトは今ビルド中です。終わるまで待ってください');
+    if (entry.running && !byRun) {
+      throw new BusyError('このプロジェクトでは今、作る AI が作業中です。終わるか中断するまで待ってください');
+    }
     entry.building = true;
     try {
       await fs.mkdir(paths.builds, { recursive: true });

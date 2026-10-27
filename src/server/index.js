@@ -1,6 +1,8 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { connectionView, resolveConnection } from './agent-connection.js';
+import { BuildRequests } from './build-requests.js';
 import { STUDIO_ROOT } from './config.js';
 import { createPreviewHandler } from './preview-server.js';
 import { createClaudeCodeConnection } from './product-ai/claude-code.js';
@@ -51,6 +53,7 @@ async function listenOrExplain(server, port, host, envName) {
 }
 
 // Studio を起動する。待ち受けは loopback だけ(0.0.0.0 にはしない)。
+// env は作る AI とプロダクト内 AI に渡す環境変数。既定は利用者のもの(ADR-0001: そのまま渡し、値は読まない)。
 export async function startStudio(config, { log = () => {}, env = process.env } = {}) {
   try {
     await fs.mkdir(projectsDir(config.home), { recursive: true });
@@ -65,17 +68,27 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
     throw error;
   }
 
+  const connection = await resolveConnection(config, env);
   const token = createToken();
   const store = new ProjectStore(config.home, log);
+  const requests = new BuildRequests({
+    store,
+    connection,
+    env,
+    log,
+    maxBudgetUsd: config.maxBudgetUsd,
+  });
   const ports = { studio: config.studioPort, preview: config.previewPort };
   const servers = [];
 
-  // 接続の既定はモック。Claude Code は、利用者が画面で送るものと費用を確かめてから切り替える
+  // プロダクト内 AI の接続の既定はモック。Claude Code は、利用者が画面で送るものと費用を確かめてから切り替える
   const aiSessions = new AiSessions({
     definitionOf: (id) => store.aiDefinition(id),
     connections: [createMockConnection(), createClaudeCodeConnection({ env, allowed: config.allowClaudeCode === true })],
   });
-  const studioServer = http.createServer(createStudioHandler({ store, aiSessions, token, ports }));
+  const studioServer = http.createServer(
+    createStudioHandler({ store, requests, agent: connectionView(connection), aiSessions, token, ports }),
+  );
   servers.push(studioServer);
   const previewHandler = createPreviewHandler({ home: config.home, store, ports });
   const previewServer = http.createServer(previewHandler);
@@ -107,10 +120,12 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
     url,
     ports,
     store,
+    requests,
+    connection,
     aiSessions,
     async close() {
-      // 応答を待っている Claude Code を止め、終わるまで待つ
-      await aiSessions.close();
+      // 作る AI と、応答を待っているプロダクト内 AI の Claude Code を止め、終わるまで待つ
+      await Promise.all([requests.closeAll(), aiSessions.close()]);
       await Promise.all(
         servers.map(
           (server) =>

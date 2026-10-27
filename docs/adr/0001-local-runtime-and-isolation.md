@@ -114,7 +114,7 @@ cwd: ~/PrototypeStudio/projects/<id>/app/
 
 - 依頼の文は stdin で渡す。argv に入れると、`-` で始まる依頼がフラグとして読まれる。Windows で npm 版の `claude.cmd` を起動するときは cmd.exe を通るので、argv の文字がコマンドとして解釈される恐れもある。
 - `--safe-mode` は、CLAUDE.md、skills、installed plugins、hooks、MCP servers などを外し、認証と組み込みのツールと権限はそのまま動かす(`claude --help`)。`--restricted` と一緒に使えるかは要実機。
-- 「作る」会話の続きを `--resume` で持つか、ツールが会話を持って毎回渡すかは #274 で決める。後者なら `--no-session-persistence` で、`~/.claude/projects/` に会話を残さずに済む。
+- 「作る」会話の続き: #274 で、依頼ごとに新しい会話で動かすことにした(仮)。`--resume` は使わず、`--no-session-persistence` を付ける。前の依頼の内容は `app/` のファイルを通じて引き継ぐ。下の「#274 で決めたこと」。
 
 `--restricted` について公式に書かれていること(cli-reference、permission-modes):
 
@@ -245,6 +245,32 @@ cwd: ~/PrototypeStudio/projects/<id>/app/
 - 起動ごとのトークンは、画面が `sessionStorage` に置く。再読み込みしても使い続けるため。プレビューは別 origin(かつ opaque origin)なので読めない。
 - 同梱するライブラリは、まず React(`react`、`react-dom`)だけにした。
 
+## #274 で決めたこと(2026-10-28、仮)
+
+利用者が朝まで答えないので、推奨の既定で仮に決めた。変えるなら別のカードで直す。
+
+- 作る AI の既定は偽接続(`src/agent/fake-claude.js`)。Claude Code は `STUDIO_AGENT=claude` で利用者が明示したときだけ起動する。会社の利用条件が決まるまで、実モデルを呼ばないため。`STUDIO_CLAUDE_BIN` は Claude Code の場所を変える変数にした(上の「方式全体で守ること」では偽接続の差し替えにも使う想定だった)。
+- 偽接続は、Studio が組み立てた引数をそのまま受け取る。上の「作る AI の起動」の守り(`--restricted`、`--safe-mode`、`dontAsk` など)が欠けていれば、失敗して終わる。偽接続と実接続で引数が同じであることを、E2E のたびに確かめるため。
+- 引数は上の「作る AI の起動」のとおり。加えて `--no-session-persistence` を付ける。`--max-budget-usd` は、サブスクの枠でない見込み(`ANTHROPIC_API_KEY`、`ANTHROPIC_AUTH_TOKEN`、クラウド経由)のときだけ付ける。既定は 1 ドルで、`STUDIO_MAX_BUDGET_USD` で変えられる。
+- 権限の確認: `--permission-mode dontAsk --permission-prompts none` のままにした。画面で許可を受ける形(SDK の `canUseTool` や `--permission-prompt-tool`)は採らない。断られた操作は、stream-json の `result.permission_denials` と、エラーになったツールの結果から、作る会話に出す。
+  - 理由: 許可を画面で受けると、利用者が意味のわからない許可を押し、閉じ込めを自分で外す道ができる。`--restricted` では、設定や git のファイルへの書き込みを人が許可できてしまう。
+- 認証と課金の表示: 実行の前に、環境変数の「有無」だけから見込みを出す。値は読まない。順番は Claude Code の認証の優先順位(クラウド、`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_API_KEY`、`CLAUDE_CODE_OAUTH_TOKEN`、本人のログイン)に合わせた。実行の後は、Claude Code が `init` で報告する `apiKeySource` を出す。組織の管理設定の `apiKeyHelper` と、Console(API)のアカウントでのログインは、見込みに入っていない(送る前には見分けられない)。
+- 版の確認: 起動のときに `claude --version` を 1 回だけ実行し、2.1.248 未満なら作る欄を使えなくする。モデルは呼ばない。ログインの状態(`claude auth status`)は確かめない。ログインしていないときは、実行の結果の文から見分けて、ログインの手順を出す。
+- 変わったファイルは、AI の報告ではなく、Studio が実行の前と後の `app/` の中身(SHA-256)を比べて確かめる。変わっていればビルドする。中断や失敗のときも、途中まで変わったファイルがあればビルドする。
+- 止め方: 中断と時間切れ(10 分)では、SIGINT、3 秒待って SIGTERM、さらに 3 秒待ってプロセスグループごと SIGKILL。本体が終わった時点で、プロセスグループに残ったものは SIGKILL で止める。Studio を止めるとき(SIGINT、SIGTERM、SIGHUP)も、動いている作る AI を同じ手順で止める。例外などで止める手順を待てないときは、終わる直前に同期で SIGKILL を送る。
+- 1 プロジェクト 1 実行: 作る AI が動いている間は、同じプロジェクトの依頼と「作り直す」を断る(409)。
+- 作る会話は Studio のサーバーのメモリーに置く(プロジェクトごとに直近 20 件)。画面を再読み込みしても残り、Studio を止めると消える。ディスクには書かない。ターミナルのログにも依頼の文を出さない。
+- Windows: npm 版の `claude.cmd` は使えなくした。cmd.exe を通ると、`--append-system-prompt` の文が命令として読まれる恐れがあるため。ネイティブ版の `claude.exe` を使う。
+- 自動で直す(コンパイルのエラーを AI に 1 回だけ返す)は、#274 では入れていない。ビルドに失敗したら、場所を詳細の欄に出し、利用者が直す依頼を送る。
+
+実機で確かめていないこと(`npm run check:claude -- --run` で確かめられるようにした。会社の利用条件が決まってから実行する):
+
+- 非対話(`-p`)で、本人のログインのまま `--restricted` と `--safe-mode` が一緒に動くか。
+- `app/` の外への書き込みと読み出しが止まるか。断られたことが `permission_denials` に出るか。
+- `app/CLAUDE.md` と `app/.claude/settings.json` の hooks が効かないか。
+- 中断の手順で、プロセスグループごと止まるか。
+- Claude Code の実際の stream-json の形が、偽接続の形と合うか(特に、断られたときのツールの結果の文)。
+
 ## #275 で決めたこと(2026-10-28、仮)
 
 「試す」の経路のうち、プロダクト内 AI の部分をモックで作った。実モデルは #276 で同じ口につなぐ。
@@ -297,21 +323,23 @@ Claude Code の接続  未改変の claude -p を、発言ごとに 1 回起動�
 - 失敗の分け方: 利用の上限(`limit`)、費用の上限(`budget`)、ログイン(`auth`)、見つからない(`not-found`)、時間切れ(`timeout`)、中断(`cancelled`)、その他(`connection`)。上限とログインは、CLI の出力の文で見分ける。本物の文は要実機。
 - 接続の切り替えを、試作品(iframe)からはできないようにした。費用のかかる接続を、生成コードが勝手に選ばないため(T6)。切り替えは `studio.ai.onChange` で試作品に知らせる。
 - Windows で npm 版の `claude.cmd` は起動しない(cmd.exe を通すと argv が解釈されるため)。ネイティブ版の `claude.exe` を前提にする。要実機。
+- 作る AI(#274)とは別の接続で、別に切り替える。作る AI は `STUDIO_AGENT=claude`、プロダクト内 AI は `STUDIO_ALLOW_CLAUDE_CODE=1` と画面での確認で、Claude Code を使う。Claude Code の場所(`STUDIO_CLAUDE_BIN`)は両方で共用する。
 
 ## 未決事項
 
 | 未決事項 | 決める人・場所 |
 |---|---|
 | この ADR の仮採用を正式にするか | 利用者(2026-10-28 の朝) |
-| `--restricted` と `--safe-mode` が本人ログインで一緒に動くか、閉じ込めが実際に効くか | #274 の実機確認(許可と予算が要る) |
+| `--restricted` と `--safe-mode` が本人ログインで一緒に動くか、閉じ込めが実際に効くか | 利用者が `npm run check:claude -- --run` で確かめる(会社の利用条件が決まってから) |
 | WebRTC と DNS の先読みの残る危険を受け入れるか | 利用者(実データを使う前に) |
-| 作る AI の権限の確認を画面で受けるか(SDK の `canUseTool` など)、`dontAsk` で拒否だけにするか | #274 |
+| 作る AI の権限の確認を画面で受けるか(SDK の `canUseTool` など)、`dontAsk` で拒否だけにするか | #274 で `dontAsk` で拒否だけに仮決め。利用者が確かめる |
 | プロダクト内 AI の Claude Code の起動の形(#276 で仮に決めた)が、実機で動くか。`--restricted` と `--safe-mode` と `--tools ""` と `--json-schema` を一緒に使えるか、`--system-prompt` がサブスクのログインで効くか、応答の速さ、上限に当たったときの出力 | 実機の確認(許可と予算が要る) |
-| 会社として Claude の Commercial Terms に同意するか(それまで `STUDIO_ALLOW_CLAUDE_CODE` を付けない) | 社内 |
+| 会社として Claude の Commercial Terms に同意するか(それまで `STUDIO_ALLOW_CLAUDE_CODE` を付けず、`STUDIO_AGENT=claude` にしない) | 社内 |
 | プロダクト内 AI の会話と状態を保存するか、版と一緒に戻すか | #278 |
 | `ai.json` の形(項目の種類を `choice` と `number` から増やすか) | 別の題材で使ってから(#281) |
 | 版の保存の方式(git を `app/` の外に置くか、ファイルの写しか) | #278 |
-| 同梱するライブラリの範囲(#273 では React だけ。UI 部品まで入れるか) | #274 |
+| 同梱するライブラリの範囲(#273 では React だけ。UI 部品まで入れるか) | #274 では React だけのまま。後のカード |
+| コンパイルのエラーを作る AI に 1 回だけ返して直させるか | 後のカード |
 | AI が試作品の画面を見て操作する閉ループ(ヘッドレスのブラウザ) | 後のカード |
 | 配布の形(段階 2) | 利用者 |
 | 外から試作品を取り込むときの検査 | 共有を扱うカード |
