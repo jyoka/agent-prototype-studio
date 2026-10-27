@@ -34,7 +34,7 @@ test('サンプルは初回だけ写し、利用者の変更を上書きしな�
   assert.deepEqual(
     projects.map((p) => [p.id, p.title]),
     [
-      ['sample-job-consult', 'サンプル: 架空の求人相談(モック AI)'],
+      ['sample-job-consult', 'サンプル: 架空の求人相談(プロダクト内 AI)'],
       ['sample-library', 'サンプル: 架空の図書室'],
     ],
   );

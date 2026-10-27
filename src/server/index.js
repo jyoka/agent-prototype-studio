@@ -3,6 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { STUDIO_ROOT } from './config.js';
 import { createPreviewHandler } from './preview-server.js';
+import { createClaudeCodeConnection } from './product-ai/claude-code.js';
+import { createMockConnection } from './product-ai/mock.js';
 import { AiSessions } from './product-ai/session.js';
 import { ensureSampleProjects, projectsDir } from './projects.js';
 import { createToken } from './security.js';
@@ -49,7 +51,7 @@ async function listenOrExplain(server, port, host, envName) {
 }
 
 // Studio を起動する。待ち受けは loopback だけ(0.0.0.0 にはしない)。
-export async function startStudio(config, { log = () => {} } = {}) {
+export async function startStudio(config, { log = () => {}, env = process.env } = {}) {
   try {
     await fs.mkdir(projectsDir(config.home), { recursive: true });
     for (const id of await ensureSampleProjects(config.home, path.join(STUDIO_ROOT, 'samples'))) {
@@ -68,7 +70,11 @@ export async function startStudio(config, { log = () => {} } = {}) {
   const ports = { studio: config.studioPort, preview: config.previewPort };
   const servers = [];
 
-  const aiSessions = new AiSessions({ definitionOf: (id) => store.aiDefinition(id) });
+  // 接続の既定はモック。Claude Code は、利用者が画面で送るものと費用を確かめてから切り替える
+  const aiSessions = new AiSessions({
+    definitionOf: (id) => store.aiDefinition(id),
+    connections: [createMockConnection(), createClaudeCodeConnection({ env, allowed: config.allowClaudeCode === true })],
+  });
   const studioServer = http.createServer(createStudioHandler({ store, aiSessions, token, ports }));
   servers.push(studioServer);
   const previewHandler = createPreviewHandler({ home: config.home, store, ports });
@@ -90,6 +96,7 @@ export async function startStudio(config, { log = () => {} } = {}) {
     }
   } catch (error) {
     await Promise.all(servers.map((server) => new Promise((resolve) => server.close(() => resolve()))));
+    await aiSessions.close();
     throw error;
   }
 
@@ -102,6 +109,8 @@ export async function startStudio(config, { log = () => {} } = {}) {
     store,
     aiSessions,
     async close() {
+      // 応答を待っている Claude Code を止め、終わるまで待つ
+      await aiSessions.close();
       await Promise.all(
         servers.map(
           (server) =>

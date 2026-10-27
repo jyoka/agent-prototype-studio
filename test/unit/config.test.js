@@ -10,6 +10,12 @@ test('既定はホームの PrototypeStudio と 4317、4318 番', () => {
   assert.equal(config.studioPort, 4317);
   assert.equal(config.previewPort, 4318);
   assert.equal(config.openBrowser, true);
+  assert.equal(config.allowClaudeCode, false);
+});
+
+test('実モデル(Claude Code)は STUDIO_ALLOW_CLAUDE_CODE=1 のときだけ許す', () => {
+  assert.equal(loadConfig({ STUDIO_ALLOW_CLAUDE_CODE: '1' }).allowClaudeCode, true);
+  for (const value of ['', '0', 'true', 'yes']) assert.equal(loadConfig({ STUDIO_ALLOW_CLAUDE_CODE: value }).allowClaudeCode, false, value);
 });
 
 test('環境変数で置き場とポートを変えられる', () => {

@@ -30,5 +30,7 @@ export function loadConfig(env = process.env) {
     studioPort,
     previewPort,
     openBrowser: env.STUDIO_NO_OPEN !== '1',
+    // 実モデル(Claude Code)は、社内の利用条件を確かめた人が明示して許すまで選べない
+    allowClaudeCode: env.STUDIO_ALLOW_CLAUDE_CODE === '1',
   };
 }

@@ -18,6 +18,8 @@ header h1 { margin: 0; font-size: 1.3rem; color: #136f63; }
 .log li { margin-bottom: 0.6rem; max-width: 85%; }
 .log li p { margin: 0; padding: 0.5rem 0.7rem; border-radius: 10px; white-space: pre-wrap; }
 .log .who { display: block; font-size: 0.75rem; color: #5b6b6f; }
+.log .via { margin-left: 0.4rem; padding: 0 0.3rem; border: 1px solid #b9c7c4; border-radius: 3px; }
+.thinking { margin: 0.4rem 0; font-size: 0.85rem; color: #5b6b6f; }
 .log .assistant p { background: #e3f1ee; }
 .log .user { margin-left: auto; text-align: right; }
 .log .user p { background: #136f63; color: #fff; text-align: left; }

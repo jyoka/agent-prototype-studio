@@ -89,6 +89,11 @@ console.log('Prototype Studio を起動しました。');
 console.log('ブラウザで次の URL を開いてください(自動で開かないとき):');
 console.log(`  ${studio.url}`);
 console.log(`データの置き場: ${config.home}`);
+if (config.allowClaudeCode) {
+  console.log('プロダクト内 AI に Claude Code(実モデル)を選べます。切り替える前に、送るものと費用が画面に出ます。');
+} else {
+  console.log('プロダクト内 AI はモックだけで動きます(Claude Code を選ぶには STUDIO_ALLOW_CLAUDE_CODE=1)。');
+}
 console.log('止めるときは、このターミナルで Ctrl+C を押してください。');
 console.log('');
 if (config.openBrowser) openBrowser(studio.url);

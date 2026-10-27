@@ -66,12 +66,15 @@ function waitForUrl(child, output) {
 }
 
 // 利用者と同じ手順(npm start、または node bin/studio.js)で起動し、表示された URL を返す。
-export async function launchStudio(home, { useNpm = false } = {}) {
+// env で環境変数を足す。値が undefined の名前は消す(手元の ANTHROPIC_API_KEY などに左右されないため)
+export async function launchStudio(home, { useNpm = false, env: extraEnv = {} } = {}) {
   const command = useNpm ? (process.platform === 'win32' ? 'npm.cmd' : 'npm') : process.execPath;
   const args = useNpm ? ['start'] : ['bin/studio.js'];
+  const env = { ...process.env, STUDIO_HOME: home, STUDIO_NO_OPEN: '1', STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0', ...extraEnv };
+  for (const [name, value] of Object.entries(env)) if (value === undefined) delete env[name];
   const child = spawn(command, args, {
     cwd: ROOT,
-    env: { ...process.env, STUDIO_HOME: home, STUDIO_NO_OPEN: '1', STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0' },
+    env,
     detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
     shell: useNpm && process.platform === 'win32',

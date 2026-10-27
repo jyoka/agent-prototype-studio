@@ -57,8 +57,12 @@ let pollTimer = null;
 let refreshSeq = 0;
 let appliedSeq = 0;
 const preview = { frame: null, url: null, projectId: null, expectingLoad: false, unexpectedLoads: [], port: null };
-// 詳細の欄に出している、プロダクト内 AI の会話と状態
-const ai = { projectId: null, session: null, seq: 0 };
+// 詳細の欄に出している、プロダクト内 AI の会話と状態。
+// choices は選べる接続と、実行の前に出す「送るもの」と「費用」。confirm は実モデルへ切り替える前の確認
+const ai = { projectId: null, session: null, choices: null, seq: 0, confirm: null, switching: false };
+// 応答を待っている発言の数を、試作品ごとに数える。開き直しや作り直しの後も「止める」を出し続けるため
+const waitingByProject = new Map();
+const waitingFor = (projectId) => waitingByProject.get(projectId) ?? 0;
 
 // URL のフラグメントから鍵を読み、履歴に残さないよう消す(ADR-0001 の層 3)。
 function takeTokenFromHash() {
@@ -260,6 +264,99 @@ function formatAiValue(field, value) {
   return field.type === 'number' ? `${Number(value).toLocaleString('ja-JP')}${field.unit ?? ''}` : String(value);
 }
 
+const CONNECTION_CHECK = '架空のデータだけで試します。上のものが送られることと、費用がかかることを確かめました';
+
+function formatSeconds(ms) {
+  return `${(ms / 1000).toLocaleString('ja-JP', { maximumFractionDigits: 1 })} 秒`;
+}
+
+// 最後の応答の、接続、速さ、費用
+function lastReplyText(session) {
+  const last = session.messages.findLast((m) => m.role === 'assistant' && m.via);
+  if (!last) return '';
+  const label = ai.choices?.options.find((o) => o.kind === last.via)?.label ?? last.via;
+  const parts = [`最後の応答: ${label}`];
+  if (Number.isFinite(last.elapsedMs)) parts.push(formatSeconds(last.elapsedMs));
+  if (Number.isFinite(last.costUsd)) parts.push(`費用の目安 $${last.costUsd.toFixed(4)}`);
+  return parts.join('、');
+}
+
+// 実モデルへ切り替える前に、送り先、送るもの、送らないもの、費用を出す
+function sendsBlock(option) {
+  const box = element('div', undefined, 'ai-sends');
+  box.append(element('p', `送り先: ${option.sends.to}`));
+  const list = element('ul');
+  list.setAttribute('aria-label', '送るもの');
+  list.append(...option.sends.items.map((item) => element('li', item)));
+  box.append(element('p', '送るもの:'), list, element('p', option.sends.notSent, 'muted'));
+  const billing = element('p', undefined, 'ai-billing');
+  billing.dataset.kind = option.billing.kind;
+  billing.append(element('strong', `費用: ${option.billing.label}`), document.createTextNode(` ${option.billing.text}`));
+  box.append(billing);
+  const prompt = element('details');
+  prompt.append(element('summary', '送る指示の全文を見る'), element('pre', option.sends.systemPrompt));
+  box.append(prompt);
+  return box;
+}
+
+function confirmBlock(option) {
+  const box = element('div', undefined, 'ai-confirm');
+  box.setAttribute('role', 'group');
+  box.setAttribute('aria-label', `${option.label} に切り替える前の確認`);
+  box.append(element('p', `${option.label} に切り替えると、発言のたびに実際の AI モデルを呼びます。`, 'notice'), sendsBlock(option));
+  const label = element('label', undefined, 'ai-check');
+  const check = document.createElement('input');
+  check.type = 'checkbox';
+  check.checked = ai.confirm.checked;
+  label.append(check, document.createTextNode(CONNECTION_CHECK));
+  const ok = element('button', `${option.label} に切り替える`);
+  ok.type = 'button';
+  ok.disabled = !ai.confirm.checked || ai.switching;
+  check.addEventListener('change', () => {
+    ai.confirm.checked = check.checked;
+    ok.disabled = !check.checked || ai.switching;
+  });
+  ok.addEventListener('click', () => selectConnection(option.kind, true));
+  const cancel = element('button', 'やめる');
+  cancel.type = 'button';
+  cancel.addEventListener('click', () => {
+    ai.confirm = null;
+    renderAi();
+  });
+  const buttons = element('div', undefined, 'ai-buttons');
+  buttons.append(ok, cancel);
+  box.append(label, buttons);
+  return box;
+}
+
+// 接続を選ぶ欄。選べない接続は、理由と次の手順を出す
+function connectionPicker(session) {
+  const box = element('fieldset', undefined, 'ai-picker');
+  box.append(element('legend', '接続を選ぶ'));
+  for (const option of ai.choices?.options ?? []) {
+    const label = element('label');
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'ai-connection';
+    radio.value = option.kind;
+    radio.checked = ai.confirm ? ai.confirm.kind === option.kind : session.connection.kind === option.kind;
+    radio.disabled = !option.available || waitingFor(ai.projectId) > 0 || ai.switching;
+    radio.addEventListener('change', () => {
+      if (option.billing) {
+        ai.confirm = { kind: option.kind, checked: false };
+        renderAi();
+      } else {
+        ai.confirm = null;
+        selectConnection(option.kind, false);
+      }
+    });
+    label.append(radio, document.createTextNode(option.label));
+    box.append(label);
+    if (!option.available) box.append(element('p', option.reason, 'hint'));
+  }
+  return box;
+}
+
 // プロダクト内 AI の接続(モックか実モデルか)と、AI が理解した状態を出す
 function renderAi() {
   const { session } = ai;
@@ -276,31 +373,55 @@ function renderAi() {
   const connection = element('p', undefined, 'ai-connection');
   connection.dataset.kind = session.connection.kind;
   connection.append(element('strong', `接続: ${session.connection.label}`), document.createTextNode(` ${session.connection.description}`));
+  const nodes = [connection];
+  // 実モデルを選んでいる間は、発言の前にいつも送り先と費用が見えるようにする
+  const current = ai.choices?.options.find((o) => o.kind === session.connection.kind);
+  if (current?.billing && !ai.confirm) nodes.push(sendsBlock(current));
+  nodes.push(connectionPicker(session));
+  if (ai.confirm) {
+    const option = ai.choices?.options.find((o) => o.kind === ai.confirm.kind);
+    if (option) nodes.push(confirmBlock(option));
+  }
+  if (waitingFor(ai.projectId) > 0) {
+    const waiting = element('div', undefined, 'ai-waiting');
+    waiting.setAttribute('role', 'status');
+    const stop = element('button', '応答を止める');
+    stop.type = 'button';
+    stop.addEventListener('click', cancelAi);
+    waiting.append(element('span', `${session.connection.label} の応答を待っています…`), stop);
+    nodes.push(waiting);
+  }
+  const last = lastReplyText(session);
+  if (last) nodes.push(element('p', last, 'muted ai-last'));
   const list = element('dl', undefined, 'ai-state');
   list.setAttribute('aria-label', 'AI が理解した状態');
   for (const field of session.fields) {
     list.append(element('dt', field.label), element('dd', formatAiValue(field, session.state[field.key])));
   }
   const count = session.messages.filter((m) => m.role === 'user').length;
-  els.aiStatus.replaceChildren(
-    connection,
+  nodes.push(
     element('p', '架空のデータで試してください。実在の人や会社の情報は入れないでください。', 'muted'),
     element('p', session.name, 'ai-name'),
     element('p', `利用者の発言: ${count} 件`, 'muted'),
     list,
   );
+  els.aiStatus.replaceChildren(...nodes);
 }
 
 async function loadAi(projectId) {
   const seq = ++ai.seq;
   ai.projectId = projectId;
   ai.session = null;
+  ai.choices = null;
+  ai.confirm = null;
   renderAi();
   if (!projectId) return;
   try {
-    const { session } = await api(`/api/projects/${encodeURIComponent(projectId)}/ai`);
+    const base = `/api/projects/${encodeURIComponent(projectId)}/ai`;
+    const [{ session }, choices] = await Promise.all([api(base), api(`${base}/connections`)]);
     if (seq !== ai.seq) return;
     ai.session = session;
+    ai.choices = choices;
   } catch (error) {
     if (seq !== ai.seq) return;
     if (!(error instanceof ApiError && error.code === 'no-ai')) handleError(error);
@@ -313,7 +434,47 @@ function showAiSession(projectId, session) {
   // 先に送った読み込みの結果で、新しい状態を上書きしない
   ai.seq += 1;
   ai.session = session;
+  if (ai.choices) ai.choices.selected = session.connection.kind;
   renderAi();
+}
+
+async function selectConnection(kind, confirmed) {
+  const projectId = ai.projectId;
+  if (!projectId) return;
+  ai.switching = true;
+  renderAi();
+  try {
+    const { session } = await api(`/api/projects/${encodeURIComponent(projectId)}/ai/connection`, {
+      method: 'POST',
+      json: { kind, confirmed },
+    });
+    if (ai.projectId !== projectId) return;
+    ai.confirm = null;
+    addEvent('info', `プロダクト内 AI の接続を「${session.connection.label}」にしました。会話と状態はそのまま引き継ぎます。`);
+    showAiSession(projectId, session);
+    // 試作品にも知らせる(studio.ai.onChange)
+    if (preview.projectId === projectId) preview.port?.postMessage({ type: 'ai-session', session });
+  } catch (error) {
+    if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) {
+      addEvent('warning', `接続を切り替えられませんでした: ${error.message}`);
+    } else {
+      handleError(error);
+    }
+  } finally {
+    ai.switching = false;
+    renderAi();
+  }
+}
+
+// 応答を待っている実行を止める。止めた発言は会話に残らない
+async function cancelAi() {
+  const projectId = ai.projectId;
+  if (!projectId) return;
+  try {
+    await api(`/api/projects/${encodeURIComponent(projectId)}/ai/cancel`, { method: 'POST' });
+  } catch (error) {
+    handleError(error);
+  }
 }
 
 function clearEvents() {
@@ -438,10 +599,18 @@ function createAiRelay(iframe, port, projectId) {
           ? api(`${base}/corrections`, { method: 'POST', json: { changes: data.changes } })
           : api(base);
     inFlight += 1;
+    // 応答を待つ間は、詳細の欄に「止める」を出す
+    const waiting = data.op === 'send';
+    if (waiting) {
+      waitingByProject.set(projectId, waitingFor(projectId) + 1);
+      if (ai.projectId === projectId) renderAi();
+    }
     try {
       const { session } = await request;
       showAiSession(projectId, session);
       reply({ id: data.id, ok: true, session });
+      // 待つ間に開き直していたら、新しく開いた試作品に知らせる(studio.ai.onChange)
+      if (iframe !== preview.frame && preview.projectId === projectId) preview.port?.postMessage({ type: 'ai-session', session });
     } catch (error) {
       const code = error instanceof ApiError ? error.code : 'internal';
       if (code === 'offline' || code === 'token') handleError(error);
@@ -449,6 +618,10 @@ function createAiRelay(iframe, port, projectId) {
       reply({ id: data.id, ok: false, error: { code, message: error.message } });
     } finally {
       inFlight -= 1;
+      if (waiting) {
+        waitingByProject.set(projectId, Math.max(0, waitingFor(projectId) - 1));
+        if (ai.projectId === projectId) renderAi();
+      }
     }
   };
 }
