@@ -7,7 +7,7 @@ export class BusyError extends Error {}
 const BUSY = {
   running: 'このプロジェクトでは今、作る AI が作業中です。終わるか中断するまで待ってください',
   building: 'このプロジェクトは今ビルド中です。終わるまで待ってください',
-  versioning: 'このプロジェクトは今、版を保存か復元しているところです。終わるまで待ってください',
+  versioning: 'このプロジェクトは今、版の保存か復元、または引き継ぎの書き出しをしているところです。終わるまで待ってください',
 };
 export class NotFoundError extends Error {}
 
@@ -73,7 +73,7 @@ export class ProjectStore {
     this.entry(id).running = false;
   }
 
-  // 版の保存と復元を始める印。作る AI やビルドと同時には app/ を読み書きしない
+  // 版の保存と復元、引き継ぎの書き出しを始める印。作る AI やビルドと同時には app/ を読み書きしない
   claimVersions(id) {
     const entry = this.entry(id);
     if (entry.running) throw new BusyError(BUSY.running);

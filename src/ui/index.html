@@ -68,6 +68,20 @@
         <ol id="version-list" class="version-list" aria-label="保存した版"></ol>
         <p class="muted">保存すると、app/ のファイルと、プロダクト内 AI の会話と状態を残します。作業中の会話は Studio を止めると消えますが、保存した版は残ります。</p>
       </section>
+      <section aria-labelledby="handoff-heading">
+        <h3 id="handoff-heading">本番開発への引き継ぎ</h3>
+        <p class="muted">作業中の試作品を、本番開発の担当者に渡すフォルダーに書き出します。ソース、AI の設定、会話と状態、実機・モック・未接続の区別、未決事項が入ります。秘密情報らしい文字列があると書き出しません。</p>
+        <form id="handoff-form" class="handoff-form">
+          <label for="handoff-purpose">目的(この試作品で確かめたいこと)</label>
+          <textarea id="handoff-purpose" rows="2" maxlength="4000" disabled></textarea>
+          <label for="handoff-decided">決まったこと</label>
+          <textarea id="handoff-decided" rows="2" maxlength="4000" disabled></textarea>
+          <label for="handoff-undecided">未決事項</label>
+          <textarea id="handoff-undecided" rows="2" maxlength="4000" disabled></textarea>
+          <button type="submit" id="handoff-export" disabled>引き継ぎ用に書き出す</button>
+        </form>
+        <div id="handoff-result" class="handoff-result" role="status" hidden></div>
+      </section>
       <section aria-labelledby="build-heading">
         <h3 id="build-heading">ビルド</h3>
         <div id="build-status" class="build-status"></div>

@@ -78,6 +78,10 @@ const els = {
   saveVersion: $('save-version'),
   versionsMessage: $('versions-message'),
   versionList: $('version-list'),
+  handoffForm: $('handoff-form'),
+  handoffNotes: { purpose: $('handoff-purpose'), decided: $('handoff-decided'), undecided: $('handoff-undecided') },
+  handoffExport: $('handoff-export'),
+  handoffResult: $('handoff-result'),
 };
 
 class ApiError extends Error {
@@ -116,6 +120,9 @@ const waitingByProject = new Map();
 const waitingFor = (projectId) => waitingByProject.get(projectId) ?? 0;
 // 詳細の欄の「版」。保存した版の一覧と、作業中がどの版と同じか
 const versions = { projectId: null, data: null, seq: 0, busy: false, message: null };
+// 詳細の欄の「本番開発への引き継ぎ」(#280)。メモは試作品を選んだときだけ読み、書いている途中の文を上書きしない
+// target は読み込みを頼んだ試作品、projectId は読み終えた試作品
+const handoff = { target: undefined, projectId: null, seq: 0, busy: false, result: null, message: null, last: null };
 
 // URL のフラグメントから鍵を読み、履歴に残さないよう消す(ADR-0001 の層 3)。
 function takeTokenFromHash() {
@@ -235,6 +242,8 @@ function render() {
   renderBuild(project);
   renderMake(project);
   renderVersions(project);
+  if ((project?.id ?? null) !== handoff.target) loadHandoff(project?.id ?? null);
+  renderHandoff(project);
   if (!project) {
     showPlaceholder('試作品がありません。');
   } else if (!project.previewUrl) {
@@ -264,7 +273,7 @@ function renderList() {
     state.textContent = project.running
       ? '作る AI が作業中'
       : project.versioning
-        ? '版を保存か復元しています'
+        ? '版の保存・復元か書き出しをしています'
         : project.building
         ? 'ビルド中'
         : failed
@@ -843,9 +852,10 @@ function versionItem(project, version, working, locked) {
 
 function renderVersions(project) {
   const data = project && versions.projectId === project.id ? versions.data : null;
-  const locked = !project || project.running || project.building || project.versioning || versions.busy;
+  const locked = !project || project.running || project.building || project.versioning || versions.busy || handoff.busy;
   els.versionName.disabled = locked;
   els.saveVersion.disabled = locked;
+  lockHandoff(project);
   els.versionsMessage.hidden = !versions.message;
   els.versionsMessage.textContent = versions.message?.text ?? '';
   els.versionsMessage.dataset.kind = versions.message?.kind ?? '';
@@ -917,6 +927,108 @@ async function saveVersion() {
   } finally {
     versions.busy = false;
     if (selectedId !== project.id) versions.message = null;
+    renderVersions(selectedProject());
+  }
+}
+
+// 版の保存や復元の間も押せないようにする。renderVersions からも呼ぶ
+function lockHandoff(project) {
+  const locked = !project || handoff.projectId !== project.id || project.running || project.building || project.versioning || versions.busy || handoff.busy;
+  for (const field of Object.values(els.handoffNotes)) field.disabled = locked;
+  els.handoffExport.disabled = locked;
+  els.handoffExport.textContent = handoff.busy ? '書き出しています…' : '引き継ぎ用に書き出す';
+}
+
+function renderHandoff(project) {
+  lockHandoff(project);
+  const box = els.handoffResult;
+  if (handoff.message) {
+    box.hidden = false;
+    box.dataset.kind = 'failed';
+    box.replaceChildren(element('p', handoff.message));
+    return;
+  }
+  if (handoff.result) {
+    const { dir, counts, excluded } = handoff.result;
+    box.hidden = false;
+    box.dataset.kind = 'ok';
+    const where = element('p', '書き出した場所: ');
+    where.append(element('code', dir));
+    const copy = element('button', '場所をコピー');
+    copy.type = 'button';
+    copy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(dir);
+        copy.textContent = 'コピーしました';
+      } catch {
+        copy.textContent = 'コピーできません。場所を選んでコピーしてください';
+      }
+    });
+    const nodes = [
+      element('p', `書き出しました。実機 ${counts.real} 件、モック ${counts.mock} 件、未接続 ${counts.missing} 件、未決事項 ${counts.questions} 件。`),
+      where,
+      copy,
+      element('p', 'フォルダーの README.md に、区分の一覧、未決事項、試した会話があります。フォルダーごと開発の担当者に渡してください。', 'muted'),
+    ];
+    if (excluded.length > 0) nodes.push(element('p', `秘密を入れるファイルは外しました: ${excluded.map((e) => e.path).join('、')}`, 'muted'));
+    box.replaceChildren(...nodes);
+    return;
+  }
+  if (handoff.last) {
+    box.hidden = false;
+    box.dataset.kind = 'last';
+    const last = element('p', `前に書き出したもの(${new Date(handoff.last.createdAt).toLocaleString('ja-JP')}): `);
+    last.append(element('code', handoff.last.dir));
+    box.replaceChildren(last);
+    return;
+  }
+  box.hidden = true;
+  box.replaceChildren();
+}
+
+async function loadHandoff(projectId) {
+  const seq = ++handoff.seq;
+  handoff.target = projectId;
+  handoff.projectId = null;
+  handoff.result = null;
+  handoff.message = null;
+  handoff.last = null;
+  for (const field of Object.values(els.handoffNotes)) field.value = '';
+  if (!projectId) return;
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(projectId)}/handoff`);
+    if (seq !== handoff.seq || projectId !== selectedId) return;
+    for (const [key, field] of Object.entries(els.handoffNotes)) field.value = data.notes[key] ?? '';
+    handoff.last = data.last;
+  } catch (error) {
+    if (seq !== handoff.seq) return;
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    handoff.message = `引き継ぎのメモを読めませんでした: ${error.message}`;
+  }
+  handoff.projectId = projectId;
+  renderHandoff(selectedProject());
+}
+
+async function exportHandoff() {
+  const project = selectedProject();
+  if (!project || handoff.busy || handoff.projectId !== project.id) return;
+  handoff.busy = true;
+  handoff.result = null;
+  handoff.message = null;
+  renderHandoff(project);
+  renderVersions(project);
+  try {
+    const notes = Object.fromEntries(Object.entries(els.handoffNotes).map(([key, field]) => [key, field.value]));
+    const data = await api(`/api/projects/${encodeURIComponent(project.id)}/handoff`, { method: 'POST', json: notes });
+    if (handoff.projectId !== project.id) return;
+    handoff.result = data.handoff;
+    handoff.last = data.last;
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    if (handoff.projectId === project.id) handoff.message = `書き出せませんでした: ${error.message}`;
+  } finally {
+    handoff.busy = false;
+    renderHandoff(selectedProject());
     renderVersions(selectedProject());
   }
 }
@@ -1464,6 +1576,11 @@ els.rebuild.addEventListener('click', async () => {
   await refresh();
   // つながらないときも、ボタンと詳細の欄を元に戻す
   render();
+});
+
+els.handoffForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  exportHandoff();
 });
 
 els.saveForm.addEventListener('submit', (event) => {

@@ -5,6 +5,7 @@ import { isAllowedHost, tokensEqual } from './security.js';
 import { AgentUnavailableError, RequestError } from './build-requests.js';
 import { AiError } from './product-ai/session.js';
 import { BusyError, NotFoundError } from './store.js';
+import { HandoffError } from './handoff.js';
 import { VersionError } from './versions.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -82,7 +83,7 @@ function projectView(project, previewPort, runs) {
 }
 
 // Studio 画面と API。API はすべてトークンを要求する(ADR-0001 の層 3)。
-export function createStudioHandler({ store, requests, agent, aiSessions, versions, token, ports }) {
+export function createStudioHandler({ store, requests, agent, aiSessions, versions, handoffs, token, ports }) {
   const view = (project) => projectView(project, ports.preview, requests.summary(project.id));
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
@@ -166,6 +167,8 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
       if (req.method === 'GET' && !restore) return handleVersions(req, res, id, null);
       if (req.method === 'POST') return handleVersions(req, res, id, restore ? versionId : undefined);
     }
+    const handoffMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/handoff$/.exec(url.pathname);
+    if (handoffMatch && (req.method === 'GET' || req.method === 'POST')) return handleHandoff(req, res, handoffMatch[1]);
     const aiMatch = /^\/api\/projects\/([^/]+)\/ai(?:\/(messages|corrections|reset|connections|connection|cancel|retry|trace|clear-trace))?$/.exec(
       url.pathname,
     );
@@ -192,6 +195,21 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
     }
   }
 
+  // 本番開発への引き継ぎ。GET は前に書いたメモと最後の書き出し、POST は書き出し
+  async function handleHandoff(req, res, id) {
+    try {
+      if (req.method === 'GET') return sendJson(res, 200, await handoffs.view(id));
+      const body = await readJson(req);
+      return sendJson(res, 200, await handoffs.export(id, body));
+    } catch (error) {
+      if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', error.message);
+      if (error instanceof BusyError) return sendError(res, 409, 'busy', error.message);
+      if (error instanceof HandoffError) return sendError(res, error.status, error.code, error.message);
+      if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
+      throw error;
+    }
+  }
+
   // プロダクト内 AI。試作品からの要求は、Studio 画面が形を確かめてから、ここへ送る。
   // 接続の切り替えと中断と試し直し(connections、connection、cancel、retry)と実行の記録(trace、clear-trace)は、Studio 画面だけが送る。試作品からは届かない。
   // retry は試し直せる会話と結果で、Studio 画面だけが使う(画面は試作品に session だけを渡す)
@@ -209,7 +227,7 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
     // 接続の一覧と中断、実行の記録は会話を変えないので通す。実モデルの応答はいつでも止められる
     const changesConversation = action && !['connections', 'cancel', 'trace', 'clear-trace'].includes(action);
     if (changesConversation && store.isVersioning(id)) {
-      return sendError(res, 409, 'busy', '版を保存か復元しているところです。終わってから試してください');
+      return sendError(res, 409, 'busy', '版の保存か復元、または引き継ぎの書き出しをしているところです。終わってから試してください');
     }
     try {
       if (action === 'connections') return sendJson(res, 200, aiSessions.connectionChoices(id));
@@ -221,7 +239,7 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
       const body = action ? await readJson(req) : null;
       // 本文を読んでいる間に、版の操作が始まったかもしれない
       if (changesConversation && store.isVersioning(id)) {
-        return sendError(res, 409, 'busy', '版を保存か復元しているところです。終わってから試してください');
+        return sendError(res, 409, 'busy', '版の保存か復元、または引き継ぎの書き出しをしているところです。終わってから試してください');
       }
       let session;
       if (!action) session = aiSessions.view(id);

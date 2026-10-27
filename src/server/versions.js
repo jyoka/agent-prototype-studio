@@ -24,8 +24,8 @@ export class VersionError extends Error {
 }
 
 // app/ の写し。普通のファイルとフォルダーだけを写し、シンボリックリンクなどはたどらずに省く。
-// 大きさは app/ の検査(inspect.js)と同じ上限で止める。
-async function copyTree(from, to) {
+// 大きさは app/ の検査(inspect.js)と同じ上限で止める。skip(app/ からの相対パス)が true のファイルは写さない
+export async function copyTree(from, to, { skip = () => false } = {}) {
   let files = 0;
   let bytes = 0;
   async function walk(src, dest) {
@@ -36,6 +36,7 @@ async function copyTree(from, to) {
       if (entry.isDirectory()) {
         await walk(source, target);
       } else if (entry.isFile()) {
+        if (skip(path.relative(from, source).split(path.sep).join('/'))) continue;
         const { size } = await fs.lstat(source);
         files += 1;
         bytes += size;

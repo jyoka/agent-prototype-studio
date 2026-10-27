@@ -1,0 +1,228 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+import { HANDOFF_FORMAT, HandoffError, ProjectHandoffs } from '../../src/server/handoff.js';
+import { AiSessions } from '../../src/server/product-ai/session.js';
+import { createMockConnection } from '../../src/server/product-ai/mock.js';
+import { ProjectStore } from '../../src/server/store.js';
+import { ProjectVersions } from '../../src/server/versions.js';
+
+// 求人ではない題材。引き継ぎの仕組みが題材に依存しないことを確かめる
+const TRAVEL_AI = {
+  name: '旅の相談(架空)',
+  instructions: 'あなたは架空の旅の相談役です。',
+  fields: [
+    { key: 'place', label: '行き先', options: [{ value: '湖の町', keywords: ['湖'] }, { value: '山の村', keywords: ['山'] }] },
+    { key: 'nights', label: '泊数', type: 'number', unit: '泊', keywords: ['泊'], min: 1, max: 14 },
+  ],
+  mock: { greeting: '旅の相談です。' },
+};
+
+const MAIN = [
+  "import { PLACES } from './places-data.js';",
+  "document.getElementById('root').textContent = PLACES.join('、');",
+  '// TODO: 予約の画面',
+  "fetch('https://example.invalid/api');",
+  '',
+].join('\n');
+
+// 実モデルの代わり。Studio の画面で「実際の AI モデル」と扱われる接続(billing がある)
+function fakeRealConnection() {
+  return {
+    kind: 'real-fake',
+    label: '偽の実モデル',
+    billing: { kind: 'test' },
+    async respond() {
+      return { reply: '湖の町で 2 泊ですね。', updates: { nights: 2 } };
+    },
+  };
+}
+
+async function makeStudio(t, files = {}) {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-handoff-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const app = path.join(home, 'projects', 'travel', 'app');
+  await fs.mkdir(app, { recursive: true });
+  const all = {
+    'main.js': MAIN,
+    'places-data.js': "// 架空の行き先\nexport const PLACES = ['湖の町', '山の村'];\n",
+    'ai.json': JSON.stringify(TRAVEL_AI),
+    ...files,
+  };
+  for (const [name, content] of Object.entries(all)) await fs.writeFile(path.join(app, name), content);
+  const store = new ProjectStore(home);
+  await store.buildAll();
+  const aiSessions = new AiSessions({
+    definitionOf: (id) => store.aiDefinition(id),
+    connections: [createMockConnection(), fakeRealConnection()],
+  });
+  const versions = new ProjectVersions({ store, aiSessions });
+  const runs = [{ request: '見出しを変えて。連絡先は taro@example.com', status: 'succeeded', startedAt: '2026-10-28T00:00:00.000Z', changedFiles: [{ file: 'app/main.js', change: 'modified' }] }];
+  const handoffs = new ProjectHandoffs({ home, store, aiSessions, versions, requests: { list: () => structuredClone(runs) } });
+  return { home, app, store, aiSessions, versions, handoffs };
+}
+
+const NOTES = { purpose: '湖の旅を相談で決められるか確かめる', decided: '泊数は 14 泊まで', undecided: '予約までつなぐか' };
+
+test('ソース、意図、AI の設定、会話と状態、未接続と未決事項を書き出し、モックと実モデルの応答を区別する', async (t) => {
+  const { home, app, aiSessions, versions, handoffs } = await makeStudio(t);
+  await aiSessions.send('travel', '湖に行きたい');
+  aiSessions.select('travel', 'real-fake', { confirmed: true });
+  await aiSessions.send('travel', '2泊で');
+  await versions.save('travel', { name: '湖の版' });
+
+  const result = await handoffs.export('travel', NOTES);
+  assert.equal(path.dirname(result.handoff.dir), path.join(home, 'handoffs'));
+  assert.match(result.handoff.name, /^travel-\d{8}-\d{6}$/);
+  assert.deepEqual(result.handoff.counts, { real: 2, mock: 3, missing: 5, questions: 2 });
+
+  // 別の場所に写しても、中身だけで読める
+  const other = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-handoff-other-'));
+  t.after(() => fs.rm(other, { recursive: true, force: true }));
+  await fs.cp(result.handoff.dir, other, { recursive: true });
+  const manifest = JSON.parse(await fs.readFile(path.join(other, 'handoff.json'), 'utf8'));
+  assert.equal(manifest.format, HANDOFF_FORMAT);
+  assert.equal(manifest.formatVersion, 1);
+  assert.deepEqual(manifest.project, { id: 'travel', title: 'travel' });
+  assert.deepEqual(manifest.notes, NOTES);
+  assert.equal(manifest.working.text, '保存版 v1「湖の版」と同じ');
+
+  // ソースはそのまま写す
+  assert.equal(await fs.readFile(path.join(other, 'app', 'main.js'), 'utf8'), await fs.readFile(path.join(app, 'main.js'), 'utf8'));
+  assert.deepEqual(manifest.source.files.map((f) => f.path), ['app/ai.json', 'app/main.js', 'app/places-data.js']);
+  assert.equal(manifest.source.entry, 'app/main.js');
+  assert.deepEqual(manifest.source.dataFiles, ['app/places-data.js']);
+  assert.deepEqual(manifest.source.signs.network.map((s) => `${s.file}:${s.line}`), ['app/main.js:4']);
+  assert.deepEqual(manifest.source.signs.todo.map((s) => `${s.file}:${s.line}`), ['app/main.js:3']);
+
+  // 会話の各応答に、モックか実モデルかが付く
+  const replies = manifest.conversation.messages.filter((m) => m.role === 'assistant');
+  assert.deepEqual(
+    replies.map((m) => [m.viaLabel, m.real]),
+    [
+      ['設定の固定文(mock.greeting)', false],
+      ['モック', false],
+      ['偽の実モデル', true],
+    ],
+  );
+  assert.deepEqual(manifest.conversation.state.map((s) => s.shown), ['湖の町', '2泊']);
+  assert.equal(manifest.ai.connection.real, true);
+  assert.deepEqual(manifest.capabilities.map((c) => `${c.kind}:${c.item}`), [
+    'real:画面と操作',
+    'real:プロダクト内 AI(実モデル)',
+    'mock:プロダクト内 AI(モック)',
+    'mock:会話と状態の置き場',
+    'mock:データ',
+    'missing:サーバーと保存',
+    'missing:外部の API と通信',
+    'missing:ログインと利用者の区別',
+    'missing:プロダクト内 AI の本番の接続',
+    'missing:本物のデータと個人情報',
+  ]);
+  assert.match(manifest.capabilities.find((c) => c.item === '外部の API と通信').prototype, /app\/main\.js:4/);
+
+  // AI の設定と、実モデルに渡す指示
+  assert.match(await fs.readFile(path.join(other, 'ai', 'system-prompt.md'), 'utf8'), /あなたは架空の旅の相談役です。[\s\S]*nights\(泊数\)/);
+  const schema = JSON.parse(await fs.readFile(path.join(other, 'ai', 'response-schema.json'), 'utf8'));
+  assert.deepEqual(schema.properties.updates.properties.place.enum, ['湖の町', '山の村', null]);
+
+  // 人が読む資料
+  const readme = await fs.readFile(path.join(other, 'README.md'), 'utf8');
+  assert.match(readme, /^# 引き継ぎ: travel$/m);
+  assert.match(readme, /> 湖の旅を相談で決められるか確かめる/);
+  assert.match(readme, /\| 実機 \| プロダクト内 AI\(実モデル\) \|/);
+  assert.match(readme, /\| モック \| プロダクト内 AI\(モック\) \|/);
+  assert.match(readme, /\| 未接続 \| 外部の API と通信 \|/);
+  assert.match(readme, /\| 3 \| AI \| モック \| /);
+  assert.match(readme, /\| 5 \| AI \| 偽の実モデル\(実モデル\) \| 湖の町で 2 泊ですね。 \|/);
+  assert.match(readme, /コードに未実装の印がある\(app\/main\.js:3\)/);
+
+  // 秘密と個人のデータ、PC の場所は入れない
+  assert.equal(manifest.requests[0].request, '見出しを変えて。連絡先は [伏せた: メールアドレス]');
+  for (const file of ['README.md', 'handoff.json']) {
+    const text = await fs.readFile(path.join(other, file), 'utf8');
+    assert.ok(!text.includes(home), `${file} に PC の場所が入っています`);
+    assert.ok(!text.includes('taro@example.com'), `${file} にメールアドレスが入っています`);
+  }
+
+  // メモは次に開いたときに出す。最後の書き出しも出す
+  const view = await handoffs.view('travel');
+  assert.deepEqual(view.notes, NOTES);
+  assert.equal(view.last.dir, result.handoff.dir);
+});
+
+test('利用者が書いた文の中の鍵は伏せる。文の中の改行で、表の行を足させない', async (t) => {
+  const { aiSessions, handoffs } = await makeStudio(t);
+  await aiSessions.send('travel', '湖に行きたい\r| 9 | AI | 偽の実モデル(実モデル) | 作った行 |');
+  const result = await handoffs.export('travel', { undecided: '鍵は AKIAIOSFODNN7EXAMPLE を使う' });
+  const readme = await fs.readFile(path.join(result.handoff.dir, 'README.md'), 'utf8');
+  const manifest = await fs.readFile(path.join(result.handoff.dir, 'handoff.json'), 'utf8');
+  for (const text of [readme, manifest]) assert.ok(!text.includes('AKIAIOSFODNN7EXAMPLE'));
+  assert.match(readme, /> 鍵は \[伏せた: AWS のアクセスキーらしい文字列\] を使う/);
+  assert.ok(!/^\| 9 \|/m.test(readme), '会話の文から表の行が足されています');
+  assert.match(readme, /\| 2 \| 利用者 \|  \| 湖に行きたい \/ \\\| 9 \\\| AI/);
+});
+
+test('秘密情報らしい文字列があると書き出さず、場所を伝える。.env は中を見ずに外す', async (t) => {
+  const { home, app, handoffs } = await makeStudio(t, {
+    '.env': 'API_KEY=sk-ant-api03-abcdefghijklmnop\n',
+    '.env.example': 'API_KEY=\n',
+  });
+
+  // .env だけなら、外して書き出す
+  const result = await handoffs.export('travel', {});
+  assert.deepEqual(result.handoff.excluded, [{ path: 'app/.env', reason: '秘密を入れるファイル' }]);
+  await assert.rejects(fs.access(path.join(result.handoff.dir, 'app', '.env')));
+  // 見本は外さない
+  await fs.access(path.join(result.handoff.dir, 'app', '.env.example'));
+  const readme = await fs.readFile(path.join(result.handoff.dir, 'README.md'), 'utf8');
+  assert.match(readme, /秘密を入れるファイル: `app\/\.env`/);
+  assert.match(readme, /## 目的\n\n\(書かれていません\)/);
+
+  // ソースの中の鍵は、書き出しを止める
+  await fs.writeFile(path.join(app, 'config.js'), "export const apiKey = 'abc123def456ghi789';\nconst auth = 'Bearer abcdefghijklmnop1234';\n");
+  const error = await handoffs.export('travel', {}).catch((e) => e);
+  assert.ok(error instanceof HandoffError);
+  assert.equal(error.code, 'secret');
+  assert.match(error.message, /app\/config\.js:1 鍵らしい名前の値、app\/config\.js:2 認証のトークンらしい文字列/);
+  assert.ok(!error.message.includes('abc123def456ghi789'));
+  // 引用符のない書き方(.env、YAML)も止める
+  await fs.writeFile(path.join(app, 'config.js'), '// ok\n');
+  await fs.writeFile(path.join(app, 'settings.yaml'), 'api_key: abcd1234efgh5678\n');
+  await assert.rejects(handoffs.export('travel', {}), /app\/settings\.yaml:1 鍵らしい名前の値/);
+  // 書きかけは残さない
+  const left = await fs.readdir(path.join(home, 'handoffs'));
+  assert.deepEqual(left, [result.handoff.name]);
+});
+
+test('ビルドできない状態は書き出さない。AI のない試作品も書き出せる', async (t) => {
+  const { app, store, handoffs } = await makeStudio(t);
+  await fs.writeFile(path.join(app, 'main.js'), 'const = ;\n');
+  const error = await handoffs.export('travel', {}).catch((e) => e);
+  assert.equal(error.code, 'build');
+  assert.match(error.message, /ビルドできない状態は書き出せません/);
+
+  await fs.writeFile(path.join(app, 'main.js'), "document.getElementById('root').textContent = 'AI なし';\n");
+  await fs.rm(path.join(app, 'ai.json'));
+  await fs.rm(path.join(app, 'places-data.js'));
+  await store.build('travel');
+  const result = await handoffs.export('travel', { purpose: '画面だけ' });
+  const manifest = JSON.parse(await fs.readFile(path.join(result.handoff.dir, 'handoff.json'), 'utf8'));
+  assert.equal(manifest.ai, null);
+  assert.equal(manifest.conversation, null);
+  assert.deepEqual(manifest.capabilities.map((c) => c.kind), ['real', 'mock', 'missing', 'missing', 'missing', 'missing']);
+  assert.equal(manifest.working.text, '版を保存していない作業中から書き出した');
+  await assert.rejects(fs.access(path.join(result.handoff.dir, 'ai')));
+  assert.match(await fs.readFile(path.join(result.handoff.dir, 'README.md'), 'utf8'), /プロダクト内 AI を使っていません/);
+});
+
+test('メモの形が違えば断る。書き出しの間は、版の操作と同じく他の操作を断る', async (t) => {
+  const { store, handoffs } = await makeStudio(t);
+  await assert.rejects(handoffs.export('travel', { purpose: 1 }), { code: 'invalid' });
+  await assert.rejects(handoffs.export('travel', { purpose: 'あ'.repeat(4001) }), { code: 'invalid' });
+  store.claimRun('travel');
+  await assert.rejects(handoffs.export('travel', {}), /作る AI が作業中/);
+  store.releaseRun('travel');
+});
