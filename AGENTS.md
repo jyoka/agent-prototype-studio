@@ -1,0 +1,43 @@
+# AGENTS.md
+
+このリポジトリ(agent-prototype-studio)で作業するエージェントへの案内です。人向けの決まりは [CONTRIBUTING.md](CONTRIBUTING.md)
+にあり、ここはその入口です。食い違ったら CONTRIBUTING.md が正です。
+
+## まず読むもの
+
+| 知りたいこと | 読むもの |
+|---|---|
+| 何を作るか | [docs/prd.md](docs/prd.md)(最後の「PRD の後に決めたこと」が正) |
+| 全体の部品とデータの流れ | [docs/architecture/hld.md](docs/architecture/hld.md) |
+| なぜこの作りなのか(隔離、作る AI の起動) | [docs/adr/0001-local-runtime-and-isolation.md](docs/adr/0001-local-runtime-and-isolation.md) |
+| これからの画面 | [docs/design/ux-redesign.md](docs/design/ux-redesign.md) |
+| 使い方の全部 | [docs/usage.md](docs/usage.md)、[docs/claude-code.md](docs/claude-code.md) |
+
+## 書き方
+
+- コメント、画面とターミナルの文は日本語。名前(変数、関数)は英語。周りのコードに合わせる。Node.js 22 以上、ES modules
+- README と docs は日本語。結論を先に、1 文は短く(目安 40 字)、同じものには同じ語。em ダッシュと en ダッシュは使わない。
+  詳しくは [CONTRIBUTING.md の「書き方」](CONTRIBUTING.md#書き方)
+- README の構成は決まっている([CONTRIBUTING.md の「README の構成」](CONTRIBUTING.md#readme-の構成))。
+  詳しいことは README に足さず、docs に置いてリンクする
+- 使い方が変わる変更は、同じ PR で README と関係する docs も直す。部品や流れが変わるなら hld.md も直す
+
+## 確かめ方
+
+```sh
+npm test                                   # 単体と結合(数秒)
+node --test test/unit/<名前>.test.js       # 一部だけ
+npm run test:e2e                           # ブラウザの E2E(1 分以内)
+npx playwright test test/e2e/<名前>.spec.js  # E2E の一部だけ
+```
+
+作業中は、変えたところに関係するテストだけを動かす。画面や流れを変えたら、関係する E2E も動かす。
+不具合は、利用者から見た動きを再現する E2E を先に書いてから直す。
+
+## してはいけないこと
+
+- 実モデルを勝手に呼ばない。`STUDIO_AGENT=claude`、`STUDIO_ALLOW_CLAUDE_CODE=1`、`npm run check:claude -- --run` は、
+  人に頼まれたときだけ。テストは偽接続と偽の CLI(`test/fixtures/fake-claude.js`)を使う
+- 実データ(本物の個人情報、社内のデータ)をサンプル、テスト、docs に入れない。架空のデータだけを使う
+- ADR 0001 の守り(loopback だけ、トークン、`sandbox` の iframe と CSP、`app/` の外に書かせない)を弱めない
+- 秘密の値(`.env`、API キー、Claude Code のログインの情報)を読まない、表示しない、コミットしない
