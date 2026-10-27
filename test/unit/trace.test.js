@@ -259,3 +259,21 @@ test('Claude Code を起動できなかったときは、渡すはずだった�
     return true;
   });
 });
+
+test('版を戻しても、記録は消さない。戻した会話は記録の前の発言を書き換えない', async () => {
+  const definition = travel();
+  const sessions = new AiSessions({ definitionOf: () => definition });
+  await sessions.send('p', '湖に行きたい');
+  const saved = sessions.snapshot('p');
+  await sessions.send('p', '山にします');
+  assert.equal(sessions.restore('p', saved), true);
+  assert.equal(sessions.view('p').state.place, '湖の町');
+  const { entries } = sessions.trace('p');
+  assert.deepEqual(
+    entries.map((entry) => [entry.type, entry.status, entry.text]),
+    [
+      ['reply', 'ok', '山にします'],
+      ['reply', 'ok', '湖に行きたい'],
+    ],
+  );
+});

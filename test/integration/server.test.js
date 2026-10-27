@@ -241,6 +241,58 @@ test('プロダクト内 AI の API: 会話、修正、リセットと、その�
   assert.equal((await call(`${base}/reset`)).status, 404);
 });
 
+test('版の API: 保存、一覧、復元と、その守り', async (t) => {
+  const { studio, token, sp, host } = await withStudio(t);
+  const base = '/api/projects/sample-job-consult/versions';
+  const headers = { host, 'x-studio-token': token, origin: `http://${host}`, 'content-type': 'application/json' };
+  const call = async (pathname, json, extra = {}) => {
+    const res = await request(sp, {
+      method: json === undefined ? 'GET' : 'POST',
+      pathname,
+      headers: { ...headers, ...extra },
+      body: json === undefined ? undefined : JSON.stringify(json),
+    });
+    return { status: res.status, body: JSON.parse(res.body) };
+  };
+
+  assert.deepEqual((await call(base)).body, {
+    versions: [],
+    working: { files: 'none', versionId: null, conversation: 'initial', baseVersionId: null },
+  });
+  await call('/api/projects/sample-job-consult/ai/messages', { text: 'カフェで働きたいです' });
+  const saved = await call(base, { name: '最初' });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.version.number, 1);
+  assert.equal(saved.body.working.files, 'saved');
+  assert.equal(saved.body.working.conversation, 'saved');
+
+  await call('/api/projects/sample-job-consult/ai/reset', {});
+  const listed = await call(base);
+  assert.equal(listed.body.working.conversation, 'initial');
+  const restored = await call(`${base}/${saved.body.version.id}/restore`, {});
+  assert.equal(restored.status, 200);
+  assert.equal(restored.body.conversation, 'restored');
+  const session = await call('/api/projects/sample-job-consult/ai');
+  assert.equal(session.body.session.state.jobType, 'カフェのホール');
+
+  assert.equal((await call(`${base}/0123456789abcdef/restore`, {})).body.error.code, 'not-found');
+  assert.equal((await call(`${base}/..%2F..%2Fx/restore`, {})).status, 404);
+  assert.equal((await call('/api/projects/nothing/versions')).status, 404);
+  assert.equal((await call(base, { name: 1 })).body.error.code, 'invalid');
+  // トークンと Origin
+  assert.equal((await call(base, undefined, { 'x-studio-token': 'x' })).status, 401);
+  assert.equal((await call(base, {}, { origin: 'http://evil.example' })).status, 403);
+  assert.equal((await call(`${base}/${saved.body.version.id}/restore`)).status, 404);
+
+  // 版の保存と復元の間は、プロダクト内 AI の会話を変えない
+  studio.store.claimVersions('sample-job-consult');
+  const during = await call('/api/projects/sample-job-consult/ai/messages', { text: 'アルバイト' });
+  assert.equal(during.status, 409);
+  assert.match(during.body.error.message, /版を保存か復元しているところ/);
+  assert.equal((await call('/api/projects/sample-job-consult/ai')).status, 200);
+  studio.store.releaseVersions('sample-job-consult');
+});
+
 test('プロダクト内 AI の接続の API: 既定はモック、実モデルは許されるまで選べず、Studio 画面以外からは切り替えられない', async (t) => {
   const { token, sp, host } = await withStudio(t);
   const base = '/api/projects/sample-job-consult/ai';
