@@ -261,6 +261,15 @@ button { font: inherit; }
 .save-form input { flex: 1; min-width: 0; font: inherit; padding: 0.25rem 0.4rem; }
 .versions-message { margin: 0.5rem 0 0; padding: 0.4rem 0.6rem; border-radius: 4px; background: #eaf5ee; }
 .versions-message[data-kind="failed"] { background: var(--error-bg); color: var(--error); }
+.handoff-form { display: flex; flex-direction: column; gap: 0.25rem; }
+.handoff-form label { font-size: 0.8rem; color: var(--muted); }
+.handoff-form textarea { font: inherit; padding: 0.25rem 0.4rem; border: 1px solid var(--line); border-radius: 6px; resize: vertical; }
+.handoff-form button { align-self: flex-start; margin-top: 0.2rem; }
+.handoff-result { margin: 0.5rem 0 0; padding: 0.4rem 0.6rem; border-radius: 4px; background: #eaf5ee; }
+.handoff-result[data-kind="failed"] { background: var(--error-bg); color: var(--error); }
+.handoff-result[data-kind="last"] { background: transparent; padding: 0; color: var(--muted); }
+.handoff-result p { margin: 0 0 0.3rem; }
+.handoff-result code { word-break: break-all; }
 .version-list { list-style: none; margin: 0.5rem 0; padding: 0; max-height: 40vh; overflow: auto; }
 .version { padding: 0.4rem 0; border-bottom: 1px solid var(--line); }
 .version p { margin: 0 0 0.2rem; }

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { connectionView, resolveConnection } from './agent-connection.js';
 import { BuildRequests } from './build-requests.js';
 import { STUDIO_ROOT } from './config.js';
+import { ProjectHandoffs } from './handoff.js';
 import { createPreviewHandler } from './preview-server.js';
 import { createClaudeCodeConnection } from './product-ai/claude-code.js';
 import { createMockConnection } from './product-ai/mock.js';
@@ -89,8 +90,9 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
     connections: [createMockConnection(), createClaudeCodeConnection({ env, allowed: config.allowClaudeCode === true })],
   });
   const versions = new ProjectVersions({ store, aiSessions, log });
+  const handoffs = new ProjectHandoffs({ home: config.home, store, aiSessions, versions, requests, log });
   const studioServer = http.createServer(
-    createStudioHandler({ store, requests, agent: connectionView(connection), aiSessions, versions, token, ports }),
+    createStudioHandler({ store, requests, agent: connectionView(connection), aiSessions, versions, handoffs, token, ports }),
   );
   servers.push(studioServer);
   const previewHandler = createPreviewHandler({ home: config.home, store, ports });
@@ -127,6 +129,7 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
     connection,
     aiSessions,
     versions,
+    handoffs,
     async close() {
       // 作る AI と、応答を待っているプロダクト内 AI の Claude Code を止め、終わるまで待つ
       await Promise.all([requests.closeAll(), aiSessions.close()]);

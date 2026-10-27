@@ -288,7 +288,7 @@ test('版の API: 保存、一覧、復元と、その守り', async (t) => {
   studio.store.claimVersions('sample-job-consult');
   const during = await call('/api/projects/sample-job-consult/ai/messages', { text: 'アルバイト' });
   assert.equal(during.status, 409);
-  assert.match(during.body.error.message, /版を保存か復元しているところ/);
+  assert.match(during.body.error.message, /版の保存か復元、または引き継ぎの書き出しをしているところ/);
   assert.equal((await call('/api/projects/sample-job-consult/ai')).status, 200);
   studio.store.releaseVersions('sample-job-consult');
 });

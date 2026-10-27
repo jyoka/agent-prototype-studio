@@ -227,8 +227,8 @@ test('版の操作は、作る AI の実行やビルドと重ならない。知�
   studio.store.releaseRun('travel');
 
   studio.store.claimVersions('travel');
-  await assert.rejects(studio.store.build('travel'), /版を保存か復元しているところ/);
-  assert.throws(() => studio.store.claimRun('travel'), /版を保存か復元しているところ/);
+  await assert.rejects(studio.store.build('travel'), /版の保存か復元、または引き継ぎの書き出しをしているところ/);
+  assert.throws(() => studio.store.claimRun('travel'), /版の保存か復元、または引き継ぎの書き出しをしているところ/);
   studio.store.releaseVersions('travel');
 
   await assert.rejects(studio.versions.restore('travel', '../../etc'), (error) => error.code === 'not-found');
