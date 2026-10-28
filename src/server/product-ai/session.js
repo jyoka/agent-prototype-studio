@@ -111,21 +111,21 @@ export class AiError extends Error {
 const NEXT_ACTIONS = {
   cancelled: 'Studio の画面で止めました。試作品の欄に書いた文は残っているので、もう一度送れます。',
   reset: '応答を待つ間に会話を最初に戻したので、届いた応答は捨てました。もう一度送ってください。',
-  limit: '時間をおいてから送り直すか、右の「接続を選ぶ」でモックに戻してください。会話はそのままです。',
-  budget: '「リセット」で会話を短くしてから送るか、右の「接続を選ぶ」でモックに戻してください。',
-  timeout: 'もう一度送ってください。続くときは、右の「接続を選ぶ」でモックに戻してください。',
+  limit: '時間をおいてから送り直すか、「試す」の上の「AI」でモックに戻してください。会話はそのままです。',
+  budget: '「会話を最初から」で会話を短くしてから送るか、「試す」の上の「AI」でモックに戻してください。',
+  timeout: 'もう一度送ってください。続くときは、「試す」の上の「AI」でモックに戻してください。',
   auth: 'ターミナルで claude を起動し、ログインしてから、もう一度送ってください。Studio はログインの情報を扱いません。',
   'not-found': 'Claude Code を入れてください。別の場所にあるときは、STUDIO_CLAUDE_BIN にその場所を書いて Studio を起動し直してください。',
-  'paid-limit': '「リセット」で会話を最初からやり直すか、右の「接続を選ぶ」でモックに戻してください。',
-  'turn-limit': 'もう一度送ってください。続くときは、右の「接続を選ぶ」でモックに戻して試し、この記録を開発の担当者に見せてください。',
-  'project-limit': '時間をおいてから送るか、右の「接続を選ぶ」でモックに戻してください。会話はそのままです。',
-  'too-long': '「リセット」で会話を最初からやり直してください。',
-  busy: '前の応答が届くまで待ってください。急ぐときは、右の「応答を止める」を押してください。',
+  'paid-limit': '「会話を最初から」でやり直すか、「試す」の上の「AI」でモックに戻してください。',
+  'turn-limit': 'もう一度送ってください。続くときは、「試す」の上の「AI」でモックに戻して試し、この記録を開発の担当者に見せてください。',
+  'project-limit': '時間をおいてから送るか、「試す」の上の「AI」でモックに戻してください。会話はそのままです。',
+  'too-long': '「会話を最初から」を押して、やり直してください。',
+  busy: '前の応答が届くまで待ってください。急ぐときは、下の「詳細」の「応答を止める」を押してください。',
   'reply:invalid': `空でない、${SESSION_LIMITS.maxTextLength} 文字までの文を送ってください。`,
   'correction:invalid':
-    '選べる値に直してください。試作品の画面が選べない値を送っているときは、「作る」欄で直す依頼をするか、app/ai.json の選択肢を確かめてください。',
+    '選べる値に直してください。試作品の画面が選べない値を送っているときは、「言葉で直す」欄で直す依頼をするか、app/ai.json の選択肢を確かめてください。',
 };
-const GENERIC_NEXT = 'もう一度送ってください。続くときは、右の「接続を選ぶ」でモックに戻して試し、この記録を開発の担当者に見せてください。';
+const GENERIC_NEXT = 'もう一度送ってください。続くときは、「試す」の上の「AI」でモックに戻して試し、この記録を開発の担当者に見せてください。';
 
 export function nextAction(code, type = 'reply') {
   return NEXT_ACTIONS[`${type}:${code}`] ?? NEXT_ACTIONS[code] ?? GENERIC_NEXT;
@@ -529,7 +529,7 @@ export class AiSessions {
 
   checkRoom(session, adding) {
     if (session.messages.length + adding > SESSION_LIMITS.maxMessages) {
-      throw new AiError(409, 'too-long', '会話が長くなりすぎました。Studio の「リセット」で最初からやり直してください');
+      throw new AiError(409, 'too-long', '会話が長くなりすぎました。Studio の「会話を最初から」でやり直してください');
     }
   }
 
@@ -652,7 +652,7 @@ export class AiSessions {
         throw new AiError(
           429,
           'paid-limit',
-          `${connection.label} への発言は、1 つの会話で ${SESSION_LIMITS.maxPaidReplies} 回までです。Studio の「リセット」で最初からやり直すか、接続をモックに戻してください`,
+          `${connection.label} への発言は、1 つの会話で ${SESSION_LIMITS.maxPaidReplies} 回までです。Studio の「会話を最初から」でやり直すか、接続をモックに戻してください`,
         );
       }
     }

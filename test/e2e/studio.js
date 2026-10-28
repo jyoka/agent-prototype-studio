@@ -170,11 +170,28 @@ export const SAMPLES = {
   library: { id: 'sample-library', name: '図書室(架空・AI なし)' },
 };
 
+// 上の帯の「試作品: … ▾」を押して一覧を開き、名前(文字列か正規表現)の試作品を選ぶ。一覧は選ぶと閉じる
+export async function chooseProject(page, name) {
+  const menuButton = page.locator('#project-menu-button');
+  if ((await menuButton.getAttribute('aria-expanded')) !== 'true') await menuButton.click();
+  const menu = page.getByRole('navigation', { name: '試作品の一覧', includeHidden: true });
+  const button = menu.getByRole('button', { name, includeHidden: true });
+  await button.click();
+  await expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+  return button;
+}
+
 // 一覧からサンプルを選び、試作品の欄がそのサンプルに変わるまで待つ。
 // 初めて開いたときは求人相談が選ばれているので、ほかのサンプルを使うテストは、これで明示して選ぶ
 export async function chooseSample(page, sample) {
-  const button = page.getByRole('navigation', { name: '試作品の一覧' }).getByRole('button', { name: sample.name });
-  await button.click();
+  const button = await chooseProject(page, sample.name);
   await expect(button).toHaveAttribute('aria-current', 'true');
   await expect(page.locator('iframe[title="試作品"]')).toHaveAttribute('src', new RegExp(`/p/${sample.id}/`));
+}
+
+// 試す欄の上の「AI: … ▾」を押して、試作品の中の AI の接続の選び方を開く(開いていれば、そのまま)
+export async function openAiMenu(page) {
+  const aiSwitch = page.locator('#ai-switch');
+  if ((await aiSwitch.getAttribute('aria-expanded')) !== 'true') await aiSwitch.click();
+  await expect(page.locator('#ai-menu')).toBeVisible();
 }

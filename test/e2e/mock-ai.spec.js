@@ -1,4 +1,4 @@
-import { SAMPLES, chooseSample, expect, launchStudio, test, writeProject } from './studio.js';
+import { SAMPLES, chooseProject, chooseSample, expect, launchStudio, test, writeProject } from './studio.js';
 
 const GREETING =
   'こんにちは。しおかぜ求人相談の案内役です(架空のサービスです)。どんなお仕事を探していますか? 職種、雇用区分、勤務地、時給の希望を、話しやすいところから教えてください。';
@@ -78,7 +78,7 @@ test('モックの AI と話し、理解された希望条件を直すと、次�
     await expect(conditions).toHaveText(['カフェのホール', 'アルバイト・パート', 'もみじ台', '1,200円以上']);
 
     // リセットで初期状態に戻る
-    await page.getByRole('button', { name: 'リセット' }).click();
+    await page.getByRole('button', { name: '会話を最初から' }).click();
     await expect(log).toHaveCount(1);
     await expect(log.first()).toContainText(GREETING);
     await expect(conditions).toHaveText(['未定', '未定', '未定', '未定']);
@@ -177,7 +177,7 @@ test('別の題材でも同じ仕組みで動き、AI のない試作品と連�
     await page.goto(studio.url);
     const app = page.frameLocator('iframe[title="試作品"]');
 
-    await page.getByRole('button', { name: /架空の旅の相談/ }).click();
+    await chooseProject(page, /架空の旅の相談/);
     await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
     await expect(app.locator('output')).toHaveText('旅の相談です。');
     await app.getByLabel('発言').fill('湖に行きたい');
@@ -195,8 +195,8 @@ test('別の題材でも同じ仕組みで動き、AI のない試作品と連�
       await new Promise((resolve) => setTimeout(resolve, 800));
       await route.continue();
     });
-    await page.getByRole('button', { name: 'リセット' }).click();
-    await page.getByRole('button', { name: /AI のない試作品/ }).click();
+    await page.getByRole('button', { name: '会話を最初から' }).click();
+    await chooseProject(page, /AI のない試作品/);
     await page.waitForTimeout(1200);
     await expect(page.locator('iframe[title="試作品"]')).toHaveAttribute('src', /\/p\/no-ai\//);
 
@@ -205,7 +205,7 @@ test('別の題材でも同じ仕組みで動き、AI のない試作品と連�
     await expect(page.locator('#ai-status')).toHaveText('この試作品はプロダクト内 AI を使っていません。');
     await expect(page.locator('#events')).toContainText('AI への要求に失敗しました');
 
-    await page.getByRole('button', { name: /連打する試作品/ }).click();
+    await chooseProject(page, /連打する試作品/);
     await expect(app.locator('#root')).toHaveText(/断られた数: [1-9]\d*/);
     await expect(page.locator('#events')).toContainText('試作品から AI への要求が多すぎる');
   } finally {

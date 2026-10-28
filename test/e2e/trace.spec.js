@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { loadConfig } from '../../src/server/config.js';
 import { startStudio } from '../../src/server/index.js';
-import { ROOT, SAMPLES, chooseSample, expect, launchStudio, test, writeProject } from './studio.js';
+import { ROOT, SAMPLES, chooseProject, chooseSample, expect, launchStudio, openAiMenu, test, writeProject } from './studio.js';
 
 // 実モデルは呼ばない。Claude Code は偽の CLI(test/fixtures/fake-claude.js)に差し替える
 const FAKE = path.join(ROOT, 'test', 'fixtures', 'fake-claude.js');
@@ -87,7 +87,7 @@ test('モックの実行の記録: 発言、返事、状態の変化、修正、
     await expect(app.getByRole('region', { name: '会話' })).toContainText('taro@example.com');
 
     // リセットしても記録は残り、リセットしたことが出る
-    await page.getByRole('button', { name: 'リセット' }).click();
+    await page.getByRole('button', { name: '会話を最初から' }).click();
     await expect(entries.first()).toContainText('会話と状態を最初に戻しました(Studio の画面から)');
     await expect(entries.first()).toContainText('最初の状態: 職種「未定」、雇用区分「未定」、勤務地「未定」、時給の下限「未定」');
     await expect(entries).toHaveCount(4);
@@ -112,6 +112,7 @@ test('Claude Code(偽)の実行の記録: 渡した指示と本文、受け取�
     expect(refused.status).toBe(403);
     expect(JSON.parse(refused.text).error.code).toBe('consent-required');
     // 切り替える前の確認(送るもの、費用、確かめた印)が、本物の AI を使う同意になる(同意のカードの画面 P25 までのつなぎ)
+    await openAiMenu(page);
     await page.getByRole('radio', { name: 'Claude Code' }).check();
     await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: 'Claude Code に切り替える' }).click();
@@ -163,7 +164,7 @@ test('Claude Code(偽)の実行の記録: 渡した指示と本文、受け取�
     const limit = entries.first();
     await expect(limit).toContainText('失敗しました');
     await expect(limit).toContainText('理由: Claude Code の利用の上限に当たりました');
-    await expect(limit).toContainText('次にすること: 時間をおいてから送り直すか、右の「接続を選ぶ」でモックに戻してください。会話はそのままです。');
+    await expect(limit).toContainText('次にすること: 時間をおいてから送り直すか、「試す」の上の「AI」でモックに戻してください。会話はそのままです。');
     await expect(page.locator('#events')).toContainText('次にすること: 時間をおいてから送り直すか');
 
     // 失敗: CLI のエラーに鍵らしい文字列があっても、画面にも記録にも出さない
@@ -217,7 +218,7 @@ test('試作品のコードが決まりに合わない要求を送ったら、�
   const studio = await launchStudio(home);
   try {
     await page.goto(studio.url);
-    await page.getByRole('button', { name: /要求を誤る試作品/ }).click();
+    await chooseProject(page, /要求を誤る試作品/);
     const app = page.frameLocator('iframe[title="試作品"]');
     const entries = page.locator('#ai-trace').getByRole('list', { name: 'AI の実行の記録' }).locator(':scope > li');
 
@@ -226,7 +227,7 @@ test('試作品のコードが決まりに合わない要求を送ったら、�
     await expect(entries.first()).toContainText('状態の修正(試作品から)');
     await expect(entries.first()).toContainText('直そうとした値: place「海の町」');
     await expect(entries.first()).toContainText('理由: 行き先に「海の町」は使えません');
-    await expect(entries.first()).toContainText('次にすること: 選べる値に直してください。試作品の画面が選べない値を送っているときは、「作る」欄で直す依頼をするか');
+    await expect(entries.first()).toContainText('次にすること: 選べる値に直してください。試作品の画面が選べない値を送っているときは、「言葉で直す」欄で直す依頼をするか');
 
     await app.getByRole('button', { name: '空で送る' }).click();
     await expect(entries.first()).toContainText('発言: (空)');

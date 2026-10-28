@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, launchStudio, test, writeProject } from './studio.js';
+import { ROOT, SAMPLES, chooseProject, chooseSample, expect, launchStudio, openAiMenu, test, writeProject } from './studio.js';
 
 // 本番開発への引き継ぎを、画面の操作で書き出し、別の場所で確かめる。
 // 作る AI は偽接続、プロダクト内 AI はモックと偽の Claude Code で、実モデルは呼ばない。
@@ -71,6 +71,7 @@ async function exportAndCheck(page, home, other, otherHome) {
     await expect(log.last()).toContainText(AFTER_JOB);
     await app.getByLabel('勤務地を直す').selectOption('もみじ台');
     await expect(log.last()).toHaveText('あなたの修正: 勤務地を「もみじ台」に直しました。');
+    await openAiMenu(page);
     await page.getByRole('radio', { name: 'Claude Code' }).check();
     const confirm = page.getByRole('group', { name: 'Claude Code に切り替える前の確認' });
     await confirm.getByRole('checkbox').check();
@@ -81,7 +82,7 @@ async function exportAndCheck(page, home, other, otherHome) {
 
     await page.getByLabel('版の名前(なくてもよい)').fill('引き継ぐ版');
     await page.getByRole('button', { name: '今の作業中を保存' }).click();
-    await expect(page.locator('#work-badge')).toHaveText('作業中 = 保存版 v1');
+    await expect(page.locator('#working-status')).toHaveText('作業中は保存版 v1「引き継ぐ版」と同じです。');
 
     // 意図と未決事項を書いて、書き出す
     const handoff = page.getByRole('region', { name: '本番開発への引き継ぎ' });
@@ -180,6 +181,7 @@ async function exportAndCheck(page, home, other, otherHome) {
     try {
       await page.goto(elsewhere.url);
       // 名前は目録の title から作るので、サンプルと同じ名前になる。ID で選ぶ
+      await page.locator('#project-menu-button').click();
       await page.locator('[data-project-id="handed-over"]').click();
       const app = page.frameLocator('iframe[title="試作品"]');
       await expect(app.getByRole('heading', { name: 'うみかぜ求人相談' })).toBeVisible();
@@ -208,7 +210,7 @@ test('秘密情報らしい文字列があると書き出さず、場所を画�
   const studio = await launchStudio(home);
   try {
     await page.goto(studio.url);
-    await page.getByRole('button', { name: /鍵を書いた試作品/ }).click();
+    await chooseProject(page, /鍵を書いた試作品/);
     await expect(page.frameLocator('iframe[title="試作品"]').locator('#root')).toHaveText('鍵あり');
     const handoff = page.getByRole('region', { name: '本番開発への引き継ぎ' });
     await handoff.getByRole('button', { name: '引き継ぎ用に書き出す' }).click();

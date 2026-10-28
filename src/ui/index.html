@@ -8,20 +8,44 @@
   <script type="module" src="/studio.js"></script>
 </head>
 <body>
+  <!-- 上の帯: 試作品の切り替え、保存、その他。保存の印と接続の印は、必要なときだけ出す(ux-redesign.md 3 節) -->
   <header class="topbar">
     <h1>Prototype Studio</h1>
-    <span id="connection" class="connection" data-state="checking">確かめています…</span>
+    <div class="project-switch">
+      <button type="button" id="project-menu-button" class="menu-button" aria-haspopup="true" aria-expanded="false" aria-controls="project-menu">
+        試作品: <span id="project-title">読み込んでいます…</span><span aria-hidden="true"> ▾</span>
+      </button>
+      <nav id="project-menu" class="project-menu" aria-label="試作品の一覧" hidden>
+        <ul id="project-list"></ul>
+      </nav>
+    </div>
+    <div class="topbar-end">
+      <span id="connection" class="connection" data-state="checking" hidden></span>
+      <span id="save-mark" class="save-mark" hidden>保存していない変更があります</span>
+      <button type="button" id="save-now" disabled>保存</button>
+      <button type="button" id="more" aria-controls="details">その他</button>
+    </div>
   </header>
   <div id="banner" class="banner" role="alert" hidden>
     <p id="banner-text"></p>
   </div>
   <main class="layout">
-    <nav class="projects" aria-label="試作品の一覧">
-      <h2>試作品</h2>
-      <ul id="project-list"></ul>
-    </nav>
+    <section class="preview" aria-labelledby="try-heading">
+      <div class="toolbar" id="try-toolbar">
+        <h2 id="try-heading">試す</h2>
+        <button type="button" id="ai-switch" class="ai-switch" aria-expanded="false" aria-controls="ai-menu" hidden>
+          <span id="ai-badge">AI</span><span aria-hidden="true"> ▾</span>
+        </button>
+        <button type="button" id="reset" disabled title="会話と状態を最初に戻して、開き直します">会話を最初から</button>
+      </div>
+      <div id="ai-menu" class="ai-menu" hidden></div>
+      <div id="retry-bar" class="retry-bar" role="region" aria-label="試し直す" hidden></div>
+      <div id="frame-host" class="frame-host">
+        <p id="frame-placeholder" class="placeholder">読み込んでいます…</p>
+      </div>
+    </section>
     <section class="make" aria-labelledby="make-heading">
-      <h2 id="make-heading">作る</h2>
+      <h2 id="make-heading">言葉で直す</h2>
       <p class="muted">作る AI に、試作品の変え方を頼みます。試作品の中の操作は、隣の「試す」で行います。</p>
       <div id="agent-status" class="agent-status"></div>
       <ol id="conversation" class="conversation" aria-label="作る会話"></ol>
@@ -39,23 +63,11 @@
         <ul id="example-list"></ul>
       </div>
     </section>
-    <section class="preview" aria-labelledby="project-title">
-      <p class="eyebrow">試す</p>
-      <div class="toolbar">
-        <h2 id="project-title">試作品を選んでください</h2>
-        <span id="work-badge" class="work-badge" hidden></span>
-        <span id="ai-badge" class="ai-badge" hidden></span>
-        <button type="button" id="reopen" disabled title="画面だけを読み直します。会話と状態はそのまま">開き直す</button>
-        <button type="button" id="reset" disabled title="会話と状態を最初に戻して、開き直します">リセット</button>
-        <button type="button" id="rebuild" disabled>作り直す</button>
-      </div>
-      <div id="retry-bar" class="retry-bar" role="region" aria-label="試し直す" hidden></div>
-      <div id="frame-host" class="frame-host">
-        <p id="frame-placeholder" class="placeholder">読み込んでいます…</p>
-      </div>
-    </section>
-    <aside class="details" aria-label="詳細">
-      <h2>詳細</h2>
+  </main>
+  <!-- 今の詳細の中身は、P22 で「その他」の引き出しへ移すまで、2 列の下に仮に置く -->
+  <aside id="details" class="details" aria-labelledby="details-heading" tabindex="-1">
+    <h2 id="details-heading">詳細</h2>
+    <div class="details-grid">
       <section aria-labelledby="versions-heading">
         <h3 id="versions-heading">版</h3>
         <p id="working-status" class="working-status"></p>
@@ -85,6 +97,7 @@
       <section aria-labelledby="build-heading">
         <h3 id="build-heading">ビルド</h3>
         <div id="build-status" class="build-status"></div>
+        <button type="button" id="rebuild" class="detail-button" disabled>作り直す</button>
       </section>
       <section aria-labelledby="ai-heading">
         <h3 id="ai-heading">プロダクト内 AI</h3>
@@ -96,10 +109,11 @@
       </section>
       <section aria-labelledby="events-heading">
         <h3 id="events-heading">試作品からの知らせ</h3>
+        <button type="button" id="reopen" class="detail-button" disabled title="画面だけを読み直します。会話と状態はそのまま">開き直す</button>
         <p id="events-empty" class="muted">まだありません</p>
         <ul id="events" class="events"></ul>
       </section>
-    </aside>
-  </main>
+    </div>
+  </aside>
 </body>
 </html>
