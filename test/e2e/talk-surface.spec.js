@@ -3,7 +3,7 @@ import path from 'node:path';
 import { ROOT, SAMPLES, chooseProject, chooseSample, expect, launchStudio, test, writeProject } from './studio.js';
 
 // 会話の枠(同梱の studio-talk)と、構成 A の見本(架空のバイト探し)。模擬のエージェントはモック(お試しの AI)で答える。
-// 前提の選び方は既定の前提だけ(選ぶ画面は sim-10)なので、カードを使えない前提は、既定を替えた写しで確かめる
+// カードを使えない前提は、既定を替えた写しで確かめる(開発者向けの詳細で前提を選ぶ形は test/e2e/sim-choice.spec.js)
 const SAMPLE_APP = path.join(ROOT, 'samples', 'part-time', 'app');
 const TEXT_ONLY = { id: 'talk-text-only', name: 'バイト探し カードなし(架空・AI と話せる)' };
 

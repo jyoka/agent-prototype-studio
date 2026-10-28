@@ -486,6 +486,12 @@ button { font: inherit; }
 .trace-internals details { margin: 0.2rem 0; }
 .trace-internals pre { white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; background: var(--panel); padding: 0.3rem; max-height: 12rem; overflow: auto; }
 .trace-internals code { word-break: break-all; font-size: 0.75rem; }
+/* 模擬の会話の 1 ターン(sim-turn)の段と、守りの判定。止めた守りと合わなかった確かめは目立たせる */
+.sim-steps { margin: 0.3rem 0; padding-left: 1.4rem; }
+.sim-step { margin: 0.3rem 0; }
+.sim-step p { margin: 0.1rem 0; word-break: break-all; }
+.sim-guards { margin: 0.1rem 0; padding-left: 1.2rem; font-size: 0.8rem; color: var(--muted); }
+.sim-guards li[data-effect="blocked"], .sim-guards li[data-effect="violated"], .sim-guards li[data-effect="replaced"] { color: var(--error); }
 .ai-trace > button {
   padding: 0.3rem 0.7rem;
   border: 1px solid var(--line);
