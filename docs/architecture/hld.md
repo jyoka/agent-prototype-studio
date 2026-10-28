@@ -75,6 +75,7 @@ flowchart TB
     observer["観察器<br/>src/observer/observe.js、browser.js、<br/>operations.js、scenario.js"]
     observeCli["観察の CLI<br/>bin/observe.js(npm run observe)"]
     observeMcp["観察の道具の MCP サーバー<br/>bin/observe-mcp.js、src/server/observe-mcp.js<br/>(作る AI に --mcp-config で渡す)"]
+    toolsMcp["ツールの MCP サーバー<br/>bin/tools-mcp.js、src/server/sim/tools-mcp.js<br/>(npm run tools:mcp。模擬のエージェントへの渡し方は sim-4)"]
 
     subgraph local["データの置き場: ~/PrototypeStudio"]
         app[("projects/ID/app/<br/>作る AI が書ける唯一の場所")]
@@ -126,6 +127,9 @@ flowchart TB
     host -- "エラー、AI の要求<br/>(exposeBinding)" --> observer
     observer -- "スクリーンショット" --> dotstudio
     observeEntry -- "report.json" --> dotstudio
+    toolsMcp -- "ツールの口(callTool)" --> sim
+    toolsMcp -- "tools.json とデータを読む" --> app
+    toolsMcp -- "sim/会話の ID/ に記録の店と呼び出しの記録" --> dotstudio
 ```
 
 | 部品 | ファイル | すること |
@@ -136,7 +140,7 @@ flowchart TB
 | 試作品とビルド | `src/server/store.js`、`src/server/projects.js`、`src/server/build.js`、`src/server/inspect.js`、`src/server/manifest.js` | 試作品の一覧と置き場、`app/` と目録の検査、esbuild で 1 つの classic script に束ねる。一覧の名前は、表示中の版の目録の `title` と AI の有無から作る。一覧の順はサンプル(`SAMPLES` の順)が先 |
 | 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1〜G6 を安い順に回す。失敗したら直す依頼(`fix-prompt.js`)を作って作る AI に返し、2 回まで直させる。`run.json` に残す |
 | プロダクト内 AI | `src/server/product-ai/` | 試作品ごとの会話、状態、実行の記録を持つ。1 ターンは harness(`harness.js`)が抽出 → 決定 → 言い方で回し、何を聞くか、段の遷移、終わるかはコードが決める。言い方の返事は `rules` で確かめる(`guards.js`)。接続はモックか Claude Code(抽出と言い方の 2 種の呼び出し)。実モデルの呼び出しの上限を数える(`limits.js`)。`app/ai.json` を検査する |
-| 構成 | `src/server/sim/` | `app/composition.json`、`compositions/`、`tools.json`、`assumptions/`、`mocks/`、`evals/` を検査する(G3)。`composition.json` がなければ、`ai.json` の harness 1 つの構成(構成 B)として読む。作る run の後に、構成とガードレールの変化を作る会話に出す(`changes.js`)。ツールの口(`tool-gate.js`)は、宣言のツールを形の検査、ツールの守り、実行の順に動かし、記録の店を値で返す。ファイルを書かず、外へ通信しない。まだどこからも呼ばれない。構成で会話を回すほかの部品はまだない([agent-simulation.md](../design/agent-simulation.md) の sim-3 以降) |
+| 構成 | `src/server/sim/` | `app/composition.json`、`compositions/`、`tools.json`、`assumptions/`、`mocks/`、`evals/` を検査する(G3)。`composition.json` がなければ、`ai.json` の harness 1 つの構成(構成 B)として読む。作る run の後に、構成とガードレールの変化を作る会話に出す(`changes.js`)。ツールの口(`tool-gate.js`)は、宣言のツールを形の検査、ツールの守り、実行の順に動かし、記録の店を値で返す。ファイルを書かず、外へ通信しない。今はツールの MCP サーバーだけが呼ぶ。構成で会話を回すほかの部品はまだない([agent-simulation.md](../design/agent-simulation.md) の sim-4 以降) |
 | 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する |
 | 引き継ぎ | `src/server/handoff.js` | 作業中の試作品と、目録、シナリオ、最新の証拠の要約を `handoffs/` に書き出す。形は [handoff.md](../handoff.md) |
 | 本物の AI の同意 | `src/server/real-ai.js` | 本物の AI を使う前の同意を、メモリーに 1 つ持つ。作る AI(`BuildRequests.start`、接続が Claude Code のとき)と、プロダクト内 AI の本物の接続への口(`AiSessions.useReal`。切り替えと観察)が、使う前に確かめ、同意の前は `consent-required` で断る。同意のカードの中身(送るもの、送り先、料金の文と上限、「詳しく」)を `/api/real-ai` で返す |
@@ -148,6 +152,7 @@ flowchart TB
 | 観察の入口 | `src/server/observe-entry.js` | 観察を呼ぶ所が、どれも通る `observeProject`。同じ形の report を返す。モードは 2 つ。`shown` は Studio の表示中のビルドを見る。`working` は作業中の `app/` を一時フォルダーにビルドし、loopback の空いているポートに自分の試作品の配信と観察用の親ページを立てて見る。`working` の AI は、その観察だけのモックの会話。観察器は会話の実装を import しないので、入口は `src/server/` に置く |
 | 観察の CLI | `bin/observe.js` | `npm run observe -- <プロジェクト>`。入口を `working` で呼び、結果をターミナルに出す。終了コードは `passed` で 0 |
 | 観察の道具の MCP サーバー | `bin/observe-mcp.js`、`src/server/observe-mcp.js`、`src/server/observe-temp.js` | `npm run observe:mcp -- <プロジェクト>`。stdio の JSON-RPC で `initialize`、`tools/list`、`tools/call` に答え、決まった名前の 9 つの道具(`open`、`read_page`、`inspect`、`click`、`type`、`scroll`、`set_viewport`、`screenshot`、`run_scenarios`)を出す。入口を `working` で呼ぶ。プロジェクトの場所は起動の引数でだけ受け取り、`app/` に書かない。SDK は使わない。入口(会話の実装を使う)を import するので、観察器の境界(S2)の外の `src/server/` に置く。起動ごとの一時フォルダーを作り、前の起動が残したものを消す(`observe-temp.js`) |
+| ツールの MCP サーバー | `bin/tools-mcp.js`、`src/server/sim/tools-mcp.js` | `npm run tools:mcp -- <プロジェクト> [--conversation <会話の ID>]`。stdio の JSON-RPC で `initialize`、`tools/list`、`tools/call` に答え、`app/tools.json` のツールだけを出す。呼び出しはツールの口(`callTool`)を通す。`app/` は読むだけ(`tools.json` とデータ)。書くのは `.studio/sim/<会話の ID>/` の `store.json`(記録の店の写し)、`counts.json`(呼び出しの数)、`calls.jsonl`(呼び出しの記録)と、動いている間のロックだけ。記録の店と数は起動のときに読み、呼び出しのたびに書く。SDK は使わない。作りは観察の道具の MCP サーバーと同じで、別のサーバー。模擬のエージェントへの渡し方は、まだない([agent-simulation.md の 3.6](../design/agent-simulation.md#36-ツールの-mcp-サーバー)) |
 | 観察器の操作とシナリオ | `src/observer/operations.js`、`src/observer/scenario.js` | 7 つの操作(読む、要素の一覧と検査、クリック、入力、スクロール、画面幅、スクリーンショット)と 4 つの確かめ。シナリオの手順と、1 つずつの呼び出し(`observe()` の `operate`)が同じ関数を使う。シナリオの形の検査、`app/scenarios/` の読み込み、Studio の基本のシナリオ([形](../configuration.md#シナリオappscenariosjson)) |
 | 観察用の親ページ | `src/ui/observe.html`、`src/ui/observe.js` | Studio の `/observe.html` に置く静的なページ。試作品を同じ sandbox の iframe に入れ、エラーと AI の要求を `exposeBinding` で観察器に渡す。Studio の API は呼ばない(CSP の `connect-src 'none'`) |
 
