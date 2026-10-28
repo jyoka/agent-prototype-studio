@@ -1,5 +1,6 @@
 import { ConnectionError } from './claude-code.js';
 import { END_STEP, INTENTS, describeWhen, formatValue, normalizeValue } from './definition.js';
+import { checkReply, describeFailures, utterancesOf } from './guards.js';
 import { templateReply } from './mock.js';
 
 // プロダクト内 AI の harness(docs/design/harness.md の 4)。1 ターンを 3 段で回す:
@@ -197,29 +198,88 @@ export function describeDecision(definition, decision) {
 const describeState = (definition, state) =>
   definition.fields.map((field) => ({ key: field.key, label: field.label, value: formatValue(field, state[field.key]) }));
 
+// 1 ターンの期限。過ぎたら、内側の signal で接続を止め、待っている呼び出しを DEADLINE で投げる(接続が止まるのを待たない)。
+// 外の signal(利用者が止めた)も内側へ伝える
+const DEADLINE = Symbol('turn-deadline');
+function startDeadline(ms, outer) {
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  if (outer?.aborted) controller.abort();
+  else outer?.addEventListener('abort', onAbort, { once: true });
+  let expired = false;
+  let expire;
+  const expiredAt = new Promise((_, reject) => (expire = reject));
+  expiredAt.catch(() => {});
+  const timer = Number.isFinite(ms) && ms > 0
+    ? setTimeout(() => {
+        expired = true;
+        expire(DEADLINE);
+        controller.abort();
+      }, ms)
+    : null;
+  return {
+    signal: controller.signal,
+    // 期限を過ぎたか。利用者が止めたときは、期限のせいにしない
+    passed: (error) => (error === DEADLINE || expired) && !outer?.aborted,
+    race(value) {
+      const pending = Promise.resolve(value);
+      pending.catch(() => {});
+      return Promise.race([pending, expiredAt]);
+    },
+    clear() {
+      clearTimeout(timer);
+      outer?.removeEventListener('abort', onAbort);
+    },
+  };
+}
+
+const usable = (reply) => typeof reply === 'string' && reply.trim() !== '';
+
 // 1 ターン。接続の失敗(例外)はそのまま投げる。進み具合と状態は書き換えず、新しいものを返す。
-// trace に段ごとの中身(抽出、決定、言い方)を書き足す。途中で失敗しても、そこまでが残る
-export async function turn({ connection, definition, progress, state, messages, text, signal, meter, trace = {} }) {
+// trace に段ごとの中身(抽出、決定、言い方、守ることの確かめ)を書き足す。途中で失敗しても、そこまでが残る。
+// 言い方の返事は守ることを確かめ(guards.js)、合わなければ言い方を 1 回やり直す。2 回目も合わなければ、mock の型の文で返す。
+// やり直しも 1 ターンの呼び出しの上限(meter)に数える。deadlineMs を過ぎたら、mock の型の文で返し、記録に時間切れと残す。
+// dataNumbers は、試作品の架空のデータに出てくる数(noNewNumbers で使う)
+export async function turn({ connection, definition, progress, state, messages, text, signal, meter, trace = {}, dataNumbers = [], deadlineMs = null }) {
+  const deadline = startDeadline(deadlineMs, signal);
+  try {
+    return await runTurn({ connection, definition, progress, state, messages, text, signal, meter, trace, dataNumbers, deadline, deadlineMs });
+  } finally {
+    deadline.clear();
+  }
+}
+
+async function runTurn({ connection, definition, progress, state, messages, text, signal, meter, trace, dataNumbers, deadline, deadlineMs }) {
   const fields = definition.fields;
+  const timeoutText = () => `1 ターンの期限(${deadlineMs / 1000} 秒)を過ぎた`;
   trace.extract = { input: { text, step: progress.step, fields: fields.map((field) => field.key), state: describeState(definition, state) } };
   let raw;
   let oneCall = null;
+  let timedOut = null;
   const quick = connection.respond ? null : quickExtract(definition, progress, state, text);
-  if (quick) {
-    trace.extract.via = 'shortcut';
-    trace.extract.reason = `${quick.reason}なので、抽出を呼ばずに読んだ`;
-    raw = { updates: quick.updates, intent: quick.intent };
-  } else if (connection.respond) {
-    // 1 回の呼び出しで返事と updates を返す接続。返事は決定の前に作られる
-    trace.extract.via = 'respond';
-    oneCall = await connection.respond({ definition, state, messages, text, signal });
-    raw = { updates: oneCall?.updates, intent: oneCall?.intent };
-  } else {
-    trace.extract.via = 'connection';
-    const extracted = await connection.extract({ definition, fields, state, messages, text, signal, meter });
-    raw = extracted;
-    if (extracted?.retry) trace.extract.retry = extracted.retry;
-    if (extracted?.fallback) trace.extract.fallback = extracted.fallback;
+  try {
+    if (quick) {
+      trace.extract.via = 'shortcut';
+      trace.extract.reason = `${quick.reason}なので、抽出を呼ばずに読んだ`;
+      raw = { updates: quick.updates, intent: quick.intent };
+    } else if (connection.respond) {
+      // 1 回の呼び出しで返事と updates を返す接続。返事は決定の前に作られる
+      trace.extract.via = 'respond';
+      oneCall = await deadline.race(connection.respond({ definition, state, messages, text, signal: deadline.signal }));
+      raw = { updates: oneCall?.updates, intent: oneCall?.intent };
+    } else {
+      trace.extract.via = 'connection';
+      const extracted = await deadline.race(connection.extract({ definition, fields, state, messages, text, signal: deadline.signal, meter }));
+      raw = extracted;
+      if (extracted?.retry) trace.extract.retry = extracted.retry;
+      if (extracted?.fallback) trace.extract.fallback = extracted.fallback;
+    }
+  } catch (error) {
+    if (!deadline.passed(error)) throw error;
+    // 抽出の途中で期限を過ぎたら、変更なしで決定へ進む(壊れた抽出の代わりと同じ)
+    timedOut = 'extract';
+    raw = { updates: {}, intent: null };
+    trace.extract.fallback = `${timeoutText()}ので、抽出を止めて変更なしにした`;
   }
   trace.extract.output = { updates: raw?.updates ?? null, intent: raw?.intent == null ? null : shownValue(raw.intent) };
   const extraction = checkExtraction(definition, raw);
@@ -231,29 +291,80 @@ export async function turn({ connection, definition, progress, state, messages, 
   trace.decision = describeDecision(definition, decided.decision);
 
   const phraseInput = { step: decided.decision.step, ask: trace.decision.ask, say: decided.decision.say, done: decided.decision.done, mustInclude: decided.decision.mustInclude };
-  trace.phrase = { input: phraseInput };
-  let reply;
-  if (oneCall) {
-    trace.phrase.via = 'respond';
-    reply = oneCall.reply;
-  } else {
-    trace.phrase.via = 'connection';
-    const phraseInput = { definition, decision: decided.decision, state: decided.state, messages, text };
+  trace.phrase = { input: phraseInput, via: oneCall ? 'respond' : 'connection' };
+  const guardInput = { definition, decision: decided.decision, state: decided.state, utterances: utterancesOf(messages, text), dataNumbers };
+  const checks = [];
+  // 言い方を 1 回呼ぶ。guardProblem は、やり直すときの前の返事の問題
+  const ask = async (guardProblem) => {
+    const input = { definition, decision: decided.decision, state: decided.state, messages, text, ...(guardProblem ? { guardProblem } : {}) };
     // 送る本文を、送る前に記録に残す(失敗しても見られるように)
-    const sent = connection.describePhrase?.(phraseInput);
-    if (sent?.stdin) trace.phrase.stdin = sent.stdin;
-    const said = await connection.phrase({ ...phraseInput, signal, meter });
-    if (said?.retry) trace.phrase.retry = said.retry;
-    reply = said?.reply;
-    if (said?.fallback && (typeof reply !== 'string' || reply.trim() === '')) {
-      trace.phrase.fallback = `${said.fallback}ので、mock の型の文に代えた`;
+    const sent = connection.describePhrase?.(input);
+    if (sent?.stdin) trace.phrase[guardProblem ? 'retryStdin' : 'stdin'] = sent.stdin;
+    return deadline.race(connection.phrase({ ...input, signal: deadline.signal, meter }));
+  };
+  // 返事を確かめ、記録に残す。合えば足した後の返事を、合わなければ null を返す
+  const check = (reply, attempt) => {
+    const result = checkReply(reply, guardInput);
+    checks.push({ attempt, reply: shownReply(reply), failed: result.failed, added: result.added });
+    return result.failed.length === 0 ? result.reply : null;
+  };
+  let reply = null;
+  let fallback = null;
+  try {
+    let first;
+    if (timedOut) {
+      // 抽出で期限を過ぎたら、言い方を呼ばない
+    } else if (oneCall) {
+      first = oneCall.reply;
+    } else {
+      const said = await ask(null);
+      if (said?.retry) trace.phrase.retry = said.retry;
+      if (said?.fallback) fallback = `${said.fallback}ので、mock の型の文に代えた`;
+      first = said?.reply;
     }
+    if (timedOut) {
+      // 下で、時間切れの理由を入れる
+    } else if (!usable(first)) {
+      fallback ??= '接続の返事が空か文でなかったので、mock の型の文に代えた';
+    } else {
+      reply = check(first, 1);
+      if (reply === null) {
+        // 合わなければ、言い方を 1 回やり直す。1 回の呼び出しで返す接続と、呼び出しの上限を使い切ったときは、やり直さない
+        if (oneCall || !connection.phrase) {
+          fallback = '守ることに合わず、この接続は言い方をやり直せないので、mock の型の文に代えた';
+        } else if (meter && meter.remaining('phrase') === 0) {
+          fallback = '守ることに合わず、1 ターンの言い方の呼び出しの上限を使い切っていたので、やり直さずに mock の型の文に代えた';
+        } else {
+          const again = await ask(describeFailures(checks[0].failed));
+          if (again?.retry || again?.fallback) checks[0].retryCall = [again.retry, again.fallback].filter(Boolean).join('。');
+          if (!usable(again?.reply)) {
+            fallback = `守ることに合わず、やり直しの返事も${again?.fallback ? `使えなかった(${again.fallback})` : '空か文でなかった'}ので、mock の型の文に代えた`;
+          } else {
+            reply = check(again.reply, 2);
+            if (reply === null) fallback = 'やり直しても守ることに合わなかったので、mock の型の文に代えた';
+          }
+        }
+      }
+    }
+  } catch (error) {
+    if (!deadline.passed(error)) throw error;
+    timedOut = 'phrase';
+    reply = null;
   }
-  if (typeof reply !== 'string' || reply.trim() === '') {
-    // 返事が文でなければ、決定を mock の型に当てはめた決まりの文で返す
-    trace.phrase.fallback ??= '接続の返事が空か文でなかったので、mock の型の文に代えた';
+  if (timedOut) {
+    fallback = `${timeoutText()}ので、mock の型の文に代えた`;
+    trace.timeout = { stage: timedOut, limitMs: deadlineMs };
+  }
+  if (reply === null) {
+    // 決定を mock の型に当てはめた決まりの文で返す
+    trace.phrase.fallback = fallback;
     reply = templateReply(definition, decided.decision, decided.state);
   }
+  const failed = [...new Set(checks.flatMap((c) => c.failed.map((f) => f.rule)))];
+  let result = 'passed';
+  if (trace.phrase.fallback) result = 'fallback';
+  else if (checks.length > 1) result = 'retried';
+  trace.guards = { result, failed, checks, ...(result === 'fallback' ? { reason: trace.phrase.fallback } : {}) };
   reply = reply.slice(0, 4000);
   trace.phrase.output = { reply };
   return {
@@ -263,6 +374,11 @@ export async function turn({ connection, definition, progress, state, messages, 
     decision: decided.decision,
     state: decided.state,
     progress: decided.progress,
+    guards: trace.guards,
+    timedOut,
     meta: oneCall?.meta ?? null,
   };
 }
+
+// 記録に出す、確かめた返事(長い返事は切る)
+const shownReply = (reply) => (reply.length > 2000 ? `${reply.slice(0, 2000)}…` : reply);

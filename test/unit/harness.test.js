@@ -99,7 +99,8 @@ test('turn() は抽出 → 決定 → 言い方の順に回し、何を聞くか
   assert.deepEqual(result.decision.changes.map((c) => c.key), ['subject', 'level']);
   assert.match(result.decision.reason, /遷移の条件をどれも満たしていない/);
   assert.match(result.decision.reason, /「学び方」を聞く/);
-  assert.equal(result.reply, '(hearの返事)');
+  // 言い方の返事に問いの原文がなかったので、harness が後ろに足した(mustAsk)
+  assert.equal(result.reply, `(hearの返事)${definition.fields[2].question}`);
 });
 
 test('終わる条件を満たすと done になり、それ以上聞かない(S16)', async () => {
@@ -313,7 +314,7 @@ test('本人の修正はモデルを呼ばずに状態に入れ、次の決定�
   assert.deepEqual(entry.harness.decision.corrected, [{ key: 'level', label: 'いまの段階' }]);
   assert.equal(entry.harness.decision.step, 'hear');
   assert.equal(entry.harness.decision.ask.key, 'style');
-  assert.equal(view.messages.at(-1).text, '(hearの返事)');
+  assert.equal(view.messages.at(-1).text, `(hearの返事)${definition.fields[2].question}`);
   // モックの言い方では、直した項目を先に言ってから聞く
   const mock = new AiSessions({ definitionOf: () => definition });
   await mock.send('p', 'プログラミングを学びたい');

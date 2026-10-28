@@ -20,7 +20,7 @@ import {
   replyProblem,
 } from '../../src/server/product-ai/claude-code.js';
 import { INTENTS, parseAiDefinition } from '../../src/server/product-ai/definition.js';
-import { CALL_LIMITS, createTurnMeter } from '../../src/server/product-ai/limits.js';
+import { createTurnMeter } from '../../src/server/product-ai/limits.js';
 import { createMockConnection } from '../../src/server/product-ai/mock.js';
 import { AiSessions, SESSION_LIMITS } from '../../src/server/product-ai/session.js';
 
@@ -149,15 +149,6 @@ test('応答の形は 2 つだけ: 抽出は全部の項目と intent、言い�
   assert.match(phraseInput({ definition, decision, state: {}, messages: [], problem: 'reply が空か、文でなかった' }), /<前の出力の問題>\n前の出力はreply が空か、文でなかったので/);
 });
 
-test('試作品の runtime は、1 ターンの呼び出しが全部 90 秒かかっても、先に「返事がありません」にしない', async () => {
-  const runtime = await fs.readFile(path.join(STUDIO_ROOT, 'src', 'runtime', 'runtime.js'), 'utf8');
-  const waitMs = Number(runtime.match(/var AI_TIMEOUT_MS = (\d+);/)[1]);
-  const calls = Object.values(CALL_LIMITS.perTurn).reduce((sum, n) => sum + n, 0);
-  // 1 回ごとに、時間切れの後で止めるまで(SIGKILL まで)待つ
-  const turnMs = calls * (CLAUDE_CODE_LIMITS.timeoutMs + CLAUDE_CODE_LIMITS.stopGraceMs * 2);
-  assert.ok(waitMs > turnMs, `runtime ${waitMs} ms、1 ターンの最大 ${turnMs} ms`);
-});
-
 test('ANTHROPIC_API_KEY の有無で、どちらで課金されるかを返す', () => {
   assert.equal(billingOf({}).kind, 'subscription');
   // ログインの種類は分からないので、両方の場合を書く
@@ -246,7 +237,7 @@ test('偽の CLI で抽出と言い方を呼ぶ: 会話の全体を毎回渡し�
   const extracted = await connection.extract({ definition, state: { place: '山の村', nights: null }, messages, text: '3泊したい', meter });
   assert.deepEqual(extracted, { updates: { nights: 3 }, intent: 'answer' });
   const said = await connection.phrase({ definition, decision: decisionAsking(definition, 'place'), state: { place: '山の村', nights: 3 }, messages, text: '3泊したい', meter });
-  assert.deepEqual(said, { reply: '偽の Claude Code です。これまでの会話 4 件(修正 1 件)を受け取りました。「3泊したい」への返事です。' });
+  assert.deepEqual(said, { reply: `偽の Claude Code です。これまでの会話を受け取りました(修正の記録あり)。「3泊したい」への返事です。${definition.fields[0].question}` });
 
   const [first, second] = await calls();
   assert.match(first.stdin, /\[利用者の修正\] 行き先を「山の村」に直しました。/);
@@ -392,7 +383,7 @@ test('許されていなければ選べず、切り替えには確認が要り�
     view.messages.map((m) => [m.role, m.via]),
     [['assistant', undefined], ['user', undefined], ['assistant', 'mock'], ['user', undefined], ['assistant', 'claude-code']],
   );
-  assert.match(view.messages.at(-1).text, /これまでの会話 3 件/);
+  assert.match(view.messages.at(-1).text, /これまでの会話を受け取りました/);
   // 抽出と言い方の 2 回の合計
   assert.equal(view.messages.at(-1).costUsd, 0.0024);
   assert.ok(Number.isFinite(view.messages.at(-1).elapsedMs));

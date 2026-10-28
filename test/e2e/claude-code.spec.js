@@ -94,7 +94,10 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
 
     // 自由な文に応答する。モックとの会話(3 件)を引き継ぐ
     await say('雇用は正社員で、もみじ台あたりがいいな');
-    await expect(log.last()).toContainText('偽の Claude Code です。これまでの会話 3 件(修正 0 件)を受け取りました。');
+    await expect(log.last()).toContainText('偽の Claude Code です。これまでの会話を受け取りました(修正の記録なし)。');
+    // 言い方に渡した会話は、モックとの会話の 3 件(偽の CLI の返事には、どこにも出てこない数を書かせない)
+    const historyOf = (call) => /<これまでの会話>\n([\s\S]*?)\n<\/これまでの会話>/.exec(call.stdin)[1].split('\n');
+    expect(historyOf((await readCalls(env.FAKE_CLAUDE_LOG)).at(-1))).toHaveLength(3);
     await expect(log.last()).toContainText('Claude Code');
     await expect(log.nth(2)).toContainText('モック');
     await expect(conditions).toHaveText(['カフェのホール', '正社員', 'もみじ台', '未定']);
@@ -106,7 +109,10 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     await app.getByLabel('勤務地を直す').selectOption('ひばり駅前');
     await expect(log.last()).toHaveText('あなたの修正: 勤務地を「ひばり駅前」に直しました。');
     await say('時給は1300円以上で');
-    await expect(log.last()).toContainText('これまでの会話 6 件(修正 1 件)');
+    await expect(log.last()).toContainText('これまでの会話を受け取りました(修正の記録あり)');
+    const afterCorrection = historyOf((await readCalls(env.FAKE_CLAUDE_LOG)).at(-1));
+    expect(afterCorrection).toHaveLength(6);
+    expect(afterCorrection.filter((line) => line.startsWith('[利用者の修正]'))).toHaveLength(1);
     await expect(conditions).toHaveText(['カフェのホール', '正社員', 'ひばり駅前', '1,300円以上']);
     await expect(log).toHaveCount(8);
 

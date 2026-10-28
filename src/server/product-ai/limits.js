@@ -3,13 +3,17 @@ import { ConnectionError } from './claude-code.js';
 // 実モデル(費用のかかる接続)の呼び出しの上限(docs/design/harness.md の 4.4。利用者が 2026-10-28 に決めた値)。
 // 1 つの会話の有料のターン(30 まで)は session.js の SESSION_LIMITS.maxPaidReplies で数える。
 export const CALL_LIMITS = {
-  // 1 ターンの呼び出し。抽出 2 回、言い方 2 回(どちらも、壊れた出力のやり直しを含む)
+  // 1 ターンの呼び出し。抽出 2 回、言い方 2 回(どちらも、壊れた出力のやり直しを含む。言い方は、守ることに合わない返事のやり直しも含む)
   perTurn: { extract: 2, phrase: 2 },
   // プロジェクトごとの呼び出し。観察の会話も含め、この時間の窓でこの回数まで。
   // 観察ごとに新しい会話を作ると会話ごとの上限が毎回戻るので、プロジェクトで抑える(ADR-0001 の T6)
   perProject: 120,
   windowMs: 60 * 60 * 1000,
 };
+
+// 1 ターンの期限。過ぎたら接続を止め、決まった文(mock の型)で返し、記録に時間切れと残す(harness.js の turn)。
+// 試作品の側の待ち時間(src/runtime/runtime.js の AI_TIMEOUT_MS)は、これより少し長くする
+export const TURN_LIMITS = { deadlineMs: 240_000 };
 
 const KIND_LABELS = { extract: '抽出', phrase: '言い方' };
 const perTurnTotal = (perTurn) => Object.values(perTurn).reduce((sum, n) => sum + n, 0);
@@ -83,6 +87,10 @@ export function createTurnMeter({ perTurn = CALL_LIMITS.perTurn, take = () => {}
           }
         },
       };
+    },
+    // この種類の呼び出しを、このターンであと何回できるか
+    remaining(kind) {
+      return Math.max(0, (perTurn[kind] ?? 0) - calls.filter((call) => call.kind === kind).length);
     },
     // 記録に残す形。回数、待った時間の合計、CLI が報告した処理の時間と費用の合計、1 回ずつの中身
     summary() {

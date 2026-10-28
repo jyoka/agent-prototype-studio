@@ -7,6 +7,7 @@ import { readScenarios } from '../observer/scenario.js';
 import { inspectApp } from './inspect.js';
 import { ENTRY_NAMES, readManifest } from './manifest.js';
 import { readAiDefinition } from './product-ai/definition.js';
+import { numbersIn } from './product-ai/guards.js';
 import { createBuildId } from './security.js';
 
 // 試作品が import できる、Studio が同梱するライブラリ。
@@ -118,12 +119,33 @@ function indexHtml(hasCss) {
     .join('\n');
 }
 
+// 目録の data に書いた架空のデータに出てくる数。プロダクト内 AI の返事の確かめ(rules.noNewNumbers)で、出してよい数に入れる。
+// 1 つのファイルは先頭から maxBytes まで、数は重ねずに maxNumbers 個まで読む
+export const DATA_NUMBER_LIMITS = { maxBytes: 1024 * 1024, maxNumbers: 10_000 };
+export async function readDataNumbers(appDir, data = []) {
+  const numbers = new Set();
+  for (const { file } of data) {
+    const handle = await fs.open(path.join(appDir, ...file.split('/')), 'r');
+    try {
+      const buffer = Buffer.alloc(DATA_NUMBER_LIMITS.maxBytes);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      for (const n of numbersIn(buffer.subarray(0, bytesRead).toString('utf8'))) {
+        if (numbers.size >= DATA_NUMBER_LIMITS.maxNumbers) return [...numbers];
+        numbers.add(n);
+      }
+    } finally {
+      await handle.close();
+    }
+  }
+  return [...numbers];
+}
+
 // ビルドの段。安い順に回し、失敗した段で止める(docs/design/harness.md の 2.2、関門 G2〜G4)
 export const BUILD_STAGES = ['inspect', 'contract', 'compile'];
 
 // app/ を 1 つの classic script(IIFE)に束ね、builds/<build-id>/ に置く。
 // 生成コードはここでは実行しない。成功したら、検査済みの AI の設定(なければ null)を ai で、
-// 目録(app/prototype.json。なければ既定の値)を manifest で返す。
+// 目録(app/prototype.json。なければ既定の値)を manifest で、架空のデータに出てくる数を dataNumbers で返す。
 // 失敗したら、止まった段の名前を stage に、各誤りにも stage を付けて返す。
 export async function buildApp({ appDir, buildsDir }) {
   const started = Date.now();
@@ -139,6 +161,7 @@ export async function buildApp({ appDir, buildsDir }) {
   if (manifestErrors.length > 0) return fail('contract', withoutPlace(manifestErrors));
   const ai = await readAiDefinition(appDir, manifest.ai ?? undefined);
   if (ai.errors.length > 0) return fail('contract', withoutPlace(ai.errors));
+  const dataNumbers = ai.definition ? await readDataNumbers(appDir, manifest.data) : [];
   // シナリオの誤りには、どのシナリオのどの手順かが入る(scenario、step)
   const scenarios = await readScenarios(appDir, manifest.scenarios);
   if (scenarios.errors.length > 0) return fail('contract', withoutPlace(scenarios.errors));
@@ -203,6 +226,7 @@ export async function buildApp({ appDir, buildsDir }) {
     buildId,
     ai: ai.definition,
     manifest,
+    dataNumbers,
     errors: [],
     warnings: result.warnings.map((m) => toBuildError(appDir, m)),
   });

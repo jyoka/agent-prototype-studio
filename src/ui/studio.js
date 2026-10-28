@@ -1245,6 +1245,7 @@ function traceInternals(entry) {
     box.append(preBlock(entry, '言い方の指示の全文', input.phrase.systemPrompt));
   }
   if (entry.harness?.phrase?.stdin) box.append(preBlock(entry, '言い方の本文の全文', entry.harness.phrase.stdin));
+  if (entry.harness?.phrase?.retryStdin) box.append(preBlock(entry, '言い方のやり直しの本文の全文', entry.harness.phrase.retryStdin));
   if (entry.calls) {
     const kinds = Object.keys(CALL_KINDS).map((kind) => `${CALL_KINDS[kind]} ${entry.calls[kind]} 回`).join('、');
     box.append(labeled('実際の AI モデルの呼び出し', `${entry.calls.count} 回(${kinds})、待った時間の合計 ${formatSeconds(entry.calls.waitMs)}`));
@@ -1286,6 +1287,9 @@ const STAGE_PHRASE = {
   respond: '接続の 1 回の呼び出しの返事を使いました(決定の前に作られた返事です)',
 };
 const STAGE_SAY = { summary: '条件のまとめ', complete: '終わりの文' };
+const GUARD_RESULTS = { passed: '合格', retried: 'やり直して合格', fallback: '決まった文(mock の型)に代えた' };
+const GUARD_LABELS = { noNewNumbers: '数字を作らない', noLeading: '誘導しない', mustAsk: '聞くべき問いを入れる', maxReplyChars: '長さ', forbidden: '禁止の言葉' };
+const TIMEOUT_STAGES = { extract: '抽出', phrase: '言い方' };
 
 // 開発の担当者向け。harness の 3 段(抽出 → 決定 → 言い方)の中身。モデルの判断と決まった手順の境目を見せる
 function traceStages(entry) {
@@ -1326,6 +1330,22 @@ function traceStages(entry) {
     box.append(labeled('どう作ったか', [STAGE_PHRASE[phrase.via] ?? phrase.via, phrase.retry, phrase.fallback].filter(Boolean).join('。')));
     if (phrase.input.mustInclude.length > 0) box.append(labeled('入れる問いの原文', phrase.input.mustInclude.join(' / ')));
     if (phrase.output) box.append(labeled('出力', phrase.output.reply));
+  }
+  const { guards, timeout } = entry.harness;
+  if (timeout) {
+    box.append(labeled('時間切れ', `1 ターンの期限(${formatSeconds(timeout.limitMs)})を${TIMEOUT_STAGES[timeout.stage] ?? timeout.stage}の途中で過ぎたので、接続を止めて決まった文で返しました`, 'notice'));
+  }
+  if (guards) {
+    box.append(stage('4. 守ることの確かめ(harness のコード。形だけを確かめ、意味は確かめません)'));
+    const failed = guards.failed.map((rule) => `${GUARD_LABELS[rule] ?? rule}(${rule})`).join('、');
+    box.append(labeled('結果', `${GUARD_RESULTS[guards.result] ?? guards.result}${failed ? `。合わなかった決まり: ${failed}` : ''}`, guards.result === 'passed' ? undefined : 'notice'));
+    for (const check of guards.checks) {
+      const problems = check.failed.map((f) => `${GUARD_LABELS[f.rule] ?? f.rule}: ${f.detail}`);
+      if (check.added.length > 0) problems.push(`問いの原文が抜けていたので、後ろに足した: ${check.added.join(' / ')}`);
+      if (check.retryCall) problems.push(check.retryCall);
+      box.append(labeled(`${check.attempt} 回目の返事`, `${check.reply}(${problems.length > 0 ? problems.join('。') : '合う'})`));
+    }
+    if (guards.reason) box.append(labeled('理由', guards.reason, 'notice'));
   }
   return box;
 }

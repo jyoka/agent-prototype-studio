@@ -108,6 +108,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   // プロダクト内 AI の接続の既定はモック。Claude Code は、利用者が画面で送るものと費用を確かめてから切り替える
   const aiSessions = new AiSessions({
     definitionOf: (id) => store.aiDefinition(id),
+    dataNumbersOf: (id) => store.dataNumbers(id),
     connections: [createMockConnection(), createClaudeCodeConnection({ env, allowed: config.allowClaudeCode === true })],
   });
 
