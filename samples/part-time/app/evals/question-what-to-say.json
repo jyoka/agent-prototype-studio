@@ -3,6 +3,7 @@
   "id": "question-what-to-say",
   "kind": "question",
   "about": "何を話せばよいかを、逆に聞かれる",
+  "entry": "partner",
   "turns": [{ "user": "何を話せばいいの?" }],
   "expect": [
     { "check": "toolCalled", "tool": "suggest_questions" },

@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "id": "tool-handoff-schema",
+  "kind": "tool",
+  "about": "構成 C。引き継ぎのツールに、選択肢にない場所を渡すと、形の検査が断る",
+  "call": { "tool": "handoff_to_consult", "args": { "area": "そらまめ村" } },
+  "expect": [{ "check": "guardBlocked", "layer": "tool", "guard": "schema" }]
+}

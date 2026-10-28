@@ -1,0 +1,18 @@
+{
+  "formatVersion": 1,
+  "id": "switch-return-front",
+  "kind": "switch",
+  "about": "構成 C。相談役の聞き取りが終わる(done)と受付に戻り、次の発言は受付が受ける",
+  "entry": "front",
+  "turns": [
+    { "user": "みなと町で時給1100円以上がいい" },
+    { "user": "引き継いでください", "action": "handoff-consult" },
+    { "user": "土日" },
+    { "user": "ありがとう" }
+  ],
+  "expect": [
+    { "check": "handoffTo", "to": "consult" },
+    { "check": "replyContains", "text": "受付です。ほかにご用件はありますか?" },
+    { "check": "noRepeat" }
+  ]
+}

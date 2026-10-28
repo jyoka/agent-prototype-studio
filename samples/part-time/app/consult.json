@@ -1,0 +1,112 @@
+{
+  "formatVersion": 2,
+  "name": "そよかぜバイト探しの相談役(架空)",
+  "instructions": "あなたは架空のバイト探しサービス「そよかぜバイト探し」の相談役です。受付から引き継いだ相談で、働きたい場所、時給の下限、働ける曜日を読み取ります。受付から受け取った条件は、聞き直さないでください。実在の企業や求人の話はしないでください。",
+  "fields": [
+    {
+      "key": "area",
+      "label": "働きたい場所",
+      "question": "働きたい場所はどのあたりですか? みなと町、もり台、かわべ市があります。",
+      "options": [
+        {
+          "value": "みなと町",
+          "keywords": [
+            "みなと"
+          ]
+        },
+        {
+          "value": "もり台",
+          "keywords": [
+            "もり台"
+          ]
+        },
+        {
+          "value": "かわべ市",
+          "keywords": [
+            "かわべ"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "minWage",
+      "label": "時給の下限",
+      "type": "number",
+      "unit": "円",
+      "keywords": [
+        "時給"
+      ],
+      "min": 900,
+      "max": 3000,
+      "question": "時給はいくら以上を希望しますか?"
+    },
+    {
+      "key": "days",
+      "label": "働ける曜日",
+      "question": "働ける曜日は、土日と平日のどちらがいいですか?",
+      "options": [
+        {
+          "value": "土日",
+          "keywords": [
+            "土日",
+            "週末"
+          ]
+        },
+        {
+          "value": "平日",
+          "keywords": [
+            "平日"
+          ]
+        }
+      ]
+    }
+  ],
+  "flow": {
+    "steps": [
+      {
+        "id": "hear",
+        "ask": [
+          "area",
+          "minWage",
+          "days"
+        ],
+        "next": [
+          {
+            "when": {
+              "filled": "required"
+            },
+            "to": "done"
+          }
+        ]
+      }
+    ],
+    "maxTurns": 10
+  },
+  "end": {
+    "say": "complete"
+  },
+  "rules": {
+    "noNewNumbers": true,
+    "noLeading": true,
+    "mustAsk": true,
+    "maxReplyChars": 300,
+    "forbidden": [
+      "必ず採用",
+      "絶対に受かる"
+    ]
+  },
+  "mock": {
+    "greeting": "相談役です(架空のサービスです)。働きたい場所、時給、曜日の希望を教えてください。",
+    "understood": "{changes}と理解しました。",
+    "afterCorrection": "直していただいた{changes}で進めます。",
+    "notUnderstood": "条件として読み取れなかったので、続けて伺います。",
+    "complete": "{summary}で承りました。受付に戻ります。",
+    "intents": {
+      "yes": [
+        "お願いします",
+        "引き継いで",
+        "はい"
+      ]
+    }
+  }
+}

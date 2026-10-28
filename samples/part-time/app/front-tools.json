@@ -1,0 +1,28 @@
+{
+  "formatVersion": 1,
+  "owner": "dip",
+  "tools": [
+    {
+      "name": "handoff_to_consult",
+      "description": "バイト探しの相談を相談役に引き継ぐ。本人がもう話した場所と時給の下限を渡す",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "area": { "type": "string", "enum": ["みなと町", "もり台", "かわべ市"] },
+          "minWage": { "type": "number", "minimum": 900, "maximum": 3000 },
+          "note": { "type": "string", "maxLength": 200 }
+        }
+      },
+      "do": { "op": "handoff", "to": "consult" },
+      "guards": {
+        "deny": [{ "arg": "note", "containsAny": ["体調", "ハラスメント", "パワハラ"], "message": "体調やハラスメントの話は、相談役ではなく担当者に引き継いでください(handoff_to_staff)" }]
+      }
+    },
+    {
+      "name": "handoff_to_staff",
+      "description": "体調やハラスメントなど、危ない話を担当者(人)に引き継ぐ",
+      "inputSchema": { "type": "object", "properties": {} },
+      "do": { "op": "handoff", "to": "staff" }
+    }
+  ]
+}

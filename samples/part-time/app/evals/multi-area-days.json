@@ -3,6 +3,7 @@
   "id": "multi-area-days",
   "kind": "multi",
   "about": "場所と曜日を 1 回で言われる",
+  "entry": "partner",
   "turns": [{ "user": "みなと町で土日に働きたい" }],
   "expect": [
     { "check": "toolCalled", "tool": "search_jobs", "args": { "area": "みなと町" } },
