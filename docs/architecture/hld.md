@@ -138,7 +138,7 @@ flowchart TB
 | 観察器 | `src/observer/observe.js`、`src/observer/browser.js` | 表示中のビルドをヘッドレスの Playwright の Chromium で開き、読み込み、エラー、スクリーンショット、シナリオの結果、最後の画面、合否を report で返す。ブラウザは Studio の中で 1 つ。観察は 1 つずつ、毎回新しい文脈で回す。文脈は観察用の親ページと観察するビルドにだけ要求を出せ、名前の解決は loopback だけ([ADR 0002](../adr/0002-observer-and-harness.md))。作る AI、画面、版、会話の実装は import しない。設計は [harness.md の 3](../design/harness.md#3-観察) |
 | 観察の入口 | `src/server/observe-entry.js` | 観察を呼ぶ所が、どれも通る `observeProject`。同じ形の report を返す。モードは 2 つ。`shown` は Studio の表示中のビルドを見る。`working` は作業中の `app/` を一時フォルダーにビルドし、loopback の空いているポートに自分の試作品の配信と観察用の親ページを立てて見る。`working` の AI は、その観察だけのモックの会話。観察器は会話の実装を import しないので、入口は `src/server/` に置く |
 | 観察の CLI | `bin/observe.js` | `npm run observe -- <プロジェクト>`。入口を `working` で呼び、結果をターミナルに出す。終了コードは `passed` で 0 |
-| 観察の道具の MCP サーバー | `bin/observe-mcp.js`、`src/server/observe-mcp.js` | `npm run observe:mcp -- <プロジェクト>`。stdio の JSON-RPC で `initialize`、`tools/list`、`tools/call` に答え、決まった名前の 9 つの道具(`open`、`read_page`、`inspect`、`click`、`type`、`scroll`、`set_viewport`、`screenshot`、`run_scenarios`)を出す。入口を `working` で呼ぶ。プロジェクトの場所は起動の引数でだけ受け取り、`app/` に書かない。SDK は使わない。入口(会話の実装を使う)を import するので、観察器の境界(S2)の外の `src/server/` に置く |
+| 観察の道具の MCP サーバー | `bin/observe-mcp.js`、`src/server/observe-mcp.js`、`src/server/observe-temp.js` | `npm run observe:mcp -- <プロジェクト>`。stdio の JSON-RPC で `initialize`、`tools/list`、`tools/call` に答え、決まった名前の 9 つの道具(`open`、`read_page`、`inspect`、`click`、`type`、`scroll`、`set_viewport`、`screenshot`、`run_scenarios`)を出す。入口を `working` で呼ぶ。プロジェクトの場所は起動の引数でだけ受け取り、`app/` に書かない。SDK は使わない。入口(会話の実装を使う)を import するので、観察器の境界(S2)の外の `src/server/` に置く。起動ごとの一時フォルダーを作り、前の起動が残したものを消す(`observe-temp.js`) |
 | 観察器の操作とシナリオ | `src/observer/operations.js`、`src/observer/scenario.js` | 7 つの操作(読む、要素の一覧と検査、クリック、入力、スクロール、画面幅、スクリーンショット)と 4 つの確かめ。シナリオの手順と、1 つずつの呼び出し(`observe()` の `operate`)が同じ関数を使う。シナリオの形の検査、`app/scenarios/` の読み込み、Studio の基本のシナリオ([形](../configuration.md#シナリオappscenariosjson)) |
 | 観察用の親ページ | `src/ui/observe.html`、`src/ui/observe.js` | Studio の `/observe.html` に置く静的なページ。試作品を同じ sandbox の iframe に入れ、エラーと AI の要求を `exposeBinding` で観察器に渡す。Studio の API は呼ばない(CSP の `connect-src 'none'`) |
 
@@ -226,6 +226,9 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 
 - 時間の上限: `open` は 90 秒、操作 1 回は 30 秒、`run_scenarios` は観察が 5 分。開いた文脈を使えるのは 10 分まで(観察器の `operate` の上限)。サーバーの全体は 30 分(`--max-seconds` で変えられる)
 - 操作が時間内に終わらなければ、文脈ごと閉じる。サーバーが終わる(入力が閉じる、全体の上限、SIGINT か SIGTERM)と、開いた文脈の report を書き、ブラウザと一時フォルダーを片付ける。片付けが 20 秒で終わらなければ、一時フォルダーと report のない観察のフォルダーを消して終わる
+- 開く途中の `open` と、動いている `run_scenarios` は、サーバーが終わるときに打ち切る(入口の `signal`)。ビルドの後ならブラウザを開かない。開いていれば、その観察だけのブラウザを待たずに閉じる。作る AI の中断(ADR-0001)は、本体が終わると残りを SIGKILL で止めるので、片付けを短くする
+- 一時フォルダー(`src/server/observe-temp.js`): サーバーは起動ごとに `prototype-studio-observe-mcp-<プロセスの番号>-<6 文字>` を `os.tmpdir()` の下に 1 つ作り、Playwright を読む前に `TMPDIR` をそこに向ける。作業中のビルドも、Playwright のプロフィールなども、この中にできる。終わるときはフォルダーごと消す
+- 片付けの途中で強制終了されて残った一時フォルダーは、次の起動で消す。消すのは、名前の決まりに合い、同じ利用者のフォルダーで(シンボリックリンクは除く)、作ったプロセスがもう動いていないものだけ。CLI の作業中のビルドと、ほかのプログラムのものは消さない
 - 画像は 1 MB まで。超えたら JPEG で撮り直し、それでも超えたら画像を返さずファイルの場所を返す。道具の結果の文は 2 万字で切る(ページの文字とアクセシビリティの木は、観察器が先に 3000 字と 5000 字で切る)
 
 1. 呼ぶ所が `observeProject({ projectDir, mode, ... })` を呼ぶ。`scenarios` を渡さなければ、目録の `scenarios` のフォルダー(既定は `app/scenarios/`)から読む。`aiConnection: 'mock'` で観察用の会話の `ai` 関数(`createObservationAi`)を作り、やり取りを report の `ai` に入れる。G5 はシナリオを回さず、基本のシナリオも回さない。G6 は目録のシナリオと基本のシナリオを回す。`outDir` を渡さなければ、`.studio/observations/<観察の ID>/` を新しく作り、`report.json` もそこに書く

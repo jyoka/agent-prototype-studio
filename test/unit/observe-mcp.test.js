@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import { ObserveTools, PROTOCOL_VERSIONS, TOOL_NAMES, handleMessage, serveObserveMcp } from '../../src/server/observe-mcp.js';
@@ -132,4 +135,36 @@ test('サーバーの全体の時間の上限を超えると、入力が開い�
   assert.equal(await server.done, 'timeout');
   assert.ok(Date.now() - started < 2_000);
   assert.equal(server.tools.closed, true);
+});
+
+// 作業中のビルドは os.tmpdir() の下にできるので、TMPDIR をこのテストのフォルダーに向けて残り物を数える
+async function withTempDir(work) {
+  const base = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-observe-mcp-unit-'));
+  const saved = process.env.TMPDIR;
+  const tmp = path.join(base, 'tmp');
+  await fs.mkdir(tmp);
+  process.env.TMPDIR = tmp;
+  try {
+    return await work({ base, tmp });
+  } finally {
+    if (saved === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = saved;
+    await fs.rm(base, { recursive: true, force: true });
+  }
+}
+
+test('open の上限がビルドの途中で来ると、ブラウザを開かずに打ち切り、上限の文を返す。一時フォルダーと観察のフォルダーは残さない', async () => {
+  await withTempDir(async ({ base, tmp }) => {
+    const projectDir = path.join(base, 'project');
+    await fs.mkdir(path.join(projectDir, 'app'), { recursive: true });
+    await fs.writeFile(path.join(projectDir, 'app', 'main.js'), "document.getElementById('root').textContent = '架空の試作品';\n");
+    const tools = new ObserveTools({ projectDir, limits: { openTimeoutMs: 1 } });
+    const opened = await tools.call('open', {});
+    assert.equal(opened.isError, true);
+    assert.match(opened.content[0].text, /秒で開けませんでした/);
+    await tools.close();
+    assert.deepEqual(await fs.readdir(tmp), []);
+    const observations = path.join(projectDir, '.studio', 'observations');
+    assert.deepEqual(await fs.readdir(observations).catch(() => []), []);
+  });
 });

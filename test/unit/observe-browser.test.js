@@ -202,3 +202,47 @@ test('時間の上限は、正しい名前と値だけを受ける', async () =>
     await assert.rejects(observer.observe({ build: OK_BUILD, viewports: [], limits }), /limits/, JSON.stringify(limits));
   }
 });
+
+// 閉じたかを覚えるブラウザ
+function closableBrowser() {
+  const browser = {
+    closed: false,
+    isConnected: () => !browser.closed,
+    on() {},
+    version: () => '1.0',
+    async close() {
+      browser.closed = true;
+    },
+    newContext: async () => ({ async close() {} }),
+  };
+  return browser;
+}
+
+test('abort は動いている観察を待たずにブラウザを閉じ、起動の途中なら起動したらすぐ閉じる', async () => {
+  // 起動の途中で止める: 起動が終わったブラウザはすぐ閉じ、この後の観察は断る
+  let finishLaunch;
+  const late = closableBrowser();
+  const starting = new ObserverBrowser({ launch: () => new Promise((resolve) => (finishLaunch = () => resolve(late))) });
+  const waiting = starting.withContext({}, async () => 'ran');
+  await new Promise((resolve) => setImmediate(resolve));
+  const aborted = starting.abort();
+  finishLaunch();
+  await aborted;
+  await waiting.catch(() => {});
+  assert.equal(late.closed, true);
+  await assert.rejects(starting.withContext({}, async () => 'ran'), /もう止まっています/);
+
+  // 観察の途中で止める: 観察が終わるのを待たずに閉じる
+  const open = closableBrowser();
+  const running = new ObserverBrowser({ launch: async () => open });
+  let entered;
+  const inside = new Promise((resolve) => (entered = resolve));
+  const work = running.withContext({}, () => {
+    entered();
+    return new Promise(() => {});
+  });
+  work.catch(() => {});
+  await inside;
+  await running.abort();
+  assert.equal(open.closed, true);
+});
