@@ -132,3 +132,40 @@ test('ビルドの誤りには、止まった段の名前(inspect、contract、c
   assert.equal(ok.ok, true);
   assert.equal(ok.stage, undefined);
 });
+
+test('目録が指すシナリオの形の誤りは、contract の段の失敗として、ファイル、シナリオ、手順で返す', async (t) => {
+  const MAIN = 'console.log(1);\n';
+  const good = JSON.stringify({ name: '架空の確かめ', steps: [{ expect: 'noErrors' }] });
+  const bad = JSON.stringify({ name: '架空の注文', steps: [{ expect: 'noErrors' }, { do: 'click' }, { do: 'hover' }] });
+
+  // 既定の置き場所(app/scenarios/)
+  const plain = await makeApp(t, { 'main.js': MAIN, 'scenarios/a-good.json': good, 'scenarios/b-bad.json': bad });
+  const result = await buildApp({ appDir: plain.appDir, buildsDir: plain.buildsDir });
+  assert.equal(result.ok, false);
+  assert.equal(result.stage, 'contract');
+  assert.deepEqual(
+    result.errors.map((e) => [e.stage, e.file, e.scenario, e.step, e.line]),
+    [
+      ['contract', 'app/scenarios/b-bad.json', '架空の注文', 2, null],
+      ['contract', 'app/scenarios/b-bad.json', '架空の注文', 3, null],
+    ],
+  );
+  assert.match(result.errors[0].text, /^2 番目の手順: /);
+  assert.equal(await fs.readdir(plain.buildsDir).catch(() => []).then((d) => d.length), 0);
+
+  // 目録で置き場所を変えたら、そこを検査する。読めない JSON も同じ段の失敗
+  const moved = await makeApp(t, {
+    'main.js': MAIN,
+    'prototype.json': JSON.stringify({ formatVersion: 1, scenarios: 'checks' }),
+    'checks/broken.json': '{ "name": ',
+    'scenarios/b-bad.json': bad,
+  });
+  const movedResult = await buildApp({ appDir: moved.appDir, buildsDir: moved.buildsDir });
+  assert.equal(movedResult.stage, 'contract');
+  assert.deepEqual(movedResult.errors.map((e) => e.file), ['app/checks/broken.json']);
+  assert.match(movedResult.errors[0].text, /JSON として読めません/);
+
+  // 形の正しいシナリオだけなら、ビルドは通る
+  const fine = await makeApp(t, { 'main.js': MAIN, 'scenarios/a-good.json': good });
+  assert.equal((await buildApp({ appDir: fine.appDir, buildsDir: fine.buildsDir })).ok, true);
+});

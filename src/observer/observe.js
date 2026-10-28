@@ -42,6 +42,8 @@ const MAX_AI_CHANGES = 20;
 // report の ai に入れるやり取りの数(会話の始まりと、要求の上限の分)
 const MAX_AI_ENTRIES = MAX_AI_REQUESTS + 1;
 const MAX_PAGE_TEXT = 2000;
+// シナリオが失敗したときの画面の文字
+const MAX_FAILED_PAGE_TEXT = 2000;
 const PAGE_TIMEOUT_MS = 5_000;
 
 // 親ページが Node に渡す知らせの種類と、report の errors の kind
@@ -249,7 +251,7 @@ async function runScenario({ ops, item, index, limit, stop }) {
   };
   if (!scenario) {
     // 形の誤り。どの手順がどう違うかを problems に入れ、回さない
-    entry.failed = { step: item.errors[0]?.step ?? null, message: item.errors.map((e) => e.text).join(' / ').slice(0, MAX_MESSAGE), screenshot: null };
+    entry.failed = { step: item.errors[0]?.step ?? null, message: item.errors.map((e) => e.text).join(' / ').slice(0, MAX_MESSAGE), screenshot: null, pageText: null };
     return entry;
   }
   entry.steps = scenario.steps.map((step, i) => ({ n: i + 1, step: structuredClone(step), status: 'skipped', durationMs: null, result: null, message: null }));
@@ -280,7 +282,13 @@ async function runScenario({ ops, item, index, limit, stop }) {
     if (current?.status === 'failed') current.message = message;
     let screenshot = null;
     if (!stop.stopped) screenshot = await ops.screenshot('失敗したとき', { file: `${prefix}-failed.png` }).catch(() => null);
-    entry.failed = { step: current?.status === 'failed' ? current.n : null, message, screenshot };
+    // そのときの画面の文字(作る AI に返す失敗の中身に使う)。時間切れのとき(試作品が止まっているかもしれない)は読まず null
+    let pageText = null;
+    if (!stop.stopped && !(error instanceof StepTimeoutError)) {
+      const shown = await within(ops.read(), PAGE_TIMEOUT_MS, '画面を読めません').catch(() => null);
+      if (shown) pageText = text(shown.text, MAX_FAILED_PAGE_TEXT);
+    }
+    entry.failed = { step: current?.status === 'failed' ? current.n : null, message, screenshot, pageText };
   }
   entry.durationMs = Date.now() - started;
   return entry;

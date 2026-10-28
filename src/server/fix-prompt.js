@@ -1,5 +1,6 @@
 // 直す依頼(docs/design/harness.md の 2.3)。関門の失敗を、決まった型の文にして作る AI に返す。
-// 作る AI に渡す文脈を絞る(S14): 元の依頼、直前のラウンドで失敗した関門の名前と結果(8,000 文字まで)、
+// 作る AI に渡す文脈を絞る(S14): 元の依頼、直前のラウンドで失敗した関門の名前と結果(8,000 文字まで。
+// シナリオの失敗は、シナリオの名前、失敗した手順、期待と実際、そのときの画面の文字)、
 // 変わったファイルの名前だけ。前の会話、全部の report、スクリーンショットの場所は入れない。
 
 export const MAX_FAILURE_CHARS = 8000;
@@ -24,12 +25,26 @@ function where(error) {
   return error.column ? `${error.file}:${error.line}:${error.column}` : `${error.file}:${error.line}`;
 }
 
+// シナリオ 1 本の失敗(関門 G6 の failures の 1 つ): シナリオの名前、失敗した手順、期待と実際、そのときの画面の文字
+function describeScenarioFailure(failure) {
+  const name = failure.base ? `Studio の基本のシナリオ「${failure.scenario}」` : `シナリオ「${failure.scenario}」${failure.file ? `(${failure.file})` : ''}`;
+  const lines = [failure.step ? `${name}の ${failure.step} 番目の手順で失敗しました` : `${name}で失敗しました`];
+  if (failure.expected) lines.push(`期待: ${failure.expected}`);
+  lines.push(`実際: ${failure.actual}`);
+  if (failure.pageText) lines.push(`そのときの画面の文字: ${failure.pageText}`);
+  return lines;
+}
+
 // 関門の結果(run.gates の 1 つ)から、失敗の中身を文にする。ビルドの段はファイルと行とメッセージ、
-// 起動の確認は要約とエラーの種類とメッセージ。report の場所や読み込みの時間は入れない
+// 起動の確認は要約とエラーの種類とメッセージ、シナリオは失敗したシナリオごとの手順と期待と実際。
+// report の場所や読み込みの時間、スクリーンショットは入れない
 export function describeFailure(gate) {
   const lines = [];
-  // 要約はエラーの 1 件目と重なるので、エラーがないとき(画面が空など)だけ書く
-  if (gate.summary && !gate.errors?.length) lines.push(gate.summary);
+  // 要約はエラーやシナリオの 1 件目と重なるので、どちらもないとき(画面が空など)だけ書く
+  if (gate.summary && !gate.errors?.length && !gate.failures?.length) lines.push(gate.summary);
+  for (const failure of gate.failures ?? []) lines.push(...describeScenarioFailure(failure));
+  const moreScenarios = (gate.failedCount ?? 0) - (gate.failures?.length ?? 0);
+  if (moreScenarios > 0) lines.push(`ほか ${moreScenarios} 本のシナリオも失敗しました`);
   for (const error of gate.errors ?? []) {
     if (error.text !== undefined) lines.push(`${where(error)} ${error.text}`);
     else lines.push(`${ERROR_KIND_TEXT[error.kind] ?? error.kind}: ${error.message}`);

@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { describeTarget } from './operations.js';
 
 // シナリオの形と検査(docs/design/harness.md の 3.3)。シナリオは app/<目録の scenarios>/*.json に置く。
 // 手順は、観察器の 7 つの操作(do)と、4 つの確かめ(expect)から作る。
@@ -170,6 +171,42 @@ function deepFreeze(value) {
     Object.freeze(value);
   }
   return value;
+}
+
+// 手順が期待すること(人と作る AI が読む文)。関門 G6 の失敗の「期待」に使う。書き方は operations.js の失敗の文にそろえる
+export function describeStep(step) {
+  if (!isPlainObject(step)) return quote(step);
+  const target = describeTarget(step.target ?? null);
+  switch (step.do) {
+    case 'read':
+      return '画面を読める';
+    case 'inspect':
+      return `${target} を調べられる`;
+    case 'click':
+      return `${target} を押せる`;
+    case 'type':
+      return `${target} に「${step.text}」を入力できる`;
+    case 'scroll':
+      return step.target ? `${target} までスクロールできる` : `ページの${step.to === 'top' ? '上' : '下'}の端までスクロールできる`;
+    case 'viewport':
+      return `画面幅を ${step.viewport} にできる`;
+    case 'screenshot':
+      return `「${step.name}」の画面を撮れる`;
+    default:
+      break;
+  }
+  switch (step.expect) {
+    case 'text':
+      return `${target} に「${step.contains}」がある`;
+    case 'visible':
+      return step.target ? `${target} が見える` : '描画が空でない';
+    case 'noErrors':
+      return 'ここまでにエラーがない';
+    case 'aiState':
+      return `プロダクト内 AI の状態の「${step.key}」が ${quote(step.equals)} になる`;
+    default:
+      return quote(step);
+  }
 }
 
 // Studio の基本のシナリオ。Studio のコードの中にだけ持ち、app/ からは変えられない(harness.md 2.3、3.3)。

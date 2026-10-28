@@ -57,6 +57,48 @@ test('起動の確認の失敗は、エラーの種類とメッセージを入�
   assert.equal(empty.split('\n')[2], '起動の確認で、画面に何も描かれていませんでした');
 });
 
+test('シナリオの失敗は、シナリオの名前、失敗した手順、期待と実際、そのときの画面の文字を入れる', () => {
+  const gate = {
+    id: 'G6',
+    name: 'scenarios',
+    label: 'シナリオ',
+    status: 'failed',
+    verdict: 'failed',
+    summary: 'シナリオ「見出しが出る」の 1 番目の手順で失敗しました(…)。ほか 2 本',
+    report: '.studio/runs/0123456789abcdef/rounds/1/scenarios/report.json',
+    scenarioCount: 4,
+    failedCount: 3,
+    errors: [],
+    failures: [
+      {
+        scenario: '見出しが出る',
+        file: 'app/scenarios/heading.json',
+        base: false,
+        step: 1,
+        expected: '役割 heading、名前「架空の図書室」 が見える',
+        actual: '役割 heading、名前「架空の図書室」 が見えません',
+        pageText: '架〓空〓の〓図〓書〓室 本を探す',
+      },
+      { scenario: '起動して描画が空でなく、エラーがない', file: null, base: true, step: 2, expected: 'ここまでにエラーがない', actual: 'エラーが 1 件あります', pageText: null },
+    ],
+  };
+  const lines = buildFixPrompt({ request: REQUEST, gate, changedFiles: [{ file: 'app/App.jsx', change: 'modified' }] }).split('\n');
+  assert.deepEqual(lines.slice(1, 10), [
+    'Studio が確かめたところ、次の関門で失敗しました: G6 シナリオ',
+    'シナリオ「見出しが出る」(app/scenarios/heading.json)の 1 番目の手順で失敗しました',
+    '期待: 役割 heading、名前「架空の図書室」 が見える',
+    '実際: 役割 heading、名前「架空の図書室」 が見えません',
+    'そのときの画面の文字: 架〓空〓の〓図〓書〓室 本を探す',
+    'Studio の基本のシナリオ「起動して描画が空でなく、エラーがない」の 2 番目の手順で失敗しました',
+    '期待: ここまでにエラーがない',
+    '実際: エラーが 1 件あります',
+    'ほか 1 本のシナリオも失敗しました',
+  ]);
+  const prompt = lines.join('\n');
+  for (const leaked of ['report.json', '.studio', 'verdict', '。ほか 2 本']) assert.ok(!prompt.includes(leaked), leaked);
+  assert.deepEqual(readFixPrompt(prompt), { request: REQUEST, gate: 'G6 シナリオ' });
+});
+
 test('失敗の中身は 8,000 文字までに切る', () => {
   const errors = Array.from({ length: 20 }, (_, i) => ({ file: `app/part${i}.jsx`, line: 1, column: 1, text: 'あ'.repeat(1000) }));
   const prompt = buildFixPrompt({ request: REQUEST, gate: { ...compileGate(errors), errorCount: 25 }, changedFiles: [] });
