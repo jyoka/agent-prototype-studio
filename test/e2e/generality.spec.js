@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, closeMore, expect, launchStudio, openAiMenu, openDevDetails, openMore, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, closeMore, expect, launchStudio, openDevDetails, openMore, switchToRealAi, test } from './studio.js';
 
 // 求人でも LINE でもない題材(架空の学習相談)で、求人相談と同じ流れが通るかを確かめる(#281)。
 // 作成(サンプルを開く) → 試行(モックと偽の Claude Code) → 変更(画面と AI の振る舞い、試し直し) → 版 → 引き継ぎ。
@@ -168,12 +168,7 @@ async function runFlow(page, home, other, otherHome) {
     await page.screenshot({ path: test.info().outputPath('2-changed-and-retried.png'), fullPage: true });
 
     // 6. 試行(実モデルの経路): 偽の Claude Code に切り替える。応答の形と指示は、この題材の ai.json から作る
-    await openAiMenu(page);
-    await page.getByRole('radio', { name: 'Claude Code' }).check();
-    const confirm = page.getByRole('group', { name: 'Claude Code に切り替える前の確認' });
-    await confirm.getByRole('checkbox').check();
-    await confirm.getByRole('button', { name: 'Claude Code に切り替える' }).click();
-    await expect(page.locator('#ai-badge')).toHaveText('AI: Claude Code');
+    await switchToRealAi(page);
     await ui.say('プログラミングを本で学ぶ形がいいです');
     await expect(ui.log.last()).toContainText('偽の Claude Code です');
     await expect(ui.values).toHaveText(['未定', 'プログラミング', '未定', '本で学ぶ']);

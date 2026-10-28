@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { loadConfig } from '../../src/server/config.js';
 import { startStudio } from '../../src/server/index.js';
-import { ROOT, SAMPLES, chooseProject, chooseSample, expect, launchStudio, openAiMenu, openDevDetails, test, writeProject } from './studio.js';
+import { ROOT, SAMPLES, chooseProject, chooseSample, expect, launchStudio, openDevDetails, switchToRealAi, test, writeProject } from './studio.js';
 
 // 実モデルは呼ばない。Claude Code は偽の CLI(test/fixtures/fake-claude.js)に差し替える
 // AI の実行の記録は、その他 → 開発者向けの詳細にある。引き出しは右に重なるが、左の試作品は開いたまま使える
@@ -113,11 +113,8 @@ test('Claude Code(偽)の実行の記録: 渡した指示と本文、受け取�
     const refused = await studio.post('/api/projects/sample-job-consult/ai/connection', { kind: 'claude-code' });
     expect(refused.status).toBe(403);
     expect(JSON.parse(refused.text).error.code).toBe('consent-required');
-    // 切り替える前の確認(送るもの、費用、確かめた印)が、本物の AI を使う同意になる(同意のカードの画面 P25 までのつなぎ)
-    await openAiMenu(page);
-    await page.getByRole('radio', { name: 'Claude Code' }).check();
-    await page.getByRole('checkbox').check();
-    await page.getByRole('button', { name: 'Claude Code に切り替える' }).click();
+    // 同意のカードで「同意して使う」を押すと、本物の AI を使う同意になり、切り替わる
+    await switchToRealAi(page);
     await expect(entries.first()).toContainText('接続の切り替え: モック → Claude Code(Studio の画面から)');
     expect((await studio.api('/api/real-ai')).consent.agreed).toBe(true);
     await expect(trace).toContainText('今の接続: Claude Code(実際の AI モデル)');

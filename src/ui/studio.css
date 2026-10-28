@@ -155,7 +155,50 @@ button { font: inherit; }
 .toolbar .ai-switch[data-kind="claude-code"] { border-color: var(--error); background: var(--error-bg); }
 .ai-menu { margin-bottom: 0.6rem; padding: 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font-size: 0.9rem; max-height: 50vh; overflow: auto; }
 .ai-menu[hidden] { display: none; }
-.ai-menu .ai-picker, .ai-menu .ai-confirm { background: var(--panel); }
+.ai-menu .ai-picker { background: var(--panel); }
+
+/* 本物の AI を使う前の同意のカード(ux-redesign.md 6 節)。直す欄の会話の中と、試す欄の上に、1 枚だけ出す */
+.try-consent[hidden], .real-ai-info[hidden], .real-ai-mark[hidden] { display: none; }
+.try-consent, .real-ai-info { margin-bottom: 0.6rem; max-height: 60vh; overflow: auto; font-size: 0.9rem; }
+.consent-card { list-style: none; padding: 0.7rem 0.9rem; border: 2px solid var(--accent); border-radius: 8px; background: var(--panel); }
+.consent-card h3 { margin: 0 0 0.4rem; font-size: 1rem; }
+.consent-card p { margin: 0.2rem 0; }
+.consent-lead { font-weight: 600; }
+.consent-facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 0.8rem; margin: 0.5rem 0; }
+.consent-facts dt { font-weight: 600; color: var(--muted); }
+.consent-facts dd { margin: 0; }
+.consent-facts ul { margin: 0; padding-left: 1.1rem; }
+.consent-note { padding: 0.4rem 0.6rem; background: var(--warn-bg); border-radius: 4px; }
+.consent-details { margin: 0.5rem 0; font-size: 0.85rem; }
+.consent-details > summary { cursor: pointer; color: var(--accent); }
+.consent-details h4 { margin: 0.6rem 0 0.2rem; font-size: 0.85rem; }
+.consent-details ul { margin: 0 0 0.3rem; padding-left: 1.1rem; }
+.consent-details pre { white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; background: var(--bg); padding: 0.3rem; max-height: 12rem; overflow: auto; }
+.consent-buttons { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
+.consent-buttons button, .consent-declined button {
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.consent-buttons button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.consent-buttons button:disabled { opacity: 0.5; cursor: default; }
+.consent-declined { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; padding: 0.4rem 0.6rem; border: 1px solid #c77700; border-radius: 6px; background: var(--warn-bg); }
+.consent-declined p { margin: 0; flex: 1 1 14rem; }
+/* 本物の AI を使っている間の小さな印。押すと、カードの中身をもう一度見られる */
+.real-ai-mark {
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--error);
+  border-radius: 999px;
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.toolbar .real-ai-mark { padding: 0.1rem 0.5rem; border-color: var(--error); border-radius: 999px; background: var(--error-bg); }
+.make-head { display: flex; align-items: center; gap: 0.6rem; }
 
 /* その他の引き出し。上の帯の下から、右に重ねて出す。開いている間も、左の試作品は使える。
    上の帯の試作品の一覧は、引き出しより手前に出す(上の帯の z-index より小さくする) */
@@ -321,21 +364,15 @@ button { font: inherit; }
 .ai-picker { margin: 0 0 0.6rem; padding: 0.4rem 0.6rem; border: 1px solid var(--line); border-radius: 4px; }
 .ai-picker label { display: block; padding: 0.15rem 0; }
 .ai-picker .hint { margin: 0 0 0.3rem 1.4rem; font-size: 0.8rem; color: var(--muted); }
-.ai-sends, .ai-confirm { margin: 0 0 0.6rem; padding: 0.5rem 0.6rem; border: 1px solid var(--line); border-radius: 4px; }
-.ai-sends ul { margin: 0 0 0.4rem; padding-left: 1.1rem; }
-.ai-billing { padding: 0.3rem 0.5rem; background: var(--warn-bg); border-radius: 4px; }
-.ai-sends pre { white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; background: var(--bg); padding: 0.3rem; max-height: 12rem; overflow: auto; }
-.ai-check { display: block; margin: 0.4rem 0; }
-.ai-buttons, .ai-waiting { display: flex; gap: 0.5rem; align-items: center; margin: 0 0 0.6rem; }
+.ai-waiting { display: flex; gap: 0.5rem; align-items: center; margin: 0 0 0.6rem; }
 .ai-waiting[hidden] { display: none; }
-.ai-buttons button, .ai-waiting button {
+.ai-waiting button {
   padding: 0.3rem 0.7rem;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--panel);
   cursor: pointer;
 }
-.ai-buttons button:disabled { opacity: 0.5; cursor: default; }
 .ai-waiting { padding: 0.4rem 0.6rem; background: #eef3fd; border-radius: 4px; justify-content: space-between; }
 .ai-name { font-weight: 600; }
 .ai-state { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.8rem; margin: 0; }

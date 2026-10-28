@@ -197,6 +197,18 @@ export async function openAiMenu(page) {
   await expect(page.locator('#ai-menu')).toBeVisible();
 }
 
+// 試作品の中の AI を本物の AI(Claude Code)に切り替える。同意の前なら、試す欄の上に出る同意のカードで「同意して使う」を押す。
+// 同意は直す AI と共通なので、同意の後はカードを出さずに切り替わる(ux-redesign.md 6 節)
+export async function switchToRealAi(page) {
+  await openAiMenu(page);
+  await page.getByRole('radio', { name: 'Claude Code' }).click();
+  const card = page.getByRole('group', { name: '本物の AI を使う前に' });
+  const badge = page.locator('#ai-badge');
+  await expect(card.or(badge.filter({ hasText: 'AI: Claude Code' }))).toBeVisible();
+  if (await card.isVisible()) await card.getByRole('button', { name: '同意して使う' }).click();
+  await expect(badge).toHaveText('AI: Claude Code');
+}
+
 // 上の帯の「その他」を押して、右の引き出しを開く(開いていれば、そのまま)。
 // 保存した状態、本番開発へ渡す、画面を読み込み直す、開発者向けの詳細は、この中にある
 export async function openMore(page) {

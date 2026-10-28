@@ -102,6 +102,9 @@ test('同意の前は、直す AI の送信と本物の AI への切り替えを
   // 試作品を選ばなければ、試作品の中の AI の「詳しく」は入れない。ない試作品は 404
   assert.equal(before.body.details.product, null);
   assert.equal((await call('/api/real-ai?project=no-such-project')).status, 404);
+  // 「詳しく」の記録の扱い。一覧の API も同意の状態を返す(画面の、本物の AI を使っている間の印)
+  assert.match(before.body.details.records.join(''), /\.studio\/runs/);
+  assert.deepEqual((await call('/api/projects')).body.consent, { agreed: false, agreedAt: null });
 
   // 直す AI の送信は断る。run は始めない
   const fix = await call(`/api/projects/${JOB}/build-requests`, { request: '失敗して' });
@@ -131,6 +134,7 @@ test('同意の前は、直す AI の送信と本物の AI への切り替えを
   assert.equal(agreed.status, 200);
   assert.equal(agreed.body.consent.agreed, true);
   assert.match(agreed.body.consent.agreedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual((await call('/api/projects')).body.consent, agreed.body.consent);
 
   // 同意の後は通る。1 回の同意が、直す AI と試作品の中の AI の両方に効く
   const sent = await call(`/api/projects/${JOB}/build-requests`, { request: '失敗して' });
