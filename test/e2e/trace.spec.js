@@ -222,7 +222,8 @@ test('試す画面で話している途中に観察を回しても、利用者�
     const chat = app.getByRole('region', { name: '会話' });
     await expect(chat).toContainText('カフェで働きたいです');
 
-    const report = await studio.observe('sample-job-consult', { aiConnection: 'mock', viewports: [] });
+    // 見本のシナリオ(app/scenarios/)は回さず、基本のシナリオ(起動、あいさつ)だけを回す
+    const report = await studio.observe('sample-job-consult', { aiConnection: 'mock', viewports: [], scenarios: [] });
     expect(report.verdict).toBe('passed');
     expect(report.ai.map((entry) => entry.type)).toEqual(['open']);
 

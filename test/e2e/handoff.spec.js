@@ -132,6 +132,7 @@ async function exportAndCheck(page, home, other, otherHome) {
       'app/jobs.js',
       'app/main.jsx',
       'app/prototype.json',
+      'app/scenarios/talk-and-narrow.json',
       'app/style.css',
       'handoff.json',
     ]);

@@ -51,10 +51,14 @@ test('正常な見本は passed になり、読み込みの時間と、指定し
   expect(report.load.done).toBe(true);
   expect(report.load.durationMs).toBeGreaterThanOrEqual(0);
   expect(report.load.timeoutMs).toBe(15_000);
-  expect(report).toMatchObject({ ai: [], scenarios: [] });
+  expect(report.ai).toEqual([]);
+  // シナリオを渡さなくても、Studio の基本のシナリオ(起動して描画が空でない、エラーがない)が回る
+  expect(report.scenarios.map((s) => [s.name, s.base, s.verdict])).toEqual([['起動して描画が空でなく、エラーがない', true, 'passed']]);
+  // 最後の画面の文字と、アクセシビリティの木の要約、空でないか
   expect(report.page.empty).toBe(false);
   expect(report.page.text).toContain('架空の花屋 ひだまり');
   expect(report.page.text).toContain('ひまわり 300 円');
+  expect(report.page.tree).toContain('- heading "架空の花屋 ひだまり" [level=1]');
 
   // 指定した 2 つだけ。tablet は撮らない
   expect(report.screenshots.map((s) => s.viewport)).toEqual(['mobile', 'desktop']);
@@ -70,7 +74,9 @@ test('正常な見本は passed になり、読み込みの時間と、指定し
 test('何も描かない試作品は、エラーがなくても page.empty が true になる', async () => {
   const report = await studio.observe('obs-empty', { viewports: [] });
   expect(report.errors).toEqual([]);
-  expect(report.page).toEqual({ text: '', empty: true });
+  expect(report.page).toMatchObject({ text: '', empty: true });
+  // 基本のシナリオ(描画が空でない)で落ちる
+  expect(report.verdict).toBe('failed');
 });
 
 test('ビルドの失敗は、ブラウザを開かずに build のエラーと failed を返す', async () => {
@@ -193,8 +199,13 @@ test('見本の求人相談を観察すると、report の ai にあいさつの
   await studio.aiSessions.send(id, 'しおかぜ町でカフェのアルバイトを探しています');
   const before = studio.aiSessions.view(id);
 
-  const report = await studio.observe(id, { aiConnection: 'mock', viewports: [] });
+  // 見本のシナリオ(app/scenarios/)は回さず、基本のシナリオ(起動、あいさつ)だけを回す
+  const report = await studio.observe(id, { aiConnection: 'mock', viewports: [], scenarios: [] });
   expect(report.verdict).toBe('passed');
+  expect(report.scenarios.map((s) => [s.name, s.verdict])).toEqual([
+    ['起動して描画が空でなく、エラーがない', 'passed'],
+    ['プロダクト内 AI のあいさつが出る', 'passed'],
+  ]);
   expect(report.errors).toEqual([]);
   const [open, ...rest] = report.ai;
   expect(rest).toEqual([]);
@@ -259,5 +270,146 @@ test('続けて 2 回観察しても、前の観察の会話とブラウザの�
     expect(studio.aiSessions.conversations('obs-ai-fresh')).toEqual([]);
   } finally {
     browser.withContext = original;
+  }
+});
+
+test('7 つの操作と 4 つの確かめが、シナリオの手順で使える', async () => {
+  const scenario = {
+    name: '7 つの操作と 4 つの確かめ',
+    viewport: 'desktop',
+    steps: [
+      { do: 'read' },
+      { do: 'inspect' },
+      { do: 'viewport', viewport: 'mobile' },
+      { do: 'type', target: { label: 'メッセージ' }, text: '英会話を始めたいです' },
+      { do: 'inspect', target: { role: 'button', name: '送る' } },
+      { do: 'click', target: { role: 'button', name: '送る' } },
+      { expect: 'aiState', key: 'subject', equals: '英会話' },
+      { expect: 'text', target: { region: '学習プラン' }, contains: '英会話' },
+      { do: 'scroll', to: 'bottom' },
+      { do: 'scroll', target: { region: '合う講座' } },
+      { expect: 'visible', target: { text: '合う講座(架空)' } },
+      { expect: 'noErrors' },
+      { do: 'screenshot', name: '話した後' },
+    ],
+  };
+  const report = await studio.observe('sample-study-consult', { aiConnection: 'mock', viewports: [], scenarios: [scenario] });
+  const [, , ran] = report.scenarios;
+  expect(report.verdict).toBe('passed');
+  expect(ran).toMatchObject({ name: '7 つの操作と 4 つの確かめ', base: false, file: null, verdict: 'passed', failed: null });
+  expect(ran.steps.map((s) => s.status)).toEqual(Array(13).fill('passed'));
+  const result = (n) => ran.steps[n - 1].result;
+
+  // ページを読む: 画面の文字と、アクセシビリティの木
+  expect(result(1).text).toContain('あおぞら学習相談');
+  expect(result(1).tree).toContain('- heading "あおぞら学習相談" [level=1]');
+  // 要素の一覧: 操作できる要素の役割、名前、見えているか、押せるか。文字がないうちは送れない
+  expect(result(2).elements).toContainEqual(expect.objectContaining({ role: 'textbox', name: 'メッセージ', visible: true, enabled: true }));
+  expect(result(2).elements).toContainEqual(expect.objectContaining({ role: 'button', name: '送る', visible: true, enabled: false }));
+  // 画面幅の切り替え
+  expect(result(3)).toMatchObject({ viewport: 'mobile', width: 390, height: 844 });
+  // 入力の後は、送るを押せる
+  expect(result(5)).toMatchObject({ count: 1, elements: [expect.objectContaining({ role: 'button', name: '送る', enabled: true })] });
+  // スクロール: ページの端まで(mobile では縦に長い)
+  expect(result(9).scrollY).toBeGreaterThan(0);
+  // スクリーンショット: 名前を付けて、観察のフォルダーに置く
+  const shot = result(13);
+  expect(shot).toMatchObject({ name: '話した後', viewport: 'mobile', width: 390, height: 844 });
+  expect(path.basename(shot.file)).toBe('scenario-3-step-13.png');
+  expect(await pngSize(shot.file)).toEqual({ width: 390, height: 844 });
+
+  // 観察の会話で、試作品から送った文に AI が答えた
+  expect(report.ai.map((entry) => entry.type)).toEqual(['open', 'reply']);
+  // 最後の画面
+  expect(report.page).toMatchObject({ viewport: 'mobile', truncated: false });
+  expect(report.page.text).toContain('英会話');
+});
+
+test('7 つの操作は、シナリオの手順と同じ関数を 1 つずつ呼んで使える', async () => {
+  const calls = [];
+  const report = await studio.observe('obs-ok', {
+    viewports: [],
+    scenarios: [],
+    operate: async (ops) => {
+      calls.push(await ops.read());
+      calls.push(await ops.inspect({ text: 'すずらん' }));
+      calls.push(await ops.viewport('tablet'));
+      calls.push(await ops.scroll({ to: 'top' }));
+      calls.push(await ops.expectText({ role: 'list' }, 'コスモス 250 円'));
+      calls.push(await ops.screenshot('1 つずつ'));
+      // シナリオの手順と同じ入口でも呼べる
+      calls.push(await ops.step({ expect: 'visible', target: { role: 'heading', name: '架空の花屋 ひだまり' } }));
+      await expect(ops.click({ role: 'button', name: 'ない' })).rejects.toThrow('対象が見つかりません');
+    },
+    limits: { stepTimeoutMs: 1_000 },
+  });
+  expect(report.verdict).toBe('passed');
+  expect(calls[0].text).toContain('ひまわり');
+  expect(calls[1]).toMatchObject({ count: 1, elements: [expect.objectContaining({ role: 'listitem', text: 'すずらん 450 円', visible: true })] });
+  expect(calls[2]).toMatchObject({ viewport: 'tablet', width: 820 });
+  expect(calls[3]).toEqual({ to: 'top', scrollY: 0 });
+  expect(await pngSize(calls[5].file)).toEqual({ width: 820, height: 1180 });
+  expect(calls[6]).toEqual({ target: { role: 'heading', name: '架空の花屋 ひだまり' } });
+  expect(report.page.viewport).toBe('tablet');
+});
+
+test('失敗した手順と、そのときのスクリーンショットが report に入る。形の誤りは、どの手順がどう違うかを返す', async () => {
+  const report = await studio.observe('obs-ok', {
+    viewports: [],
+    limits: { stepTimeoutMs: 1_000 },
+    scenarios: [
+      {
+        name: '注文できる',
+        viewport: 'tablet',
+        steps: [
+          { expect: 'visible', target: { text: 'ひまわり' } },
+          { do: 'click', target: { role: 'button', name: '注文する' } },
+          { do: 'screenshot', name: '注文の後' },
+        ],
+      },
+      { name: '品ぞろえに、ばらがある', steps: [{ expect: 'text', contains: 'ばら' }] },
+      { name: '形が違う', steps: [{ do: 'hover', target: { text: 'ひまわり' } }] },
+    ],
+  });
+  expect(report.errors).toEqual([]);
+  expect(report.verdict).toBe('failed');
+  const [base, order, roses, broken] = report.scenarios;
+  expect(base.verdict).toBe('passed');
+
+  expect(order).toMatchObject({ verdict: 'failed', viewport: 'tablet' });
+  expect(order.steps.map((s) => s.status)).toEqual(['passed', 'failed', 'skipped']);
+  expect(order.steps[1].message).toContain('対象が見つかりません: 役割 button、名前「注文する」');
+  expect(order.failed).toMatchObject({ step: 2, message: order.steps[1].message });
+  expect(order.failed.screenshot).toMatchObject({ name: '失敗したとき', viewport: 'tablet', width: 820, height: 1180 });
+  expect(path.basename(order.failed.screenshot.file)).toBe('scenario-2-failed.png');
+  expect(await pngSize(order.failed.screenshot.file)).toEqual({ width: 820, height: 1180 });
+
+  expect(roses.failed).toMatchObject({ step: 1, message: expect.stringContaining('画面全体 に「ばら」がありません(今の文字: 「架空の花屋 ひだまり') });
+
+  // 形の誤りは回さない
+  expect(broken).toMatchObject({ name: '形が違う', verdict: 'failed', steps: [] });
+  expect(broken.failed).toMatchObject({ step: 1, screenshot: null, message: expect.stringContaining('1 番目の手順: 知らない do です: "hover"') });
+});
+
+test('見本の求人相談と学習相談のシナリオ(app/scenarios/)が、モックで通る', async () => {
+  for (const [id, name, file] of [
+    ['sample-job-consult', '希望を話すと、希望条件が埋まり、合う求人が絞られる', 'app/scenarios/talk-and-narrow.json'],
+    ['sample-study-consult', '学びたいことを話すと、学習プランの項目に出る', 'app/scenarios/talk-and-plan.json'],
+  ]) {
+    const report = await studio.observe(id, { aiConnection: 'mock', viewports: [] });
+    expect(report.errors).toEqual([]);
+    expect(report.scenarios.map((s) => [s.name, s.base, s.verdict])).toEqual([
+      ['起動して描画が空でなく、エラーがない', true, 'passed'],
+      ['プロダクト内 AI のあいさつが出る', true, 'passed'],
+      [name, false, 'passed'],
+    ]);
+    expect(report.verdict).toBe('passed');
+    const sample = report.scenarios[2];
+    expect(sample.file).toBe(file);
+    const shot = sample.steps.at(-1).result;
+    expect(path.dirname(path.dirname(shot.file))).toBe(path.join(home, 'projects', id, '.studio', 'observations'));
+    expect(await pngSize(shot.file)).toEqual({ width: shot.width, height: shot.height });
+    // プロダクト内 AI はモックで答えた
+    expect(report.ai.find((entry) => entry.type === 'reply')).toMatchObject({ connection: { kind: 'mock' } });
   }
 });

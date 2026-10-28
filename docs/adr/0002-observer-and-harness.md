@@ -39,7 +39,7 @@ harness.md の 3.6 の表を元に、jyoka/tasks#300 で作ったものを書き
 | 外部への通信 | CSP に加えて、観察の文脈(`BrowserContext`)の `context.route` で、観察用の親ページとその script、観察するビルドのファイル以外への要求を断つ。断った要求は report の `errors` に `blocked-request` として残す。CSP が断った要求も残すので、外部の画像やフォントを読む試作品は `failed` になる。`context.route` は名前の解決と WebRTC を止めないので、起動の引数でブラウザ全体をしぼる(下の表) |
 | 使い捨ての環境 | 観察ごとに新しい文脈(新しいプロフィール)で開く。service worker とダウンロードは使わせない |
 | 管理された PC | Playwright の Chromium だけを使うので、利用者の Chrome や Edge の組織のポリシーと強制の拡張機能は効かない(上の節) |
-| 暴走(T8) | 観察の全体に時間の上限を置き(`limits.observeTimeoutMs`。既定は `loadTimeoutMs` + `settleMs` + 30 秒)、超えたら文脈ごと閉じる。文脈を開けない、閉じられないブラウザは手放し、次の観察で新しいブラウザを起動する。手放したブラウザは、Playwright が close の 30 秒後にプロセスグループごと強制終了する |
+| 暴走(T8) | 観察の全体に時間の上限を置き(`limits.observeTimeoutMs`。既定は `loadTimeoutMs` + `settleMs` + 30 秒に、シナリオ 1 本ごとに `scenarioTimeoutMs` + 5 秒を足す)、超えたら文脈ごと閉じる。文脈を開けない、閉じられないブラウザは手放し、次の観察で新しいブラウザを起動する。手放したブラウザは、Playwright が close の 30 秒後にプロセスグループごと強制終了する |
 
 ### 観察の文脈が出してよい要求
 

@@ -1,0 +1,14 @@
+{
+  "name": "希望を話すと、希望条件が埋まり、合う求人が絞られる",
+  "viewport": "desktop",
+  "steps": [
+    { "do": "type", "target": { "label": "メッセージ" }, "text": "しおかぜ町でカフェのアルバイトを探しています" },
+    { "do": "click", "target": { "role": "button", "name": "送る" } },
+    { "expect": "aiState", "key": "jobType", "equals": "カフェのホール" },
+    { "expect": "aiState", "key": "area", "equals": "しおかぜ町" },
+    { "expect": "text", "target": { "region": "希望条件" }, "contains": "アルバイト・パート" },
+    { "expect": "text", "target": { "region": "条件に合う求人" }, "contains": "喫茶こもれび" },
+    { "expect": "noErrors" },
+    { "do": "screenshot", "name": "条件で求人が絞られた" }
+  ]
+}

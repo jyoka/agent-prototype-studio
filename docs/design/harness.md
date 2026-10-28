@@ -176,7 +176,7 @@ report の形(`format: "prototype-studio-observation"`、`formatVersion: 1`):
 | `ai` | 観察の中のプロダクト内 AI とのやり取り(発言、返事、接続、状態の変化)。今の AI の実行の記録(#277)と同じ形 |
 | `scenarios[]` | シナリオごとの合否、手順ごとの結果、失敗した手順、そのときのスクリーンショット |
 | `screenshots[]` | 名前、画面幅、ファイル(`.studio/` の中) |
-| `page` | 最後の画面の文字と、アクセシビリティの木の要約(作る AI に文で渡せる形) |
+| `page` | 最後の画面の文字と、アクセシビリティの木の要約(作る AI に文で渡せる形)、画面が空かどうか(`empty`。関門 G5 が見る) |
 | `verdict` | `passed`、`failed`、`unverified` |
 
 ### 3.2 図

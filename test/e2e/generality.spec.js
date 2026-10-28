@@ -213,6 +213,7 @@ async function runFlow(page, home, other, otherHome) {
     'app/courses.js',
     'app/main.jsx',
     'app/prototype.json',
+    'app/scenarios/talk-and-plan.json',
     'app/style.css',
     'handoff.json',
   ]);
