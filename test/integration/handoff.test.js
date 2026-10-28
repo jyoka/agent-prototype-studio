@@ -3,7 +3,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { FAKE_CLI } from '../../src/server/agent-connection.js';
+import { BuildRequests } from '../../src/server/build-requests.js';
+import { describeBilling } from '../../src/server/claude-args.js';
+import { STUDIO_ROOT } from '../../src/server/config.js';
 import { HANDOFF_FORMAT, HandoffError, ProjectHandoffs } from '../../src/server/handoff.js';
+import { ensureSampleProjects } from '../../src/server/projects.js';
 import { AiSessions } from '../../src/server/product-ai/session.js';
 import { createMockConnection } from '../../src/server/product-ai/mock.js';
 import { ProjectStore } from '../../src/server/store.js';
@@ -76,7 +81,7 @@ test('ソース、意図、AI の設定、会話と状態、未接続と未決�
   const result = await handoffs.export('travel', NOTES);
   assert.equal(path.dirname(result.handoff.dir), path.join(home, 'handoffs'));
   assert.match(result.handoff.name, /^travel-\d{8}-\d{6}$/);
-  assert.deepEqual(result.handoff.counts, { real: 2, mock: 3, missing: 5, questions: 2 });
+  assert.deepEqual(result.handoff.counts, { real: 2, mock: 3, missing: 5, questions: 3 });
 
   // 別の場所に写しても、中身だけで読める
   const other = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-handoff-other-'));
@@ -84,7 +89,7 @@ test('ソース、意図、AI の設定、会話と状態、未接続と未決�
   await fs.cp(result.handoff.dir, other, { recursive: true });
   const manifest = JSON.parse(await fs.readFile(path.join(other, 'handoff.json'), 'utf8'));
   assert.equal(manifest.format, HANDOFF_FORMAT);
-  assert.equal(manifest.formatVersion, 1);
+  assert.equal(manifest.formatVersion, 2);
   assert.deepEqual(manifest.project, { id: 'travel', title: 'travel' });
   assert.deepEqual(manifest.notes, NOTES);
   assert.equal(manifest.working.text, '保存版 v1「湖の版」と同じ');
@@ -93,7 +98,16 @@ test('ソース、意図、AI の設定、会話と状態、未接続と未決�
   assert.equal(await fs.readFile(path.join(other, 'app', 'main.js'), 'utf8'), await fs.readFile(path.join(app, 'main.js'), 'utf8'));
   assert.deepEqual(manifest.source.files.map((f) => f.path), ['app/ai.json', 'app/main.js', 'app/places-data.js']);
   assert.equal(manifest.source.entry, 'app/main.js');
+  // 目録がないので、架空のデータは推定のまま。目録は既定の値で、作る run の記録もない
   assert.deepEqual(manifest.source.dataFiles, ['app/places-data.js']);
+  assert.equal(manifest.source.dataFrom, 'guess');
+  assert.equal(manifest.prototype.file, null);
+  assert.equal(manifest.prototype.entry, 'main.js');
+  assert.deepEqual(manifest.scenarios.files, []);
+  assert.deepEqual(manifest.scenarios.base.map((s) => s.name), ['起動して描画が空でなく、エラーがない', 'プロダクト内 AI のあいさつが出る']);
+  assert.equal(manifest.evidence.run, null);
+  assert.match(manifest.evidence.appDigest, /^[0-9a-f]{64}$/);
+  assert.ok(manifest.openQuestions.some((q) => q.from === 'studio' && q.text.startsWith('作る run の記録がない。')));
   assert.deepEqual(manifest.source.signs.network.map((s) => `${s.file}:${s.line}`), ['app/main.js:4']);
   assert.deepEqual(manifest.source.signs.todo.map((s) => `${s.file}:${s.line}`), ['app/main.js:3']);
 
@@ -228,4 +242,153 @@ test('メモの形が違えば断る。書き出しの間は、版の操作と�
   store.claimRun('travel');
   await assert.rejects(handoffs.export('travel', {}), /作る AI が作業中/);
   store.releaseRun('travel');
+});
+
+// 目録、シナリオ、作る run の記録がある試作品(見本の求人相談)。作る AI は偽接続で、観察器(関門 G5、G6)は差し替える
+const JOB = 'sample-job-consult';
+const ENV = { PATH: process.env.PATH };
+
+async function makeSampleStudio(t) {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-handoff-sample-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  await ensureSampleProjects(home, path.join(STUDIO_ROOT, 'samples'));
+  const store = new ProjectStore(home);
+  await store.buildAll();
+  const aiSessions = new AiSessions({ definitionOf: (id) => store.aiDefinition(id), connections: [createMockConnection()] });
+  const versions = new ProjectVersions({ store, aiSessions });
+  // 観察器の report の代わり。本物と同じく、表示中のビルドの appDigest を持つ
+  const report = async (scenarios) => ({
+    format: 'prototype-studio-observation',
+    formatVersion: 1,
+    appDigest: (await store.list()).find((p) => p.id === JOB).lastBuild.appDigest,
+    startedAt: new Date().toISOString(),
+    verdict: 'passed',
+    reason: null,
+    errors: [],
+    load: { done: true, durationMs: 100 },
+    page: { text: 'しおかぜ求人相談', empty: false },
+    scenarios,
+    screenshots: [],
+  });
+  const requests = new BuildRequests({
+    store,
+    connection: { kind: 'fake', label: '偽接続', command: process.execPath, prefixArgs: [FAKE_CLI], billing: describeBilling(ENV), problem: null },
+    env: ENV,
+    observe: async (id, options) =>
+      options.gate === 'scenarios'
+        ? report([
+            { name: '起動して描画が空でなく、エラーがない', base: true, file: null, verdict: 'passed', steps: [], failed: null },
+            { name: '希望を話すと、希望条件が埋まり、合う求人が絞られる', base: false, file: 'app/scenarios/talk-and-narrow.json', verdict: 'passed', steps: [], failed: null },
+          ])
+        : report([]),
+  });
+  t.after(() => requests.closeAll());
+  const handoffs = new ProjectHandoffs({ home, store, aiSessions, versions, requests });
+  const send = async (text) => {
+    const started = await requests.start(JOB, text);
+    return new Promise((resolve) => started.subscribe(() => {}, resolve));
+  };
+  const app = path.join(home, 'projects', JOB, 'app');
+  return { home, app, store, handoffs, send };
+}
+
+const readHandoff = async (result) => ({
+  manifest: JSON.parse(await fs.readFile(path.join(result.handoff.dir, 'handoff.json'), 'utf8')),
+  readme: await fs.readFile(path.join(result.handoff.dir, 'README.md'), 'utf8'),
+});
+
+test('目録、シナリオ、最新の作る run と観察の report の要約を入れる。目録の data を宣言として出し、未実装と制約を未接続の行に出す(S7)', async (t) => {
+  const { handoffs, send } = await makeSampleStudio(t);
+  const run = await send('見出しを「うみかぜ求人相談」にして');
+  assert.equal(run.status, 'passed', JSON.stringify(run.items, null, 2));
+
+  const result = await handoffs.export(JOB, { purpose: '求人を相談で絞れるか確かめる' });
+  const { manifest, readme } = await readHandoff(result);
+  assert.equal(manifest.formatVersion, 2);
+
+  // 目録: 作る AI が書いた意図、制約、未実装、架空のデータ
+  assert.equal(manifest.prototype.file, 'app/prototype.json');
+  assert.equal(manifest.prototype.intent.purpose, '求職者が希望を話すと、案内役が条件を読み取り、合う求人が絞られる体験を試す');
+  assert.deepEqual(manifest.prototype.unimplemented, ['ログイン', '求人への応募', '本物の求人データとのつなぎ込み']);
+  assert.deepEqual(manifest.prototype.data, [{ file: 'jobs.js', about: '架空の求人の一覧(職種、雇用区分、勤務地、時給)' }]);
+  assert.equal(manifest.source.entry, 'app/main.jsx');
+
+  // 架空のデータは、推定ではなく目録の宣言
+  assert.deepEqual(manifest.source.dataFiles, ['app/jobs.js']);
+  assert.equal(manifest.source.dataFrom, 'manifest');
+  const data = manifest.capabilities.find((c) => c.item === 'データ');
+  assert.match(data.prototype, /目録\(app\/prototype\.json の data\)に書かれた架空のデータ: app\/jobs\.js\(架空の求人の一覧/);
+  assert.ok(!data.prototype.includes('推定'));
+  assert.ok(!readme.includes('手がかり(推定)'));
+
+  // 未実装と制約は「未接続」の行
+  const missing = manifest.capabilities.filter((c) => c.kind === 'missing').map((c) => c.item);
+  assert.deepEqual(missing.slice(-4), ['ログイン', '求人への応募', '本物の求人データとのつなぎ込み', '試作品の制約(目録)']);
+  assert.match(manifest.capabilities.at(-1).prototype, /データはすべて架空、実在の企業、店舗、地名とは関係ない/);
+  assert.match(readme, /\| 未接続 \| 求人への応募 \| 目録\(app\/prototype\.json の unimplemented\)/);
+  // 書き出した人のメモと、作る AI の意図を並べる
+  assert.match(readme, /## 目的\n\n> 求人を相談で絞れるか確かめる\n\n## 作る AI が書いた意図と制約\(目録\)/);
+  assert.match(readme, /- 意図: 求職者が希望を話すと/);
+
+  // シナリオ: app/ のものと Studio の基本のもの。手順ごとに確かめることの文を付ける
+  assert.equal(manifest.scenarios.folder, 'app/scenarios');
+  assert.deepEqual(manifest.scenarios.files.map((s) => [s.file, s.name, s.steps.length]), [
+    ['app/scenarios/talk-and-narrow.json', '希望を話すと、希望条件が埋まり、合う求人が絞られる', 8],
+  ]);
+  assert.equal(manifest.scenarios.files[0].checks[2], 'プロダクト内 AI の状態の「jobType」が "カフェのホール" になる');
+  assert.equal(manifest.scenarios.base.length, 2);
+  assert.match(readme, /\| `app\/scenarios\/talk-and-narrow\.json` \| 希望を話すと、希望条件が埋まり、合う求人が絞られる \| desktop \| 1\. /);
+
+  // 最新の作る run の要約: 合否、関門ごとの結果、日時、appDigest。今の app/ と同じ中身で確かめた
+  const evidence = manifest.evidence.run;
+  assert.equal(evidence.id, run.id);
+  assert.equal(evidence.file, `.studio/runs/${run.id}/run.json`);
+  assert.equal(evidence.status, 'passed');
+  assert.equal(evidence.startedAt, run.startedAt);
+  assert.ok(evidence.finishedAt);
+  assert.deepEqual(evidence.gates.map((g) => `${g.id}:${g.status}`), ['G1:passed', 'G2:passed', 'G3:passed', 'G4:passed', 'G5:passed', 'G6:passed']);
+  assert.equal(evidence.appDigest, manifest.evidence.appDigest);
+  assert.equal(evidence.stale, false);
+  assert.deepEqual(evidence.reports.map((r) => [r.gate, r.verdict, r.stale]), [['G5', 'passed', false], ['G6', 'passed', false]]);
+  assert.deepEqual(evidence.reports[1].scenarios.map((s) => [s.name, s.base, s.verdict]), [
+    ['起動して描画が空でなく、エラーがない', true, 'passed'],
+    ['希望を話すと、希望条件が埋まり、合う求人が絞られる', false, 'passed'],
+  ]);
+  assert.match(readme, /## 最新の証拠\n[\s\S]*- 結果: 通った\(ラウンド 1 回\)\n[\s\S]*- 確かめた app\/ の中身: 今の app\/ と同じ中身/);
+  assert.match(readme, /\| G6 \| シナリオ \| 通った \|/);
+  assert.ok(!manifest.openQuestions.some((q) => /証拠|作る run/.test(q.text)));
+});
+
+test('作る run の後に app/ が変わったら、証拠の要約に古い印を付ける', async (t) => {
+  const { app, store, handoffs, send } = await makeSampleStudio(t);
+  await send('見出しを「うみかぜ求人相談」にして');
+  // 作る欄を通さずに app/ を変える(手で直したときなど)
+  await fs.appendFile(path.join(app, 'App.jsx'), '// 手で直した\n');
+  await store.build(JOB);
+
+  const { manifest, readme } = await readHandoff(await handoffs.export(JOB, {}));
+  assert.equal(manifest.evidence.run.stale, true);
+  assert.notEqual(manifest.evidence.run.appDigest, manifest.evidence.appDigest);
+  assert.deepEqual(manifest.evidence.run.reports.map((r) => r.stale), [true, true]);
+  assert.match(readme, /- 確かめた app\/ の中身: \*\*古い\*\*\(今の app\/ と違う中身で確かめた\)/);
+  assert.ok(manifest.openQuestions.some((q) => q.from === 'studio' && /今の app\/ と違う中身で確かめたもので、古い/.test(q.text)));
+});
+
+test('足した中身(証拠の要約)に秘密らしい文字列があれば、書き出さない', async (t) => {
+  const { home, handoffs, send } = await makeSampleStudio(t);
+  const run = await send('見出しを「うみかぜ求人相談」にして');
+  // 観察の失敗の文に、鍵が入ってしまった記録
+  const file = path.join(home, 'projects', JOB, '.studio', 'runs', run.id, 'run.json');
+  const record = JSON.parse(await fs.readFile(file, 'utf8'));
+  record.gates.find((g) => g.id === 'G5').summary = '起動の確認で失敗しました(sk-ant-api03-abcdefghijklmnop)';
+  await fs.writeFile(file, JSON.stringify(record));
+
+  const error = await handoffs.export(JOB, {}).catch((e) => e);
+  assert.ok(error instanceof HandoffError);
+  assert.equal(error.code, 'secret');
+  assert.match(error.message, /handoff\.json:\d+ API キーらしい文字列/);
+  assert.match(error.message, /README\.md:\d+ API キーらしい文字列/);
+  assert.ok(!error.message.includes('abcdefghijklmnop'));
+  // 書きかけは残さない
+  assert.deepEqual(await fs.readdir(path.join(home, 'handoffs')), []);
 });

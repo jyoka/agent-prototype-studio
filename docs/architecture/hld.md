@@ -104,6 +104,7 @@ flowchart TB
     versions -- "戻す" --> app
     versions -- "会話と状態" --> ai
     handoff -- "書き出す" --> handoffs
+    handoff -- "run.json と report を読む" --> dotstudio
     handoff --> redact
     entry -- "observe()" --> observer
     observer -- "playwright-core で操作" --> host
@@ -123,7 +124,7 @@ flowchart TB
 | 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1〜G6 を安い順に回す。失敗したら直す依頼(`fix-prompt.js`)を作って作る AI に返し、2 回まで直させる。`run.json` に残す |
 | プロダクト内 AI | `src/server/product-ai/` | 試作品ごとの会話、状態、実行の記録を持つ。1 ターンは harness(`harness.js`)が抽出 → 決定 → 言い方で回し、何を聞くか、段の遷移、終わるかはコードが決める。接続はモックか Claude Code(抽出と言い方の 2 種の呼び出し)。実モデルの呼び出しの上限を数える(`limits.js`)。`app/ai.json` を検査する |
 | 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する |
-| 引き継ぎ | `src/server/handoff.js` | 作業中の試作品を `handoffs/` に書き出す。形は [handoff.md](../handoff.md) |
+| 引き継ぎ | `src/server/handoff.js` | 作業中の試作品と、目録、シナリオ、最新の証拠の要約を `handoffs/` に書き出す。形は [handoff.md](../handoff.md) |
 | 伏せる | `src/server/redact.js` | 記録と表示の前に、秘密らしい文字列と個人のデータを伏せる。書き出す前に秘密を探す |
 | 偽接続 | `src/agent/fake-claude.js` | `claude -p` と同じ形の出力を出す偽の CLI。モデルを呼ばない |
 | runtime | `src/runtime/runtime.js` | 試作品に配る。試作品のエラーを画面に知らせ、`window.studio.ai` を配る |
@@ -203,7 +204,7 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 
 - 保存: `ProjectVersions.save` が `app/` と、`AiSessions.snapshot` の会話と状態を写す
 - 復元: `ProjectVersions.restore` が、作業中を自動で保存してから `app/` を戻してビルドし、`AiSessions.restore` で会話と状態を戻す
-- 引き継ぎ: `ProjectHandoffs.export` が、作業中のソース、AI の設定、会話と状態、メモを `handoffs/<id>-<日時>/` に書き出す。秘密らしい文字列があれば書き出さない
+- 引き継ぎ: `ProjectHandoffs.export` が、作業中のソース、AI の設定、会話と状態、メモ、目録、シナリオ、最新の作る run(`.studio/runs/`)の要約を `handoffs/<id>-<日時>/` に書き出す。証拠の `appDigest` が今の `app/` と違えば古いと書く。秘密らしい文字列が `app/` か書き出す資料にあれば書き出さない
 
 ## 5. 手元の状態
 
