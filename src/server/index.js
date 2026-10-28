@@ -58,8 +58,9 @@ async function listenOrExplain(server, port, host, envName) {
 
 // Studio を起動する。待ち受けは loopback だけ(0.0.0.0 にはしない)。
 // env は作る AI とプロダクト内 AI に渡す環境変数。既定は利用者のもの(ADR-0001: そのまま渡し、値は読まない)。
-// scenarioLimits は関門 G6 の時間の上限(build-requests.js の SCENARIO_GATE_LIMITS)。テストで短くするときだけ渡す
-export async function startStudio(config, { log = () => {}, env = process.env, scenarioLimits } = {}) {
+// scenarioLimits は関門 G6 の時間の上限(build-requests.js の SCENARIO_GATE_LIMITS)。テストで短くするときだけ渡す。
+// onAgentEvent は作る AI に渡した文と stream-json を受け取る関数(BuildRequests と同じ。実機の確かめの記録用)
+export async function startStudio(config, { log = () => {}, env = process.env, scenarioLimits, onAgentEvent } = {}) {
   try {
     await fs.mkdir(projectsDir(config.home), { recursive: true });
     for (const id of await ensureSampleProjects(config.home, path.join(STUDIO_ROOT, 'samples'))) {
@@ -128,6 +129,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     log,
     maxBudgetUsd: config.maxBudgetUsd,
     ...(scenarioLimits ? { scenarioLimits } : {}),
+    ...(onAgentEvent ? { onAgentEvent } : {}),
   });
   const servers = [];
   const versions = new ProjectVersions({ store, aiSessions, log });

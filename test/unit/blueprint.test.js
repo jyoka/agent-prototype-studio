@@ -34,7 +34,7 @@ function scenariosReport() {
 }
 
 // observe は関門 G5 の観察、scenarios は関門 G6 の観察を差し替える
-async function setup(t, { connection = fakeConnection(), observe, scenarios = scenariosReport, onNode } = {}) {
+async function setup(t, { connection = fakeConnection(), observe, scenarios = scenariosReport, onNode, onAgentEvent } = {}) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-blueprint-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   await ensureSampleProjects(home, path.join(STUDIO_ROOT, 'samples'));
@@ -48,6 +48,7 @@ async function setup(t, { connection = fakeConnection(), observe, scenarios = sc
     connection,
     env: ENV,
     onNode,
+    onAgentEvent,
     observe:
       observe === null
         ? null
@@ -70,6 +71,26 @@ async function setup(t, { connection = fakeConnection(), observe, scenarios = sc
 }
 
 const gateStatus = (record) => Object.fromEntries(record.gates.map((gate) => [gate.id, gate.status]));
+
+test('作る AI の起動ごとに、Claude Code が返した費用とやりとりの回数を run.json に残し、渡した文と出力を onAgentEvent に渡す', async (t) => {
+  const events = [];
+  const { send, readRun } = await setup(t, { onAgentEvent: (event) => events.push(event) });
+  const run = await send('見出しを「単体の図書室」にして');
+  assert.equal(run.status, 'passed', JSON.stringify(run.items));
+
+  const record = await readRun(run);
+  const [launch] = record.agentLaunches.launches;
+  // 偽接続も、本物と同じく result に total_cost_usd と num_turns を返す
+  assert.equal(typeof launch.costUsd, 'number');
+  assert.ok(Number.isInteger(launch.numTurns) && launch.numTurns > 0);
+  assert.equal(record.agentLaunches.costUsd, launch.costUsd);
+
+  // 確かめの記録用: 渡した文(依頼)と、stream-json の 1 行ずつ。どれも run とラウンドを持つ
+  assert.deepEqual(events[0], { projectId: PROJECT, runId: run.id, round: 1, type: 'input', text: '見出しを「単体の図書室」にして' });
+  const messages = events.filter((event) => event.type === 'message');
+  assert.ok(messages.some((event) => event.message.type === 'result'));
+  assert.ok(events.every((event) => event.runId === run.id && event.round === 1));
+});
 
 test('作る run は節の並びで動き、通った節の列と関門の結果を run.json に残す', async (t) => {
   const { root, calls, scenarioCalls, send, readRun } = await setup(t);

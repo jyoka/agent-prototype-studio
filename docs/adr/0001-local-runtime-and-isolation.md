@@ -412,10 +412,10 @@ AiSessions  会話を新しい設定で最初からにし、前の会話を 1 �
 | 未決事項 | 決める人・場所 |
 |---|---|
 | この ADR の仮採用を正式にするか | 利用者(2026-10-28 の朝) |
-| `--restricted` と `--safe-mode` が本人ログインで一緒に動くか、閉じ込めが実際に効くか | 作る AI は jyoka/tasks#312 で `--safe-mode` を外し、代わりの引数で実機の確認をした(ADR-0002)。`app/` の外への書き込みで `permission_denials` が出るかは、まだ確かめられていない |
+| `--restricted` と `--safe-mode` が本人ログインで一緒に動くか、閉じ込めが実際に効くか | 作る AI は jyoka/tasks#312 で `--safe-mode` を外し、代わりの引数で実機の確認をした(ADR-0002)。jyoka/tasks#314(2026-10-28)で、`Write` で `app/` の外へ書くように頼むと、ファイルは作られず、`permission_denials` に `Write` が出た(道具の結果は `--restricted` の閉じ込めのエラー)。プロダクト内 AI の `--restricted` と `--safe-mode` は、本人のログインで一緒に動いた([記録](../evidence/real-loop/README.md)) |
 | WebRTC と DNS の先読みの残る危険を受け入れるか | 利用者(実データを使う前に) |
 | 作る AI の権限の確認を画面で受けるか(SDK の `canUseTool` など)、`dontAsk` で拒否だけにするか | #274 で `dontAsk` で拒否だけに仮決め。利用者が確かめる |
-| プロダクト内 AI の Claude Code の起動の形(#276 で仮に決めた)が、実機で動くか。`--restricted` と `--safe-mode` と `--tools ""` と `--json-schema` を一緒に使えるか、`--system-prompt` がサブスクのログインで効くか、応答の速さ、上限に当たったときの出力 | 実機の確認(許可と予算が要る) |
+| プロダクト内 AI の Claude Code の起動の形(#276 で仮に決めた)が、実機で動くか。`--restricted` と `--safe-mode` と `--tools ""` と `--json-schema` を一緒に使えるか、`--system-prompt` がサブスクのログインで効くか、応答の速さ、上限に当たったときの出力 | jyoka/tasks#314(2026-10-28)で、本人のログインのまま 1 ターン(抽出と言い方の 2 回)が通った。待ち時間は 7.7 秒。上限に当たったときの出力は、まだ確かめていない |
 | 会社として Claude の Commercial Terms に同意するか(それまで `STUDIO_ALLOW_CLAUDE_CODE` を付けず、`STUDIO_AGENT=claude` にしない) | 社内 |
 | プロダクト内 AI の会話と状態を保存するか、版と一緒に戻すか | #278 で、版に入れて一緒に戻すことに仮決め。利用者が確かめる |
 | AI の実行の記録を、伏せた形でも保存するか(#278 の版には入れていない)。伏せる形(メールアドレス、電話番号、鍵らしい文字列)で足りるか | 利用者(実データを使う前) |
