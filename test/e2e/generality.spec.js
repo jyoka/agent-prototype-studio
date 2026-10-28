@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, launchStudio, openAiMenu, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, closeMore, expect, launchStudio, openAiMenu, openDevDetails, openMore, test } from './studio.js';
 
 // 求人でも LINE でもない題材(架空の学習相談)で、求人相談と同じ流れが通るかを確かめる(#281)。
 // 作成(サンプルを開く) → 試行(モックと偽の Claude Code) → 変更(画面と AI の振る舞い、試し直し) → 版 → 引き継ぎ。
@@ -60,6 +60,8 @@ function parts(page) {
       await expect(message).toHaveValue('');
     },
     async request(text) {
+      // 「その他」の引き出しは直す欄に重なるので、閉じてから頼む
+      await closeMore(page);
       await page.getByLabel('依頼').fill(text);
       await page.getByRole('button', { name: '送る' }).click();
       const run = this.runs.last();
@@ -69,9 +71,9 @@ function parts(page) {
   };
 }
 
-// Studio の画面(試作品の一覧を除く)に、求人の題材の言葉が出ていない
+// Studio の画面(試作品の一覧を除く)に、求人の題材の言葉が出ていない。「その他」の引き出しは、閉じていても中身を確かめる
 async function expectNoJobWords(page) {
-  for (const area of ['section.make', '.preview .toolbar', '#retry-bar', 'aside.details']) {
+  for (const area of ['section.make', '.preview .toolbar', '#retry-bar', '#more-panel']) {
     expect(await page.locator(area).innerText(), `${area} に求人の言葉`).not.toMatch(JOB_WORDS);
   }
 }
@@ -117,7 +119,8 @@ async function runFlow(page, home, other, otherHome) {
     await expect(ui.values).toHaveText(['英会話', 'はじめて', '動画で学ぶ', '30分']);
     await expect(ui.courses).toHaveText([/そらいろ英会話 はじめの一歩/]);
     await expect(ui.week).toHaveText('1 週間で 210 分。「そらいろ英会話 はじめの一歩」を 1 日 2 回、週 14 回。');
-    // 実行の記録も、題材の項目の名前で出る
+    // 実行の記録も、題材の項目の名前で出る(その他 → 開発者向けの詳細)
+    await openDevDetails(page);
     const entries = page.getByRole('list', { name: 'AI の実行の記録' }).getByRole('listitem');
     await expect(entries.first().getByRole('list', { name: '状態の変化' }).getByRole('listitem')).toHaveText(['学び方: 未定 → 動画で学ぶ', '1日に使える時間: 未定 → 30分']);
     await page.screenshot({ path: test.info().outputPath('1-tried-with-mock.png'), fullPage: true });
@@ -147,6 +150,7 @@ async function runFlow(page, home, other, otherHome) {
     await expect(ui.log).toHaveCount(6);
     await expect(ui.log.nth(2)).toContainText(AFTER_SUBJECT_MINUTES_FIRST);
     await expect(ui.log.nth(3)).toHaveText('あなたの修正: いまの段階を「はじめて」に直しました。');
+    await openDevDetails(page);
     await expect(ui.comparison.nth(0)).toContainText(`前(モック): ${AFTER_SUBJECT}`);
     await expect(ui.comparison.nth(0)).toContainText(`今(モック): ${AFTER_SUBJECT_MINUTES_FIRST}`);
     await expect(ui.comparison.nth(0)).toContainText('応答が変わりました');
@@ -184,7 +188,8 @@ async function runFlow(page, home, other, otherHome) {
     expect(calls[1].argv.join('\n')).toContain('あおぞら学習相談');
 
     // 7. 引き継ぎ: 書き出し、題材の項目と架空のデータの場所が出る。求人の言葉は入らない
-    const handoff = page.getByRole('region', { name: '本番開発への引き継ぎ' });
+    await openMore(page);
+    const handoff = page.getByRole('region', { name: '本番開発へ渡す' });
     await handoff.getByLabel('目的(この試作品で確かめたいこと)').fill('学ぶ人が、AI の理解した学習プランを直しながら相談を続けられるか確かめる');
     await handoff.getByLabel('未決事項').fill('講座の一覧を本物のデータにするか');
     await handoff.getByRole('button', { name: '引き継ぎ用に書き出す' }).click();

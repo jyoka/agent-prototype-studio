@@ -1,7 +1,7 @@
 # 引き継ぎの形(handoff、形式 2)
 
 - 状態: **仮**(2026-10-28)。出典のタスク: jyoka/tasks#280(親 PRD: jyoka/tasks#269)。形式 2 は jyoka/tasks#313([harness.md](design/harness.md) の 5 節、基準 S7)
-- 作るところ: `src/server/handoff.js`。画面は下の「詳細」の「本番開発への引き継ぎ」
+- 作るところ: `src/server/handoff.js`。画面は上の帯の「その他」の「本番開発へ渡す」
 
 試作品を本番開発の担当者に渡すときに、Studio が書き出すフォルダーの形です。中身は決まった手順で作ります。AI の判断は入れません(ADR-0001、Stripe の Minions の考え方)。標準化する契約は、使われ方を見て直します(親 PRD)。
 

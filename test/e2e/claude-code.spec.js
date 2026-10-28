@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, launchStudio, openAiMenu, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, expect, launchStudio, openAiMenu, openDevDetails, test } from './studio.js';
 
 // 実モデルは呼ばない。Claude Code は偽の CLI(test/fixtures/fake-claude.js)に差し替える
 const FAKE = path.join(ROOT, 'test', 'fixtures', 'fake-claude.js');
@@ -42,7 +42,9 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     await page.goto(studio.url);
     await chooseSample(page, SAMPLES.jobConsult);
     const app = page.frameLocator('iframe[title="試作品"]');
+    // プロダクト内 AI の状態は、その他 → 開発者向けの詳細にある。「応答を止める」は試す欄の上に出る
     const details = page.locator('#ai-status');
+    const waiting = page.locator('#ai-waiting');
     const log = app.getByRole('region', { name: '会話' }).getByRole('listitem');
     const conditions = app.getByRole('region', { name: '希望条件' }).locator('.value');
     const message = app.getByLabel('メッセージ');
@@ -98,8 +100,12 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     expect((await studio.api('/api/real-ai')).consent.agreed).toBe(true);
     await expect(page.locator('#events')).toContainText('接続を「Claude Code」にしました');
     await expect(app.locator('.note')).toContainText('案内役の AI は Claude Code(実際の AI モデル)です');
-    // 選んでいる間は、送り先と費用がいつも見える
-    await expect(details).toContainText('費用: Claude Code にログインしているアカウント');
+    // 選んでいる間は、送り先と費用が、試す欄の上の「AI: Claude Code ▾」を開くと見える
+    await openAiMenu(page);
+    await expect(page.locator('#ai-menu')).toContainText('費用: Claude Code にログインしているアカウント');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#ai-menu')).toBeHidden();
+    await openDevDetails(page);
 
     // 自由な文に応答する。モックとの会話(3 件)を引き継ぐ
     await say('雇用は正社員で、もみじ台あたりがいいな');
@@ -140,21 +146,21 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     // 中断: Studio の画面から止めると、CLI が終わり、会話は変わらない
     await type('[遅い] よく考えて');
     await expect(app.getByRole('status')).toHaveText('案内役が考えています…');
-    await expect(details.getByRole('status')).toContainText('Claude Code の応答を待っています');
+    await expect(waiting).toContainText('Claude Code の応答を待っています');
     await openAiMenu(page);
     await expect(page.getByRole('radio', { name: 'モック' })).toBeDisabled();
     await expect.poll(async () => (await readCalls(env.FAKE_CLAUDE_LOG)).some((c) => c.stdin.includes('[遅い] よく考えて'))).toBe(true);
     const slow = (await readCalls(env.FAKE_CLAUDE_LOG)).find((c) => c.stdin.includes('[遅い] よく考えて'));
     expect(alive(slow.pid)).toBe(true);
-    await details.getByRole('button', { name: '応答を止める' }).click();
+    await waiting.getByRole('button', { name: '応答を止める' }).click();
     await expect(alert).toHaveText('応答を止めました');
     await expect(app.getByRole('status')).toBeHidden();
-    await expect(details.getByRole('status')).toBeHidden();
+    await expect(waiting).toBeHidden();
     await expect.poll(() => alive(slow.pid)).toBe(false);
     await expect(log).toHaveCount(8);
 
-    // 開き直しても、会話と接続はそのまま
-    await page.getByRole('button', { name: '開き直す' }).click();
+    // 画面を読み込み直しても(開き直す)、会話と接続はそのまま
+    await page.getByRole('button', { name: '画面を読み込み直す' }).click();
     await expect(log).toHaveCount(8);
     await expect(page.locator('#ai-badge')).toHaveText('AI: Claude Code');
 
@@ -164,7 +170,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     await page.getByRole('radio', { name: 'モック' }).click();
     await expect(page.locator('#ai-menu')).toBeHidden();
     await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
-    await expect(details).not.toContainText('費用:');
+    await expect(page.locator('#ai-menu')).not.toContainText('費用:');
     await say('やっぱりアルバイトがいいです');
     await expect(log.last()).toContainText('雇用区分「アルバイト・パート」と理解しました。');
     await expect(log.last()).toContainText('お試しの AI');
@@ -195,9 +201,11 @@ test('応答を待つ間に開き直しても作り直しても、止められ�
     await page.goto(studio.url);
     await chooseSample(page, SAMPLES.jobConsult);
     const app = page.frameLocator('iframe[title="試作品"]');
-    const details = page.locator('#ai-status');
+    // 「応答を止める」は試す欄の上に出る。画面を読み込み直すは引き出しに、ファイルから作り直すは開発者向けの詳細にある
+    const waiting = page.locator('#ai-waiting');
     const log = app.getByRole('region', { name: '会話' }).getByRole('listitem');
     const message = app.getByLabel('メッセージ');
+    await openDevDetails(page);
     await openAiMenu(page);
     await page.getByRole('radio', { name: 'Claude Code' }).check();
     await page.getByRole('checkbox').check();
@@ -207,21 +215,21 @@ test('応答を待つ間に開き直しても作り直しても、止められ�
     // 開き直しても、待っていた応答は新しく開いた試作品に出る
     await message.fill('[少し遅い] 書店の売り場で働きたい');
     await app.getByRole('button', { name: '送る' }).click();
-    await expect(details.getByRole('status')).toBeVisible();
-    await page.getByRole('button', { name: '開き直す' }).click();
+    await expect(waiting).toBeVisible();
+    await page.getByRole('button', { name: '画面を読み込み直す' }).click();
     await expect(log).toHaveCount(1);
     await expect(log.last()).toContainText('「[少し遅い] 書店の売り場で働きたい」への返事です', { timeout: 10_000 });
     await expect(app.getByRole('region', { name: '希望条件' }).locator('.value')).toHaveText(['書店の売り場', '未定', '未定', '未定']);
-    await expect(details.getByRole('status')).toBeHidden();
+    await expect(waiting).toBeHidden();
 
     // 作り直しても「止める」は出たまま。押すと止まる
     await message.fill('[遅い] 考えて');
     await app.getByRole('button', { name: '送る' }).click();
-    await expect(details.getByRole('status')).toBeVisible();
-    await page.getByRole('button', { name: '作り直す' }).click();
+    await expect(waiting).toBeVisible();
+    await page.getByRole('button', { name: 'ファイルから作り直す' }).click();
     await expect(page.locator('#build-status')).toContainText('ビルドに成功しました');
-    await details.getByRole('button', { name: '応答を止める' }).click();
-    await expect(details.getByRole('status')).toBeHidden();
+    await waiting.getByRole('button', { name: '応答を止める' }).click();
+    await expect(waiting).toBeHidden();
     await openAiMenu(page);
     await expect(page.getByRole('radio', { name: 'モック' })).toBeEnabled();
     const slow = (await readCalls(env.FAKE_CLAUDE_LOG)).find((c) => c.stdin.includes('[遅い] 考えて'));

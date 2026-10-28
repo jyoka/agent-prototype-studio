@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { SAMPLES, chooseSample, expect, launchStudio, test } from './studio.js';
+import { SAMPLES, chooseSample, closeMore, expect, launchStudio, openDevDetails, test } from './studio.js';
 
 // 作る欄の縦切り。作る AI は決定的な偽接続(src/agent/fake-claude.js)で、モデルも外部の API も呼ばない。
 
@@ -137,7 +137,10 @@ test('作業中は中断でき、その間はほかの依頼と作り直しを�
     await expect(run.locator('.run-status')).toContainText('偽接続が作業しています');
     await expect(page.getByRole('button', { name: '送る' })).toBeDisabled();
     await expect(page.getByLabel('依頼')).toBeDisabled();
-    await expect(page.getByRole('button', { name: '作り直す' })).toBeDisabled();
+    // ファイルから作り直すは、その他 → 開発者向けの詳細にある
+    await openDevDetails(page);
+    await expect(page.getByRole('button', { name: 'ファイルから作り直す' })).toBeDisabled();
+    await closeMore(page);
 
     // 同じプロジェクトでは 1 つずつ。API から送っても断る
     const second = await studio.post('/api/projects/sample-library/build-requests', { request: '見出しを「別」にして' });

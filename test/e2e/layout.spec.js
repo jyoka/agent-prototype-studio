@@ -1,7 +1,7 @@
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, launchStudio, openAiMenu, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, expect, launchStudio, openAiMenu, openDevDetails, openMore, test } from './studio.js';
 
-// 画面の骨組み(ux-redesign.md 3 節、7-1、7-2)。上の帯と、左「試す」・右「言葉で直す」の 2 列
+// 画面の骨組み(ux-redesign.md 3 節、7-1、7-2、7-7)。上の帯と、左「試す」・右「言葉で直す」の 2 列と、「その他」の引き出し
 
 // 「分かるか」の確かめ(ux-redesign.md 9 節)のスクリーンショットの置き場。test-results/ は git が無視する
 const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
@@ -64,8 +64,8 @@ test('U9: 試す欄の上のボタンは、AI の切り替えを除くと「会�
     const toolbar = page.locator('#try-toolbar');
     await expect(toolbar.locator('#ai-switch')).toBeVisible();
     await expect(toolbar.getByRole('button').and(page.locator(':not(#ai-switch)'))).toHaveText(['会話を最初から']);
-    // 開き直す、作り直すは、試す欄の上にない(P22 で「その他」の引き出しへ移すまでは、下の詳細にある)
-    for (const name of ['開き直す', '作り直す', 'リセット']) {
+    // 画面を読み込み直す(開き直す)、ファイルから作り直す(作り直す)は、試す欄の上にない。「その他」の引き出しにある
+    for (const name of ['画面を読み込み直す', 'ファイルから作り直す', '開き直す', '作り直す', 'リセット']) {
       await expect(page.getByRole('region', { name: '試す' }).getByRole('button', { name })).toHaveCount(0);
     }
 
@@ -168,6 +168,134 @@ test('1024 より狭いときは、試すと直すを上下に並べる', async 
     const makeBox = await page.getByRole('region', { name: '言葉で直す' }).boundingBox();
     expect(makeBox.y).toBeGreaterThanOrEqual(tryBox.y + tryBox.height);
     expect(Math.abs(makeBox.x - tryBox.x)).toBeLessThan(2);
+  } finally {
+    await studio.stop();
+  }
+});
+
+test('U5: 準備の結果、AI のやりとりの記録、AI が覚えていることは、最初は見えない。その他 → 開発者向けの詳細を開くと見える', async ({ page, home }) => {
+  const studio = await launchStudio(home);
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(studio.url);
+    const app = page.frameLocator('iframe[title="試作品"]');
+    await expect(app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
+
+    // 中身は読み込み済み(要素はある)だが、見えない。AI が覚えていることは、試作品の中の「希望条件」とだけ見える
+    const build = page.locator('#build-status');
+    const trace = page.locator('#ai-trace');
+    const state = page.locator('dl[aria-label="AI が理解した状態"]');
+    await expect(build).toContainText('ビルドに成功しました');
+    await expect(trace).toContainText('まだ記録はありません');
+    await expect(state).toBeAttached();
+    for (const [locator, label] of [
+      [build, '準備の結果'],
+      [trace, 'AI のやりとりの記録'],
+      [state, 'AI が覚えていること'],
+      [page.locator('#more-panel'), 'その他の引き出し'],
+    ]) {
+      await expect(locator, label).toBeHidden();
+    }
+    await expect(app.getByRole('region', { name: '希望条件' })).toBeVisible();
+
+    // 試作品の中の AI と話しても、開発者向けの情報は出てこない
+    await app.getByLabel('メッセージ').fill('カフェで働きたいです');
+    await app.getByRole('button', { name: '送る' }).click();
+    await expect(app.getByRole('region', { name: '会話' }).getByRole('listitem').last()).toContainText('職種「カフェのホール」と理解しました');
+    await expect(page.getByRole('list', { name: 'AI の実行の記録', includeHidden: true }).getByRole('listitem', { includeHidden: true })).not.toHaveCount(0);
+    await expect(trace).toBeHidden();
+    await expect(state).toBeHidden();
+
+    // その他: 保存した状態、本番開発へ渡す、画面を読み込み直す。開発者向けの詳細は、まだ閉じている
+    const more = page.getByRole('banner').getByRole('button', { name: 'その他' });
+    await expect(more).toHaveAttribute('aria-expanded', 'false');
+    const panel = await openMore(page);
+    await expect(more).toHaveAttribute('aria-expanded', 'true');
+    await expect(panel.getByRole('heading', { level: 3 })).toHaveText(['保存した状態', '本番開発へ渡す']);
+    await expect(panel.getByRole('button', { name: '画面を読み込み直す' })).toBeVisible();
+    await expect(panel.getByText('開発者向けの詳細')).toBeVisible();
+    await expect(build).toBeHidden();
+    await expect(trace).toBeHidden();
+    await expect(state).toBeHidden();
+    // 引き出しを開いても、左の試作品は見えたまま
+    await expect(app.getByRole('region', { name: '会話' })).toBeVisible();
+    await page.screenshot({ path: path.join(UX_SHOTS, 'P22-more.png') });
+
+    // 開発者向けの詳細を開くと、準備の結果、AI のやりとりの記録、AI が覚えていることが見える。
+    // 開いた見出しは、引き出しの上(「その他」の見出しのすぐ下)へ送られる
+    await openDevDetails(page);
+    const summary = page.locator('#dev-details > summary');
+    await expect.poll(async () => (await summary.boundingBox()).y).toBeLessThan(150);
+    await expect(build).toBeVisible();
+    await expect(trace).toBeVisible();
+    await expect(state).toBeVisible();
+    await expect(state.getByRole('definition')).toHaveText(['カフェのホール', '未定', '未定', '未定']);
+    await expect(page.locator('#dev-details').getByRole('heading', { level: 3 })).toHaveText([
+      'ビルド',
+      'プロダクト内 AI',
+      'AI の実行の記録',
+      '試作品からの知らせ',
+    ]);
+    await page.screenshot({ path: path.join(UX_SHOTS, 'P22-dev.png') });
+
+    // Esc で閉じ、焦点は「その他」に戻る。もう一度開くと、開発者向けの詳細は開いたまま
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#more-panel')).toBeHidden();
+    await expect(more).toBeFocused();
+    await expect(more).toHaveAttribute('aria-expanded', 'false');
+    await openMore(page);
+    await expect(build).toBeVisible();
+    // 閉じるボタンでも閉じる
+    await panel.getByRole('button', { name: '閉じる' }).click();
+    await expect(page.locator('#more-panel')).toBeHidden();
+    await expect(more).toBeFocused();
+  } finally {
+    await studio.stop();
+  }
+});
+
+test('「画面を読み込み直す」は引き出しに、「ファイルから作り直す」は開発者向けの詳細にあり、押すとそれぞれ動く', async ({ page, home }) => {
+  const studio = await launchStudio(home);
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(studio.url);
+    const app = page.frameLocator('iframe[title="試作品"]');
+    const log = app.getByRole('region', { name: '会話' }).getByRole('listitem');
+    await expect(app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
+    await app.getByLabel('メッセージ').fill('カフェで働きたいです');
+    await app.getByRole('button', { name: '送る' }).click();
+    await expect(log.last()).toContainText('職種「カフェのホール」と理解しました');
+    const count = await log.count();
+
+    const tryRegion = page.getByRole('region', { name: '試す' });
+    const reopen = page.getByRole('button', { name: '画面を読み込み直す', includeHidden: true });
+    const rebuild = page.getByRole('button', { name: 'ファイルから作り直す', includeHidden: true });
+    await expect(reopen).toHaveCount(1);
+    await expect(rebuild).toHaveCount(1);
+    await expect(tryRegion.getByRole('button', { name: '画面を読み込み直す', includeHidden: true })).toHaveCount(0);
+    await expect(tryRegion.getByRole('button', { name: 'ファイルから作り直す', includeHidden: true })).toHaveCount(0);
+    // 画面を読み込み直すは引き出しの中で、開発者向けの詳細の外。ファイルから作り直すは開発者向けの詳細の中
+    await expect(page.locator('#more-panel #reopen')).toHaveCount(1);
+    await expect(page.locator('#dev-details #reopen')).toHaveCount(0);
+    await expect(page.locator('#dev-details #rebuild')).toHaveCount(1);
+
+    // 画面を読み込み直すと、試作品を開き直す。会話はそのまま
+    const panel = await openMore(page);
+    await expect(rebuild).toBeHidden();
+    const frame = page.locator('iframe[title="試作品"]');
+    const before = await frame.elementHandle();
+    await panel.getByRole('button', { name: '画面を読み込み直す' }).click();
+    await expect.poll(async () => (await frame.elementHandle()) !== null && !(await before.evaluate((el) => el.isConnected))).toBe(true);
+    await expect(app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
+    await expect(log).toHaveCount(count);
+
+    // ファイルから作り直すと、もう一度ビルドする
+    await openDevDetails(page);
+    await expect(rebuild).toBeVisible();
+    const builds = page.waitForResponse((response) => response.url().endsWith('/builds') && response.request().method() === 'POST');
+    await rebuild.click();
+    expect((await builds).ok()).toBe(true);
+    await expect(page.locator('#build-status')).toContainText('ビルドに成功しました');
   } finally {
     await studio.stop();
   }

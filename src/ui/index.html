@@ -23,7 +23,7 @@
       <span id="connection" class="connection" data-state="checking" hidden></span>
       <span id="save-mark" class="save-mark" hidden>保存していない変更があります</span>
       <button type="button" id="save-now" disabled>保存</button>
-      <button type="button" id="more" aria-controls="details">その他</button>
+      <button type="button" id="more" aria-controls="more-panel" aria-expanded="false">その他</button>
     </div>
   </header>
   <div id="banner" class="banner" role="alert" hidden>
@@ -39,6 +39,8 @@
         <button type="button" id="reset" disabled title="会話と状態を最初に戻して、開き直します">会話を最初から</button>
       </div>
       <div id="ai-menu" class="ai-menu" hidden></div>
+      <!-- 試作品の中の AI の応答を待つ間だけ、「応答を止める」を出す -->
+      <div id="ai-waiting" class="ai-waiting" role="status" hidden></div>
       <div id="retry-bar" class="retry-bar" role="region" aria-label="試し直す" hidden></div>
       <div id="frame-host" class="frame-host">
         <p id="frame-placeholder" class="placeholder">読み込んでいます…</p>
@@ -64,40 +66,49 @@
       </div>
     </section>
   </main>
-  <!-- 今の詳細の中身は、P22 で「その他」の引き出しへ移すまで、2 列の下に仮に置く -->
-  <aside id="details" class="details" aria-labelledby="details-heading" tabindex="-1">
-    <h2 id="details-heading">詳細</h2>
-    <div class="details-grid">
-      <section aria-labelledby="versions-heading">
-        <h3 id="versions-heading">版</h3>
-        <p id="working-status" class="working-status"></p>
-        <form id="save-form" class="save-form">
-          <label for="version-name">版の名前(なくてもよい)</label>
-          <input id="version-name" type="text" maxlength="60" autocomplete="off" disabled>
-          <button type="submit" id="save-version" disabled>今の作業中を保存</button>
-        </form>
-        <p id="versions-message" class="versions-message" role="status" hidden></p>
-        <ol id="version-list" class="version-list" aria-label="保存した版"></ol>
-        <p class="muted">保存すると、app/ のファイルと、プロダクト内 AI の会話と状態を残します。作業中の会話は Studio を止めると消えますが、保存した版は残ります。</p>
-      </section>
-      <section aria-labelledby="handoff-heading">
-        <h3 id="handoff-heading">本番開発への引き継ぎ</h3>
-        <p class="muted">作業中の試作品を、本番開発の担当者に渡すフォルダーに書き出します。ソース、AI の設定、会話と状態、実機・モック・未接続の区別、未決事項が入ります。秘密情報らしい文字列があると書き出しません。</p>
-        <form id="handoff-form" class="handoff-form">
-          <label for="handoff-purpose">目的(この試作品で確かめたいこと)</label>
-          <textarea id="handoff-purpose" rows="2" maxlength="4000" disabled></textarea>
-          <label for="handoff-decided">決まったこと</label>
-          <textarea id="handoff-decided" rows="2" maxlength="4000" disabled></textarea>
-          <label for="handoff-undecided">未決事項</label>
-          <textarea id="handoff-undecided" rows="2" maxlength="4000" disabled></textarea>
-          <button type="submit" id="handoff-export" disabled>引き継ぎ用に書き出す</button>
-        </form>
-        <div id="handoff-result" class="handoff-result" role="status" hidden></div>
-      </section>
+  <!-- その他の引き出し(右から出る)。保存した状態、本番開発へ渡す、画面を読み込み直す、開発者向けの詳細(ux-redesign.md 3 節、7-7)。
+       開発者向けの詳細は、さらに開く操作の中に置き、既定で閉じる -->
+  <aside id="more-panel" class="more-panel" aria-labelledby="more-heading" tabindex="-1" hidden>
+    <div class="more-head">
+      <h2 id="more-heading">その他</h2>
+      <button type="button" id="more-close" class="more-close" aria-label="閉じる" title="閉じる(Esc)">×</button>
+    </div>
+    <section aria-labelledby="versions-heading">
+      <h3 id="versions-heading">保存した状態</h3>
+      <p id="working-status" class="working-status"></p>
+      <form id="save-form" class="save-form">
+        <label for="version-name">版の名前(なくてもよい)</label>
+        <input id="version-name" type="text" maxlength="60" autocomplete="off" disabled>
+        <button type="submit" id="save-version" disabled>今の作業中を保存</button>
+      </form>
+      <p id="versions-message" class="versions-message" role="status" hidden></p>
+      <ol id="version-list" class="version-list" aria-label="保存した版"></ol>
+      <p class="muted">保存すると、app/ のファイルと、プロダクト内 AI の会話と状態を残します。作業中の会話は Studio を止めると消えますが、保存した版は残ります。</p>
+    </section>
+    <section aria-labelledby="handoff-heading">
+      <h3 id="handoff-heading">本番開発へ渡す</h3>
+      <p class="muted">作業中の試作品を、本番開発の担当者に渡すフォルダーに書き出します。ソース、AI の設定、会話と状態、実機・モック・未接続の区別、未決事項が入ります。秘密情報らしい文字列があると書き出しません。</p>
+      <form id="handoff-form" class="handoff-form">
+        <label for="handoff-purpose">目的(この試作品で確かめたいこと)</label>
+        <textarea id="handoff-purpose" rows="2" maxlength="4000" disabled></textarea>
+        <label for="handoff-decided">決まったこと</label>
+        <textarea id="handoff-decided" rows="2" maxlength="4000" disabled></textarea>
+        <label for="handoff-undecided">未決事項</label>
+        <textarea id="handoff-undecided" rows="2" maxlength="4000" disabled></textarea>
+        <button type="submit" id="handoff-export" disabled>引き継ぎ用に書き出す</button>
+      </form>
+      <div id="handoff-result" class="handoff-result" role="status" hidden></div>
+    </section>
+    <div class="more-reopen">
+      <button type="button" id="reopen" class="detail-button" disabled title="画面だけを読み直します。会話と状態はそのまま">画面を読み込み直す</button>
+      <p class="muted">試作品が止まったように見えるときに使います。会話と状態はそのままです。</p>
+    </div>
+    <details id="dev-details" class="dev-details">
+      <summary>開発者向けの詳細</summary>
       <section aria-labelledby="build-heading">
         <h3 id="build-heading">ビルド</h3>
         <div id="build-status" class="build-status"></div>
-        <button type="button" id="rebuild" class="detail-button" disabled>作り直す</button>
+        <button type="button" id="rebuild" class="detail-button" disabled title="app/ のファイルから試作品を作り直します。直す AI の変更の後は自動で作り直されます">ファイルから作り直す</button>
       </section>
       <section aria-labelledby="ai-heading">
         <h3 id="ai-heading">プロダクト内 AI</h3>
@@ -109,11 +120,10 @@
       </section>
       <section aria-labelledby="events-heading">
         <h3 id="events-heading">試作品からの知らせ</h3>
-        <button type="button" id="reopen" class="detail-button" disabled title="画面だけを読み直します。会話と状態はそのまま">開き直す</button>
         <p id="events-empty" class="muted">まだありません</p>
         <ul id="events" class="events"></ul>
       </section>
-    </div>
+    </details>
   </aside>
 </body>
 </html>

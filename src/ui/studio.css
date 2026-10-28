@@ -113,7 +113,7 @@ button { font: inherit; }
   min-height: 32rem;
   padding: 1rem;
 }
-.preview, .make, .details {
+.preview, .make {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -148,10 +148,42 @@ button { font: inherit; }
 .ai-menu[hidden] { display: none; }
 .ai-menu .ai-picker, .ai-menu .ai-confirm { background: var(--panel); }
 
-/* 今の詳細。P22 で「その他」の引き出しへ移すまで、2 列の下に置く */
-.details { margin: 0 1rem 1rem; font-size: 0.9rem; }
-.details-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: 0 1.5rem; }
-.details-grid > section { min-width: 0; }
+/* その他の引き出し。上の帯の下から、右に重ねて出す。開いている間も、左の試作品は使える。
+   上の帯の試作品の一覧は、引き出しより手前に出す(上の帯の z-index より小さくする) */
+.more-panel {
+  position: fixed;
+  top: 3.2rem;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  width: min(30rem, 100vw);
+  overflow: auto;
+  padding: 0 1rem 1rem;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  box-shadow: -6px 0 20px rgb(0 0 0 / 0.12);
+  font-size: 0.9rem;
+}
+.more-panel[hidden] { display: none; }
+.more-panel:focus { outline: none; }
+.more-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem 0 0.4rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.more-close { padding: 0.1rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font-size: 1.1rem; line-height: 1.4; cursor: pointer; }
+.more-panel > section, .more-reopen { padding: 0.2rem 0 0.8rem; border-bottom: 1px solid var(--line); }
+.more-reopen { padding-top: 0.8rem; }
+.more-reopen .detail-button { margin: 0 0 0.3rem; }
+.dev-details { padding: 0.8rem 0 0; scroll-margin-top: 3.2rem; }
+.dev-details > summary { font-weight: 600; cursor: pointer; }
+.dev-details > section { min-width: 0; }
 .detail-button { margin-top: 0.5rem; }
 .muted { color: var(--muted); margin: 0; }
 .build-status .ok { color: var(--ok); margin: 0; }
@@ -252,6 +284,7 @@ button { font: inherit; }
 .ai-sends pre { white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; background: var(--bg); padding: 0.3rem; max-height: 12rem; overflow: auto; }
 .ai-check { display: block; margin: 0.4rem 0; }
 .ai-buttons, .ai-waiting { display: flex; gap: 0.5rem; align-items: center; margin: 0 0 0.6rem; }
+.ai-waiting[hidden] { display: none; }
 .ai-buttons button, .ai-waiting button {
   padding: 0.3rem 0.7rem;
   border: 1px solid var(--line);
