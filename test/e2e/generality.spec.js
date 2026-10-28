@@ -185,8 +185,8 @@ async function runFlow(page, home, other, otherHome) {
     await handoff.getByLabel('未決事項').fill('講座の一覧を本物のデータにするか');
     await handoff.getByRole('button', { name: '引き継ぎ用に書き出す' }).click();
     const result = page.locator('#handoff-result');
-    // 未決事項は、書いた 1 件と、保存版と違う作業中から書き出したことを Studio が足した 1 件
-    await expect(result).toContainText('書き出しました。実機 2 件、モック 3 件、未接続 5 件、未決事項 2 件。');
+    // 未決事項は、書いた 1 件と、保存版と違う作業中から書き出したことを Studio が足した 1 件。未接続には、目録の未実装 3 つと制約が入る
+    await expect(result).toContainText('書き出しました。実機 2 件、モック 3 件、未接続 9 件、未決事項 2 件。');
     exported = await result.locator('code').textContent();
     await fs.cp(exported, other, { recursive: true });
 

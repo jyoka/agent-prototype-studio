@@ -29,7 +29,7 @@ flowchart LR
 - **モックと実モデル**: 同じ試作品のまま、モックと Claude Code を切り替えられます。モックはいつも同じ応答を返します
 - **実行の記録**: AI に渡したもの、受け取ったもの、状態の変化、失敗の理由を、画面で読めます
 - **版**: `app/` のファイルと会話と状態を保存し、いつでも戻せます。Studio を止めても残ります
-- **引き継ぎ**: ソース、AI の設定、試した会話、何がモックで何が未接続かを、1 つのフォルダーに書き出します
+- **引き継ぎ**: ソース、AI の設定、試した会話、何がモックで何が未接続か、目録、シナリオ、最新の証拠の要約を、1 つのフォルダーに書き出します
 - **架空のデータで安全に**: サンプルは 3 つとも架空のデータです。秘密らしい文字列は記録と書き出しから伏せます
 
 ## はじめる
@@ -75,7 +75,7 @@ npm start                  # 既定のブラウザで Studio が開く
 |---|---|---|---|
 | [usage.md](docs/usage.md) 使い方の全部 | [configuration.md](docs/configuration.md) 環境変数、`app/prototype.json`、`app/ai.json`、データの置き場 | [architecture/hld.md](docs/architecture/hld.md) 部品とデータの流れ | [AGENTS.md](AGENTS.md) エージェント向けの入口 |
 | [claude-code.md](docs/claude-code.md) 実モデル(Claude Code)を使う | [troubleshooting.md](docs/troubleshooting.md) うまくいかないとき | [prd.md](docs/prd.md) 何を作るか | [CONTRIBUTING.md](CONTRIBUTING.md) 書き方、置き場所、テスト |
-| [handoff.md](docs/handoff.md) 引き継ぎの形(形式 1、仮) | | [ADR 0001](docs/adr/0001-local-runtime-and-isolation.md) ローカル実行と隔離の方式(仮採用) | |
+| [handoff.md](docs/handoff.md) 引き継ぎの形(形式 2、仮) | | [ADR 0001](docs/adr/0001-local-runtime-and-isolation.md) ローカル実行と隔離の方式(仮採用) | |
 | | | [design/ux-redesign.md](docs/design/ux-redesign.md) 初見で分かる画面の設計(設計。実装は別のカード) | |
 
 ## 開発

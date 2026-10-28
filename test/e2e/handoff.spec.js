@@ -91,7 +91,7 @@ async function exportAndCheck(page, home, other, otherHome) {
     await handoff.getByLabel('未決事項').fill('求人の検索を本物の API にするか。問い合わせ先 hanako@example.com');
     await handoff.getByRole('button', { name: '引き継ぎ用に書き出す' }).click();
     const result = page.locator('#handoff-result');
-    await expect(result).toContainText('書き出しました。実機 2 件、モック 3 件、未接続 5 件、未決事項 1 件。');
+    await expect(result).toContainText('書き出しました。実機 2 件、モック 3 件、未接続 9 件、未決事項 1 件。');
     const dir = await result.locator('code').textContent();
     expect(path.dirname(dir)).toBe(path.join(home, 'handoffs'));
     await page.screenshot({ path: test.info().outputPath('1-exported.png'), fullPage: true });
@@ -157,7 +157,17 @@ async function exportAndCheck(page, home, other, otherHome) {
 
     const manifest = JSON.parse(await fs.readFile(path.join(other, 'handoff.json'), 'utf8'));
     expect(manifest.format).toBe('prototype-studio-handoff');
-    expect(manifest.capabilities.map((c) => c.kind)).toEqual(['real', 'real', 'mock', 'mock', 'mock', 'missing', 'missing', 'missing', 'missing', 'missing']);
+    expect(manifest.formatVersion).toBe(2);
+    // 目録の未実装 3 つと制約が、未接続の行に足される
+    expect(manifest.capabilities.map((c) => c.kind)).toEqual(['real', 'real', 'mock', 'mock', 'mock', ...Array(9).fill('missing')]);
+    expect(manifest.prototype.file).toBe('app/prototype.json');
+    expect(manifest.source.dataFrom).toBe('manifest');
+    expect(manifest.scenarios.files.map((s) => s.file)).toEqual(['app/scenarios/talk-and-narrow.json']);
+    // 最新の作る run(見出しの変更)は、本物の観察器で全関門が通り、今の app/ と同じ中身で確かめた
+    expect(manifest.evidence.run.status).toBe('passed');
+    expect(manifest.evidence.run.gates.map((g) => g.status)).toEqual(Array(6).fill('passed'));
+    expect(manifest.evidence.run.stale).toBe(false);
+    expect(manifest.evidence.run.reports.map((r) => [r.gate, r.verdict])).toEqual([['G5', 'passed'], ['G6', 'passed']]);
     expect(manifest.conversation.messages.filter((m) => m.role === 'assistant').map((m) => [m.via, m.real])).toEqual([
       [null, false],
       ['mock', false],

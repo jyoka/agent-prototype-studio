@@ -524,7 +524,7 @@ export class BuildRequests {
     // 段の名前がない失敗は、ビルドの途中で Studio が問題に当たったとき(読めないファイルなど)。G4 の失敗として扱う
     const failedAt = build.ok ? null : (BUILD_GATES.includes(build.stage) ? build.stage : 'compile');
     state.buildFailedAt = failedAt;
-    run.build = { ok: build.ok, errorCount: build.errors?.length ?? 0, stage: failedAt, buildId: build.buildId ?? null };
+    run.build = { ok: build.ok, errorCount: build.errors?.length ?? 0, stage: failedAt, buildId: build.buildId ?? null, appDigest: build.appDigest ?? null };
     const failedIndex = failedAt ? BUILD_GATES.indexOf(failedAt) : BUILD_GATES.length;
     for (const [index, name] of BUILD_GATES.entries()) {
       if (index < failedIndex) this.setGate(run, name, { status: 'passed' });
