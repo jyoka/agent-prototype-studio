@@ -51,7 +51,7 @@ flowchart TB
         entry["起動<br/>bin/studio.js → index.js startStudio"]
         api["Studio の API と画面<br/>studio-server.js(127.0.0.1:4317)"]
         preview["試作品の配信<br/>preview-server.js(4318)"]
-        store["試作品とビルド<br/>store.js、projects.js、build.js、inspect.js"]
+        store["試作品とビルド<br/>store.js、projects.js、build.js、inspect.js、<br/>manifest.js"]
         requests["作る AI の依頼<br/>build-requests.js"]
         agent["作る AI の起動<br/>agent-connection.js、agent-process.js、<br/>claude-args.js、stream-json.js、app-snapshot.js"]
         ai["プロダクト内 AI<br/>product-ai/session.js"]
@@ -103,7 +103,7 @@ flowchart TB
 | 起動 | `bin/studio.js`、`src/server/index.js`、`src/server/config.js` | 環境変数を読み、サンプルを写し、途中で止まった復元を戻し、2 つのサーバーを loopback で待ち受ける。起動ごとのトークンを作る |
 | Studio の API と画面 | `src/server/studio-server.js`、`src/server/security.js` | `/api/projects/...` の API と `src/ui/` の画面を出す。Host、Origin、トークンを確かめる |
 | 試作品の配信 | `src/server/preview-server.js` | ビルドしたものを別ポートから CSP つきで出す。API はない |
-| 試作品とビルド | `src/server/store.js`、`src/server/projects.js`、`src/server/build.js`、`src/server/inspect.js` | 試作品の一覧と置き場、`app/` の検査、esbuild で 1 つの classic script に束ねる |
+| 試作品とビルド | `src/server/store.js`、`src/server/projects.js`、`src/server/build.js`、`src/server/inspect.js`、`src/server/manifest.js` | 試作品の一覧と置き場、`app/` と目録の検査、esbuild で 1 つの classic script に束ねる |
 | 作る AI | `src/server/build-requests.js` ほか | 依頼を受け、CLI を起動し、出力を画面に流す。終わったら、変わったファイルを自分で確かめ、検査してビルドする |
 | プロダクト内 AI | `src/server/product-ai/` | 試作品ごとの会話、状態、実行の記録を持つ。接続はモックか Claude Code。`app/ai.json` を検査する |
 | 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する |
@@ -143,6 +143,7 @@ flowchart TB
 | 場所 | 中身 | 書くもの |
 |---|---|---|
 | `projects/<id>/app/` | 試作品のソースと `ai.json` | 作る AI、版の復元 |
+| `projects/<id>/app/prototype.json` | 目録。入口、意図、制約、架空のデータ、AI の設定、シナリオの置き場所。ビルドのたびに検査する。なければ既定の値で読む([形](../configuration.md#試作品の目録appprototypejson)) | 作る AI、版の復元 |
 | `projects/<id>/.studio/builds/` | ビルドの結果 | Studio |
 | `projects/<id>/.studio/versions/`、`working.json` | 保存した版と、どの版から作業しているか | Studio |
 | `projects/<id>/.studio/handoff-notes.json` | 引き継ぎのメモ | Studio |

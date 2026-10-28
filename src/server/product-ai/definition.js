@@ -57,12 +57,13 @@ export const MOCK_TEMPLATES = {
 };
 
 class Problems {
-  constructor() {
+  constructor(shown = SHOWN) {
     this.list = [];
+    this.shown = shown;
   }
 
   add(where, text) {
-    this.list.push({ file: SHOWN, text: where ? `${where}: ${text}` : text });
+    this.list.push({ file: this.shown, text: where ? `${where}: ${text}` : text });
   }
 }
 
@@ -411,8 +412,8 @@ function checkVersionOneKeys(problems, raw) {
   for (const key of ['intents', 'confirm']) if (isPlainObject(raw.mock) && raw.mock[key] !== undefined) v2(`mock.${key}`);
 }
 
-export function parseAiDefinition(source) {
-  const problems = new Problems();
+export function parseAiDefinition(source, shown = SHOWN) {
+  const problems = new Problems(shown);
   let raw;
   try {
     raw = JSON.parse(source);
@@ -487,13 +488,14 @@ export function parseAiDefinition(source) {
   return { definition: { formatVersion: AI_FORMAT_VERSION, name, instructions, fields, initialState, flow, end, rules, mock }, errors: [] };
 }
 
-// app/ai.json を読む。なければ AI を使わない試作品として null を返す。
-export async function readAiDefinition(appDir) {
-  const file = path.join(appDir, AI_FILE);
+// app/ai.json(目録の ai で別の名前にもできる。app/ からの相対パス)を読む。なければ AI を使わない試作品として null を返す。
+export async function readAiDefinition(appDir, name = AI_FILE) {
+  const file = path.join(appDir, ...name.split('/'));
+  const shown = `app/${name}`;
   const stat = await fs.lstat(file).catch(() => null);
   if (!stat) return { definition: null, errors: [] };
-  if (!stat.isFile()) return { definition: null, errors: [{ file: SHOWN, text: '普通のファイルにしてください' }] };
-  return parseAiDefinition(await fs.readFile(file, 'utf8'));
+  if (!stat.isFile()) return { definition: null, errors: [{ file: shown, text: '普通のファイルにしてください' }] };
+  return parseAiDefinition(await fs.readFile(file, 'utf8'), shown);
 }
 
 const MOCK_LABELS = {

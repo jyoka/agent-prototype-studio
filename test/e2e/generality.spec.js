@@ -212,6 +212,7 @@ async function runFlow(page, home, other, otherHome) {
     'app/ai.json',
     'app/courses.js',
     'app/main.jsx',
+    'app/prototype.json',
     'app/style.css',
     'handoff.json',
   ]);
