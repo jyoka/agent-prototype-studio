@@ -379,7 +379,7 @@ test('AI の実行の記録の API: 発言と失敗を、次にすることと�
   for (let i = 0; i < 99; i += 1) await call(`${base}/messages`, { text: 'こんにちは' });
   const full = await call(`${base}/messages`, { text: 'こんにちは' });
   assert.equal(full.body.error.code, 'too-long');
-  assert.match(full.body.error.next, /リセット/);
+  assert.match(full.body.error.next, /会話を最初から/);
 
   // 消すのは POST だけ。AI のない試作品と、鍵と Origin の守りは他の API と同じ
   assert.equal((await call(`${base}/clear-trace`)).status, 404);

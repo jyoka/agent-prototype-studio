@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, launchStudio, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, expect, launchStudio, openAiMenu, test } from './studio.js';
 
 // 実モデルは呼ばない。Claude Code は偽の CLI(test/fixtures/fake-claude.js)に差し替える
 const FAKE = path.join(ROOT, 'test', 'fixtures', 'fake-claude.js');
@@ -63,6 +63,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     await expect(log.last()).toContainText('お試しの AI');
 
     // 切り替える前に、送り先、送るもの、費用を出し、確認を求める
+    await openAiMenu(page);
     await page.getByRole('radio', { name: 'Claude Code' }).check();
     const confirm = page.getByRole('group', { name: 'Claude Code に切り替える前の確認' });
     await expect(confirm).toContainText('発言のたびに実際の AI モデルを呼びます');
@@ -79,6 +80,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     // やめると、モックのまま。同意もしない
     await confirm.getByRole('button', { name: 'やめる' }).click();
     await expect(confirm).toBeHidden();
+    await openAiMenu(page);
     await expect(page.getByRole('radio', { name: 'モック' })).toBeChecked();
     expect(await readCalls(env.FAKE_CLAUDE_LOG)).toEqual([]);
     expect((await studio.api('/api/real-ai')).consent.agreed).toBe(false);
@@ -88,6 +90,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     expect(JSON.parse(refused.text).error.code).toBe('consent-required');
 
     // 確認の印を付けて切り替えると、本物の AI を使う同意になる(同意のカードの画面 P25 までのつなぎ)
+    await openAiMenu(page);
     await page.getByRole('radio', { name: 'Claude Code' }).check();
     await confirm.getByRole('checkbox').check();
     await switchButton.click();
@@ -138,6 +141,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     await type('[遅い] よく考えて');
     await expect(app.getByRole('status')).toHaveText('案内役が考えています…');
     await expect(details.getByRole('status')).toContainText('Claude Code の応答を待っています');
+    await openAiMenu(page);
     await expect(page.getByRole('radio', { name: 'モック' })).toBeDisabled();
     await expect.poll(async () => (await readCalls(env.FAKE_CLAUDE_LOG)).some((c) => c.stdin.includes('[遅い] よく考えて'))).toBe(true);
     const slow = (await readCalls(env.FAKE_CLAUDE_LOG)).find((c) => c.stdin.includes('[遅い] よく考えて'));
@@ -155,7 +159,10 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     await expect(page.locator('#ai-badge')).toHaveText('AI: Claude Code');
 
     // モックに戻すのに確認は要らない。会話は続く
-    await page.getByRole('radio', { name: 'モック' }).check();
+    // 選ぶと切り替わり、AI の切り替えは閉じる
+    await openAiMenu(page);
+    await page.getByRole('radio', { name: 'モック' }).click();
+    await expect(page.locator('#ai-menu')).toBeHidden();
     await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
     await expect(details).not.toContainText('費用:');
     await say('やっぱりアルバイトがいいです');
@@ -191,6 +198,7 @@ test('応答を待つ間に開き直しても作り直しても、止められ�
     const details = page.locator('#ai-status');
     const log = app.getByRole('region', { name: '会話' }).getByRole('listitem');
     const message = app.getByLabel('メッセージ');
+    await openAiMenu(page);
     await page.getByRole('radio', { name: 'Claude Code' }).check();
     await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: 'Claude Code に切り替える' }).click();
@@ -214,6 +222,7 @@ test('応答を待つ間に開き直しても作り直しても、止められ�
     await expect(page.locator('#build-status')).toContainText('ビルドに成功しました');
     await details.getByRole('button', { name: '応答を止める' }).click();
     await expect(details.getByRole('status')).toBeHidden();
+    await openAiMenu(page);
     await expect(page.getByRole('radio', { name: 'モック' })).toBeEnabled();
     const slow = (await readCalls(env.FAKE_CLAUDE_LOG)).find((c) => c.stdin.includes('[遅い] 考えて'));
     await expect.poll(() => alive(slow.pid)).toBe(false);
@@ -229,8 +238,9 @@ test('実モデルは STUDIO_ALLOW_CLAUDE_CODE=0 では選べず、理由を出�
     await expect.poll(() => blocked.output()).toContain('STUDIO_ALLOW_CLAUDE_CODE=0');
     await page.goto(blocked.url);
     await chooseSample(page, SAMPLES.jobConsult);
+    await openAiMenu(page);
     await expect(page.getByRole('radio', { name: 'Claude Code' })).toBeDisabled();
-    await expect(page.locator('#ai-status')).toContainText('本物の AI は、使わない設定で起動されています');
+    await expect(page.locator('#ai-menu')).toContainText('本物の AI は、使わない設定で起動されています');
     await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
   } finally {
     await blocked.stop();
@@ -240,6 +250,7 @@ test('実モデルは STUDIO_ALLOW_CLAUDE_CODE=0 では選べず、理由を出�
   try {
     await page.goto(paid.url);
     await chooseSample(page, SAMPLES.jobConsult);
+    await openAiMenu(page);
     await page.getByRole('radio', { name: 'Claude Code' }).check();
     const confirm = page.getByRole('group', { name: 'Claude Code に切り替える前の確認' });
     await expect(confirm).toContainText('費用: API の従量課金');

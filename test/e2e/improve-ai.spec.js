@@ -105,7 +105,7 @@ test('作る欄の依頼でプロダクト内 AI の設定が変わり、前の�
     expect(aiFile.instructions).toContain('足りない項目は、「時給の下限」から先に聞いてください。');
 
     // リセットしても、試し直しはできる(前の会話は残る)
-    await page.getByRole('button', { name: 'リセット' }).click();
+    await page.getByRole('button', { name: '会話を最初から' }).click();
     await expect(log).toHaveCount(1);
     await expect(comparison).toHaveCount(0);
     await expect(bar.getByRole('button', { name: '前の発言で試し直す' })).toBeEnabled();

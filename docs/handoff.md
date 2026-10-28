@@ -1,7 +1,7 @@
 # 引き継ぎの形(handoff、形式 2)
 
 - 状態: **仮**(2026-10-28)。出典のタスク: jyoka/tasks#280(親 PRD: jyoka/tasks#269)。形式 2 は jyoka/tasks#313([harness.md](design/harness.md) の 5 節、基準 S7)
-- 作るところ: `src/server/handoff.js`。画面は右の「詳細」の「本番開発への引き継ぎ」
+- 作るところ: `src/server/handoff.js`。画面は下の「詳細」の「本番開発への引き継ぎ」
 
 試作品を本番開発の担当者に渡すときに、Studio が書き出すフォルダーの形です。中身は決まった手順で作ります。AI の判断は入れません(ADR-0001、Stripe の Minions の考え方)。標準化する契約は、使われ方を見て直します(親 PRD)。
 
@@ -61,7 +61,7 @@
 | `conversation` | 書き出したときの会話と状態。AI の発言には `via`(接続)、`viaLabel`、`real` が付く。`via` が `null` の発言は、設定の固定文(あいさつ) |
 | `source` | 入口(目録の `entry`)、使えるライブラリ、ファイル(パス、バイト、SHA-256)、本番でつなぐ必要があるコードの印(`signs`: `network`、`storage`、`todo`)、架空のデータのファイル(`dataFiles`)とその出どころ(`dataFrom`: 目録の宣言なら `manifest`、推定なら `guess`)、メールアドレスと電話番号らしいものの場所(`personalData`) |
 | `versions[]` | 保存した版の番号、名前、種類、日時 |
-| `requests[]` | 作る欄の依頼(Studio を起動してからのもの)と、変わったファイル |
+| `requests[]` | 言葉で直す欄の依頼(Studio を起動してからのもの)と、変わったファイル |
 | `excluded[]` | 書き出しから外したファイルと理由 |
 
 ### prototype

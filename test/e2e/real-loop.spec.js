@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { REQUEST } from '../../scripts/real-loop-record.js';
-import { ROOT, expect, launchStudio, test } from './studio.js';
+import { ROOT, chooseProject, expect, launchStudio, test } from './studio.js';
 
 // 実モデルの閉じたループ(jyoka/tasks#314、docs/design/harness.md の S1、S12)。本人のログインの Claude Code を、作る欄から呼ぶ。
 // 実モデルを呼んで費用がかかるので、STUDIO_REAL=1 のときだけ動く。ふだんは飛ばし、飛ばしたことを出力に出す。
@@ -12,7 +12,7 @@ const SKIP_REASON = '実モデル(Claude Code)を呼ぶので、STUDIO_REAL=1 �
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'loop-broken', 'app');
 const PROJECT = 'loop-broken';
 const TITLE = '確かめ用: 壊れた学習相談(架空)';
-// 一覧と試す欄の名前。ビルドの前は置き場の名前(TITLE)、後は目録の title から作った名前になるので、共通の言葉で探す
+// 一覧と上の帯の名前。ビルドの前は置き場の名前(TITLE)、後は目録の title から作った名前になるので、共通の言葉で探す
 const NAME = /確かめ用/;
 // 作る AI の起動は 3 回まで、1 回 10 分。関門の時間を足す
 const RUN_TIMEOUT_MS = 35 * 60_000;
@@ -38,10 +38,9 @@ test.describe('実モデルの閉じたループ', () => {
     };
     try {
       await page.goto(studio.url);
-      await page.getByRole('button', { name: NAME }).click();
+      await chooseProject(page, NAME);
       const app = page.frameLocator('iframe[title="試作品"]');
-      // 試す欄の幅は狭いので、依頼の前の見本は試す画面でも落ちている(見出しは出ない)
-      await expect(page.getByRole('region', { name: NAME })).toBeVisible();
+      await expect(page.locator('#project-title')).toHaveText(NAME);
 
       await page.getByLabel('依頼').fill(REQUEST);
       await page.getByRole('button', { name: '送る' }).click();

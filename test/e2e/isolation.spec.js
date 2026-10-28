@@ -1,4 +1,4 @@
-import { SAMPLES, expect, launchStudio, test, writeProject } from './studio.js';
+import { SAMPLES, chooseProject, expect, launchStudio, test, writeProject } from './studio.js';
 
 // 悪意のある試作品の見本。それぞれの試みの結果を、自分の画面に書き出す。
 function probeSource({ studioOrigin, otherBuildUrl }) {
@@ -77,7 +77,7 @@ test('試作品は Studio の API、親画面、ストレージ、外部、他�
 
     await page.goto(studio.url);
     // 起動の後に置いたプロジェクトは、一覧に出てから作り直すと開ける
-    await page.getByRole('button', { name: /悪意のある見本/ }).click();
+    await chooseProject(page, /悪意のある見本/);
     await expect(page.locator('#build-status')).toContainText('まだビルドしていません');
     await page.getByRole('button', { name: '作り直す' }).click();
     await expect(page.locator('#build-status')).toContainText('ビルドに成功しました');

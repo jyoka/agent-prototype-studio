@@ -69,9 +69,17 @@ const els = {
   bannerText: $('banner-text'),
   list: $('project-list'),
   title: $('project-title'),
+  projectMenuButton: $('project-menu-button'),
+  projectMenu: $('project-menu'),
+  saveMark: $('save-mark'),
+  saveNow: $('save-now'),
+  more: $('more'),
+  details: $('details'),
   reopen: $('reopen'),
   rebuild: $('rebuild'),
   reset: $('reset'),
+  aiSwitch: $('ai-switch'),
+  aiMenu: $('ai-menu'),
   aiBadge: $('ai-badge'),
   aiStatus: $('ai-status'),
   retryBar: $('retry-bar'),
@@ -88,7 +96,6 @@ const els = {
   cancel: $('cancel'),
   examples: $('examples'),
   exampleList: $('example-list'),
-  workBadge: $('work-badge'),
   workingStatus: $('working-status'),
   saveForm: $('save-form'),
   versionName: $('version-name'),
@@ -189,9 +196,11 @@ async function api(path, options = {}) {
   return body;
 }
 
+// 接続の印は、問題があるときだけ出す(ux-redesign.md 3 節)
 function setConnection(state, text) {
   els.connection.dataset.state = state;
-  els.connection.textContent = text;
+  els.connection.hidden = state !== 'error';
+  els.connection.textContent = els.connection.hidden ? '' : text;
 }
 
 function showBanner(code, fallback) {
@@ -256,7 +265,7 @@ function render() {
   }
   renderList();
   const project = selectedProject();
-  els.title.textContent = project ? project.title : '試作品がありません';
+  els.title.textContent = project ? project.title : 'ありません';
   els.reopen.disabled = !project?.previewUrl;
   els.reset.disabled = !project?.previewUrl;
   els.rebuild.disabled = !project || project.building || project.running || project.versioning;
@@ -268,7 +277,7 @@ function render() {
   if (!project) {
     showPlaceholder('試作品がありません。');
   } else if (!project.previewUrl) {
-    showPlaceholder('表示できる版がありません。右の「詳細」を見てください。');
+    showPlaceholder('表示できる版がありません。下の「詳細」を見てください。');
   } else if (project.previewUrl !== preview.url) {
     clearEvents();
     showPreview(project.previewUrl, project.id);
@@ -290,20 +299,21 @@ function renderList() {
     const state = document.createElement('span');
     state.className = 'state';
     const failed = project.lastBuild && !project.lastBuild.ok;
-    state.dataset.state = failed ? 'error' : 'ok';
+    // AI と話せるかは名前に入っているので、ここには今の状態だけを短く出す
+    const unavailable = !project.running && !project.versioning && !project.building && (failed || !project.previewUrl);
+    state.dataset.state = unavailable ? 'error' : 'ok';
     state.textContent = project.running
       ? '作る AI が作業中'
       : project.versioning
         ? '版の保存・復元か書き出しをしています'
         : project.building
         ? 'ビルド中'
-        : failed
-          ? 'ビルドに失敗'
-          : project.previewUrl
-            ? '開けます'
-            : '';
+        : unavailable
+          ? '表示できません'
+          : '';
     button.append(name, state);
     button.addEventListener('click', () => {
+      setProjectMenu(false);
       if (selectedId === project.id) return;
       selectedId = project.id;
       makeError = null;
@@ -365,7 +375,7 @@ function renderBuild(project) {
     where.append(element('code', project.appDir));
     nodes.push(where);
     if (project.previewUrl) {
-      nodes.push(element('p', '中央には、前にビルドできた版を表示しています。', 'notice'));
+      nodes.push(element('p', '「試す」には、前にビルドできた版を表示しています。', 'notice'));
     }
   }
   els.buildStatus.replaceChildren(...nodes);
@@ -448,6 +458,7 @@ function renderMake(project) {
   els.send.disabled = !ready;
   els.cancel.hidden = !(project && runningRun(project.id));
   renderConversation(project);
+  renderSaveMark(project);
 }
 
 function renderConversation(project) {
@@ -764,7 +775,7 @@ function renderRetry() {
   const busy = info.retrying || retryingProjects.has(ai.projectId);
   let text;
   if (busy) text = `前の会話(${counts})を、今の設定で送り直しています…`;
-  else if (info.result) text = `前の会話(${counts})を、今の設定で送り直しました。前と今の応答は、右の「詳細」の「試し直しの結果」で比べられます。`;
+  else if (info.result) text = `前の会話(${counts})を、今の設定で送り直しました。前と今の応答は、下の「詳細」の「試し直しの結果」で比べられます。`;
   else if (fresh) text = `プロダクト内 AI の設定が変わったので、会話は新しい設定で最初から始まっています。前の会話(${counts})を、今の設定で送り直せます。`;
   else text = `設定が変わる前の会話(${counts})を、今の設定で送り直せます。今の会話は最初に戻ります。`;
   const nodes = [element('p', text)];
@@ -784,8 +795,10 @@ function renderAi() {
   const { session } = ai;
   renderRetry();
   renderExamples();
-  els.aiBadge.hidden = !session;
+  els.aiSwitch.hidden = !session;
   if (!session) {
+    setAiMenu(false);
+    els.aiMenu.replaceChildren();
     els.aiStatus.replaceChildren(
       element('p', ai.projectId ? 'この試作品はプロダクト内 AI を使っていません。' : '試作品を開くと、ここに出ます。', 'muted'),
     );
@@ -793,9 +806,9 @@ function renderAi() {
     syncTracePolling();
     return;
   }
-  els.aiBadge.dataset.kind = session.connection.kind;
+  els.aiSwitch.dataset.kind = session.connection.kind;
   els.aiBadge.textContent = `AI: ${session.connection.label}`;
-  els.aiBadge.title = session.connection.description;
+  els.aiSwitch.title = session.connection.description;
   const connection = element('p', undefined, 'ai-connection');
   connection.dataset.kind = session.connection.kind;
   connection.append(element('strong', `接続: ${session.connection.label}`), document.createTextNode(` ${session.connection.description}`));
@@ -803,11 +816,13 @@ function renderAi() {
   // 実モデルを選んでいる間は、発言の前にいつも送り先と費用が見えるようにする
   const current = ai.choices?.options.find((o) => o.kind === session.connection.kind);
   if (current?.billing && !ai.confirm) nodes.push(sendsBlock(current));
-  nodes.push(connectionPicker(session));
+  // 接続の選び方は、試す欄の上の「AI: … ▾」の中に出す
+  const menu = [connectionPicker(session)];
   if (ai.confirm) {
     const option = ai.choices?.options.find((o) => o.kind === ai.confirm.kind);
-    if (option) nodes.push(confirmBlock(option));
+    if (option) menu.push(confirmBlock(option));
   }
+  els.aiMenu.replaceChildren(...menu);
   if (waitingFor(ai.projectId) > 0) {
     const waiting = element('div', undefined, 'ai-waiting');
     waiting.setAttribute('role', 'status');
@@ -839,6 +854,7 @@ function renderAi() {
 
 async function loadAi(projectId) {
   const seq = ++ai.seq;
+  if (projectId !== ai.projectId) setAiMenu(false);
   ai.projectId = projectId;
   ai.session = null;
   ai.choices = null;
@@ -891,32 +907,42 @@ function workingView(data) {
   if (working.files === 'none') {
     return {
       state: 'unsaved',
-      badge: '作業中(まだ保存していません)',
       text: '作業中: まだ保存した版はありません。良い状態になったら保存してください。',
     };
   }
   if (working.files === 'changed' || !version) {
     return {
       state: 'changed',
-      badge: '作業中(保存していない変更あり)',
       text: `作業中には、保存していない変更があります${base ? `(保存版 ${versionSubject(base)}から)` : ''}。`,
     };
   }
   if (working.conversation === 'changed') {
     return {
       state: 'partly',
-      badge: `作業中(会話が v${version.number} から変わっています)`,
       text: `作業中のファイルは保存版 ${versionSubject(version)}と同じです。会話と状態は、保存したときから変わっています。`,
     };
   }
   if (working.conversation === 'initial') {
     return {
       state: 'partly',
-      badge: `作業中(ファイルは v${version.number} と同じ)`,
       text: `作業中のファイルは保存版 ${versionSubject(version)}と同じです。会話と状態は最初のままです。保存したときの会話から続けるには、その版の「復元」を押してください。`,
     };
   }
-  return { state: 'saved', badge: `作業中 = 保存版 v${version.number}`, text: `作業中は保存版 ${versionSubject(version)}と同じです。` };
+  return { state: 'saved', text: `作業中は保存版 ${versionSubject(version)}と同じです。` };
+}
+
+// 上の帯の保存の印。保存していない変更があるときだけ出す(ux-redesign.md の気づいたこと A)。
+// まだ版がないときは、ファイルが最初から変わったかをサーバーが知らないので、
+// 会話が進んだか、作る AI の依頼(app/ を変えなかったものを除く)があれば、変更ありとする
+function hasUnsavedChanges(project, working) {
+  if (working.files === 'changed' || working.conversation === 'changed') return true;
+  if (working.files !== 'none') return false;
+  return (conversations.get(project.id)?.runs ?? []).some((run) => run.status !== 'unchanged');
+}
+
+function renderSaveMark(project) {
+  const data = project && versions.projectId === project.id ? versions.data : null;
+  els.saveMark.hidden = !(data && hasUnsavedChanges(project, data.working));
 }
 
 function versionItem(project, version, working, locked) {
@@ -949,16 +975,14 @@ function renderVersions(project) {
   els.versionsMessage.hidden = !versions.message;
   els.versionsMessage.textContent = versions.message?.text ?? '';
   els.versionsMessage.dataset.kind = versions.message?.kind ?? '';
+  els.saveNow.disabled = locked;
+  renderSaveMark(project);
   if (!data) {
-    els.workBadge.hidden = true;
     els.workingStatus.textContent = project ? '読み込んでいます…' : '';
     els.versionList.replaceChildren();
     return;
   }
   const view = workingView(data);
-  els.workBadge.hidden = false;
-  els.workBadge.dataset.state = view.state;
-  els.workBadge.textContent = view.badge;
   els.workingStatus.dataset.state = view.state;
   els.workingStatus.textContent = view.text;
   els.versionList.replaceChildren(...data.versions.map((version) => versionItem(project, version, data.working, locked)));
@@ -1163,6 +1187,7 @@ async function selectConnection(kind, confirmed) {
     });
     if (ai.projectId !== projectId) return;
     ai.confirm = null;
+    setAiMenu(false);
     addEvent('info', `プロダクト内 AI の接続を「${session.connection.label}」にしました。会話と状態はそのまま引き継ぎます。`);
     showAiSession(projectId, session, retry);
     // 試作品にも知らせる(studio.ai.onChange)
@@ -1608,7 +1633,7 @@ function onFrameLoad(iframe) {
   preview.unexpectedLoads.push(now);
   if (preview.unexpectedLoads.length > MAX_UNEXPECTED_LOADS) {
     addEvent('warning', '試作品が何度も別のページへ移動しようとしたので、止めました。「開き直す」で最初から開けます。');
-    showPlaceholder('試作品を止めました。右の「詳細」を見てください。');
+    showPlaceholder('試作品を止めました。下の「詳細」を見てください。');
     return;
   }
   addEvent('warning', '試作品が別のページへ移動しようとしたので、最初から開き直しました。試作品は Studio の外へ移動できません。');
@@ -1731,6 +1756,46 @@ function connect(iframe) {
   // opaque origin の相手には '*' しか指定できない。渡すのは port だけで、返事はこの port で受ける
   iframe.contentWindow.postMessage({ type: 'studio:connect' }, '*', [channel.port2]);
 }
+
+// 上の帯の試作品の一覧と、試す欄の上の AI の切り替えは、押すと開き、もう一度押すか Esc で閉じる
+function setProjectMenu(open) {
+  els.projectMenu.hidden = !open;
+  els.projectMenuButton.setAttribute('aria-expanded', String(open));
+}
+
+function setAiMenu(open) {
+  els.aiMenu.hidden = !open;
+  els.aiSwitch.setAttribute('aria-expanded', String(open));
+}
+
+els.projectMenuButton.addEventListener('click', () => setProjectMenu(els.projectMenu.hidden));
+
+els.aiSwitch.addEventListener('click', () => setAiMenu(els.aiMenu.hidden));
+
+// 一覧の外を押したら閉じる。試作品の iframe を押したときは、この画面から焦点が外れるので、それでも閉じる
+document.addEventListener('click', (event) => {
+  if (!els.projectMenu.hidden && !event.target.closest('.project-switch')) setProjectMenu(false);
+});
+window.addEventListener('blur', () => setProjectMenu(false));
+
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  if (!els.projectMenu.hidden) {
+    setProjectMenu(false);
+    els.projectMenuButton.focus();
+  } else if (!els.aiMenu.hidden) {
+    setAiMenu(false);
+    els.aiSwitch.focus();
+  }
+});
+
+els.saveNow.addEventListener('click', () => saveVersion());
+
+// 今の詳細は 2 列の下にある。P22 で「その他」の引き出しにするまでは、そこへ移る
+els.more.addEventListener('click', () => {
+  els.details.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  els.details.focus({ preventScroll: true });
+});
 
 els.reopen.addEventListener('click', () => {
   const project = selectedProject();

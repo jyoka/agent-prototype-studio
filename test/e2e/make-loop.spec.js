@@ -22,7 +22,7 @@ test('壊れる依頼でも、Studio が失敗を直す依頼にして返し、�
     const app = page.frameLocator('iframe[title="試作品"]');
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
 
-    await page.getByRole('region', { name: '作る' }).getByRole('button', { name: '壊して', exact: true }).click();
+    await page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '壊して', exact: true }).click();
     await page.getByRole('button', { name: '送る' }).click();
     const run = lastRun(page);
     await expect(run.locator('.run-status')).toContainText('作る AI が直すラウンドで直し、Studio が確かめた関門は、すべて通りました', { timeout: 20_000 });
@@ -95,7 +95,7 @@ test('シナリオの関門 G6 の失敗を直す依頼にして返し、作る 
     const app = page.frameLocator('iframe[title="試作品"]');
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
 
-    await page.getByRole('region', { name: '作る' }).getByRole('button', { name: 'シナリオを足して、見出しを崩して', exact: true }).click();
+    await page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: 'シナリオを足して、見出しを崩して', exact: true }).click();
     await page.getByRole('button', { name: '送る' }).click();
     const run = lastRun(page);
     await expect(run.locator('.run-status')).toContainText('作る AI が直すラウンドで直し、Studio が確かめた関門は、すべて通りました', { timeout: 60_000 });

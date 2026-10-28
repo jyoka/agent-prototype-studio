@@ -15,23 +15,85 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; }
+body { margin: 0; }
 h1, h2, h3 { margin: 0; }
 h1 { font-size: 1.1rem; }
 h2 { font-size: 1rem; }
 h3 { font-size: 0.9rem; margin: 1rem 0 0.4rem; }
+button { font: inherit; }
 
+/* 上の帯。高さを決めておき、下の 2 列を 1 画面に収める */
 .topbar {
+  position: relative;
+  z-index: 10;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0.6rem 1rem;
+  gap: 1rem;
+  height: 3.2rem;
+  padding: 0 1rem;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
-.connection { font-size: 0.85rem; color: var(--muted); }
-.connection[data-state="ok"] { color: var(--ok); }
-.connection[data-state="error"] { color: var(--error); }
+.topbar h1 { white-space: nowrap; }
+.topbar-end { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; }
+.topbar button, .toolbar button, .detail-button {
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.topbar button:disabled, .toolbar button:disabled, .detail-button:disabled { opacity: 0.5; cursor: default; }
+.connection { font-size: 0.85rem; color: var(--error); }
+.connection[hidden], .save-mark[hidden] { display: none; }
+.save-mark {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid #c77700;
+  border-radius: 999px;
+  background: var(--warn-bg);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+/* 試作品の切り替え。押すと一覧が下に開く */
+.project-switch { position: relative; min-width: 0; }
+.topbar .menu-button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-color: var(--line); }
+.project-menu {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  width: max-content;
+  min-width: 18rem;
+  max-width: min(32rem, 90vw);
+  max-height: 70vh;
+  overflow: auto;
+  padding: 0.4rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
+}
+.project-menu[hidden] { display: none; }
+.project-menu ul { list-style: none; margin: 0; padding: 0; }
+.project-menu li + li { margin-top: 0.2rem; }
+.project-menu button {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+.project-menu button:hover { background: var(--bg); }
+.project-menu button[aria-current="true"] { border-color: var(--accent); background: #eef3fd; }
+.project-menu .state { flex-shrink: 0; font-size: 0.8rem; color: var(--muted); }
+.project-menu .state:empty { display: none; }
+.project-menu .state[data-state="error"] { color: var(--error); }
 
 .banner {
   margin: 0.6rem 1rem 0;
@@ -42,54 +104,29 @@ h3 { font-size: 0.9rem; margin: 1rem 0 0.4rem; }
 }
 .banner p { margin: 0; }
 
+/* 2 列。左の「試す」が約 6 割、右の「言葉で直す」が約 4 割。主役の 2 つを、スクロールなしで 1 画面に収める */
 .layout {
-  flex: 1;
   display: grid;
-  grid-template-columns: 200px minmax(300px, 360px) 1fr 280px;
-  grid-template-areas: "nav make try details";
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   gap: 1rem;
+  height: calc(100vh - 3.2rem);
+  min-height: 32rem;
   padding: 1rem;
-  min-height: 0;
 }
-.projects, .preview, .details {
+.preview, .make, .details {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0.8rem;
   min-width: 0;
 }
-.projects ul { list-style: none; margin: 0.6rem 0 0; padding: 0; }
-.projects li + li { margin-top: 0.3rem; }
-.projects button {
-  width: 100%;
-  text-align: left;
-  padding: 0.5rem 0.6rem;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: none;
-  font: inherit;
-  cursor: pointer;
-}
-.projects button:hover { background: var(--bg); }
-.projects button[aria-current="true"] { border-color: var(--accent); background: #eef3fd; }
-.projects .state { display: block; font-size: 0.8rem; color: var(--muted); }
-.projects .state[data-state="error"] { color: var(--error); }
 
-.preview { display: flex; flex-direction: column; }
-.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
-.toolbar h2 { flex: 1 1 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-button { font: inherit; }
-.toolbar button {
-  padding: 0.35rem 0.8rem;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel);
-  cursor: pointer;
-}
-.toolbar button:disabled { opacity: 0.5; cursor: default; }
+.preview { display: flex; flex-direction: column; min-height: 0; }
+.toolbar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
+.toolbar h2 { margin-right: auto; }
 .frame-host {
   flex: 1;
-  min-height: 480px;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 6px;
   overflow: hidden;
@@ -104,7 +141,18 @@ button { font: inherit; }
 .retry-bar button { padding: 0.35rem 0.8rem; border: 1px solid #7a3fb4; border-radius: 6px; background: var(--panel); cursor: pointer; }
 .retry-bar button:disabled { opacity: 0.5; cursor: default; }
 
-.details { overflow: auto; font-size: 0.9rem; }
+/* 試作品の中の AI の切り替え。押すと、今の接続の選び方が試す欄の上に開く */
+.toolbar .ai-switch { border-color: #c77700; background: var(--warn-bg); white-space: nowrap; }
+.toolbar .ai-switch[data-kind="claude-code"] { border-color: var(--error); background: var(--error-bg); }
+.ai-menu { margin-bottom: 0.6rem; padding: 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font-size: 0.9rem; max-height: 50vh; overflow: auto; }
+.ai-menu[hidden] { display: none; }
+.ai-menu .ai-picker, .ai-menu .ai-confirm { background: var(--panel); }
+
+/* 今の詳細。P22 で「その他」の引き出しへ移すまで、2 列の下に置く */
+.details { margin: 0 1rem 1rem; font-size: 0.9rem; }
+.details-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: 0 1.5rem; }
+.details-grid > section { min-width: 0; }
+.detail-button { margin-top: 0.5rem; }
 .muted { color: var(--muted); margin: 0; }
 .build-status .ok { color: var(--ok); margin: 0; }
 .build-status .failed { color: var(--error); font-weight: 600; margin: 0; }
@@ -128,24 +176,17 @@ button { font: inherit; }
 .events time { display: block; font-size: 0.75rem; color: var(--muted); }
 
 
-/* 作る */
-.projects { grid-area: nav; }
-.make { grid-area: make; }
-.preview { grid-area: try; }
-.details { grid-area: details; }
+/* 言葉で直す。依頼の欄と「送る」が、いつも 1 画面の中に見えるようにする */
 .make {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0.8rem;
-  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  min-height: 0;
+  overflow: auto;
   font-size: 0.9rem;
 }
+.make > * { flex-shrink: 0; }
 .make > .muted { font-size: 0.85rem; }
-.eyebrow { margin: 0 0 0.2rem; font-size: 0.8rem; font-weight: 600; color: var(--muted); }
 .agent-status { padding: 0.5rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
 .agent-status p { margin: 0.15rem 0; }
 .agent-status .agent-name { font-weight: 600; }
@@ -153,7 +194,7 @@ button { font: inherit; }
 .agent-status[data-kind="claude"][data-billing="api-key"] .billing,
 .agent-status[data-kind="claude"][data-billing="auth-token"] .billing,
 .agent-status[data-kind="claude"][data-billing="cloud"] .billing { padding: 0.3rem 0.4rem; background: var(--warn-bg); border-radius: 4px; }
-.conversation { list-style: none; margin: 0; padding: 0; flex: 1; min-height: 120px; max-height: 45vh; overflow: auto; }
+.make > .conversation { list-style: none; margin: 0; padding: 0; flex: 1 1 auto; min-height: 120px; overflow: auto; }
 .conversation .empty { padding: 0.5rem 0; }
 .run { padding: 0.4rem 0 0.6rem; border-bottom: 1px solid var(--line); }
 .run .steps { list-style: none; margin: 0.3rem 0 0; padding: 0; }
@@ -199,15 +240,6 @@ button { font: inherit; }
 .examples button { text-align: left; padding: 0.2rem 0.5rem; font-size: 0.85rem; }
 .examples li .muted { font-size: 0.75rem; }
 
-.ai-badge {
-  padding: 0.15rem 0.5rem;
-  border: 1px solid #c77700;
-  border-radius: 999px;
-  background: var(--warn-bg);
-  font-size: 0.8rem;
-  white-space: nowrap;
-}
-.ai-badge[data-kind="claude-code"] { border-color: var(--error); background: var(--error-bg); }
 .ai-status p { margin: 0 0 0.4rem; }
 .ai-connection { padding: 0.4rem 0.6rem; background: var(--warn-bg); border-radius: 4px; }
 .ai-connection[data-kind="claude-code"] { background: var(--error-bg); }
@@ -264,15 +296,6 @@ button { font: inherit; }
   background: var(--panel);
   cursor: pointer;
 }
-.work-badge {
-  padding: 0.15rem 0.5rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  font-size: 0.8rem;
-  white-space: nowrap;
-}
-.work-badge[data-state="saved"] { border-color: var(--ok); color: var(--ok); }
-.work-badge[data-state="partly"], .work-badge[data-state="changed"], .work-badge[data-state="unsaved"] { border-color: #c77700; background: var(--warn-bg); }
 .working-status { margin: 0 0 0.5rem; }
 .working-status[data-state="saved"] { color: var(--ok); }
 .save-form { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
@@ -297,9 +320,11 @@ button { font: inherit; }
 .tag { font-size: 0.75rem; padding: 0 0.35rem; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); }
 .tag.current { border-color: var(--ok); color: var(--ok); }
 
-@media (max-width: 1400px) {
-  .layout { grid-template-columns: 200px minmax(280px, 340px) 1fr; grid-template-areas: "nav make try" "nav make details"; }
-}
-@media (max-width: 1000px) {
-  .layout { grid-template-columns: 1fr; grid-template-areas: "nav" "make" "try" "details"; }
+/* 1024 より狭いときは、試すと直すを上下に並べる */
+@media (max-width: 1023px) {
+  .layout { grid-template-columns: 1fr; height: auto; }
+  .frame-host { flex: none; height: 640px; }
+  .make { overflow: visible; }
+  .make > .conversation { max-height: 50vh; }
+  .topbar h1 { display: none; }
 }
