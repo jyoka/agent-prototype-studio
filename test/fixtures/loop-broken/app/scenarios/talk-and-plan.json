@@ -1,0 +1,12 @@
+{
+  "name": "学びたいことを話すと、学習プランの項目に出る",
+  "viewport": "desktop",
+  "steps": [
+    { "do": "type", "target": { "label": "メッセージ" }, "text": "英会話を始めたいです。1日30分くらい使えます" },
+    { "do": "click", "target": { "role": "button", "name": "送る" } },
+    { "expect": "aiState", "key": "subject", "equals": "英会話" },
+    { "expect": "text", "target": { "region": "学習プラン" }, "contains": "英会話" },
+    { "expect": "noErrors" },
+    { "do": "screenshot", "name": "学習プランが出た" }
+  ]
+}

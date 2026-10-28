@@ -1,0 +1,75 @@
+{
+  "verdict": "passed",
+  "durationMs": 9185,
+  "scenarios": [
+    {
+      "name": "起動して描画が空でなく、エラーがない",
+      "base": true,
+      "verdict": "passed"
+    },
+    {
+      "name": "プロダクト内 AI のあいさつが出る",
+      "base": true,
+      "verdict": "passed"
+    },
+    {
+      "name": "学びたいことを話すと、学習プランの項目に出る",
+      "base": false,
+      "verdict": "passed"
+    }
+  ],
+  "errors": [],
+  "turns": [
+    {
+      "status": "ok",
+      "text": "英会話を始めたいです。1日30分くらい使えます",
+      "reply": "ありがとうございます。英会話をはじめて学ぶ予定で、1日に30分ほど使えるのですね。どう学ぶのが合っていますか? 動画で学ぶ、本で学ぶ、教室に通う、から選べます。",
+      "stages": {
+        "extract": {
+          "via": "connection",
+          "output": {
+            "updates": "{\"subject\":\"英会話\",\"minutes\":30,\"level\":\"はじめて\"}",
+            "intent": "answer"
+          },
+          "rejected": []
+        },
+        "decision": {
+          "step": "hear",
+          "ask": "style",
+          "say": null,
+          "done": false,
+          "reason": "段「hear」の遷移の条件をどれも満たしていないので、この段に留まる。段「hear」で未定の最初の項目「学び方」を聞く"
+        },
+        "phrase": {
+          "via": "connection",
+          "retry": null,
+          "fallback": null
+        },
+        "guards": {
+          "result": "passed",
+          "failed": []
+        }
+      },
+      "fourStages": true,
+      "calls": {
+        "count": 2,
+        "extract": 1,
+        "phrase": 1,
+        "waitMs": 7710,
+        "durationMs": 5816,
+        "costUsd": 0.039192
+      },
+      "elapsedMs": 7714
+    }
+  ],
+  "projectCalls": {
+    "used": 2,
+    "limit": 120,
+    "windowMinutes": 60,
+    "remaining": 118
+  },
+  "shots": [
+    "screenshots/product-ai-desktop.png",
+    "screenshots/product-ai-scenario-3-step-6.png"
+  ]
+}
