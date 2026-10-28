@@ -149,10 +149,14 @@ Studio の使い方の全部です。README の「使い方」は最初の 1 分
 | `app/tools.json`、`app/data/` | ツール 5 つ(探す、1 つ見る、聞いてほしいこと、同意の記録、希望の保存)と、架空の求人 |
 | `app/assumptions/` | 相手の仕様の推測 2 つ。`partner-a` はカードを使える(既定)。`partner-b` は文とボタンだけで、カードは文に落ちる |
 | `app/mocks/partner.json` | お試しの AI の決まり |
-| `app/evals/` | 場面 12 本。作るループの関門 GE がモックで回す。手元では `npm run evals -- sample-part-time` で回せる(下の「場面を回す」) |
+| `app/compositions/c.json` | 構成 C。受付(模擬のエージェント)が、バイト探しの相談を相談役(harness)に、体調やハラスメントの話を担当者(人。模擬の返事)に引き継ぐ。相談役は、受け取った場所と時給を聞き直さない |
+| `app/front-tools.json`、`app/consult.json`、`app/mocks/front.json`、`app/prompts/front.md` | 構成 C の引き継ぎのツール 2 つ、相談役の harness の設定、受付のお試しの AI の決まり、受付のプロンプトの枠 |
+| `app/compositions/c2.json`、`app/callers/` | 構成 C2。構成 A からこちらのプロンプトの枠と頼みを外し、ツールだけを出す。呼び手の推測を 3 つ(モデル 3 種、土台のプロンプト 2 種)置く |
+| `app/evals/` | 場面 19 本(構成 A の 12 本、構成 C の 7 本)。作るループの関門 GE が既定の構成 A をモックで回す(構成 C の場面は n/a)。手元では `npm run evals -- sample-part-time` で回せる(下の「場面を回す」) |
 | `app/scenarios/` | 観察器のシナリオ 1 本。トークのボタンを `click` で押す |
 
 - ツールの呼び出しと守りの判定は、「AI の実行の記録」と、観察の report の `ai` に残る(`kind: "sim-turn"`)。画面での見やすい出し方と、前提の選び方は後のカードで作る
+- 構成 C と C2 は、Studio のコードを変えずに `app/` のデータだけで足した(流用の証拠。[agent-simulation.md の 2.5 と 2.6](design/agent-simulation.md#25-構成-c-の例))。試す画面は既定の構成 A で話す。構成 C と C2 は、今は `npm run evals -- sample-part-time --composition compositions/c.json` のように場面の回しで使う。試す画面で選ぶ口は後のカードで作る
 - 会話の枠は、ほかの試作品でも `import { Talk } from 'studio-talk'` で使える。形は [configuration.md の「会話の枠」](configuration.md#会話の枠studio-talk)
 
 ## AI の実行の記録を見る
@@ -333,7 +337,8 @@ npm run tools:mcp -- <プロジェクト> --conversation try-1
 ```sh
 npm run evals -- sample-part-time                                   # モック。既定の構成と既定の前提
 npm run evals -- sample-part-time --assumptions partner-a,partner-b # 前提を並べて比べる
-npm run evals -- sample-part-time --composition composition.json,compositions/b.json
+npm run evals -- sample-part-time --composition composition.json,compositions/c.json
+npm run evals -- sample-part-time --composition compositions/c2.json --assumptions caller-sonnet,caller-haiku,caller-opus
 npm run evals -- sample-part-time --without prompt-guards           # プロンプトの頼みを外して回し直す
 npm run evals -- sample-part-time --repeat 2
 ```

@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "name": "ツールだけを出し、呼び手を替えて試す(架空)",
+  "driver": "partner",
+  "participants": [
+    {
+      "id": "partner",
+      "kind": "agent",
+      "label": "呼び手のエージェント(模擬)",
+      "owner": "partner",
+      "prompt": [{ "from": "assumptions", "key": "hostPrompt", "owner": "partner" }],
+      "tools": ["search_jobs", "get_job", "suggest_questions", "record_consent", "save_wish"],
+      "mock": "mocks/partner.json"
+    }
+  ],
+  "tools": "tools.json",
+  "handoffs": [],
+  "surface": { "kind": "talk", "theme": "talk" },
+  "assumptions": { "dir": "callers", "default": "caller-sonnet" },
+  "limits": { "maxTurns": 20, "maxHandoffs": 3 }
+}

@@ -1,0 +1,40 @@
+{
+  "formatVersion": 1,
+  "name": "受付、相談役、担当者の引き継ぎ(架空)",
+  "driver": "front",
+  "participants": [
+    {
+      "id": "front",
+      "kind": "agent",
+      "label": "受付(模擬)",
+      "owner": "partner",
+      "prompt": [
+        { "from": "assumptions", "key": "hostPrompt", "owner": "partner" },
+        { "slot": "dip-front", "owner": "dip", "file": "prompts/front.md" }
+      ],
+      "tools": ["handoff_to_consult", "handoff_to_staff"],
+      "mock": "mocks/front.json"
+    },
+    { "id": "consult", "kind": "harness", "label": "相談役", "owner": "dip", "ai": "consult.json", "returnTo": "front" },
+    {
+      "id": "staff",
+      "kind": "human",
+      "label": "担当者(模擬)",
+      "owner": "dip",
+      "mock": { "reply": "担当の者です。お話を伺います。急ぎのときは、ひとりで抱えずに近くの人にも伝えてください。(模擬の返事)" }
+    }
+  ],
+  "tools": "front-tools.json",
+  "handoffs": [
+    { "from": "front", "to": "consult", "carry": ["area", "minWage"] },
+    { "from": "front", "to": "staff" },
+    { "from": "consult", "to": "front" }
+  ],
+  "guards": [
+    { "id": "risky-to-staff", "layer": "prompt", "owner": "dip", "on": "front",
+      "text": "体調やハラスメントの話をされたら、handoff_to_staff を呼んでください。" }
+  ],
+  "surface": { "kind": "talk", "theme": "talk" },
+  "assumptions": { "dir": "assumptions", "default": "partner-a" },
+  "limits": { "maxTurns": 20, "maxHandoffs": 3 }
+}

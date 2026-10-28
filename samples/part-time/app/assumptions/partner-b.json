@@ -5,7 +5,7 @@
   "note": "本物の仕様ではない。カードを使えない、結果が短い、3 回目の検索が失敗する、を A から変えた",
   "model": { "name": "claude-haiku-5-5", "standIn": true },
   "hostPrompt": "あなたは文とボタンだけで話す案内役です。(架空の推測)",
-  "slots": { "dip-guide": { "maxChars": 1000 } },
+  "slots": { "dip-guide": { "maxChars": 1000 }, "dip-front": { "maxChars": 1000 } },
   "messageTypes": ["text", "buttons"],
   "messageLimits": { "textMaxChars": 300, "buttonsMax": 3, "partsMax": 2 },
   "toolCalling": { "maxPerReply": 2, "resultMaxChars": 2000, "auth": "none", "delayMs": 0, "faults": [{ "tool": "search_jobs", "onCall": 3 }] },

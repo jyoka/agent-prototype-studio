@@ -1,0 +1,17 @@
+{
+  "formatVersion": 1,
+  "id": "switch-carry-values",
+  "kind": "switch",
+  "about": "構成 C。受付が聞いた場所と時給の下限を、引き継ぎのツールの引数で相談役に渡す。相談役の状態に入るのは、受け渡した値(引き継いだターンの発言からは読み取れない)",
+  "entry": "front",
+  "turns": [
+    { "user": "みなと町で時給1100円以上がいい" },
+    { "user": "引き継いでください", "action": "handoff-consult" }
+  ],
+  "expect": [
+    { "check": "toolCalled", "tool": "handoff_to_consult", "args": { "area": "みなと町", "minWage": 1100 } },
+    { "check": "handoffTo", "to": "consult" },
+    { "check": "stateHas", "field": "area", "equals": "みなと町" },
+    { "check": "stateHas", "field": "minWage", "equals": 1100 }
+  ]
+}

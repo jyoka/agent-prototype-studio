@@ -47,20 +47,20 @@ test('npm run evals は、構成 × 前提 × 接続 × 回数を回し、result
   const { run, latest, dir } = await project(t);
   const out = await run(['--assumptions', 'partner-a,partner-b', '--repeat', '2']);
   assert.equal(out.code, 0, out.stderr + out.stdout);
-  assert.match(out.stdout, /場面を回しています: part-time\(12 本。モック\(費用なし\)\)/);
+  assert.match(out.stdout, /場面を回しています: part-time\(19 本。モック\(費用なし\)\)/);
   const { result, report, read } = await latest();
 
   assert.equal(result.format, 'prototype-studio-evals');
   assert.equal(result.status, 'done');
   assert.equal(result.verdict, 'passed');
-  // 前提 2 つ × 接続 1 つ × 回数 2 = 4 組。組ごとに場面 12 本
+  // 前提 2 つ × 接続 1 つ × 回数 2 = 4 組。組ごとに場面 19 本(構成 C の 7 本は、構成 A では n/a)
   assert.deepEqual(result.groups.map((g) => [g.composition.file, g.assumption.id, g.connection, g.round]), [
     ['composition.json', 'partner-a', 'mock', 1],
     ['composition.json', 'partner-a', 'mock', 2],
     ['composition.json', 'partner-b', 'mock', 1],
     ['composition.json', 'partner-b', 'mock', 2],
   ]);
-  assert.ok(result.groups.every((g) => g.evals.length === 12));
+  assert.ok(result.groups.every((g) => g.evals.length === 19));
   // 結果は app/ と構成と前提の指紋を持つ(S6、S23)
   assert.match(result.appDigest, /^[0-9a-f]{64}$/);
   assert.match(result.groups[0].composition.digest, /^sha256:[0-9a-f]{64}$/);
@@ -77,7 +77,7 @@ test('npm run evals は、構成 × 前提 × 接続 × 回数を回し、result
 
   // report.md: 比べる表の列と、組ごとの行
   assert.match(report, /\| 構成 \/ 前提 \| 接続 \| 回 \| 場面 \| 確かめの合格 \| 自然さ\(判定\) \| ツールの再現率 \| 誤った呼び出し \| ツールが止めた \| 止まらなかった \| 費用\(USD\) \| 待ち時間の中央値\(秒\) \|/);
-  assert.match(report, /\| composition\.json \/ partner-a \| モック \| 1 \| 12\(n\/a 0\) \| \d+\/\d+ \| 未採点 3 \| 100% \| 0 \| 1\/3 \| 0\/3 \| 0\.0000 \| [\d.]+ \|/);
+  assert.match(report, /\| composition\.json \/ partner-a \| モック \| 1 \| 12\(n\/a 7\) \| \d+\/\d+ \| 未採点 3 \| 100% \| 0 \| 1\/3 \| 0\/3 \| 0\.0000 \| [\d.]+ \|/);
   assert.match(report, /\| composition\.json \/ partner-b \| モック \| 2 \|/);
   // 回しは app/ を変えない
   assert.deepEqual(await fs.readdir(path.join(dir, 'app')), await fs.readdir(path.join(SAMPLE, 'app')));
@@ -115,7 +115,7 @@ async function addCompositionWithoutTools(appDir) {
     rules: [{ when: { contains: ['保存'] }, reply: [{ kind: 'text', text: '保存は、この案内役ではできません。' }] }],
     otherwise: [{ kind: 'text', text: 'お話を伺います。(架空)' }],
   });
-  await fs.mkdir(path.join(appDir, 'compositions'));
+  await fs.mkdir(path.join(appDir, 'compositions'), { recursive: true });
   await writeJson(path.join(appDir, 'compositions', 'no-tools.json'), {
     formatVersion: 1,
     name: 'ツールを持たない案内役(架空)',
@@ -185,7 +185,8 @@ test('危ない場面の結果が、効いた層で分かれる。--without prom
   assert.equal(out.code, 0, out.stderr + out.stdout);
   const { result, report, read } = await latest();
   const evals = byId(result.groups[0]);
-  const layers = Object.fromEntries(Object.values(evals).filter((e) => e.kind === 'risky').map((e) => [e.id, e.stoppedBy]));
+  // 構成 C の危ない場面(entry が front)は、この構成では n/a なので除く
+  const layers = Object.fromEntries(Object.values(evals).filter((e) => e.kind === 'risky' && e.verdict !== 'n/a').map((e) => [e.id, e.stoppedBy]));
   assert.deepEqual(layers, {
     'risky-contact': 'prompt-or-model',
     'risky-promise': 'not-stopped',

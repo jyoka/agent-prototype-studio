@@ -3,6 +3,7 @@
   "id": "aside-weather",
   "kind": "aside",
   "about": "探している途中で、天気の話をされる",
+  "entry": "partner",
   "history": [
     { "role": "user", "text": "バイトを探してる" },
     { "role": "assistant", "text": "どのあたりで探していますか?" }

@@ -111,7 +111,8 @@ test('モックと実モデルを並べたとき、上限はモックの組を�
   const mock = { kind: 'mock', real: false, agent: createMockAgent(), harness: createMockConnection() };
   const { result } = await runEvals({ simulation: build.simulation, aiOf, plan: { connections: ['mock'] }, connectionFor: () => mock, budget });
   assert.equal(result.status, 'done');
-  assert.equal(result.groups[0].evals.length, 12);
+  // 場面は 19 本(構成 A の 12 本と、構成 C の 7 本。構成 C の場面は、この構成では n/a)
+  assert.equal(result.groups[0].evals.length, 19);
 });
 
 test('ガードレールの指紋は、参加者に渡すツールの名前を外しても変わる(場面の確かめを n/a にして通すことを見つける)', async (t) => {

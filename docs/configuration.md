@@ -234,7 +234,7 @@
 
 ## 構成(`app/composition.json`)
 
-構成は、試作品の中で誰が会話を回し、誰が何を持つかを書いたデータ。設計は [agent-simulation.md の 2 節](design/agent-simulation.md#2-構成の書き方)、決定は [ADR-0003](adr/0003-agent-simulation.md)(案)。今は、形の検査と構成 B の読み替えと、ツールの口(ツールを宣言どおりに動かすコード)と、ツールの MCP サーバー(`npm run tools:mcp`。[usage.md](usage.md#ツールの-mcp-サーバーnpm-run-toolsmcp))と、会話の進め方と模擬のエージェントと、会話の枠の部品(`studio-talk`)を作った。`composition.json` のある試作品は、試す画面で構成どおりに会話が回る(下の「構成のある会話」)。場面(`app/evals/`)は、作るループの関門 GE がモックで回し、`npm run evals` で構成と前提を変えて回せる(下の「場面」)。見本は `samples/part-time/app/`(バイト探し。構成 A)。
+構成は、試作品の中で誰が会話を回し、誰が何を持つかを書いたデータ。設計は [agent-simulation.md の 2 節](design/agent-simulation.md#2-構成の書き方)、決定は [ADR-0003](adr/0003-agent-simulation.md)(案)。今は、形の検査と構成 B の読み替えと、ツールの口(ツールを宣言どおりに動かすコード)と、ツールの MCP サーバー(`npm run tools:mcp`。[usage.md](usage.md#ツールの-mcp-サーバーnpm-run-toolsmcp))と、会話の進め方と模擬のエージェントと、会話の枠の部品(`studio-talk`)を作った。`composition.json` のある試作品は、試す画面で構成どおりに会話が回る(下の「構成のある会話」)。場面(`app/evals/`)は、作るループの関門 GE がモックで回し、`npm run evals` で構成と前提を変えて回せる(下の「場面」)。見本は `samples/part-time/app/`(バイト探し。既定は構成 A。`compositions/` に構成 C と C2 も置いた。どれも Studio のコードを変えずにデータだけで書いた)。
 
 - `composition.json` のない試作品は、`ai.json` の harness 1 つの構成(構成 B)として読む。今の試作品と見本は、何も書き足さずに今までどおり動く。`ai.json` もなければ、AI のない試作品
 - 置き場所と形は次のとおり。形の例は設計の 2.2〜2.5、3.3、3.4、4.2 にある

@@ -1,0 +1,19 @@
+{
+  "formatVersion": 1,
+  "id": "switch-no-ask-again",
+  "kind": "switch",
+  "about": "構成 C。受け取った場所と時給の下限を、相談役が聞き直さない。まだ分からない曜日だけを聞き、答えたら受付に戻る",
+  "entry": "front",
+  "turns": [
+    { "user": "みなと町で時給1100円以上がいい" },
+    { "user": "引き継いでください", "action": "handoff-consult" },
+    { "user": "土日" }
+  ],
+  "expect": [
+    { "check": "noAskAgain", "words": ["働きたい場所はどのあたりですか?", "時給はいくら以上を希望しますか?"] },
+    { "check": "noAskAgain" },
+    { "check": "replyContains", "text": "働ける曜日は、土日と平日のどちらがいいですか?" },
+    { "check": "stateHas", "field": "days", "equals": "土日" },
+    { "check": "replyContains", "text": "受付に戻ります" }
+  ]
+}

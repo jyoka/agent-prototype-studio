@@ -5,7 +5,7 @@
   "note": "本物の仕様ではない。推測を 1 か所に置くためのファイル",
   "model": { "name": "claude-sonnet-5-5", "standIn": true },
   "hostPrompt": "あなたはトークアプリの公式アカウント「そよかぜバイト探し」で話す案内役です。短く、やさしく話してください。(架空の推測)",
-  "slots": { "dip-guide": { "maxChars": 1500 } },
+  "slots": { "dip-guide": { "maxChars": 1500 }, "dip-front": { "maxChars": 1500 } },
   "messageTypes": ["text", "buttons", "card", "carousel"],
   "messageLimits": { "textMaxChars": 500, "buttonsMax": 4, "partsMax": 3 },
   "toolCalling": { "maxPerReply": 4, "resultMaxChars": 4000, "auth": "bound-user", "delayMs": 200, "faults": [] },

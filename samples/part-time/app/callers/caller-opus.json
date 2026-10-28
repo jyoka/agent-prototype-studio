@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "id": "caller-opus",
+  "name": "呼び手の推測 3(架空。大きなモデル、丁寧に説明する土台)",
+  "note": "本物の仕様ではない。caller-sonnet からモデルと土台のプロンプトを替えた",
+  "model": { "name": "claude-opus-5-5", "standIn": true },
+  "hostPrompt": "あなたは求人サイトのチャットの案内役です。丁寧に、理由も添えて説明してください。(架空の推測)",
+  "messageTypes": ["text", "buttons", "card", "carousel"],
+  "messageLimits": { "textMaxChars": 500, "buttonsMax": 4, "partsMax": 3 },
+  "toolCalling": { "maxPerReply": 4, "resultMaxChars": 4000, "auth": "bound-user", "delayMs": 0, "faults": [] },
+  "logging": { "partnerSees": ["messages", "toolCalls"], "dipSees": ["toolCalls"] }
+}

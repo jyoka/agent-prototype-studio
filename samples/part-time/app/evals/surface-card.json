@@ -3,6 +3,7 @@
   "id": "surface-card",
   "kind": "surface",
   "about": "求人を詳しく見る。返事は会話の枠の部品だけ。カードを使えない前提(partner-b)では、カードが文に落ちて部品は text だけになる",
+  "entry": "partner",
   "turns": [{ "action": "detail-m1" }],
   "expect": [
     { "check": "toolCalled", "tool": "get_job", "args": { "id": "m1" } },

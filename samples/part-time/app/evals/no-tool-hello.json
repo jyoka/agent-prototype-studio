@@ -3,6 +3,7 @@
   "id": "no-tool-hello",
   "kind": "no-tool",
   "about": "あいさつだけでは、ツールを呼ばない",
+  "entry": "partner",
   "turns": [{ "user": "こんにちは" }],
   "expect": [
     { "check": "noToolCall" },
