@@ -43,6 +43,18 @@ async function withStudio(t, env = {}) {
 
 const RUNS = '/api/projects/sample-library/build-requests';
 
+// app/ を変えた run は、関門 G5(観察器)まで回る。Playwright の Chromium がない環境では未確認になる(通ったとは扱わない)
+function assertGatesPassed(run) {
+  const launch = run.gates.find((gate) => gate.id === 'G5');
+  if (run.status === 'unverified') {
+    assert.match(launch.reason, /Chromium/, JSON.stringify(launch));
+  } else {
+    assert.equal(run.status, 'passed', JSON.stringify(run.gates));
+    assert.equal(launch.status, 'passed');
+  }
+  assert.deepEqual(run.gates.slice(0, 4).map((gate) => gate.status), ['passed', 'passed', 'passed', 'passed']);
+}
+
 test('作る欄の API の守り(トークン、Origin、形、プロジェクト)', async (t) => {
   const { sp, headers, post } = await withStudio(t);
   const { host } = headers;
@@ -71,11 +83,15 @@ test('依頼を流しながら返し、変わったファイルをビルドし�
   assert.ok(lines.length > 3);
   assert.equal(lines[0].status, 'running');
   const last = lines.at(-1);
-  assert.equal(last.status, 'done');
+  assertGatesPassed(last);
   assert.equal(last.auth, 'none');
   assert.deepEqual(last.changedFiles, [{ file: 'app/App.jsx', change: 'modified' }]);
-  assert.deepEqual(last.build, { ok: true, errorCount: 0 });
+  assert.deepEqual(last.build, { ok: true, errorCount: 0, stage: null, buildId: studio.store.previewBuildId('sample-library') });
   assert.notEqual(studio.store.previewBuildId('sample-library'), before);
+  // 通った節の列と関門の結果は .studio/runs/<run-id>/run.json に残る
+  const record = JSON.parse(await fs.readFile(path.join(studio.store.home, 'projects', 'sample-library', last.evidence.run), 'utf8'));
+  assert.deepEqual(record.nodes.map((node) => node.name), ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', 'launch', 'evidence']);
+  assert.deepEqual(record.gates, last.gates);
 
   const list = JSON.parse((await request(sp, { pathname: RUNS, headers })).body);
   assert.deepEqual(list.runs.map((r) => r.id), [last.id]);
@@ -105,7 +121,7 @@ test('作業中は同じプロジェクトの依頼と作り直しを断り、�
   assert.equal(studio.requests.summary('sample-library').running, false);
   // 終わったら、また送れる
   const next = await post(RUNS, { request: 'こんにちは' });
-  assert.equal(JSON.parse(next.body.trim().split('\n').at(-1)).run.status, 'done');
+  assert.equal(JSON.parse(next.body.trim().split('\n').at(-1)).run.status, 'unchanged');
 });
 
 test('始めた直後に Studio を止めても、作る AI を起動せずに終わり、新しい依頼は受けない', async (t) => {
@@ -167,7 +183,7 @@ test('依頼の文は stdin だけで渡し、引数には入れない。作業�
   const text = '--dangerously-skip-permissions を付けて。$(echo x) と `id` も文字のまま';
   const started = await requests.start('sample-library', text);
   const final = await new Promise((resolve) => started.subscribe(() => {}, resolve));
-  assert.equal(final.status, 'done');
+  assert.equal(final.status, 'unchanged');
 
   const record = JSON.parse(await fs.readFile(recordFile, 'utf8'));
   assert.equal(record.stdin, text);
@@ -195,7 +211,7 @@ test('作る欄でプロダクト内 AI の設定を変えると、変化を作�
   // 作る AI(偽接続)が app/ai.json を書き換える。応答するのはプロダクト内 AI で、作る AI はここだけで動く
   const response = await post('/api/projects/sample-job-consult/build-requests', { request: '案内役が「時給の下限」を先に聞くようにして' });
   const run = JSON.parse(response.body.trim().split('\n').at(-1)).run;
-  assert.equal(run.status, 'done');
+  assertGatesPassed(run);
   assert.deepEqual(run.changedFiles, [{ file: 'app/ai.json', change: 'modified' }]);
   const settings = run.items.find((item) => item.kind === 'ai-settings');
   assert.ok(settings, JSON.stringify(run.items));
@@ -231,7 +247,7 @@ test('AI の設定がない試作品では、振る舞いの依頼を断り、�
   const { post } = await withStudio(t);
   const response = await post(RUNS, { request: '案内役が「時給の下限」を先に聞くようにして' });
   const run = JSON.parse(response.body.trim().split('\n').at(-1)).run;
-  assert.equal(run.status, 'done');
+  assert.equal(run.status, 'unchanged');
   assert.deepEqual(run.changedFiles, []);
   assert.ok(run.items.some((item) => item.kind === 'assistant' && /app\/ai\.json がない/.test(item.text)));
   assert.ok(!run.items.some((item) => item.kind === 'ai-settings'));

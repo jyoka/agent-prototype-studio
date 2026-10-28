@@ -253,7 +253,17 @@ const cell = (value) => oneLine(value).replace(/\\/g, '\\\\').replace(/\|/g, '\\
 const code = (value) => (String(value).includes('`') ? cell(value) : `\`${oneLine(value).replace(/\|/g, '\\|')}\``);
 const KIND_LABELS = { real: '実機', mock: 'モック', missing: '未接続' };
 const ROLE_LABELS = { user: '利用者', assistant: 'AI', correction: '利用者の修正' };
-const RUN_LABELS = { done: '終わった', failed: '失敗', cancelled: '中断', 'timed-out': '時間切れ', running: '作業中' };
+const RUN_LABELS = {
+  done: '終わった',
+  passed: '通った',
+  unverified: '未確認',
+  unchanged: '変更なし',
+  failed: '失敗',
+  'agent-failed': '作る AI の失敗',
+  cancelled: '中断',
+  'timed-out': '時間切れ',
+  running: '作業中',
+};
 const localTime = (iso) => (iso ? new Date(iso).toLocaleString('ja-JP') : '');
 
 // 書き出した人のメモは引用にする。行頭の # などが見出しにならないように

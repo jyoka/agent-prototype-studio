@@ -107,3 +107,28 @@ test('見本 3 つは目録を持ち、目録どおりにビルドできる', as
     assert.equal(result.manifest.ai !== null, result.ai !== null, sample);
   }
 });
+
+test('ビルドの誤りには、止まった段の名前(inspect、contract、compile)が付く', async (t) => {
+  const MAIN = 'console.log(1);\n';
+  const cases = [
+    ['inspect', { 'main.js': MAIN, 'CLAUDE.md': 'x' }],
+    ['contract', { 'main.js': MAIN, 'prototype.json': '{ "formatVersion": 1,' }],
+    ['contract', { 'main.js': MAIN, 'ai.json': '{"name": "x"}' }],
+    ['contract', { 'other.js': MAIN }],
+    ['compile', { 'main.js': 'const x = (;\n' }],
+  ];
+  for (const [stage, files] of cases) {
+    const { appDir, buildsDir } = await makeApp(t, files);
+    const result = await buildApp({ appDir, buildsDir });
+    const label = `${stage}: ${Object.keys(files).join(', ')}`;
+    assert.equal(result.ok, false, label);
+    assert.equal(result.stage, stage, label);
+    assert.ok(result.errors.length > 0, label);
+    assert.ok(result.errors.every((e) => e.stage === stage), `${label}: ${JSON.stringify(result.errors)}`);
+  }
+  // 通ったビルドには段の名前を付けない
+  const { appDir, buildsDir } = await makeApp(t, { 'main.js': MAIN });
+  const ok = await buildApp({ appDir, buildsDir });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.stage, undefined);
+});

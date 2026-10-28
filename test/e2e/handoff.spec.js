@@ -152,7 +152,7 @@ async function exportAndCheck(page, home, other, otherHome) {
     expect(readme).toMatch(/\| 6 \| AI \| Claude Code\(実モデル\) \| 偽の Claude Code です/);
     expect(readme).toContain('| `employmentType` | 雇用区分 | 正社員 |');
     expect(readme).toContain('- 版: 保存版 v1「引き継ぐ版」と同じ');
-    expect(readme).toMatch(/\| 見出しを「うみかぜ求人相談」にして \| 終わった \| app\/App\.jsx \|/);
+    expect(readme).toMatch(/\| 見出しを「うみかぜ求人相談」にして \| 通った \| app\/App\.jsx \|/);
 
     const manifest = JSON.parse(await fs.readFile(path.join(other, 'handoff.json'), 'utf8'));
     expect(manifest.format).toBe('prototype-studio-handoff');
