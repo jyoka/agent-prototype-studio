@@ -21,7 +21,7 @@ export class ProjectStore {
 
   entry(id) {
     if (!this.state.has(id)) {
-      this.state.set(id, { building: false, running: false, versioning: false, lastBuild: null, previewBuildId: null, ai: null, manifest: null });
+      this.state.set(id, { building: false, running: false, versioning: false, lastBuild: null, previewBuildId: null, ai: null, manifest: null, dataNumbers: [] });
     }
     return this.state.get(id);
   }
@@ -50,6 +50,11 @@ export class ProjectStore {
   // 表示中の版の AI の設定。失敗したビルドの設定は使わない
   aiDefinition(id) {
     return this.state.get(id)?.ai ?? null;
+  }
+
+  // 表示中の版の架空のデータ(目録の data)に出てくる数。プロダクト内 AI の返事の確かめに使う
+  dataNumbers(id) {
+    return this.state.get(id)?.dataNumbers ?? [];
   }
 
   // 表示中の版の目録(app/prototype.json。なければ既定の値)。失敗したビルドの目録は使わない
@@ -118,12 +123,13 @@ export class ProjectStore {
         };
       }
       // 目録は、画面に返すビルドの結果(lastBuild)には入れない
-      const { ai = null, manifest, ...summary } = result;
+      const { ai = null, manifest, dataNumbers = [], ...summary } = result;
       entry.lastBuild = summary;
       if (result.ok) {
         entry.previewBuildId = result.buildId;
         entry.ai = ai;
         entry.manifest = manifest;
+        entry.dataNumbers = dataNumbers;
         await removeBuildsExcept(paths.builds, [result.buildId]);
         this.log(`ビルド成功: ${id}(${result.durationMs}ms)`);
       } else {

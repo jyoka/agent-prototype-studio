@@ -70,6 +70,8 @@ test('モックの実行の記録: 発言、返事、状態の変化、修正、
     await expect(first).toContainText('決定: 段「hear」、ターン 1、聞く項目 雇用区分、言うこと なし、続ける');
     await expect(first).toContainText('理由: 段「hear」の遷移の条件をどれも満たしていないので、この段に留まる。段「hear」で未定の最初の項目「雇用区分」を聞く');
     await expect(first).toContainText('どう作ったか: 接続の言い方(phrase)を呼びました');
+    // 返事の守ることの確かめ。モックの返事はいつも合う
+    await expect(first).toContainText('結果: 合格');
 
     // 本人の修正
     await app.getByLabel('勤務地を直す').selectOption('もみじ台');
@@ -140,6 +142,16 @@ test('Claude Code(偽)の実行の記録: 渡した指示と本文、受け取�
     await expect(entries.first()).toContainText('unknownField「x」(app/ai.json にない項目)');
     await expect(conditions).toHaveText(['書店の売り場', '正社員', '未定', '未定']);
 
+    // 守ることに合わない返事は、合わなかった決まりとやり直しが出る
+    await say('[一度数を作る] 場所はまだ決めていません');
+    const retried = entries.first();
+    await retried.getByText('harness の段: 抽出 → 決定 → 言い方(開発向け)').click();
+    await expect(retried).toContainText('結果: やり直して合格。合わなかった決まり: 数字を作らない(noNewNumbers)');
+    await expect(retried).toContainText('1 回目の返事: 偽の Claude Code です。');
+    await expect(retried).toContainText('数字を作らない: 「987」は、状態、利用者の発言、問いの原文、架空のデータのどれにも出てこない数');
+    await expect(retried).toContainText('2 回目の返事: 偽の Claude Code です。');
+    await expect(retried).toContainText(/実際の AI モデルの呼び出し: 3 回\(抽出 1 回、言い方 2 回\)/);
+
     // 失敗: 利用の上限。理由と次にすること
     await type('[上限] もう一回');
     await expect(alert).toContainText('利用の上限');
@@ -169,7 +181,7 @@ test('Claude Code(偽)の実行の記録: 渡した指示と本文、受け取�
     await expect(message).toHaveValue('[遅い] よく考えて');
 
     // 失敗も止めたものも、会話は変えていない
-    await expect(app.getByRole('region', { name: '会話' }).getByRole('listitem')).toHaveCount(5);
+    await expect(app.getByRole('region', { name: '会話' }).getByRole('listitem')).toHaveCount(7);
     expect(studio.output()).not.toContain('FAKEKEY');
     expect(studio.output()).not.toContain('書店の売り場で、正社員がいいです');
   } finally {

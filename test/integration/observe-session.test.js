@@ -189,7 +189,8 @@ test('観察を閉じると、応答を待っている観察の会話も止ま�
   assert.equal(aiSessions.isBusy('travel'), true);
   answer({ reply: '山の村ですね', updates: { place: '山の村' } });
   const view = await userWaiting;
-  assert.equal(view.messages.at(-1).text, '山の村ですね');
+  // 次に聞く泊数の問いの原文は、harness が足す(rules.mustAsk)
+  assert.equal(view.messages.at(-1).text, '山の村ですね。泊数を教えてください。');
   assert.deepEqual(view.state, { place: '山の村', nights: null });
 });
 

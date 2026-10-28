@@ -207,14 +207,18 @@ const currentState = (definition, state) => [
 const newText = (text) => ['<新しい発言>', text, '</新しい発言>'];
 // やり直しのときだけ付ける。前の出力のどこが壊れていたか
 const retryNote = (problem) => (problem ? ['', '<前の出力の問題>', `前の出力は${problem}ので、使えませんでした。決まった形の JSON だけを返してください。`, '</前の出力の問題>'] : []);
+// 守ることの確かめ(guards.js)で合わなかった返事を、やり直すときだけ付ける。合わなかったところ(1 行ずつ)
+const guardNote = (lines) =>
+  lines?.length > 0 ? ['', '<前の返事の問題>', '前の返事は、Studio の決まりに合わなかったので使えませんでした。次の点を直して、<言うこと> の中身を返事にしてください。', ...lines, '</前の返事の問題>'] : [];
 
 // 抽出の本文(stdin)。会話の全体、今の状態、新しい発言
 export function extractInput({ definition, state, messages, text, problem = null }) {
   return [...conversation(messages), '', ...currentState(definition, state), '', ...newText(text), ...retryNote(problem)].join('\n');
 }
 
-// 言い方の本文(stdin)。会話の全体、新しい発言、決定の後の状態、決定の中身(何を聞くか、何を言うか)
-export function phraseInput({ definition, decision, state, messages, text = '', problem = null }) {
+// 言い方の本文(stdin)。会話の全体、新しい発言、決定の後の状態、決定の中身(何を聞くか、何を言うか)。
+// guardProblem は、前の返事が守ることに合わなかったところ(harness がやり直すときに渡す)
+export function phraseInput({ definition, decision, state, messages, text = '', problem = null, guardProblem = null }) {
   const fieldOf = (key) => definition.fields.find((field) => field.key === key);
   const shown = (key) => `${fieldOf(key)?.label ?? key}「${formatValue(fieldOf(key), state[key])}」`;
   const say = [];
@@ -235,6 +239,7 @@ export function phraseInput({ definition, decision, state, messages, text = '', 
     '<言うこと>',
     ...say,
     '</言うこと>',
+    ...guardNote(guardProblem),
     ...retryNote(problem),
   ].join('\n');
 }
@@ -533,10 +538,14 @@ export function createClaudeCodeConnection({ env = process.env, allowed = false,
         throw error;
       }
     },
-    // 出力の形が壊れていたら 1 回やり直す。2 回とも壊れていたら fallback に理由を入れて返す(代わりの値は呼ぶ側が決める)
+    // 出力の形が壊れていたら 1 回やり直す。2 回とも壊れていたら fallback に理由を入れて返す(代わりの値は呼ぶ側が決める)。
+    // 1 ターンの呼び出しの上限を使い切っていたら(守ることのやり直しで使ったとき)、やり直さずに fallback で返す
     async attempts(kind, { definition, signal, meter, inputOf, problemOf }) {
       const problems = [];
       for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+        if (attempt > 1 && meter && meter.remaining(kind) === 0) {
+          return { output: null, fallback: `出力が壊れていて(${problems[0]})、1 ターンの呼び出しの上限でやり直せなかった` };
+        }
         const { output, format, meta, metered } = await this.call(kind, { definition, input: inputOf(problems.at(-1) ?? null), signal, meter });
         const problem = problemOf(output);
         metered?.end({ ...meta, format: problem ? 'broken' : format, problem });
@@ -560,12 +569,13 @@ export function createClaudeCodeConnection({ env = process.env, allowed = false,
       return { updates: output.updates, intent: output.intent ?? null, ...(retry ? { retry } : {}) };
     },
     // 言い方。2 回とも壊れていたら reply を null で返す。harness がモックの言い方の型で返事を作る
-    async phrase({ definition, decision, state, messages, text, signal, meter }) {
+    // guardProblem は、守ることに合わなかった前の返事の問題(harness がやり直すときに渡す)
+    async phrase({ definition, decision, state, messages, text, signal, meter, guardProblem = null }) {
       const { output, retry, fallback } = await this.attempts('phrase', {
         definition,
         signal,
         meter,
-        inputOf: (problem) => phraseInput({ definition, decision, state, messages, text, problem }),
+        inputOf: (problem) => phraseInput({ definition, decision, state, messages, text, problem, guardProblem }),
         problemOf: replyProblem,
       });
       if (!output) return { reply: null, retry, fallback };

@@ -59,7 +59,7 @@ flowchart TB
         store["試作品とビルド<br/>store.js、projects.js、build.js、inspect.js、<br/>manifest.js"]
         requests["作る AI の依頼<br/>build-requests.js、fix-prompt.js"]
         agent["作る AI の起動<br/>agent-connection.js、agent-process.js、<br/>claude-args.js、stream-json.js、app-snapshot.js"]
-        ai["プロダクト内 AI<br/>product-ai/session.js、harness.js、limits.js"]
+        ai["プロダクト内 AI<br/>product-ai/session.js、harness.js、guards.js、limits.js"]
         conn["接続<br/>product-ai/mock.js、product-ai/claude-code.js"]
         def["AI の設定の検査<br/>product-ai/definition.js"]
         versions["版<br/>versions.js"]
@@ -121,7 +121,7 @@ flowchart TB
 | 試作品の配信 | `src/server/preview-server.js` | ビルドしたものを別ポートから CSP つきで出す。API はない |
 | 試作品とビルド | `src/server/store.js`、`src/server/projects.js`、`src/server/build.js`、`src/server/inspect.js`、`src/server/manifest.js` | 試作品の一覧と置き場、`app/` と目録の検査、esbuild で 1 つの classic script に束ねる |
 | 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1〜G6 を安い順に回す。失敗したら直す依頼(`fix-prompt.js`)を作って作る AI に返し、2 回まで直させる。`run.json` に残す |
-| プロダクト内 AI | `src/server/product-ai/` | 試作品ごとの会話、状態、実行の記録を持つ。1 ターンは harness(`harness.js`)が抽出 → 決定 → 言い方で回し、何を聞くか、段の遷移、終わるかはコードが決める。接続はモックか Claude Code(抽出と言い方の 2 種の呼び出し)。実モデルの呼び出しの上限を数える(`limits.js`)。`app/ai.json` を検査する |
+| プロダクト内 AI | `src/server/product-ai/` | 試作品ごとの会話、状態、実行の記録を持つ。1 ターンは harness(`harness.js`)が抽出 → 決定 → 言い方で回し、何を聞くか、段の遷移、終わるかはコードが決める。言い方の返事は `rules` で確かめる(`guards.js`)。接続はモックか Claude Code(抽出と言い方の 2 種の呼び出し)。実モデルの呼び出しの上限を数える(`limits.js`)。`app/ai.json` を検査する |
 | 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する |
 | 引き継ぎ | `src/server/handoff.js` | 作業中の試作品を `handoffs/` に書き出す。形は [handoff.md](../handoff.md) |
 | 伏せる | `src/server/redact.js` | 記録と表示の前に、秘密らしい文字列と個人のデータを伏せる。書き出す前に秘密を探す |
@@ -177,11 +177,12 @@ flowchart TB
 
 1. 試作品が `window.studio.ai.send(text)` を呼ぶ。runtime が `MessagePort` で親の画面に送る
 2. 画面が `POST /api/projects/<id>/ai/messages` を送る
-3. `AiSessions.send` が、上限を確かめてから、harness の `turn()`(`product-ai/harness.js`)に、選んでいる接続(モックか Claude Code)、設定、進み具合(段、ターン、終わったか)、状態、会話、発言を渡す。`turn()` は 1 ターンを 3 段で回す
+3. `AiSessions.send` が、上限を確かめてから、harness の `turn()`(`product-ai/harness.js`)に、選んでいる接続(モックか Claude Code)、設定、進み具合(段、ターン、終わったか)、状態、会話、発言を渡す。`turn()` は 1 ターンを 3 段で回し、返事を確かめる
    1. 抽出: 接続の `extract` が、項目の値(`updates`)と発言の種類(`intent`)を返す。選択肢の文字そのものや、今聞いている数の項目への数だけの答えは、抽出を呼ばずに読む。返った値は項目の決まりで検査し、合わない値は状態に入れない
    2. 決定: harness のコードが、状態の更新、段の遷移(`next[].when`)、次に聞く項目、言うこと、終わるか(`flow.maxTurns` を含む)を決める。本人の修正は、モデルを呼ばずに状態に入っていて、ここで `corrected` として渡る
    3. 言い方: 接続の `phrase` が、決定を返事の文にする。モックは `mock` の型に当てはめる
-4. 返事と状態の変化と進み具合を会話に足す。実行の記録には、段ごとの中身(抽出の入出力、入れなかった値、決定とその理由、言い方の入出力)を伏せて残す。画面が `MessagePort` で試作品に返す
+   4. 守ることの確かめ: harness のコード(`product-ai/guards.js`)が、返事を `rules` の 5 つで形だけ確かめる。問いの原文が抜けていたら足す。ほかが合わなければ言い方を 1 回やり直し、2 回目も合わなければ `mock` の型の文で返す。1 ターンの期限(`TURN_LIMITS`)を過ぎたときも、`mock` の型の文で返す
+4. 返事と状態の変化と進み具合を会話に足す。実行の記録には、段ごとの中身(抽出の入出力、入れなかった値、決定とその理由、言い方の入出力、守ることの確かめの結果、時間切れ)を伏せて残す。画面が `MessagePort` で試作品に返す
 
 Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p` を 1 回ずつ)で、この口を持つ。モデルが返すのは抽出の JSON と `{reply}` だけ。出力の形が壊れていたら 1 回やり直し、だめなら抽出は「変更なし」、言い方はモックの型の文にする。呼び出しの前に、`AiSessions` が渡す数え役(`product-ai/limits.js`)で上限を確かめる。上限に当たったら、モデルを呼ばずに失敗を返す。呼び出しの回数と待ち時間は、記録の 1 件(`calls`)に残す。
 
@@ -237,7 +238,8 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | 上限 | 値 | 数える場所 |
 |---|---|---|
 | 1 つの会話の有料のターン | 30 まで。リセットで数え直す | `SESSION_LIMITS.maxPaidReplies`(`product-ai/session.js`) |
-| 1 ターンの呼び出し | 4 回まで(抽出 2 回、言い方 2 回。壊れた出力のやり直しを含む) | `CALL_LIMITS.perTurn`(`product-ai/limits.js`) |
+| 1 ターンの呼び出し | 4 回まで(抽出 2 回、言い方 2 回。壊れた出力のやり直しと、守ることに合わない返事のやり直しを含む) | `CALL_LIMITS.perTurn`(`product-ai/limits.js`) |
+| 1 ターンの時間 | 240 秒まで。過ぎたら接続を止め、`mock` の型の文で返す。試作品の側は 270 秒待つ | `TURN_LIMITS.deadlineMs`(`product-ai/limits.js`)、`AI_TIMEOUT_MS`(`src/runtime/runtime.js`) |
 | プロジェクトごとの呼び出し | 1 時間に 120 回まで。観察の会話も含める。リセットや観察の終わりでは数え直さない。メモリーにだけ置く | `CALL_LIMITS.perProject`、`ProjectCallWindow` |
 
 観察ごとに新しい会話を作ると会話ごとの上限が毎回戻るので、プロジェクトごとの上限で抑えます(ADR-0001 の T6)。上限に当たったら、モデルを呼ばずに理由を返します。プロジェクトの残りが 2 回(抽出と言い方)に足りないときは、ターンを始める前に止めます。

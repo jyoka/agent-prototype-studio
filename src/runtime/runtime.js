@@ -5,8 +5,9 @@
   'use strict';
   var MAX_QUEUE = 50;
   var MAX_TEXT = 4000;
-  // 実モデルの 1 ターンは、抽出と言い方で多くて 4 回呼ぶ(1 回 90 秒まで、止めるのに 3 秒)。その合計(372 秒)より長く待つ
-  var AI_TIMEOUT_MS = 400000;
+  // Studio のサーバーは、1 ターンが期限(240 秒。src/server/product-ai/limits.js の TURN_LIMITS)を過ぎたら、決まった文で返す。
+  // それより少し長く待つ(期限の後に返る決まった文を、先に「返事がありません」で捨てないため)
+  var AI_TIMEOUT_MS = 270000;
   var port = null;
   var queue = [];
   var pending = {};
