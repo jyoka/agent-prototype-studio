@@ -42,7 +42,8 @@ E2E の全体は PR の前に 1 回回す。全体の上限は 7 分(`playwright
 ## してはいけないこと
 
 - 実モデルを勝手に呼ばない。作る AI の既定は自動で、手元の Claude Code が使えれば実モデルを呼ぶ。
-  `STUDIO_AGENT` を書かない起動、`STUDIO_AGENT=claude`、`npm run check:claude -- --run`、`npm run check:loop -- --real` は、
+  `STUDIO_AGENT` を書かない起動、`STUDIO_AGENT=claude`、`npm run check:claude -- --run`、`npm run check:loop -- --real`、
+  `npm run evals -- <プロジェクト> --real` は、
   人に頼まれたときだけ。自分で Studio を動かすときは `STUDIO_AGENT=fake` を付ける。
   本物の AI を使う前の同意(画面の「同意して送る」など、`POST /api/real-ai/consent`)を、人の代わりにしない
 - テストは `STUDIO_AGENT=fake` か偽の `claude`(`STUDIO_CLAUDE_BIN`。偽の CLI は `test/fixtures/fake-claude.js`)を必ず明示する。

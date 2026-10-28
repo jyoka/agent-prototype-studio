@@ -67,6 +67,7 @@ flowchart TB
         def["AI の設定の検査<br/>product-ai/definition.js"]
         sim["構成の検査と構成 B の読み替え、ツールの口<br/>sim/composition.js、sim/tool-gate.js ほか"]
         orch["会話の進め方と模擬のエージェント<br/>sim/orchestrator.js、sim/agent-mock.js、<br/>sim/agent-claude-code.js、sim/parts.js"]
+        evalRun["場面の回し<br/>sim/eval-run.js"]
         versions["版<br/>versions.js"]
         handoff["引き継ぎの書き出し<br/>handoff.js"]
         redact["伏せる、秘密を探す<br/>redact.js"]
@@ -76,6 +77,7 @@ flowchart TB
     observer["観察器<br/>src/observer/observe.js、browser.js、<br/>operations.js、scenario.js"]
     observeCli["観察の CLI<br/>bin/observe.js(npm run observe)"]
     observeMcp["観察の道具の MCP サーバー<br/>bin/observe-mcp.js、src/server/observe-mcp.js<br/>(作る AI に --mcp-config で渡す)"]
+    evalsCli["場面の回しの CLI<br/>bin/evals.js(npm run evals)"]
     toolsMcp["ツールの MCP サーバー<br/>bin/tools-mcp.js、src/server/sim/tools-mcp.js<br/>(npm run tools:mcp。模擬のエージェントに --mcp-config で渡す)"]
 
     subgraph local["データの置き場: ~/PrototypeStudio"]
@@ -101,6 +103,9 @@ flowchart TB
     cli -- "読み書き" --> app
     cli -- "子プロセス(--mcp-config)" --> observeMcp
     requests -- "G2〜G4 検査、契約、ビルド" --> store
+    requests -- "GE 場面(モック)" --> evalRun
+    evalsCli --> evalRun
+    evalRun --> orch
     requests -- "G5 起動の確認、G6 シナリオ<br/>(index.js が渡す observe)" --> observeEntry
     requests -- "run.json" --> dotstudio
     store --> def
@@ -147,12 +152,13 @@ flowchart TB
 | 作るループの証拠 | `src/server/evidence.js` | `/api/projects/<id>/evidence` で、終わった run と人の「確かめる」ごとに証拠が古いか(`stale`)を返す。run が確かめた `app/` の指紋(`run.appDigest`)と、今の `app/` の指紋を比べて決める。`/api/projects/<id>/evidence/screenshot?file=` で、結果の帯のスクリーンショットを返す。読むのは `.studio/runs/` と `.studio/observations/` の中の PNG だけで、シンボリックリンクで外を指していても読まない。ほかの API と同じくトークンを要る |
 | 試作品の配信 | `src/server/preview-server.js` | ビルドしたものを別ポートから CSP つきで出す。API はない |
 | 試作品とビルド | `src/server/store.js`、`src/server/projects.js`、`src/server/build.js`、`src/server/inspect.js`、`src/server/manifest.js` | 試作品の一覧と置き場、`app/` と目録の検査、esbuild で 1 つの classic script に束ねる。一覧の名前は、表示中の版の目録の `title` と AI の有無から作る。一覧の順はサンプル(`SAMPLES` の順)が先 |
-| 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1〜G6 を安い順に回す。失敗したら直す依頼(`fix-prompt.js`)を作って作る AI に返し、2 回まで直させる。`run.json` に残す |
+| 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1〜G4、GE、G5、G6 を安い順に回す。失敗したら直す依頼(`fix-prompt.js`)を作って作る AI に返し、2 回まで直させる。`run.json` に残す |
 | プロダクト内 AI | `src/server/product-ai/` | 試作品ごとの会話、状態、実行の記録を持つ。1 ターンは harness(`harness.js`)が抽出 → 決定 → 言い方で回し、何を聞くか、段の遷移、終わるかはコードが決める。言い方の返事は `rules` で確かめる(`guards.js`)。接続はモックか Claude Code(抽出と言い方の 2 種の呼び出し)。実モデルの呼び出しの上限を数える(`limits.js`)。`app/ai.json` を検査する |
 | 構成 | `src/server/sim/` | `app/composition.json`、`compositions/`、`tools.json`、`assumptions/`、`mocks/`、`evals/` を検査する(G3)。`composition.json` がなければ、`ai.json` の harness 1 つの構成(構成 B)として読む。作る run の後に、構成とガードレールの変化を作る会話に出す(`changes.js`)。ツールの口(`tool-gate.js`)は、宣言のツールを形の検査、ツールの守り、実行の順に動かし、記録の店を値で返す。ファイルを書かず、外へ通信しない。ツールの MCP サーバーと、モックの模擬のエージェント(会話の進め方の中)が同じ関数を呼ぶ |
 | 会話の進め方と模擬のエージェント | `src/server/sim/orchestrator.js`、`agent-mock.js`、`agent-claude-code.js`、`parts.js` | `composition.json` のある試作品の 1 ターンを、決まった節の並び(受け付け → 話す参加者 → 引き継ぎ → 返事)で回し、通った節を記録に残す(`sim-turn`)。誰が話すか、引き継ぎ(辺、1 ターン 1 回、`limits.maxHandoffs`)、受け渡す値の検査、上限、出口の確かめ(`enforce` でやり直しと型の文か、記録だけ)はコードが決める。harness の参加者は `harness.js` の `turn()` をそのまま使う。模擬のエージェントは、モック(`mocks/*.json`。ツールは同じプロセスのツールの口)か Claude Code(返事ごとに `claude -p` を 1 回。ツールは MCP サーバーを通す。`--safe-mode` の代わりに作る AI と同じ組み合わせと `--tools ""`、許可は構成の名前だけ、cwd は空の一時フォルダー)。返事の部品は前提の `messageTypes` から作り、合わない部品は文に落とす(`parts.js`)。会話と記録は `AiSessions`(`product-ai/session.js`)が持つ。設計は [agent-simulation.md の 3.2、3.3](../design/agent-simulation.md#32-1-ターンの進め方) |
+| 場面の回し | `src/server/sim/eval-run.js`、`bin/evals.js` | 場面(`app/evals/`)を、構成 × 前提 × 接続 × 回数で回す。場面ごとに新しい会話と記録の店で、会話の進め方(`runTurn`)かツールの口(`kind: tool`)を通す。確かめはコードが決め、当てはまらないものは `n/a`、`judge` は未採点。危ない場面は効いた層(ツール、出口の確かめ、プロンプトかモデル、止まらなかった)で分ける。結果(`result.json`、`report.md`、`traces/`)は `app/` と構成と前提の指紋を持つ。作る run の関門 GE はモックだけで回す。CLI(`npm run evals`)は作業中の `app/` を一時フォルダーにビルドして回し、`--real` は `STUDIO_ALLOW_CLAUDE_CODE=1` と `--limit-usd` のときだけ。台帳(`.studio/evals/ledger.jsonl`)の累計が上限に達したら次の返事を始めない([agent-simulation.md の 4.3](../design/agent-simulation.md#43-場面の回し)) |
 | 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する |
-| 引き継ぎ | `src/server/handoff.js` | 作業中の試作品と、目録、シナリオ、最新の証拠の要約を `handoffs/` に書き出す。形は [handoff.md](../handoff.md) |
+| 引き継ぎ | `src/server/handoff.js` | 作業中の試作品と、目録、シナリオ、最新の証拠の要約、構成とツールと前提と場面、最新の場面の回しの要約を `handoffs/` に書き出す。形は [handoff.md](../handoff.md) |
 | 本物の AI の同意 | `src/server/real-ai.js` | 本物の AI を使う前の同意を、メモリーに 1 つ持つ。作る AI(`BuildRequests.start`、接続が Claude Code のとき)と、プロダクト内 AI の本物の接続への口(`AiSessions.useReal`。切り替えと観察)が、使う前に確かめ、同意の前は `consent-required` で断る。同意のカードの中身(送るもの、送り先、料金の文と上限、「詳しく」)を `/api/real-ai` で返す |
 | 伏せる | `src/server/redact.js` | 記録と表示の前に、秘密らしい文字列と個人のデータを伏せる。書き出す前に秘密を探す |
 | 作る AI の接続を選ぶ | `src/server/agent-connection.js` | 起動のときに 1 回、`STUDIO_AGENT`(自動、`claude`、`fake`)から接続を決める。自動と `claude` は、Claude Code を探し、版(`--version`)とログイン(`auth status --json`)を確かめ、結果(使える、ない、古い、ログインしていない)と理由を `/api/projects` の `agent` に出す |
@@ -180,36 +186,37 @@ flowchart TB
 | 作る AI(`agent`) | モデル | `startAgentProcess` が偽接続か Claude Code を `app/` で起動する。引数は `buildClaudeArgs`、依頼は標準入力。観察の道具の MCP の設定を、run ごとに `.studio/runs/<run-id>/mcp.json`(`app/` の外)に書き、`--mcp-config` で渡す。stream-json を `readMessage` で項目に直して画面に流し、道具の呼び出しを数える。道具の項目には、名前の入った文(`text`、開発者向け)と、ファイルや道具の名前を入れない短い文(`summary`、利用者向け)を持たせる。直すラウンドでも、引数(MCP の設定のファイルを含む)、cwd、時間の上限、止め方は同じで、標準入力が直す依頼になるだけ |
 | G1 変更の確認(`changes`) | コード | 指紋を取り直し、変わったファイルを出す。変わっていなければ、ここで終わる(`unchanged`)。直すラウンドで変わっていなければ、直せなかったとして `failed` で終わる |
 | G2 検査、G3 契約、G4 ビルド(`inspect`、`contract`、`compile`) | コード | `ProjectStore.build` の 1 回の呼び出し。`buildApp` が誤りに段の名前を付けるので、どの関門で止まったかが分かる。G3 は目録、`ai.json`、目録が指すシナリオ(`readScenarios`)、構成とツール、前提、モック、場面(`readSimulation`)の形を検査し、シナリオの誤りはファイル、シナリオ、手順で返す。失敗したら、試す画面は前のビルドのまま |
+| GE 場面(`evals`) | コード | G4 が通ったら入る。`app/evals/` の場面を、既定の構成と既定の前提で、模擬のエージェントも harness もモックにして回す(`runEvals`)。ブラウザを使わないので G5 より前。実モデルは呼ばない。場面がなければ「場面なし」で通る。通らなかった確かめごとに、場面の `id`、確かめ、期待と実際、ツールの呼び出しの要約を残す。結果は `.studio/runs/<run-id>/rounds/<ラウンド>/evals/` |
 | G5 起動の確認(`launch`) | コード | 新しいビルドを観察器で開く。基本のシナリオなしで、3 つの画面幅を撮る。読み込みが 15 秒以内に終わり、エラーと `console.error` がなく、画面が空でなければ通る。ビルドが失敗したら行わない |
 | G6 シナリオ(`scenarios`) | コード | G5 が通ったら入る。`app/scenarios/` の各シナリオと、Studio の基本のシナリオを観察器で回す。プロダクト内 AI は、利用者が選んだ接続によらず、いつもモックの観察用の会話(`createObservationAi`)。時間の上限は 1 本 60 秒、関門の全体で 3 分。超えたら G6 の失敗。失敗したシナリオごとに、名前、失敗した手順、期待と実際、そのときの画面の文字を残す |
-| 直す依頼(`fix`) | コード | G2〜G6 のどれかが失敗したら入る。直すラウンドが `MAX_FIX_ROUNDS`(2 回)に満たなければ、`buildFixPrompt`(`fix-prompt.js`)で直す依頼を作り、作る AI の節に戻る。満たしたら、失敗と証拠を人に返す |
+| 直す依頼(`fix`) | コード | G2〜G4、GE、G5、G6 のどれかが失敗したら入る。直すラウンドが `MAX_FIX_ROUNDS`(2 回)に満たなければ、`buildFixPrompt`(`fix-prompt.js`)で直す依頼を作り、作る AI の節に戻る。満たしたら、失敗と証拠を人に返す |
 | 証拠をまとめる(`evidence`) | コード | 結果の状態を決め、関門の結果を作る会話に出し、`.studio/runs/<run-id>/run.json` に残す |
 
 1. 利用者が「作る」欄に依頼を書く。画面が `POST /api/projects/<id>/build-requests` を送る
 2. `execute` が節を順に回す。どの節も次の節を返し、通った節を `run.nodes` に残す。関門は失敗した段で止まり、直す依頼の節へ進む
-3. 直すラウンド: 直す依頼の節が、失敗を決まった型の文にして作る AI に返す。入れるのは、元の依頼、直前のラウンドで失敗した関門の名前と結果(8,000 文字まで。G6 はシナリオの名前、失敗した手順、期待と実際、そのときの画面の文字)、変わったファイルの名前だけ。前の会話や report の全部は入れない。作る AI が直したら、G1 から回し直す。作る AI の起動は 1 つの依頼で 3 回まで。依頼の前から同じ失敗が出ていたら、印(`preexisting`)を付ける
+3. 直すラウンド: 直す依頼の節が、失敗を決まった型の文にして作る AI に返す。入れるのは、元の依頼、直前のラウンドで失敗した関門の名前と結果(8,000 文字まで。G6 はシナリオの名前、失敗した手順、期待と実際、そのときの画面の文字。GE は場面の `id`、確かめ、期待と実際、ツールの呼び出しの要約)、変わったファイルの名前だけ。前の会話や report の全部は入れない。作る AI が直したら、G1 から回し直す。作る AI の起動は 1 つの依頼で 3 回まで。依頼の前から同じ失敗が出ていたら、印(`preexisting`)を付ける
 4. `app/ai.json` が変わってビルドが通ったら、前の設定との違いを会話に出す
 5. ビルドが通ったら、画面が iframe を新しいビルドに切り替える。G5 か G6 で失敗しても切り替える(利用者が失敗を見られるように)。会話には「確かめで失敗あり」と出す
 6. 観察器が使えない(Playwright の Chromium がない)ときは、G5 と G6 を「未確認」にする。通ったとは扱わない。直すラウンドにも進まない
-7. 直すラウンドで `app/scenarios/`(目録のシナリオの置き場所)が変わったら、結果に「確かめ方が変わりました」と出し、`run.json` の `scenariosChanged` に印を残す。作る AI がシナリオを弱めて通すことを、人が見つけられるようにするため。基本のシナリオは `app/` の外にあり、作る AI は変えられない
+7. 直すラウンドで `app/scenarios/`(目録のシナリオの置き場所)が変わったら、結果に「確かめ方が変わりました」と出し、`run.json` の `scenariosChanged` に印を残す。作る AI がシナリオを弱めて通すことを、人が見つけられるようにするため。基本のシナリオは `app/` の外にあり、作る AI は変えられない。場面(`app/evals/`)が変わったときも同じく `evalsChanged` に、ガードレール(構成の `guards` と辺、ツールの守り、`ai.json` の `rules`)の中身が変わったときは `guardsChanged` に印を残し、「ガードレールが変わりました」と出す
 8. 中断と時間切れは、直すラウンドの作る AI にも同じく効く。止めた run と、作る AI が失敗した run は、直させない。関門を回している間の中断は、今の関門を終えてから止め、次の直すラウンドに進まない
 
-作る会話には、ラウンドの区切り(`round`)、直す依頼の要約(`fix-request`)、G6 の結果(`scenarios-ok`、`scenarios-failed`、`scenarios-unverified`)、確かめ方が変わった印(`scenarios-changed`)、人に返したこと(`gave-up`)、前からの失敗の印(`preexisting`)が項目として出ます。
+作る会話には、ラウンドの区切り(`round`)、直す依頼の要約(`fix-request`)、GE の結果(`evals-ok`、`evals-failed`)、G6 の結果(`scenarios-ok`、`scenarios-failed`、`scenarios-unverified`)、確かめ方が変わった印(`scenarios-changed`、`evals-changed`)、ガードレールが変わった印(`guards-changed`)、人に返したこと(`gave-up`)、前からの失敗の印(`preexisting`)が項目として出ます。
 
 結果の状態(`run.status`)は次のどれかです。
 
 | 状態 | 意味 |
 |---|---|
-| `passed` | 最初のラウンドで、関門 G1〜G6 がすべて通った |
-| `fixed` | 直すラウンドの後に、関門 G1〜G6 がすべて通った |
+| `passed` | 最初のラウンドで、関門 G1〜G4、GE、G5、G6 がすべて通った |
+| `fixed` | 直すラウンドの後に、関門 G1〜G4、GE、G5、G6 がすべて通った |
 | `unverified` | ビルドは通ったが、観察器が使えず、起動かシナリオを確かめていない |
 | `unchanged` | `app/` が変わらなかった |
-| `failed` | 2 回の直すラウンドの後も、関門 G2〜G6 のどれかで失敗した。直すラウンドで `app/` が変わらなかったときも含む |
+| `failed` | 2 回の直すラウンドの後も、関門 G2〜G4、GE、G5、G6 のどれかで失敗した。直すラウンドで `app/` が変わらなかったときも含む |
 | `agent-failed`、`cancelled`、`timed-out` | 作る AI が失敗した、中断した、時間の上限を超えた。変わったファイルがあれば、G1〜G4 は回す |
 
 観察の道具の MCP の設定(`mcp.json`)も、同じ `.studio/runs/<run-id>/` に置きます。
 
-`run.json` には、通った節の列(`nodes`。どの節にもラウンドの番号が付く)、最後のラウンドの関門の結果(`gates`。G5 は画面幅ごとのスクリーンショットの場所 `screenshots`、G6 はシナリオごとの手順と結果 `scenarios` も持つ)、関門が確かめた `app/` の指紋(`appDigest`)、ラウンドごとの節の列と関門の結果と直す依頼で返した失敗(`rounds`)、作る AI の起動の回数と時間(`agentLaunches`)、作る AI の道具の呼び出しの回数(`toolCalls`。全体、観察の道具、道具ごと)、変わったファイル、直すラウンドで変わったシナリオ(`scenariosChanged`)、ビルドの結果、report の場所(`reports`)を書きます。依頼の文と直す依頼の文は書きません。直す依頼の文は、メモリーの run(`fixRequests`)にだけ持ち、画面の結果の帯で見せます。G5 の report とスクリーンショットは `.studio/runs/<run-id>/rounds/<ラウンド>/` に、G6 のものはその下の `scenarios/` に置きます。
+`run.json` には、通った節の列(`nodes`。どの節にもラウンドの番号が付く)、最後のラウンドの関門の結果(`gates`。G5 は画面幅ごとのスクリーンショットの場所 `screenshots`、G6 はシナリオごとの手順と結果 `scenarios` も持つ)、関門が確かめた `app/` の指紋(`appDigest`)、ラウンドごとの節の列と関門の結果と直す依頼で返した失敗(`rounds`)、作る AI の起動の回数と時間(`agentLaunches`)、作る AI の道具の呼び出しの回数(`toolCalls`。全体、観察の道具、道具ごと)、変わったファイル、直すラウンドで変わったシナリオ、場面、ガードレール(`scenariosChanged`、`evalsChanged`、`guardsChanged`)、ビルドの結果、report の場所(`reports`)を書きます。依頼の文と直す依頼の文は書きません。直す依頼の文は、メモリーの run(`fixRequests`)にだけ持ち、画面の結果の帯で見せます。G5 の report とスクリーンショットは `.studio/runs/<run-id>/rounds/<ラウンド>/` に、GE の結果はその下の `evals/` に、G6 のものはその下の `scenarios/` に置きます。
 
 画面は、終わった run ごとに、直す欄に結果の帯を出します(状態の 1 文、スクリーンショット、直した回数。中身は開く操作の中)。帯の関門の並びは `run.gates` のままで、関門の名前と失敗の文は `src/ui/studio.js` の `ITEM_LABELS`(`gate:<name>`)と `RUN_STATUS`(`failed:<name>`)から引きます。新しい関門は、この 2 つの表に行を足すだけで帯に出ます。画面は一覧を読むたび(3 秒ごと)に `/api/projects/<id>/evidence` を読み、`app/` が変わった後の証拠に「この後に変わりました」の印を付けます(次の依頼、版の復元、手で変えたとき)。ビルドが失敗している間は、試す欄の上に「試作品を表示できません」を出します([ux-redesign.md の 7-6](../design/ux-redesign.md#7-6-エラー-試作品を表示できない準備の失敗))。
 
@@ -291,7 +298,8 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | `projects/<id>/app/scenarios/` | シナリオ(`*.json`)。観察器が手順どおりに回す([形](../configuration.md#シナリオappscenariosjson)) | 作る AI、版の復元 |
 | `projects/<id>/.studio/builds/` | ビルドの結果 | Studio |
 | `projects/<id>/.studio/observations/<観察の ID>/` | 観察の report(`report.json`)とスクリーンショット(画面幅ごと、シナリオの手順、失敗したとき)。観察ごとに新しいフォルダー | 観察の入口、観察器 |
-| `projects/<id>/.studio/runs/<run-id>/` | 作る run の記録(`run.json`)と、G5 と G6 の report とスクリーンショット。新しい 20 個だけ残す | Studio、観察器 |
+| `projects/<id>/.studio/runs/<run-id>/` | 作る run の記録(`run.json`)と、GE の結果、G5 と G6 の report とスクリーンショット。新しい 20 個だけ残す | Studio、観察器 |
+| `projects/<id>/.studio/evals/<回しの ID>/`、`ledger.jsonl` | 場面の回し(`npm run evals`)の結果(`result.json`、`report.md`、`traces/`)。新しい 20 個だけ残す。台帳は実モデルの回しの返事ごとの費用 | 場面の回しの CLI |
 | `projects/<id>/.studio/versions/`、`working.json` | 保存した版と、どの版から作業しているか | Studio |
 | `projects/<id>/.studio/handoff-notes.json` | 引き継ぎのメモ | Studio |
 | `handoffs/` | 引き継ぎの書き出し | Studio |

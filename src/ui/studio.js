@@ -36,6 +36,7 @@ const RUN_STATUS = {
   'failed:compile': () => '試作品のファイルに誤りがあり、新しい状態を表示できません',
   'failed:launch': () => '試作品を開くと、誤りが出ます',
   'failed:scenarios': () => '決めた手順で試すと、思ったとおりに動きません',
+  'failed:evals': () => 'AI の場面を回すと、思ったとおりに動きません',
 };
 const ITEM_LABELS = {
   tool: '操作',
@@ -57,6 +58,10 @@ const ITEM_LABELS = {
   'scenarios-failed': 'シナリオ',
   'scenarios-unverified': 'シナリオ',
   'scenarios-changed': '確かめ方が変わりました',
+  'evals-ok': '場面',
+  'evals-failed': '場面',
+  'evals-changed': '確かめ方が変わりました',
+  'guards-changed': 'ガードレールが変わりました',
   gates: '関門',
   preexisting: '確かめた結果',
   round: '直すラウンド',
@@ -68,6 +73,7 @@ const ITEM_LABELS = {
   'gate:contract': 'AI の設定と確かめ方の形',
   'gate:compile': '表示の準備',
   'gate:launch': '開いて表示できるか',
+  'gate:evals': 'AI の場面で動くか',
   'gate:scenarios': '決めた手順で動くか',
 };
 // 試作品からプロダクト内 AI への要求。連打で実モデルを呼び続けないよう、数を絞る
@@ -697,7 +703,7 @@ const EVIDENCE_STATUSES = new Set(['passed', 'fixed', 'failed', 'unverified', 'u
 const GATE_RESULT = { passed: '問題なし', failed: '問題あり', unverified: '確かめられませんでした', unchanged: '変わっていません', skipped: '行っていません' };
 const STEP_RESULT = { passed: '通った', failed: '通らなかった', skipped: '行っていない' };
 const SHOT_LABELS = { mobile: 'スマートフォン', tablet: 'タブレット', desktop: 'パソコン' };
-const ERROR_KINDS = { runtime: '実行時のエラー', 'console-error': '画面の知らせのエラー', 'unhandled-rejection': '処理されない誤り', timeout: '時間切れ' };
+const ERROR_KINDS = { runtime: '実行時のエラー', 'console-error': '画面の知らせのエラー', 'unhandled-rejection': '処理されない誤り', timeout: '時間切れ', evals: '場面の回し' };
 const STALE_TEXT = 'この後に変わりました';
 // 開いている「確かめた中身を見る」と、その中の開く操作(再描画で閉じないよう、実行の ID と場所で覚える)
 const openEvidence = new Set();
@@ -811,8 +817,9 @@ function gateProblems(gate) {
   if (gate.reason) list.append(element('li', `理由: ${gate.reason}`));
   if (gate.summary && !gate.errors?.length && !gate.failures?.length) list.append(element('li', gate.summary));
   for (const failure of gate.failures ?? []) {
-    const where = failure.step ? `の ${failure.step} 番目の手順` : '';
-    const li = element('li', `「${failure.scenario}」${where}で通りませんでした`);
+    // 関門 GE(場面)の失敗は、シナリオの代わりに場面の id と確かめを持つ
+    const where = failure.eval !== undefined ? (failure.check ? `の確かめ「${failure.check}」` : '') : failure.step ? `の ${failure.step} 番目の手順` : '';
+    const li = element('li', `${failure.eval !== undefined ? '場面' : ''}「${failure.eval ?? failure.scenario}」${where}で通りませんでした`);
     if (failure.expected) li.append(element('span', `期待: ${failure.expected}`, 'evidence-line'));
     li.append(element('span', `実際: ${failure.actual}`, 'evidence-line'));
     list.append(li);

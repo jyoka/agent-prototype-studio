@@ -55,7 +55,7 @@ test('壊れる依頼でも、Studio が失敗を直す依頼にして返し、�
     await expect(run.locator('[data-kind="fix-request"]')).toContainText('添えたのは、元の依頼、失敗の中身、変わったファイルの名前(1 個)だけです');
     await expect(run.locator('.bubble.agent').filter({ hasText: 'Studio の直す依頼を読みました' })).toBeVisible();
     await expect(run.locator('[data-kind="launch-ok"]')).toBeVisible();
-    await expect(run.locator('[data-kind="gates"]')).toHaveText(/Studio が確かめた結果\(直すラウンド 1 の後\): .*G4 ビルド: 通った、G5 起動の確認: 通った/);
+    await expect(run.locator('[data-kind="gates"]')).toHaveText(/Studio が確かめた結果\(直すラウンド 1 の後\): .*G4 ビルド: 通った、GE 場面: 通った\(場面なし\)、G5 起動の確認: 通った/);
     await expect(run.locator('[data-kind="gave-up"]')).toHaveCount(0);
 
     // 試す画面は直した版で、ビルドは通っている
@@ -120,6 +120,7 @@ test('作る run の結果の帯に、状態、確かめた画面、直した回
       'ファイルの名前と大きさ: 問題なし',
       'AI の設定と確かめ方の形: 問題なし',
       '表示の準備: 問題なし',
+      'AI の場面で動くか: 問題なし',
       '開いて表示できるか: 問題なし',
       '決めた手順で動くか: 問題なし',
     ]);

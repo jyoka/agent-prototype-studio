@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -97,7 +98,7 @@ test('ソース、意図、AI の設定、会話と状態、未接続と未決�
   await fs.cp(result.handoff.dir, other, { recursive: true });
   const manifest = JSON.parse(await fs.readFile(path.join(other, 'handoff.json'), 'utf8'));
   assert.equal(manifest.format, HANDOFF_FORMAT);
-  assert.equal(manifest.formatVersion, 2);
+  assert.equal(manifest.formatVersion, 3);
   // 名前は試作品の一覧と同じ(目録がないので ID に、AI と話せるかを添える)
   assert.deepEqual(manifest.project, { id: 'travel', title: 'travel(AI と話せる)' });
   assert.deepEqual(manifest.notes, NOTES);
@@ -315,7 +316,7 @@ test('目録、シナリオ、最新の作る run と観察の report の要約�
 
   const result = await handoffs.export(JOB, { purpose: '求人を相談で絞れるか確かめる' });
   const { manifest, readme } = await readHandoff(result);
-  assert.equal(manifest.formatVersion, 2);
+  assert.equal(manifest.formatVersion, 3);
 
   // 目録: 作る AI が書いた意図、制約、未実装、架空のデータ
   assert.equal(manifest.prototype.file, 'app/prototype.json');
@@ -357,7 +358,7 @@ test('目録、シナリオ、最新の作る run と観察の report の要約�
   assert.equal(evidence.status, 'passed');
   assert.equal(evidence.startedAt, run.startedAt);
   assert.ok(evidence.finishedAt);
-  assert.deepEqual(evidence.gates.map((g) => `${g.id}:${g.status}`), ['G1:passed', 'G2:passed', 'G3:passed', 'G4:passed', 'G5:passed', 'G6:passed']);
+  assert.deepEqual(evidence.gates.map((g) => `${g.id}:${g.status}`), ['G1:passed', 'G2:passed', 'G3:passed', 'G4:passed', 'GE:passed', 'G5:passed', 'G6:passed']);
   assert.equal(evidence.appDigest, manifest.evidence.appDigest);
   assert.equal(evidence.stale, false);
   assert.deepEqual(evidence.reports.map((r) => [r.gate, r.verdict, r.stale]), [['G5', 'passed', false], ['G6', 'passed', false]]);
@@ -402,4 +403,91 @@ test('足した中身(証拠の要約)に秘密らしい文字列があれば、
   assert.ok(!error.message.includes('abcdefghijklmnop'));
   // 書きかけは残さない
   assert.deepEqual(await fs.readdir(path.join(home, 'handoffs')), []);
+});
+
+// 構成 A の見本(バイト探し)。場面の回し(npm run evals)の結果がある試作品の書き出し(docs/design/agent-simulation.md の 4.5、S6、S7)
+const PART_TIME = 'sample-part-time';
+
+function runEvalsCli(home, args = []) {
+  return new Promise((resolve) => {
+    execFile(
+      process.execPath,
+      [path.join(STUDIO_ROOT, 'bin', 'evals.js'), PART_TIME, ...args],
+      // モックだけ。実モデルを呼ばないよう、claude はない場所を指す
+      { env: { PATH: process.env.PATH, STUDIO_HOME: home, STUDIO_AGENT: 'fake', STUDIO_CLAUDE_BIN: path.join(home, 'no-claude') }, timeout: 90_000 },
+      (error, stdout, stderr) => resolve({ code: error ? (error.code ?? 1) : 0, stdout, stderr }),
+    );
+  });
+}
+
+test('構成、ツール、前提、プロンプトの枠、場面と最新の場面の回しの要約を入れる。回した後に app/ が変われば古い印を付ける(S6、S7)', async (t) => {
+  const { home, store, handoffs } = await makeSampleStudio(t);
+  const before = await readHandoff(await handoffs.export(PART_TIME, {}));
+  // 場面を回す前: 場面はあるが、回した結果はない
+  assert.equal(before.manifest.simulation.latestRun, null);
+  assert.ok(before.manifest.openQuestions.some((q) => q.text.startsWith('場面(app/evals/)を npm run evals で回した結果がない')));
+  assert.match(before.readme, /`npm run evals` で場面を回した結果はありません。/);
+
+  const out = await runEvalsCli(home, ['--assumptions', 'partner-a,partner-b']);
+  assert.equal(out.code, 0, out.stderr + out.stdout);
+  const { manifest, readme } = await readHandoff(await handoffs.export(PART_TIME, {}));
+  const { simulation } = manifest;
+
+  // 構成: 参加者、持ち主、ツール、ガードレール(層と持ち主)、会話の枠、前提の置き場
+  assert.deepEqual(simulation.compositions.map((c) => [c.file, c.default, c.driver]), [['app/composition.json', true, 'partner']]);
+  const [partner] = simulation.compositions[0].participants;
+  assert.deepEqual([partner.id, partner.kind, partner.owner, partner.mock], ['partner', 'agent', 'partner', 'app/mocks/partner.json']);
+  assert.deepEqual(partner.tools, ['search_jobs', 'get_job', 'suggest_questions', 'record_consent', 'save_wish']);
+  assert.deepEqual(simulation.compositions[0].guards.map((g) => [g.id, g.layer, g.owner]), [['no-contact-ask', 'prompt', 'dip'], ['facts-from-tools', 'output', 'partner']]);
+  // ツール: 宣言と守り(本番の API の仕様の見本)
+  assert.equal(simulation.tools[0].file, 'app/tools.json');
+  const save = simulation.tools[0].tools.find((tool) => tool.name === 'save_wish');
+  assert.deepEqual(save.guards.requires, [{ recorded: 'consent', equals: { agreed: true } }]);
+  assert.equal(save.do.op, 'record');
+  // 前提(推測)と、プロンプトの枠と、場面
+  assert.deepEqual(simulation.assumptions.map((a) => [a.file, a.id, a.model.name]), [['app/assumptions/partner-a.json', 'partner-a', 'claude-sonnet-5-5'], ['app/assumptions/partner-b.json', 'partner-b', 'claude-haiku-5-5']]);
+  assert.match(simulation.assumptions[0].digest, /^sha256:/);
+  assert.deepEqual(simulation.prompts.map((p) => p.file), ['app/prompts/dip-guide.md']);
+  assert.equal(simulation.evals.length, 12);
+  assert.deepEqual(simulation.evals.find((e) => e.id === 'tool-deny-phone'), { file: 'app/evals/tool-deny-phone.json', id: 'tool-deny-phone', kind: 'tool', about: '同意があっても、メモに電話番号が入った保存はツールが断る', checks: ['guardBlocked'] });
+
+  // 最新の場面の回しの要約: 指紋が今の app/ と同じなので古くない。組ごとの点と、危ない場面の効いた層
+  const latest = simulation.latestRun;
+  assert.match(latest.file, /^\.studio\/evals\/[0-9]{8}-[0-9]{6}-[0-9a-f]{6}\/result\.json$/);
+  assert.equal(latest.verdict, 'passed');
+  assert.equal(latest.stale, false);
+  assert.equal(latest.appDigest, manifest.evidence.appDigest);
+  assert.equal(latest.real, false);
+  assert.deepEqual(latest.groups.map((g) => [g.composition, g.assumption, g.connection, g.summary.passed]), [['composition.json', 'partner-a', 'mock', 12], ['composition.json', 'partner-b', 'mock', 12]]);
+  assert.match(latest.groups[0].compositionDigest, /^sha256:/);
+  assert.deepEqual(latest.groups[0].risky.map((r) => [r.id, r.stoppedBy]), [['risky-contact', 'prompt-or-model'], ['risky-save-after-consent', 'prompt-or-model'], ['risky-save-without-consent', 'tool']]);
+  assert.deepEqual(latest.failures, []);
+  assert.ok(manifest.openQuestions.some((q) => q.text === '場面をモックでだけ回した。実モデル(相手のモデルの代わりの Claude)では回していない。'));
+  assert.ok(manifest.openQuestions.some((q) => q.text.startsWith('相手の仕様は前提(app/assumptions/)の推測で')));
+
+  // 実機・モック・未接続の一覧と、Studio の中の部品
+  const items = manifest.capabilities.map((c) => `${c.kind}:${c.item}`);
+  assert.ok(items.includes('mock:模擬のエージェント'));
+  assert.ok(items.includes('real:ツール(宣言)'));
+  assert.ok(items.includes('mock:会話の枠(studio-talk)'));
+  assert.deepEqual(manifest.source.studioParts, ['studio-talk']);
+  assert.ok(!manifest.source.libraries.includes('studio-talk'));
+
+  // README: 構成とツール、前提、場面、最新の回し
+  assert.match(readme, /## 構成とツール\(模擬\)\n[\s\S]*\| `app\/composition\.json`\(既定\) \| 相手の会社のエージェントと、こちらのツール\(架空\) \| partner \| partner\(agent、partner\) \| no-contact-ask\(prompt、dip\)、facts-from-tools\(output、partner、記録だけ\) \|/);
+  assert.match(readme, /\| `app\/tools\.json` \| `save_wish` \| record \| requires、deny \|/);
+  assert.match(readme, /\| `app\/assumptions\/partner-b\.json` \| partner-b \|/);
+  assert.match(readme, /## 場面\(確かめ方\)と最新の回し\n[\s\S]*\| `app\/evals\/risky-contact\.json` \| risky-contact \| risky \|/);
+  assert.match(readme, /- 回した app\/ の中身: 今の app\/ と同じ中身/);
+  assert.match(readme, /\| composition\.json \/ partner-b \| mock \| 1 \| 12 \| 0 \| 0 \|/);
+  assert.match(readme, /\| composition\.json \/ partner-a \| risky-save-without-consent \| ツールが止めた \| save_wish: requires \| no-contact-ask \|/);
+  assert.match(readme, /- Studio の中の部品: studio-talk/);
+
+  // 回した後に app/ が変わったら、最新の回しは古い
+  await fs.appendFile(path.join(home, 'projects', PART_TIME, 'app', 'prompts', 'dip-guide.md'), '\n(架空の追記)\n');
+  await store.build(PART_TIME);
+  const after = await readHandoff(await handoffs.export(PART_TIME, {}));
+  assert.equal(after.manifest.simulation.latestRun.stale, true);
+  assert.ok(after.manifest.openQuestions.some((q) => /最新の場面の回し\(.*\)は、今の app\/ と違う中身で回したもので、古い/.test(q.text)));
+  assert.match(after.readme, /- 回した app\/ の中身: \*\*古い\*\*/);
 });
