@@ -435,7 +435,8 @@ async function askFirst(request) {
     return finish({ text: '変えていません' });
   }
   const labels = target.json.fields.map((field) => field?.label).filter((label) => typeof label === 'string');
-  const wanted = /「([^」]{1,40})」/.exec(request)?.[1];
+  // 「」で囲んだ名前か、囲まずに書いた項目の名前(画面の依頼の例「時給の下限を先に聞くようにして」の形)
+  const wanted = /「([^」]{1,40})」/.exec(request)?.[1] ?? labels.find((label) => request.includes(`${label}を先に聞`));
   if (!wanted) {
     await say(`先に聞く項目の名前を「」で囲んで書いてください。項目: ${labels.join('、')}`);
     return finish({ text: '変えていません' });
@@ -489,6 +490,8 @@ async function clarifyWithExamples() {
 }
 
 async function slow() {
+  // 作業中の表示(操作の短い文)を見られるよう、先に 1 回だけ道具を使う
+  await useTool('Glob', { pattern: '**/*' }, { result: 'ファイルを探しました' });
   for (let step = 1; step <= SLOW_STEPS; step += 1) {
     await sleep(SLOW_STEP_MS);
     emit({ type: 'assistant', session_id: SESSION_ID, message: { role: 'assistant', content: [{ type: 'text', text: `少しずつ進めています(${step}/${SLOW_STEPS})` }] } });

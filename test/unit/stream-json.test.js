@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
-import { readMessage, showPath } from '../../src/server/stream-json.js';
+import { readMessage, showPath, summarizeTool } from '../../src/server/stream-json.js';
 
 const APP = path.resolve('/home/u/PrototypeStudio/projects/demo/app');
 const REAL = path.resolve('/private/home/u/PrototypeStudio/projects/demo/app');
@@ -33,8 +33,8 @@ test('stream-json の行を、作る会話の項目に直す', () => {
   );
   assert.deepEqual(assistant.items, [
     { kind: 'assistant', text: '変えます' },
-    { kind: 'tool', text: '書き換える: app/App.jsx' },
-    { kind: 'tool', text: '中身を探す: h1' },
+    { kind: 'tool', text: '書き換える: app/App.jsx', summary: '試作品のファイルを書き換えました' },
+    { kind: 'tool', text: '中身を探す: h1', summary: '試作品のファイルの中を探しました' },
   ]);
   assert.deepEqual(assistant.toolUses, ['Edit', 'Grep']);
 
@@ -82,9 +82,24 @@ test('観察の道具の呼び出しは、作る会話に短く出し、名前�
     APP,
   );
   assert.deepEqual(read.items, [
-    { kind: 'tool', text: '観察: 開く' },
-    { kind: 'tool', text: '観察: 押す(role=button name=送る)' },
-    { kind: 'tool', text: '観察: 画面幅を変える(mobile)' },
+    { kind: 'tool', text: '観察: 開く', summary: '試作品の画面を開いて確かめました' },
+    { kind: 'tool', text: '観察: 押す(role=button name=送る)', summary: '試作品の画面を操作しました' },
+    { kind: 'tool', text: '観察: 画面幅を変える(mobile)', summary: '画面の幅を変えて確かめました' },
   ]);
   assert.deepEqual(read.toolUses, ['mcp__observe__open', 'mcp__observe__click', 'mcp__observe__set_viewport']);
+});
+
+test('操作の短い文には、ファイルの名前も道具の名前も入れない', () => {
+  assert.equal(summarizeTool(APP, 'Read', { file_path: path.join(APP, 'ai.json') }), 'AI の設定を読みました');
+  assert.equal(summarizeTool([APP, REAL], 'Edit', { file_path: path.join(REAL, 'ai.json') }), 'AI の設定を書き換えました');
+  assert.equal(summarizeTool(APP, 'Write', { file_path: path.join(APP, 'scenarios', 'x.json') }), '試作品のファイルを書きました');
+  // app/ の外は断られるので、したとは言わない
+  assert.equal(summarizeTool(APP, 'Write', { file_path: '/etc/hosts' }), '試作品のフォルダーの外のファイルに書こうとしました');
+  assert.equal(summarizeTool(APP, 'Edit', { file_path: '/etc/hosts' }), '試作品のフォルダーの外のファイルを書き換えようとしました');
+  assert.equal(summarizeTool(APP, 'Read', { file_path: '/etc/hosts' }), '試作品のフォルダーの外のファイルを読もうとしました');
+  assert.equal(summarizeTool(APP, 'Grep', { path: '/etc' }), '試作品のフォルダーの外を見ようとしました');
+  assert.equal(summarizeTool(APP, 'Read', {}), '試作品のファイルを読みました');
+  for (const name of ['Bash', 'mcp__other__tool', undefined, '__proto__']) {
+    assert.equal(summarizeTool(APP, name, { file_path: path.join(APP, 'App.jsx') }), '作業を進めました');
+  }
 });

@@ -35,7 +35,7 @@ flowchart LR
 ```
 
 - Studio が持つ AI は 2 つです。作る AI は試作品のファイルを変えます。プロダクト内 AI は、試作品の中で利用者と話します
-- 作る AI の既定は自動です。起動のときに Claude Code が見つかり、版が足り、ログインしていれば、Claude Code を使います。そうでなければ、作る AI は使えない状態になり、理由(ない、古い、ログインしていない)を画面に出します。偽接続には落としません
+- 作る AI の既定は自動です。起動のときに Claude Code が見つかり、版が足り、ログインしていれば、Claude Code を使います。そうでなければ、作る AI は使えない状態になり、言葉で直す欄に、何ができないかと使えるようにする手順のカードを出します(見出しは理由で変わる。理由の文は開発者向けの中だけ)。偽接続には落としません
 - 偽接続は、`STUDIO_AGENT=fake` と書いたときだけ使います。プロダクト内 AI の既定はモックで、モデルを呼びません
 - 本物の AI(Claude Code)は、使う前に画面で同意します。同意は 1 つで、作る AI の送信、プロダクト内 AI の切り替え、人の「確かめる」の全部に効きます。Studio のメモリーにだけ持ち、起動し直すと消えます
 - ログインしているかは、Claude Code 自身に聞きます(`claude auth status --json`)。出力から使うのは、ログインしているか(`loggedIn`)と方式(`authMethod`)だけです。他の値(メールアドレスなど)は捨て、画面にも記録にも出しません
@@ -161,7 +161,7 @@ flowchart TB
 |---|---|---|
 | 受け付け(`accept`) | コード | `BuildRequests.start` が依頼の形と上限、接続の問題、本物の AI の同意(Claude Code のとき)を確かめる。1 つの試作品で動く依頼は 1 つだけ(`ProjectStore.claimRun`) |
 | 前の指紋(`fingerprint`) | コード | `app/` の指紋(`snapshotApp`)と、表示中のプロダクト内 AI の設定を取る |
-| 作る AI(`agent`) | モデル | `startAgentProcess` が偽接続か Claude Code を `app/` で起動する。引数は `buildClaudeArgs`、依頼は標準入力。観察の道具の MCP の設定を、run ごとに `.studio/runs/<run-id>/mcp.json`(`app/` の外)に書き、`--mcp-config` で渡す。stream-json を `readMessage` で項目に直して画面に流し、道具の呼び出しを数える。直すラウンドでも、引数(MCP の設定のファイルを含む)、cwd、時間の上限、止め方は同じで、標準入力が直す依頼になるだけ |
+| 作る AI(`agent`) | モデル | `startAgentProcess` が偽接続か Claude Code を `app/` で起動する。引数は `buildClaudeArgs`、依頼は標準入力。観察の道具の MCP の設定を、run ごとに `.studio/runs/<run-id>/mcp.json`(`app/` の外)に書き、`--mcp-config` で渡す。stream-json を `readMessage` で項目に直して画面に流し、道具の呼び出しを数える。道具の項目には、名前の入った文(`text`、開発者向け)と、ファイルや道具の名前を入れない短い文(`summary`、利用者向け)を持たせる。直すラウンドでも、引数(MCP の設定のファイルを含む)、cwd、時間の上限、止め方は同じで、標準入力が直す依頼になるだけ |
 | G1 変更の確認(`changes`) | コード | 指紋を取り直し、変わったファイルを出す。変わっていなければ、ここで終わる(`unchanged`)。直すラウンドで変わっていなければ、直せなかったとして `failed` で終わる |
 | G2 検査、G3 契約、G4 ビルド(`inspect`、`contract`、`compile`) | コード | `ProjectStore.build` の 1 回の呼び出し。`buildApp` が誤りに段の名前を付けるので、どの関門で止まったかが分かる。G3 は目録、`ai.json`、目録が指すシナリオ(`readScenarios`)、構成とツール、前提、モック、場面(`readSimulation`)の形を検査し、シナリオの誤りはファイル、シナリオ、手順で返す。失敗したら、試す画面は前のビルドのまま |
 | G5 起動の確認(`launch`) | コード | 新しいビルドを観察器で開く。基本のシナリオなしで、3 つの画面幅を撮る。読み込みが 15 秒以内に終わり、エラーと `console.error` がなく、画面が空でなければ通る。ビルドが失敗したら行わない |

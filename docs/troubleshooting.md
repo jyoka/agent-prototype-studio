@@ -16,8 +16,8 @@
 | 言葉で直す欄に「送れませんでした: … 作業中です」 | 前の依頼が終わるか、「中断」を押すまで待つ。1 つの試作品で動く依頼は 1 つだけ |
 | 言葉で直す欄に「時間の上限(10 分)を超えたので止めました」 | 依頼を小さく分けて送る |
 | 言葉で直す欄に「Claude Code にログインしていないか…」 | ターミナルで `claude` を起動し、`/login` でログインしてから送り直す。Studio はログインの情報を扱わない |
-| 言葉で直す欄の上の枠に「claude が見つかりません」「古すぎます」 | Claude Code を入れる、または `claude update` で更新して、Studio を起動し直す。別の場所にあるときは `STUDIO_CLAUDE_BIN`。Claude Code を使わずに試すときは `STUDIO_AGENT=fake` |
-| 言葉で直す欄の上の枠に「Claude Code にログインしていません」 | ターミナルで `claude` を起動し、`/login` でログインしてから、Studio を起動し直す。Studio はログインの情報を扱わない |
+| 言葉で直す欄に「言葉で直すには、Claude Code が要ります」「Claude Code が古いので使えません」「この Claude Code は、Studio から使えません」 | Claude Code を入れる、または `claude update` で更新して、Studio を起動し直す。別の場所にあるときは `STUDIO_CLAUDE_BIN`。理由の文は、カードの中の「開発者向け: 確かめた結果」にある。Claude Code を使わずに試すときは `STUDIO_AGENT=fake` |
+| 言葉で直す欄に「Claude Code にログインしていません」 | ターミナルで `claude` を起動し、`/login` でログインしてから、Studio を起動し直す。Studio はログインの情報を扱わない |
 | 試作品に「この試作品はプロダクト内 AI を使っていません」 | `app/ai.json` を置いて「ファイルから作り直す」を押す([configuration.md の「プロダクト内 AI の設定」](configuration.md#プロダクト内-ai-の設定appaijson)) |
 | 試作品に「会話が長くなりすぎました」 | 「会話を最初から」を押す(1 つの会話は 200 件まで) |
 | 「接続を選ぶ」で Claude Code を選べず「本物の AI は、使わない設定で起動されています」 | `STUDIO_ALLOW_CLAUDE_CODE=0` で起動されている。会社として止めているときは、そのままモックで試す。止める理由がなければ、この変数を書かずに起動し直す |

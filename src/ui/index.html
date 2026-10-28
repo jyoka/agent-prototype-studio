@@ -20,6 +20,8 @@
       </nav>
     </div>
     <div class="topbar-end">
+      <!-- STUDIO_AGENT=fake で起動したときだけ出す(ux-redesign.md 4 節) -->
+      <span id="dev-agent-mark" class="dev-agent-mark" hidden>開発用: 偽の直す AI</span>
       <span id="connection" class="connection" data-state="checking" hidden></span>
       <span id="save-mark" class="save-mark" hidden>保存していない変更があります</span>
       <button type="button" id="save-now" disabled>保存</button>
@@ -48,22 +50,40 @@
     </section>
     <section class="make" aria-labelledby="make-heading">
       <h2 id="make-heading">言葉で直す</h2>
-      <p class="muted">作る AI に、試作品の変え方を頼みます。試作品の中の操作は、隣の「試す」で行います。</p>
-      <div id="agent-status" class="agent-status"></div>
+      <!-- 選んでいる試作品の名前。作る会話は試作品ごとに分かれるので、どの試作品への依頼かを出す(ux-redesign.md の気づいたこと G) -->
+      <p id="make-target" class="make-target"></p>
+      <p class="muted">気になったところを、ふだんの言葉で頼んでください。直す AI が試作品を直します。</p>
+      <!-- 直す AI が使えないときのカード(ux-redesign.md 7-5)。理由の文やエラーの文は、カードの中の「開発者向け」にだけ出す -->
+      <div id="agent-unavailable" class="agent-unavailable" role="group" aria-labelledby="agent-unavailable-heading" hidden>
+        <h3 id="agent-unavailable-heading"></h3>
+        <p id="agent-unavailable-lead"></p>
+        <p class="card-label">今できること</p>
+        <ul>
+          <li>試作品を試す(お試しの AI)</li>
+          <li>保存、本番開発へ渡す(上の帯の「保存」と「その他」)</li>
+        </ul>
+        <p class="card-label">使えるようにするには</p>
+        <ol id="agent-unavailable-steps"></ol>
+        <p class="muted">詳しい手順は、README の「はじめる」と docs/claude-code.md にあります。</p>
+        <details id="agent-unavailable-dev" class="card-dev">
+          <summary>開発者向け: 確かめた結果</summary>
+          <div id="agent-unavailable-detail"></div>
+        </details>
+      </div>
+      <div id="examples" class="examples" hidden>
+        <p class="muted">例(押すと依頼の欄に入ります)</p>
+        <ul id="example-list" aria-label="直し方の例"></ul>
+      </div>
       <ol id="conversation" class="conversation" aria-label="作る会話"></ol>
       <form id="request-form" class="request-form">
         <label for="request-text">依頼</label>
-        <textarea id="request-text" rows="3" maxlength="4000" placeholder="例: 見出しを「ひだまり図書室」にして" disabled></textarea>
+        <textarea id="request-text" rows="3" maxlength="4000" placeholder="例: 見出しの色を落ち着いた青にして" disabled></textarea>
         <div class="request-actions">
           <button type="submit" id="send" disabled>送る</button>
           <button type="button" id="cancel" hidden>中断</button>
           <span class="muted">Ctrl+Enter(Mac は ⌘+Enter)でも送れます</span>
         </div>
       </form>
-      <div id="examples" class="examples" hidden>
-        <p class="muted">偽接続で試せる依頼(押すと依頼の欄に入ります):</p>
-        <ul id="example-list"></ul>
-      </div>
     </section>
   </main>
   <!-- その他の引き出し(右から出る)。保存した状態、本番開発へ渡す、画面を読み込み直す、開発者向けの詳細(ux-redesign.md 3 節、7-7)。
@@ -105,6 +125,16 @@
     </div>
     <details id="dev-details" class="dev-details">
       <summary>開発者向けの詳細</summary>
+      <section aria-labelledby="agent-heading">
+        <h3 id="agent-heading">直す AI(作る AI)の接続</h3>
+        <div id="agent-status" class="agent-status"></div>
+      </section>
+      <!-- 偽接続(STUDIO_AGENT=fake)で試せる依頼。利用者の画面には出さない(ux-redesign.md 5 節、U4) -->
+      <section id="test-requests" hidden>
+        <h3 id="test-requests-heading">試験用の依頼</h3>
+        <p class="muted">偽の直す AI が扱える依頼です。押すと「言葉で直す」の依頼の欄に入ります。</p>
+        <ul id="test-request-list" class="test-request-list" aria-label="偽の直す AI で試せる例"></ul>
+      </section>
       <section aria-labelledby="build-heading">
         <h3 id="build-heading">ビルド</h3>
         <div id="build-status" class="build-status"></div>

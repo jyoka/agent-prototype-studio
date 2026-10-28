@@ -104,8 +104,9 @@ async function runFlow(page, home, other, otherHome) {
     await expect(ui.log.first()).toContainText(GREETING);
     await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
     await expect(page.locator('dl.ai-state dt')).toHaveText(['学びたいこと', 'いまの段階', '学び方', '1日に使える時間']);
-    // 作る欄の例も、この試作品の項目から作る(求人の項目の名前は出ない)
-    await expect(page.locator('#example-list')).toContainText('「1日に使える時間」を先に聞くようにして');
+    // 直す欄の例も、試験用の依頼も、この試作品の項目から作る(求人の項目の名前は出ない)
+    await expect(page.locator('#example-list')).toContainText('1日に使える時間を先に聞くようにして');
+    await expect(page.locator('#test-request-list')).toContainText('「1日に使える時間」を先に聞くようにして');
     await expectNoJobWords(page);
 
     // 2. 試行: モックの AI と話し、本人が直し、その修正を踏まえて続ける
@@ -135,8 +136,9 @@ async function runFlow(page, home, other, otherHome) {
     await expect(run).toContainText('変わったファイル: app/App.jsx');
     await expect(ui.app.getByRole('heading', { name: 'そよかぜ学習相談' })).toBeVisible();
 
-    // 5. 変更(AI の振る舞い): 例を押して聞く順を変え、前の発言で試し直して比べる
-    await page.getByRole('button', { name: '「1日に使える時間」を先に聞くようにして' }).click();
+    // 5. 変更(AI の振る舞い): 直す欄の例を押して聞く順を変え、前の発言で試し直して比べる。引き出しは直す欄に重なるので閉じる
+    await closeMore(page);
+    await page.getByRole('list', { name: '直し方の例' }).getByRole('button', { name: '1日に使える時間を先に聞くようにして' }).click();
     await page.getByRole('button', { name: '送る' }).click();
     run = ui.runs.last();
     await expect(run.locator('.run-status')).toContainText('終わりました');
@@ -234,7 +236,7 @@ async function runFlow(page, home, other, otherHome) {
   expect(readme).toMatch(/\| 実機 \| プロダクト内 AI\(実モデル\) \| Claude Code で 1 回応答した。/);
   expect(readme).toContain('| `minutes` | 1日に使える時間 | 数(単位: 分)、5 以上、300 以下 | 未定 |');
   expect(readme).toContain('| `subject` | 学びたいこと | プログラミング |');
-  expect(readme).toMatch(/\| 「1日に使える時間」を先に聞くようにして \| 通った \| app\/ai\.json \|/);
+  expect(readme).toMatch(/\| 1日に使える時間を先に聞くようにして \| 通った \| app\/ai\.json \|/);
   for (const file of await allFiles(other)) {
     expect(await fs.readFile(file, 'utf8'), `${path.relative(other, file)} に求人の言葉`).not.toMatch(JOB_WORDS);
   }
