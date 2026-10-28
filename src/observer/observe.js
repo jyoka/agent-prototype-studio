@@ -35,6 +35,8 @@ const MAX_STACK = 4000;
 const MAX_AI_REQUESTS = 50;
 const MAX_AI_TEXT = 2000;
 const MAX_AI_CHANGES = 20;
+// report の ai に入れるやり取りの数(会話の始まりと、要求の上限の分)
+const MAX_AI_ENTRIES = MAX_AI_REQUESTS + 1;
 
 // 親ページが Node に渡す知らせの種類と、report の errors の kind
 const EVENT_KINDS = {
@@ -93,8 +95,9 @@ function emptyReport(build) {
     browser: null,
     load: { done: false, durationMs: null, timeoutMs: null },
     errors: [],
-    // 観察用の会話(jyoka/tasks#301)、シナリオと最後の画面(jyoka/tasks#302)で埋める
+    // 観察の中のプロダクト内 AI とのやり取り(ai.entries() が返す、AI の実行の記録と同じ形)
     ai: [],
+    // シナリオと最後の画面(jyoka/tasks#302)で埋める
     scenarios: [],
     page: null,
     screenshots: [],
@@ -130,6 +133,17 @@ function waitFor(promise, ms) {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 class StepTimeoutError extends Error {}
+
+// 呼ぶ側の ai 関数が entries() を持っていれば、観察の中のやり取りを report に入れる
+function aiEntries(ai) {
+  if (typeof ai?.entries !== 'function') return [];
+  try {
+    const entries = ai.entries();
+    return Array.isArray(entries) ? structuredClone(entries.slice(0, MAX_AI_ENTRIES)) : [];
+  } catch {
+    return [];
+  }
+}
 
 // プレビューの配信が、そのビルドを今も返すか
 async function previewStatus(url) {
@@ -172,7 +186,8 @@ export class Observer {
   //            hostUrl は観察用の親ページの URL(Studio の origin の /observe.html)
   // scenarios: 回すシナリオ(jyoka/tasks#302 で回す。今は受け取るだけ)
   // viewports: スクリーンショットを撮る画面幅の名前(mobile、tablet、desktop)
-  // ai:        試作品からの AI の要求({ op, text?, changes? })に session を返す関数。なければ断る
+  // ai:        試作品からの AI の要求({ op, text?, changes? })に session を返す関数。なければ断る。
+  //            ai.entries() があれば、観察の中のやり取りとして report の ai に入れる
   // limits:    時間の上限(DEFAULT_LIMITS)
   // outDir:    スクリーンショットを置くフォルダー
   async observe({ build, scenarios = [], viewports = ['desktop'], ai = null, limits = {}, outDir = null } = {}) {
@@ -183,6 +198,7 @@ export class Observer {
     const started = Date.now();
     const report = emptyReport(build);
     const finish = () => {
+      report.ai = aiEntries(ai);
       report.durationMs = Date.now() - started;
       return report;
     };
