@@ -8,7 +8,7 @@ import { STUDIO_ROOT } from './config.js';
 import { MANIFEST_FILE } from './manifest.js';
 import { baseScenarios, describeStep, readScenarios } from '../observer/scenario.js';
 import { VersionError, copyTree } from './versions.js';
-import { responseSchema, systemPrompt } from './product-ai/claude-code.js';
+import { extractPrompt, extractSchema, phrasePrompt, phraseSchema } from './product-ai/claude-code.js';
 import { formatValue } from './product-ai/definition.js';
 import { findPersonalData, findSecrets, redact, redactDeep } from './redact.js';
 import { BusyError } from './store.js';
@@ -518,8 +518,8 @@ function renderReadme(h) {
       `- 名前: ${oneLine(ai.name)}`,
       `- 書き出したときの接続: ${ai.connection.label}${ai.connection.real ? '(実際の AI モデル)' : '(実際の AI モデルではない)'}`,
       '- 設定: `app/ai.json`',
-      '- 実モデルに渡す指示の全文: `ai/system-prompt.md`(ai.json の instructions に、Studio の決まりを足したもの)',
-      '- 応答の形(JSON スキーマ): `ai/response-schema.json`',
+      '- 実モデルに渡す指示の全文: `ai/system-prompt.md`(抽出の指示と、言い方の指示。言い方は ai.json の instructions に Studio の決まりを足したもの)',
+      '- 応答の形(JSON スキーマ): `ai/response-schema.json`(extract は抽出の形、phrase は言い方の形 `{reply}`)',
       '',
       '覚える項目:',
       '',
@@ -781,8 +781,15 @@ export class ProjectHandoffs {
         ['handoff.json', `${JSON.stringify(manifest, null, 2)}\n`],
         ...(definition
           ? [
-              ['ai/system-prompt.md', `${systemPrompt(definition)}\n`],
-              ['ai/response-schema.json', `${JSON.stringify(responseSchema(definition), null, 2)}\n`],
+              // 実モデルは抽出と言い方の 2 種の呼び出しで動く。それぞれの指示と応答の形を書く
+              [
+                'ai/system-prompt.md',
+                `# 抽出の指示\n\n${extractPrompt(definition)}\n\n# 言い方の指示\n\n${phrasePrompt(definition)}\n`,
+              ],
+              [
+                'ai/response-schema.json',
+                `${JSON.stringify({ extract: extractSchema(definition), phrase: phraseSchema() }, null, 2)}\n`,
+              ],
             ]
           : []),
       ];

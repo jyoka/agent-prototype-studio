@@ -3,21 +3,26 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { redact } from '../redact.js';
-import { formatValue } from './definition.js';
+import { INTENTS, formatValue } from './definition.js';
 
 // プロダクト内 AI を、利用者が入れた Claude Code(未改変の CLI)で動かす接続(#276)。
 // 認証は CLI に任せる。ツールは資格情報を読まない、保存しない、渡さない。環境変数は利用者のものをそのまま渡す。
 // 会話は Studio が持ち、毎回すべてを渡す(--no-session-persistence)。CLI の会話の再開(--resume)は使わない。
+// 1 ターンは harness の 2 つの口(抽出と言い方)に合わせた 2 種の呼び出しにする(jyoka/tasks#308)。
 
 export const CLAUDE_CODE_LIMITS = {
   timeoutMs: 90_000,
   maxOutputBytes: 1024 * 1024,
   maxStderrBytes: 16 * 1024,
-  // 1 回の応答の費用の上限(--max-budget-usd)。ログインが Console のアカウントだと、API キーがなくても従量課金になるので、いつも付ける
+  // 1 回の呼び出しの費用の上限(--max-budget-usd)。ログインが Console のアカウントだと、API キーがなくても従量課金になるので、いつも付ける。
+  // 1 回の発言(ターン)では、抽出と言い方で多くて 4 回呼ぶ(limits.js の CALL_LIMITS.perTurn)
   maxBudgetUsd: 0.1,
   // 止めるときの段階: SIGINT、待って SIGTERM、待ってプロセスグループごと SIGKILL
   stopGraceMs: 1500,
 };
+
+// 出力の形が壊れていたときに、同じ呼び出しを試す回数(1 回やり直す)。1 ターンの呼び出しの上限は limits.js の CALL_LIMITS
+const ATTEMPTS = 2;
 
 export class ConnectionError extends Error {
   constructor(code, message) {
@@ -29,6 +34,12 @@ export class ConnectionError extends Error {
 // 送り先と課金を変える環境変数。値は読まず、あるかだけを見る
 const PROVIDER_ENV = ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'];
 
+// 費用の上限の説明。--max-budget-usd は 1 回の呼び出しごとに効く。1 回の発言では、2 種の呼び出しをそれぞれ多くて ATTEMPTS 回
+const budgetText = () => {
+  const calls = ATTEMPTS * CALL_KINDS.length;
+  return `1 回の呼び出しの上限は $${CLAUDE_CODE_LIMITS.maxBudgetUsd} です(--max-budget-usd)。1 回の発言で多くて ${calls} 回呼ぶので、1 回の発言では多くて $${(CLAUDE_CODE_LIMITS.maxBudgetUsd * calls).toFixed(1)} です。`;
+};
+
 // 実行の前に画面に出す。ANTHROPIC_API_KEY があると、CLI は API の従量課金で動く(#270)
 export function billingOf(env) {
   const providers = PROVIDER_ENV.filter((name) => env[name]);
@@ -36,7 +47,7 @@ export function billingOf(env) {
     return {
       kind: 'other',
       label: '環境変数で指定された提供元の課金',
-      text: `環境変数 ${providers.join('、')} があるので、送り先と課金はその設定に従います。1 回の応答の上限は $${CLAUDE_CODE_LIMITS.maxBudgetUsd} です(--max-budget-usd)。`,
+      text: `環境変数 ${providers.join('、')} があるので、送り先と課金はその設定に従います。${budgetText()}`,
       providers,
     };
   }
@@ -44,14 +55,14 @@ export function billingOf(env) {
     return {
       kind: 'api-key',
       label: 'API の従量課金',
-      text: `環境変数 ANTHROPIC_API_KEY があるので、API キーの持ち主に従量で課金されます。1 回の応答の上限は $${CLAUDE_CODE_LIMITS.maxBudgetUsd} です(--max-budget-usd)。`,
+      text: `環境変数 ANTHROPIC_API_KEY があるので、API キーの持ち主に従量で課金されます。${budgetText()}`,
     };
   }
   // ログインの種類は Studio からは分からない(資格情報を読まないため)。分からないことを、そのまま出す
   return {
     kind: 'subscription',
     label: 'Claude Code にログインしているアカウント',
-    text: `ANTHROPIC_API_KEY がないので、Claude Code にログインしている本人のアカウントで動きます。Pro や Max のサブスクリプションなら、その枠を使います。枠の量は公開されておらず、事前に見積もれません。Console のアカウントでログインしているときは、API の従量課金になります。どちらかは Studio からは分かりません。1 回の応答の上限として $${CLAUDE_CODE_LIMITS.maxBudgetUsd} を Claude Code に渡します(--max-budget-usd)。`,
+    text: `ANTHROPIC_API_KEY がないので、Claude Code にログインしている本人のアカウントで動きます。Pro や Max のサブスクリプションなら、その枠を使います。枠の量は公開されておらず、事前に見積もれません。Console のアカウントでログインしているときは、API の従量課金になります。どちらかは Studio からは分かりません。${budgetText()}`,
   };
 }
 
@@ -82,8 +93,16 @@ function isExecutable(file) {
   }
 }
 
-// ai.json の fields から、応答の形(JSON スキーマ)を作る。updates には変わった項目だけを入れさせる
-export function responseSchema(definition) {
+// 接続は harness(harness.js)の 2 つの口を持つ。どちらも 1 回の呼び出しで `claude -p` を 1 回起動する(docs/design/harness.md の 4.4)。
+//   extract … 発言から項目の値と発言の種類を読む。スキーマは全部の項目と intent
+//   phrase  … harness の決定(何を聞くか、何を言うか)を返事の文にする。スキーマは {reply} だけ
+// モデルが返すのは、この 2 つの JSON だけ。何を聞くか、段の遷移、終わるかは harness が決める。
+export const CALL_KINDS = ['extract', 'phrase'];
+
+const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+// 抽出の形(JSON スキーマ)。updates は ai.json の全部の項目、intent は Studio の決めた種類
+export function extractSchema(definition) {
   const properties = {};
   for (const field of definition.fields) {
     if (field.type === 'number') {
@@ -98,10 +117,20 @@ export function responseSchema(definition) {
   return {
     type: 'object',
     properties: {
-      reply: { type: 'string' },
       updates: { type: 'object', properties, additionalProperties: false },
+      intent: { enum: [...INTENTS, null] },
     },
-    required: ['reply', 'updates'],
+    required: ['updates', 'intent'],
+    additionalProperties: false,
+  };
+}
+
+// 言い方の形(JSON スキーマ)。返事の文だけ
+export function phraseSchema() {
+  return {
+    type: 'object',
+    properties: { reply: { type: 'string' } },
+    required: ['reply'],
     additionalProperties: false,
   };
 }
@@ -114,21 +143,54 @@ function describeField(field) {
   return `- ${field.key}(${field.label}): 次のどれか ${field.options.map((option) => `「${option.value}」`).join('、')}`;
 }
 
-// 試作品の作り手が書いた指示(ai.json の instructions)に、Studio の決まりを足す
-export function systemPrompt(definition) {
+const INTENT_MEANINGS = {
+  answer: '項目に答えた',
+  yes: '確かめに「はい」と答えた',
+  no: '確かめに「いいえ」と答えた',
+  clarify: '質問を返した',
+  aside: '関係のない話をした',
+  restart: '最初からやり直したいと言った',
+};
+
+const STUDIO_HEAD = [
+  '# Studio の決まり(Prototype Studio が付け足しています)',
+  'あなたは試作品の中で利用者と話す AI の一部です。データはすべて架空です。実在の人や会社の情報を求めないでください。',
+];
+
+// 抽出の指示。試作品の作り手の instructions(言い方の指示)は渡さない。何を聞くかも決めさせない
+export function extractPrompt(definition) {
   return [
-    definition.instructions || `あなたは「${definition.name}」です。`,
+    `あなたは「${definition.name}」の、発言を読み取る係です。返事の文は書きません。`,
     '',
-    '# Studio の決まり(Prototype Studio が付け足しています)',
-    'あなたは試作品の中で利用者と話す AI です。データはすべて架空です。実在の人や会社の情報を求めないでください。',
-    '会話から、次の項目の値を読み取ってください。',
+    ...STUDIO_HEAD,
+    '<新しい発言> から、次の項目の値を読み取ってください。聞かれていない項目も、発言にあれば読み取ってください。',
     ...definition.fields.map(describeField),
     '利用者が自分で直した項目(「利用者の修正」)は、その値を優先し、勝手に戻さないでください。',
-    '未定の項目があれば、1 つずつ聞いてください。',
-    '応答は JSON だけにしてください。形: {"reply": "利用者への返事", "updates": {"項目の key": 値}}。',
+    '発言の種類(intent)を、次のどれか 1 つにしてください。どれでもなければ null にしてください。',
+    ...INTENTS.map((intent) => `- ${intent}: ${INTENT_MEANINGS[intent]}`),
+    '応答は JSON だけにしてください。形: {"updates": {"項目の key": 値}, "intent": "種類"}。',
     'updates には、今回の発言で新しく分かった項目か、変わった項目だけを入れてください。分からない項目は入れないでください。null は「未定に戻す」です。',
   ].join('\n');
 }
+
+// 言い方の指示。試作品の作り手が書いた instructions(人柄、口調)に、Studio の決まりを足す
+export function phrasePrompt(definition) {
+  return [
+    definition.instructions || `あなたは「${definition.name}」です。`,
+    '',
+    ...STUDIO_HEAD,
+    '何を聞くか、何を言うか、会話を終えるかは Studio が決めて <言うこと> で渡します。あなたは、その中身を利用者への返事の文にするだけです。',
+    '- <言うこと> に「聞く問い」があれば、その文をそのまま返事に入れてください。ほかの項目は聞かないでください。',
+    '- 「まとめる」とあれば、<今の状態> の値を変えずにまとめ、これでよいか確かめてください。',
+    '- 「会話を終える」とあれば、<今の状態> の値でまとめて終えてください。新しく聞かないでください。',
+    '- 利用者がまだ言っていない値を、決まったこととして言わないでください。<今の状態> と発言にない数を作らないでください。',
+    `- 返事は ${definition.rules.maxReplyChars} 文字以内にしてください。`,
+    '応答は JSON だけにしてください。形: {"reply": "利用者への返事"}。',
+  ].join('\n');
+}
+
+export const systemPromptOf = (definition, kind) => (kind === 'phrase' ? phrasePrompt(definition) : extractPrompt(definition));
+const schemaOf = (definition, kind) => (kind === 'phrase' ? phraseSchema() : extractSchema(definition));
 
 function line(message) {
   if (message.role === 'user') return `[利用者] ${message.text}`;
@@ -136,26 +198,51 @@ function line(message) {
   return `[AI] ${message.text}`;
 }
 
-// stdin で渡す本文。会話の全体、今の状態、新しい発言(argv には入れない)
-export function conversationPrompt({ definition, state, messages, text }) {
-  const current = definition.fields.map((field) => `- ${field.key}(${field.label}): ${formatValue(field, state[field.key])}`);
+const conversation = (messages) => ['<これまでの会話>', ...(messages.length > 0 ? messages.map(line) : ['(まだありません)']), '</これまでの会話>'];
+const currentState = (definition, state) => [
+  '<今の状態>',
+  ...definition.fields.map((field) => `- ${field.key}(${field.label}): ${formatValue(field, state[field.key])}`),
+  '</今の状態>',
+];
+const newText = (text) => ['<新しい発言>', text, '</新しい発言>'];
+// やり直しのときだけ付ける。前の出力のどこが壊れていたか
+const retryNote = (problem) => (problem ? ['', '<前の出力の問題>', `前の出力は${problem}ので、使えませんでした。決まった形の JSON だけを返してください。`, '</前の出力の問題>'] : []);
+
+// 抽出の本文(stdin)。会話の全体、今の状態、新しい発言
+export function extractInput({ definition, state, messages, text, problem = null }) {
+  return [...conversation(messages), '', ...currentState(definition, state), '', ...newText(text), ...retryNote(problem)].join('\n');
+}
+
+// 言い方の本文(stdin)。会話の全体、新しい発言、決定の後の状態、決定の中身(何を聞くか、何を言うか)
+export function phraseInput({ definition, decision, state, messages, text = '', problem = null }) {
+  const fieldOf = (key) => definition.fields.find((field) => field.key === key);
+  const shown = (key) => `${fieldOf(key)?.label ?? key}「${formatValue(fieldOf(key), state[key])}」`;
+  const say = [];
+  if (decision.corrected.length > 0) say.push(`- 本人が直した項目(直した内容に合わせると伝える): ${decision.corrected.map(shown).join('、')}`);
+  if (decision.changes.length > 0) say.push(`- 今の発言から読み取った値(理解したと伝える): ${decision.changes.map((change) => shown(change.key)).join('、')}`);
+  else if (decision.corrected.length === 0 && (decision.intent === null || decision.intent === 'answer')) say.push('- 今の発言からは、条件を読み取れなかった(そう伝える)');
+  if (decision.say === 'summary') say.push('- まとめる: 今の状態をまとめ、これでよいか確かめる');
+  if (decision.done) say.push('- 会話を終える: 今の状態でまとめて終える。新しく聞かない');
+  for (const question of decision.mustInclude) say.push(`- 聞く問い(この文をそのまま入れる): ${question}`);
+  if (say.length === 0) say.push('- 発言を受け止める');
   return [
-    '<これまでの会話>',
-    ...(messages.length > 0 ? messages.map(line) : ['(まだありません)']),
-    '</これまでの会話>',
+    ...conversation(messages),
     '',
-    '<今の状態>',
-    ...current,
-    '</今の状態>',
+    ...newText(text),
     '',
-    '<新しい発言>',
-    text,
-    '</新しい発言>',
+    ...currentState(definition, state),
+    '',
+    '<言うこと>',
+    ...say,
+    '</言うこと>',
+    ...retryNote(problem),
   ].join('\n');
 }
 
-// 起動の引数。偽接続でも実接続でも同じにする(ADR-0001)。発言は argv に入れず stdin で渡す
-export function buildArgs(definition) {
+// 起動の引数。偽接続でも実接続でも同じにする(ADR-0001)。発言は argv に入れず stdin で渡す。
+// kind は呼び出しの種類(extract か phrase)。違うのは --json-schema と --system-prompt だけ
+export function buildArgs(definition, kind = 'extract') {
+  if (!CALL_KINDS.includes(kind)) throw new Error(`知らない呼び出しの種類です: ${kind}`);
   const args = [
     '-p',
     '--restricted', // コマンド実行と Web を外し、利用者とプロジェクトの設定ファイルを読まない
@@ -169,8 +256,8 @@ export function buildArgs(definition) {
     '--output-format',
     'json',
     // 値が - で始まってもフラグとして読まれないよう、= でつなぐ
-    `--json-schema=${JSON.stringify(responseSchema(definition))}`,
-    `--system-prompt=${systemPrompt(definition)}`,
+    `--json-schema=${JSON.stringify(schemaOf(definition, kind))}`,
+    `--system-prompt=${systemPromptOf(definition, kind)}`,
     '--max-budget-usd',
     String(CLAUDE_CODE_LIMITS.maxBudgetUsd),
   ];
@@ -199,20 +286,22 @@ function parseJsonObject(text) {
   const body = text.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, '$1');
   try {
     const value = JSON.parse(body);
-    return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : null;
+    return isPlainObject(value) ? value : null;
   } catch {
     return null;
   }
 }
 
-// --output-format json の結果を、{ reply, updates, meta } にする。
+// --output-format json の結果を、{ output, format, meta } にする。CLI の失敗(上限、ログイン、費用、読めない出力)は投げる。
 // 構造化出力(structured_output)を優先し、なければ本文を JSON として読む(代わりの方法)。
+// どちらもなければ output は null(モデルの出力が壊れている。やり直すかは呼ぶ側が決める)
+// format: structured は構造化出力、text-json は本文の JSON、broken は JSON の出力がない
 export function parseResult(stdout) {
   const result = parseJsonObject(stdout);
   if (!result) throw failure(stdout, 'Claude Code の出力を読めませんでした');
   if (result.is_error || (typeof result.subtype === 'string' && result.subtype !== 'success')) {
     if (result.subtype === 'error_max_budget_usd') {
-      throw new ConnectionError('budget', `1 回の応答の費用の上限($${CLAUDE_CODE_LIMITS.maxBudgetUsd})に当たったので止めました`);
+      throw new ConnectionError('budget', `1 回の呼び出しの費用の上限($${CLAUDE_CODE_LIMITS.maxBudgetUsd})に当たったので止めました`);
     }
     throw failure(result.result ?? result.subtype, 'Claude Code がエラーを返しました');
   }
@@ -220,22 +309,24 @@ export function parseResult(stdout) {
     costUsd: Number.isFinite(result.total_cost_usd) ? result.total_cost_usd : null,
     durationMs: Number.isFinite(result.duration_ms) ? result.duration_ms : null,
   };
-  // format: どの形で読んだか(実行の記録に出す)。structured は構造化出力、text-json は本文の JSON、text は本文だけ
-  let output = result.structured_output;
-  let format = 'structured';
-  if (output === null || typeof output !== 'object' || Array.isArray(output)) {
-    output = parseJsonObject(result.result);
-    format = 'text-json';
-  }
-  if (output && typeof output.reply === 'string') {
-    const updates = output.updates !== null && typeof output.updates === 'object' && !Array.isArray(output.updates) ? output.updates : {};
-    return { reply: output.reply, updates, meta: { ...meta, structured: format === 'structured', format } };
-  }
-  // JSON で返さなかったときは、本文を返事として使い、状態は変えない
-  if (typeof result.result === 'string' && result.result.trim()) {
-    return { reply: result.result.trim(), updates: {}, meta: { ...meta, structured: false, format: 'text' } };
-  }
-  throw new ConnectionError('failed', 'Claude Code の応答が空でした');
+  if (isPlainObject(result.structured_output)) return { output: result.structured_output, format: 'structured', meta };
+  const output = parseJsonObject(result.result);
+  if (output) return { output, format: 'text-json', meta };
+  return { output: null, format: 'broken', meta };
+}
+
+// 出力の形の検査。壊れていれば理由を返す。値が項目の決まりに合うかは harness が確かめる(checkExtraction)
+export function extractionProblem(output) {
+  if (!output) return 'JSON の出力がなかった';
+  if (!isPlainObject(output.updates)) return 'updates が { 項目の key: 値 } の形でなかった';
+  if (output.intent !== undefined && output.intent !== null && typeof output.intent !== 'string') return 'intent が文字列でなかった';
+  return null;
+}
+
+export function replyProblem(output) {
+  if (!output) return 'JSON の出力がなかった';
+  if (typeof output.reply !== 'string' || output.reply.trim() === '') return 'reply が空か、文でなかった';
+  return null;
 }
 
 function signalTree(child, name) {
@@ -260,7 +351,7 @@ export function shownArgs(args) {
   });
 }
 
-// 1 回の応答のために CLI を起動し、終わるか、止めるか、時間切れまで待つ
+// 1 回の呼び出しのために CLI を起動し、終わるか、止めるか、時間切れまで待つ
 // running には、動いている CLI を止める関数と、終わりを待つ Promise を入れる(Studio を止めるとき用)
 function run({ bin, args, input, cwd, env, signal, limits, running }) {
   let entry;
@@ -372,7 +463,7 @@ export function createClaudeCodeConnection({ env = process.env, allowed = false,
   return {
     kind: 'claude-code',
     label: 'Claude Code',
-    description: '利用者が入れた Claude Code を、本人のログインで動かします。発言のたびに実際の AI モデルを呼びます。',
+    description: '利用者が入れた Claude Code を、本人のログインで動かします。発言のたびに実際の AI モデルを呼びます(抽出と言い方で、1 回の発言に 1 回から 4 回)。',
     billing,
     tools: 'Claude Code にはツールを渡していません(--tools "")。ファイル、コマンド、Web は使えません。',
     // 選べるか。選べないときは、理由と次の手順を返す
@@ -402,36 +493,83 @@ export function createClaudeCodeConnection({ env = process.env, allowed = false,
           `試作品の AI の指示(app/ai.json の instructions、${definition.instructions.length} 文字)と、Studio が付け足す決まり`,
           `覚える項目と選択肢(${definition.fields.length} 項目)`,
           'この試作品で話した会話の全体(モックとの会話、あなたの修正の記録も含む)と、今の状態',
-          '新しく送る発言',
+          '新しく送る発言と、Studio が決めた次に聞くこと・言うこと',
         ],
         notSent: 'app/ の他のファイル、他の試作品、PC のファイルは送りません。Claude Code にはツールを渡しません。',
-        systemPrompt: systemPrompt(definition),
+        systemPrompt: `【抽出の指示】\n${extractPrompt(definition)}\n\n【言い方の指示】\n${phrasePrompt(definition)}`,
       };
     },
-    // 実行の記録に出す。この接続が CLI に渡すもの(送る前に作る。失敗しても見られるように)
+    // 実行の記録に出す。抽出の呼び出しで CLI に渡すもの(送る前に作る。失敗しても見られるように)と、言い方の起動の形と指示
     describe({ definition, state, messages, text }) {
       return {
         to: this.sends(definition).to,
         tools: this.tools,
-        command: [path.basename(binName), ...shownArgs(buildArgs(definition))],
-        systemPrompt: systemPrompt(definition),
-        stdin: conversationPrompt({ definition, state, messages, text }),
+        command: [path.basename(binName), ...shownArgs(buildArgs(definition, 'extract'))],
+        systemPrompt: extractPrompt(definition),
+        stdin: extractInput({ definition, state, messages, text }),
+        phrase: {
+          command: [path.basename(binName), ...shownArgs(buildArgs(definition, 'phrase'))],
+          systemPrompt: phrasePrompt(definition),
+        },
       };
     },
-    async respond({ definition, state, messages, text, signal }) {
+    // 言い方の呼び出しで渡す本文。harness が送る前に記録に残す
+    describePhrase(input) {
+      return { stdin: phraseInput(input) };
+    },
+    // CLI を 1 回起動する。起動する前に上限を数え(meter。上限なら投げてモデルを呼ばない)、待ち時間と結果を残す
+    async call(kind, { definition, input, signal, meter }) {
       const bin = findExecutable(binName, env);
       if (!bin) throw new ConnectionError('not-found', this.availability().reason);
+      // 止められた後と、作業フォルダーを作れないときは、数えずに終える
+      if (signal?.aborted) throw new ConnectionError('cancelled', '応答を止めました');
       if (!workDir || !fs.existsSync(workDir)) workDir = emptyWorkDir();
-      return run({
-        bin,
-        args: buildArgs(definition),
-        input: conversationPrompt({ definition, state, messages, text }),
-        cwd: workDir,
-        env,
+      const metered = meter?.start(kind);
+      try {
+        const parsed = await run({ bin, args: buildArgs(definition, kind), input, cwd: workDir, env, signal, limits, running });
+        return { ...parsed, metered };
+      } catch (error) {
+        metered?.end({ error: error.code ?? 'failed' });
+        throw error;
+      }
+    },
+    // 出力の形が壊れていたら 1 回やり直す。2 回とも壊れていたら fallback に理由を入れて返す(代わりの値は呼ぶ側が決める)
+    async attempts(kind, { definition, signal, meter, inputOf, problemOf }) {
+      const problems = [];
+      for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+        const { output, format, meta, metered } = await this.call(kind, { definition, input: inputOf(problems.at(-1) ?? null), signal, meter });
+        const problem = problemOf(output);
+        metered?.end({ ...meta, format: problem ? 'broken' : format, problem });
+        const retry = problems.length > 0 ? `1 回目の出力は${problems[0]}ので、やり直した` : null;
+        if (!problem) return { output, retry };
+        problems.push(problem);
+        if (signal?.aborted) throw new ConnectionError('cancelled', '応答を止めました');
+      }
+      return { output: null, retry: `1 回目の出力は${problems[0]}ので、やり直した`, fallback: `2 回とも出力が壊れていた(${problems.join('、')})` };
+    },
+    // 抽出。2 回とも壊れていたら「変更なし」で返す
+    async extract({ definition, state, messages, text, signal, meter }) {
+      const { output, retry, fallback } = await this.attempts('extract', {
+        definition,
         signal,
-        limits,
-        running,
+        meter,
+        inputOf: (problem) => extractInput({ definition, state, messages, text, problem }),
+        problemOf: extractionProblem,
       });
+      if (!output) return { updates: {}, intent: null, retry, fallback: `${fallback}ので、変更なしにした` };
+      return { updates: output.updates, intent: output.intent ?? null, ...(retry ? { retry } : {}) };
+    },
+    // 言い方。2 回とも壊れていたら reply を null で返す。harness がモックの言い方の型で返事を作る
+    async phrase({ definition, decision, state, messages, text, signal, meter }) {
+      const { output, retry, fallback } = await this.attempts('phrase', {
+        definition,
+        signal,
+        meter,
+        inputOf: (problem) => phraseInput({ definition, decision, state, messages, text, problem }),
+        problemOf: replyProblem,
+      });
+      if (!output) return { reply: null, retry, fallback };
+      return { reply: output.reply, ...(retry ? { retry } : {}) };
     },
     // 動いている CLI を止め、終わるまで待ってから作業フォルダーを消す。待つのは SIGKILL の後まで
     async close() {

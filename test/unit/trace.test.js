@@ -198,11 +198,17 @@ test('Claude Code(偽)に渡したもの、受け取ったもの、切り替え�
   assert.equal(reply.input.command[0], 'fake-claude.js');
   assert.ok(reply.input.command.includes('--restricted'));
   assert.ok(reply.input.command.some((arg) => /^--system-prompt=…\(\d+ 文字\)$/.test(arg)));
-  assert.match(reply.input.systemPrompt, /架空の旅行会社の案内役です。/);
+  // 抽出の指示は項目を、言い方の指示は作り手の instructions を持つ
+  assert.match(reply.input.systemPrompt, /nights\(泊数\)/);
+  assert.match(reply.input.phrase.systemPrompt, /架空の旅行会社の案内役です。/);
+  assert.ok(reply.input.phrase.command.includes('--restricted'));
   assert.match(reply.input.stdin, /<新しい発言>\n山の村で2泊\n<\/新しい発言>/);
+  assert.match(reply.harness.phrase.stdin, /<言うこと>\n- 今の発言から読み取った値/);
   assert.equal(reply.output.format, 'structured');
-  assert.equal(reply.output.costUsd, 0.0012);
-  assert.equal(reply.output.durationMs, 5);
+  // 抽出と言い方の 2 回の合計
+  assert.equal(reply.output.costUsd, 0.0024);
+  assert.equal(reply.output.durationMs, 10);
+  assert.deepEqual([reply.calls.count, reply.calls.extract, reply.calls.phrase], [2, 1, 1]);
   assert.deepEqual(reply.changes.map((c) => c.to), ['山の村', '2泊']);
 
   assert.equal(keyError.status, 'failed');

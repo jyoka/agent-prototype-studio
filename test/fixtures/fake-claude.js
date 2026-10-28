@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // 偽の Claude Code。実モデルは呼ばない。STUDIO_CLAUDE_BIN でこのファイルを指すと、Studio はこれを起動する。
 // 本物と同じ `-p --output-format json --json-schema …` の結果を出す。発言の中の合図で、失敗と遅延を再現する。
+// 呼び出しは 2 種(jyoka/tasks#308)。--json-schema に updates があれば抽出({updates, intent})、reply があれば言い方({reply})を返す。
 //   [遅い]   止められるまで応答しない(中断と時間切れ)
 //   [しぶとい] [遅い] に加えて SIGINT を無視する(SIGTERM、SIGKILL まで段階を進めるか)
 //   [少し遅い] 1.5 秒待ってから応答する(待つ間の画面の操作)
@@ -9,6 +10,9 @@
 //   [文だけ] 構造化出力を出さず、本文に JSON を書く(代わりの方法)
 //   [鍵を出す] API キーらしい文字列を含むエラーを出して終了コード 1 で止まる(画面と記録で伏せるか)
 //   [範囲外] 項目の決まりに合わない値と、ない項目を返す(状態に入れないか)
+//   [抽出が壊れる] [言い方が壊れる]       その呼び出しで、いつも形の合わない出力を返す(やり直しと代わりの値)
+//   [抽出が一度壊れる] [言い方が一度壊れる] やり直し(stdin の <前の出力の問題>)でなければ、形の合わない出力を返す
+// FAKE_CLAUDE_EXTRACTIONS があれば、そのファイル(JSON の { 発言: { updates, intent } })に書いた抽出を返す(モックと同じ抽出を返すため)。
 // FAKE_CLAUDE_LOG があれば、受け取った argv、cwd、stdin、関係する環境変数の「名前」を 1 行ずつ書く(値は書かない)。
 import fs from 'node:fs';
 
@@ -69,8 +73,26 @@ function main() {
 }
 
 function answer(text) {
-  // 本物のモデルの代わりに、スキーマの選択肢と数の範囲だけで値を読み取る
   const schema = JSON.parse(option('--json-schema'));
+  const kind = schema.properties.reply ? 'phrase' : 'extract';
+  const retrying = stdin.includes('<前の出力の問題>');
+  const label = kind === 'phrase' ? '言い方' : '抽出';
+  let output = kind === 'phrase' ? phrase(text) : extract(schema, text);
+  if (text.includes(`[${label}が壊れる]`) || (text.includes(`[${label}が一度壊れる]`) && !retrying)) {
+    output = kind === 'phrase' ? { reply: '' } : { intent: 'answer' };
+  }
+  const result = { type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0.0012 };
+  if (text.includes('[文だけ]')) result.result = JSON.stringify(output);
+  else Object.assign(result, { result: '', structured_output: output });
+  process.stdout.write(JSON.stringify(result));
+}
+
+function extract(schema, text) {
+  if (process.env.FAKE_CLAUDE_EXTRACTIONS) {
+    const given = JSON.parse(fs.readFileSync(process.env.FAKE_CLAUDE_EXTRACTIONS, 'utf8'));
+    if (Object.hasOwn(given, text)) return given[text];
+  }
+  // 本物のモデルの代わりに、スキーマの選択肢と数の範囲だけで値を読み取る
   const updates = {};
   for (const [key, property] of Object.entries(schema.properties.updates.properties)) {
     if (property.enum) {
@@ -88,12 +110,11 @@ function answer(text) {
     }
     updates.unknownField = 'x';
   }
+  return { updates, intent: Object.keys(updates).length > 0 ? 'answer' : null };
+}
+
+function phrase(text) {
   const history = section('これまでの会話').split('\n').filter((line) => line.startsWith('['));
   const corrections = history.filter((line) => line.startsWith('[利用者の修正]')).length;
-  const reply = `偽の Claude Code です。これまでの会話 ${history.length} 件(修正 ${corrections} 件)を受け取りました。「${text}」への返事です。`;
-  const output = { reply, updates };
-  const result = { type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0.0012 };
-  if (text.includes('[文だけ]')) result.result = JSON.stringify(output);
-  else Object.assign(result, { result: '', structured_output: output });
-  process.stdout.write(JSON.stringify(result));
+  return { reply: `偽の Claude Code です。これまでの会話 ${history.length} 件(修正 ${corrections} 件)を受け取りました。「${text}」への返事です。` };
 }

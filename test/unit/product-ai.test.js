@@ -5,7 +5,9 @@ import path from 'node:path';
 import test from 'node:test';
 import { buildApp } from '../../src/server/build.js';
 import { STUDIO_ROOT } from '../../src/server/config.js';
+import { createClaudeCodeConnection } from '../../src/server/product-ai/claude-code.js';
 import { DEFAULT_RULES, describeDefinitionChanges, parseAiDefinition } from '../../src/server/product-ai/definition.js';
+import { CALL_LIMITS, ProjectCallWindow, createTurnMeter } from '../../src/server/product-ai/limits.js';
 import { createMockConnection, extractUpdates, mockExtract } from '../../src/server/product-ai/mock.js';
 import { AiSessions, SESSION_LIMITS } from '../../src/server/product-ai/session.js';
 
@@ -674,4 +676,123 @@ test('学習相談のサンプル(#281)の設定は検査に通り、README の�
   // 「1日」の 1 は単位(分)が続かないので読まない。単位の換算はしない
   assert.deepEqual(extractUpdates(definition, '1日30分くらい'), { minutes: 30 });
   assert.deepEqual(extractUpdates(definition, '1時間くらい'), {});
+});
+
+// 費用のかかる接続(テスト用)。Claude Code の接続と同じく、呼ぶ前に meter で数える。made は実際に「呼んだ」回数
+function paidConnection() {
+  const made = [];
+  const call = (kind, meter) => {
+    meter?.start(kind).end({ costUsd: 0.001 });
+    made.push(kind);
+  };
+  return {
+    made,
+    kind: 'paid',
+    label: '有料の接続(テスト用)',
+    billing: { kind: 'test' },
+    async extract({ definition, text, meter }) {
+      // [やり直しすぎ] 決まりより多くやり直そうとする接続。3 回目は meter が止める
+      for (let i = 0; i < (text.includes('[やり直しすぎ]') ? 3 : 1); i += 1) call('extract', meter);
+      return mockExtract({ definition, text });
+    },
+    async phrase({ meter }) {
+      call('phrase', meter);
+      return { reply: '有料の返事' };
+    },
+  };
+}
+
+test('実モデルの呼び出しの 3 つの上限(会話の有料のターン 30、1 ターン 4 回、プロジェクトごとに 1 時間 120 回)。観察の会話もプロジェクトに数える', async () => {
+  assert.equal(SESSION_LIMITS.maxPaidReplies, 30);
+  assert.deepEqual(CALL_LIMITS.perTurn, { extract: 2, phrase: 2 });
+  assert.equal(CALL_LIMITS.perProject, 120);
+  assert.equal(CALL_LIMITS.windowMs, 60 * 60 * 1000);
+
+  let now = Date.parse('2026-10-28T09:00:00Z');
+  const projectCalls = new ProjectCallWindow({ now: () => now });
+  const connection = paidConnection();
+  const sessions = new AiSessions({ definitionOf: () => travel(), connections: [createMockConnection(), connection], projectCalls });
+  sessions.select('p', 'paid', { confirmed: true });
+
+  // 1 ターン: 呼び出しの回数と待ち時間が記録の 1 件に残る
+  await sessions.send('p', '湖に行きたい');
+  const [first] = sessions.trace('p').entries;
+  assert.deepEqual([first.calls.count, first.calls.extract, first.calls.phrase], [2, 1, 1]);
+  assert.ok(first.calls.calls.every((c) => Number.isFinite(c.waitMs)));
+  assert.equal(projectCalls.count('p'), 2);
+
+  // 1 ターン 4 回(抽出 2、言い方 2)。3 回目の抽出は呼ばずに止め、理由を返す
+  const before = connection.made.length;
+  await assert.rejects(sessions.send('p', '[やり直しすぎ]'), { status: 429, code: 'turn-limit', message: /1 ターンで実際の AI モデルを呼べるのは 4 回まで\(抽出 2 回、言い方 2 回\)/ });
+  assert.deepEqual(connection.made.slice(before), ['extract', 'extract']);
+  const [turnLimited] = sessions.trace('p').entries;
+  assert.equal(turnLimited.status, 'failed');
+  assert.match(turnLimited.error.next, /もう一度送ってください/);
+  assert.equal(turnLimited.calls.extract, 2);
+
+  // 会話の有料のターンは 30 まで(リセットで数え直す)
+  const session = sessions.session('p');
+  const paid = session.messages.filter((m) => m.via === 'paid').length;
+  for (let i = paid; i < SESSION_LIMITS.maxPaidReplies; i += 1) session.messages.push({ role: 'user', text: 'x' }, { role: 'assistant', text: 'y', via: 'paid' });
+  const counted = connection.made.length;
+  await assert.rejects(sessions.send('p', '山'), { code: 'paid-limit', message: /30 回まで/ });
+  assert.equal(connection.made.length, counted);
+  sessions.reset('p');
+
+  // プロジェクトごとに 1 時間 120 回。観察の会話も同じプロジェクトに数える。
+  // 実モデルでの観察は同意の画面(P24)の後なので、ここでは観察に有料の接続を使えるようにして数え方だけを確かめる
+  sessions.observationConnection = (kind) => sessions.connections.get(kind);
+  while (projectCalls.count('p') < CALL_LIMITS.perProject - 4) projectCalls.take('p');
+  const observation = sessions.openObservation('p', { connection: 'paid' });
+  await sessions.send('p', '湖の町', { conversation: observation });
+  assert.equal(projectCalls.count('p'), CALL_LIMITS.perProject - 3);
+  await sessions.send('p', '山の村で2泊');
+  assert.equal(projectCalls.count('p'), CALL_LIMITS.perProject - 1);
+  const madeBefore = connection.made.length;
+  // 残りが 1 回で、抽出と言い方の 2 回に足りないので、抽出も呼ばずに止める(抽出だけ呼んで捨てない)
+  await assert.rejects(sessions.send('p', '湖に変えたい'), { status: 429, code: 'project-limit', message: /観察も含めて 60 分に 120 回まで/ });
+  assert.deepEqual(connection.made.slice(madeBefore), []);
+  assert.equal(projectCalls.count('p'), CALL_LIMITS.perProject - 1);
+  // 新しい観察の会話を作っても、会話をリセットしても、数え直さない
+  sessions.closeObservation('p', observation);
+  const next = sessions.openObservation('p', { connection: 'paid' });
+  await assert.rejects(sessions.send('p', '湖', { conversation: next }), { code: 'project-limit' });
+  sessions.reset('p');
+  await assert.rejects(sessions.send('p', '湖'), { code: 'project-limit' });
+  assert.equal(connection.made.length, madeBefore);
+  const [limited] = sessions.trace('p').entries;
+  assert.equal(limited.error.code, 'project-limit');
+  assert.match(limited.error.next, /時間をおいてから送るか/);
+  assert.equal(limited.calls.count, 0);
+  // 1 回も呼ばずに止めたので、渡すはずだったものは送っていない
+  assert.equal(limited.input.notSent, true);
+  assert.equal(turnLimited.input.notSent, undefined);
+  // ほかのプロジェクトは別に数える。モックは数えない
+  sessions.select('q', 'paid', { confirmed: true });
+  await sessions.send('q', '湖');
+  sessions.select('p', 'mock');
+  await sessions.send('p', '湖');
+  // 1 時間たてば、また呼べる
+  now += CALL_LIMITS.windowMs;
+  sessions.select('p', 'paid', { confirmed: true });
+  assert.equal((await sessions.send('p', '山')).messages.at(-1).text, '有料の返事');
+});
+
+test('Claude Code の接続は、上限に当たると CLI を起動せずに止める', async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-limits-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const log = path.join(dir, 'calls.jsonl');
+  const env = { PATH: process.env.PATH, STUDIO_CLAUDE_BIN: path.join(STUDIO_ROOT, 'test', 'fixtures', 'fake-claude.js'), FAKE_CLAUDE_LOG: log };
+  const connection = createClaudeCodeConnection({ env, allowed: true });
+  t.after(() => connection.close());
+  const input = { definition: travel(), state: {}, messages: [], text: '湖' };
+
+  const turn = createTurnMeter();
+  turn.start('extract');
+  turn.start('extract');
+  await assert.rejects(connection.extract({ ...input, meter: turn }), { code: 'turn-limit' });
+  const window = new ProjectCallWindow({ limit: 1 });
+  window.take('p');
+  await assert.rejects(connection.extract({ ...input, meter: createTurnMeter({ take: () => window.take('p') }) }), { code: 'project-limit' });
+  assert.equal(await fs.readFile(log, 'utf8').catch(() => ''), '');
 });
