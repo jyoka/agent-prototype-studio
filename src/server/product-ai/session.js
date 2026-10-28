@@ -2,12 +2,14 @@ import { redact, redactDeep } from '../redact.js';
 import { ConnectionError } from './claude-code.js';
 import { formatValue, normalizeValue } from './definition.js';
 import { checkProgress, shownValue, startProgress, turn } from './harness.js';
+import { CALL_LIMITS, ProjectCallWindow, createTurnMeter } from './limits.js';
 import { createMockConnection } from './mock.js';
 
 export const SESSION_LIMITS = {
   maxTextLength: 500,
   maxMessages: 200,
-  // 費用のかかる接続(Claude Code)の応答は、1 つの会話でこの回数まで。試作品のコードが勝手に送り続けても止まる
+  // 費用のかかる接続(Claude Code)の応答(有料のターン)は、1 つの会話でこの回数まで。試作品のコードが勝手に送り続けても止まる。
+  // 1 ターンの呼び出しと、プロジェクトごとの 1 時間の呼び出しの上限は limits.js の CALL_LIMITS
   maxPaidReplies: 30,
   // 実行の記録は、試作品ごとに新しい方からこの件数まで。AI に渡した本文は、この文字数まで残す。
   // 観察の会話の記録は、利用者の会話の記録とは別に数える(観察で利用者の記録を押し出さない)
@@ -114,6 +116,8 @@ const NEXT_ACTIONS = {
   auth: 'ターミナルで claude を起動し、ログインしてから、もう一度送ってください。Studio はログインの情報を扱いません。',
   'not-found': 'Claude Code を入れてください。別の場所にあるときは、STUDIO_CLAUDE_BIN にその場所を書いて Studio を起動し直してください。',
   'paid-limit': '「リセット」で会話を最初からやり直すか、右の「接続を選ぶ」でモックに戻してください。',
+  'turn-limit': 'もう一度送ってください。続くときは、右の「接続を選ぶ」でモックに戻して試し、この記録を開発の担当者に見せてください。',
+  'project-limit': '時間をおいてから送るか、右の「接続を選ぶ」でモックに戻してください。会話はそのままです。',
   'too-long': '「リセット」で会話を最初からやり直してください。',
   busy: '前の応答が届くまで待ってください。急ぐときは、右の「応答を止める」を押してください。',
   'reply:invalid': `空でない、${SESSION_LIMITS.maxTextLength} 文字までの文を送ってください。`,
@@ -137,6 +141,7 @@ const isPlainObject = (value) => value !== null && typeof value === 'object' && 
 function clipStages(stages) {
   const clipped = structuredClone(stages);
   if (clipped.extract?.output) clipped.extract.output.updates = clip(JSON.stringify(clipped.extract.output.updates));
+  if (clipped.phrase?.stdin) clipped.phrase.stdin = clip(clipped.phrase.stdin);
   return clipped;
 }
 
@@ -151,6 +156,8 @@ const CONNECTION_ERRORS = {
   timeout: [504, 'timeout'],
   auth: [502, 'auth'],
   'not-found': [502, 'not-found'],
+  'turn-limit': [429, 'turn-limit'],
+  'project-limit': [429, 'project-limit'],
 };
 
 // プロダクト内 AI の会話と状態を、プロジェクトごとにサーバーで持つ(ADR-0001 の「試す」)。
@@ -162,7 +169,7 @@ const CONNECTION_ERRORS = {
 // 作業中の会話はメモリーにだけ置く。Studio を止めると消える。残すときは版として保存する(versions.js)。
 // 設定が変わって会話が最初に戻ったら、前の会話を 1 つ覚えておき、同じ発言と修正を新しい設定で送り直せる(試し直す、#279)。
 export class AiSessions {
-  constructor({ definitionOf, connections = [createMockConnection()] }) {
+  constructor({ definitionOf, connections = [createMockConnection()], projectCalls = new ProjectCallWindow() }) {
     this.definitionOf = definitionOf;
     this.connections = new Map(connections.map((connection) => [connection.kind, connection]));
     this.defaultKind = connections[0].kind;
@@ -178,6 +185,8 @@ export class AiSessions {
     // 実行の記録(#277)。試作品ごとに、リセットしても残す。メモリーにだけ置き、Studio を止めると消える
     this.traces = new Map();
     this.traceSeq = 0;
+    // 実モデルの呼び出しの時刻。プロジェクトごとに、観察の会話も含めて数える(CALL_LIMITS.perProject)
+    this.projectCalls = projectCalls;
   }
 
   // 記録に足す。秘密らしい文字列と、要らない個人のデータは、ここで伏せてから残す
@@ -217,8 +226,8 @@ export class AiSessions {
     entry.error = { code, message: redact(String(error?.message ?? error)), next: nextAction(code, type) };
     // API の応答(試作品からの知らせ)にも、記録と同じ次にすることを付ける
     if (error instanceof AiError) error.nextText = entry.error.next;
-    // 起動できなかったときは、渡すはずだったものを、送っていないと記録する
-    if (code === 'not-found' && entry.input) entry.input.notSent = true;
+    // 起動できなかったとき、上限などで 1 回も呼ばずに止めたときは、渡すはずだったものを、送っていないと記録する
+    if (entry.input && (code === 'not-found' || entry.calls?.count === 0)) entry.input.notSent = true;
   }
 
   // 終わった観察の会話には書かない(利用者の記録に、印のない記録を残さないため)
@@ -602,6 +611,7 @@ export class AiSessions {
       ...described,
       systemPrompt: clip(described.systemPrompt),
       stdin: clip(described.stdin),
+      ...(described.phrase ? { phrase: { ...described.phrase, systemPrompt: clip(described.phrase.systemPrompt) } } : {}),
       history: input.messages.length,
       state: this.describeState(session),
     });
@@ -610,9 +620,13 @@ export class AiSessions {
     const started = Date.now();
     // 段ごとの中身(抽出、決定、言い方)。失敗しても、そこまでを記録に残す
     const stages = {};
+    // 費用のかかる接続の呼び出しを数える。1 ターンの上限と、プロジェクトごとの上限(観察の会話も同じ projectId で数える)。
+    // プロジェクトの残りが抽出と言い方の 2 回に足りなければ、呼ぶ前に止める(抽出だけ呼んで捨てないため)
+    const meter = connection.billing ? createTurnMeter({ perTurn: CALL_LIMITS.perTurn, take: () => this.projectCalls.take(projectId) }) : null;
     let result;
     try {
-      result = await turn({ connection, ...input, progress: { ...session.progress }, signal: session.controller.signal, trace: stages });
+      if (meter) this.projectCalls.ensure(projectId, 2);
+      result = await turn({ connection, ...input, progress: { ...session.progress }, signal: session.controller.signal, meter, trace: stages });
     } catch (error) {
       // 応答を待つ間にリセットや設定の切り替えがあったら、そちらを伝える
       if (this.sessions.get(slot) !== session) throw new AiError(409, 'reset', '応答を待つ間に会話が最初に戻りました');
@@ -625,6 +639,8 @@ export class AiSessions {
       session.busy = false;
       session.controller = null;
       entry.harness = redactDeep(clipStages(stages));
+      // 呼び出しの回数と待ち時間(jyoka/tasks#314 で速さを測るため)。失敗しても、そこまでの呼び出しを残す
+      if (meter) entry.calls = meter.summary();
     }
     // 応答を待つ間にリセットや設定の切り替えがあったら、古い会話に書き足さない
     if (this.sessions.get(slot) !== session) throw new AiError(409, 'reset', '応答を待つ間に会話が最初に戻りました');
@@ -637,7 +653,9 @@ export class AiSessions {
     // どの接続が応答したかを残す。切り替えた後も、前の応答がどちらのものか分かる
     // 応答の速さは、利用者が待った時間(CLI の起動を含む)で測る
     const assistant = { role: 'assistant', text: reply, via: connection.kind, elapsedMs: Date.now() - started };
-    if (Number.isFinite(result.meta?.costUsd)) assistant.costUsd = result.meta.costUsd;
+    // CLI の報告。実モデルの接続は、このターンの呼び出しの合計
+    const meta = entry.calls ?? result.meta ?? {};
+    if (Number.isFinite(meta.costUsd)) assistant.costUsd = meta.costUsd;
     session.messages.push({ role: 'user', text: text.trim() }, assistant);
     const updates = isPlainObject(result.raw?.updates) ? result.raw.updates : {};
     Object.assign(
@@ -647,9 +665,9 @@ export class AiSessions {
         output: {
           reply,
           updates: clip(JSON.stringify(updates)),
-          format: result.meta?.format ?? null,
-          costUsd: Number.isFinite(result.meta?.costUsd) ? result.meta.costUsd : null,
-          durationMs: Number.isFinite(result.meta?.durationMs) ? result.meta.durationMs : null,
+          format: meta.format ?? null,
+          costUsd: Number.isFinite(meta.costUsd) ? meta.costUsd : null,
+          durationMs: Number.isFinite(meta.durationMs) ? meta.durationMs : null,
         },
         changes,
         rejected: result.extraction.rejected,

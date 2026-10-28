@@ -20,8 +20,8 @@
 | `README.md` | 人が読む資料。目的、決まったこと、未決事項、実機・モック・未接続の一覧、プロダクト内 AI の設定、試した会話と状態、ソースの一覧、版、変更の経緯、入れていないもの |
 | `handoff.json` | 機械が読む資料。下の「handoff.json」 |
 | `app/` | 試作品のソース(作業中の `app/` の写し)。秘密を入れるファイルは外す |
-| `ai/system-prompt.md` | プロダクト内 AI を実モデルで動かすときの指示の全文(`ai.json` の `instructions` と Studio の決まり)。AI のない試作品にはない |
-| `ai/response-schema.json` | 実モデルに求める応答の形(JSON スキーマ)。AI のない試作品にはない |
+| `ai/system-prompt.md` | プロダクト内 AI を実モデルで動かすときの指示の全文。抽出の指示と、言い方の指示(`ai.json` の `instructions` と Studio の決まり)の 2 つ。AI のない試作品にはない |
+| `ai/response-schema.json` | 実モデルに求める応答の形(JSON スキーマ)。`extract` は抽出の形(`updates` と `intent`)、`phrase` は言い方の形(`reply`)。AI のない試作品にはない |
 
 ## 区分
 
