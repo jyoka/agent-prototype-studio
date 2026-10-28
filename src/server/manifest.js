@@ -4,12 +4,18 @@ import { AI_FILE } from './product-ai/definition.js';
 
 // 試作品の目録。成果物の契約の入口で、作る AI が app/ に書き、ビルドのたびに検査する(harness.md 5 節)。
 // 題材に依存しない形(入口、意図、制約、架空のデータの宣言、AI の設定、シナリオの置き場所)だけを決める。
+// 版 2 で、構成の置き場所(composition、compositions)と場面の置き場所(evals)を足す(docs/design/agent-simulation.md の 2.3)。
+// 版 1 の目録は今のまま読み、新しいキーを書いたら誤りにする(ai.json の版 1 と版 2 と同じ決まり)。
 export const MANIFEST_FILE = 'prototype.json';
-export const MANIFEST_FORMAT_VERSION = 1;
+export const MANIFEST_FORMAT_VERSION = 2;
+export const MANIFEST_FORMAT_VERSIONS = [1, 2];
 export const ENTRY_NAMES = ['main.jsx', 'main.tsx', 'main.js', 'main.ts'];
 const SHOWN = `app/${MANIFEST_FILE}`;
 const ENTRY_EXTENSIONS = ['.jsx', '.tsx', '.js', '.ts'];
 const DEFAULT_SCENARIOS = 'scenarios';
+export const DEFAULT_COMPOSITION = 'composition.json';
+export const DEFAULT_COMPOSITIONS = 'compositions';
+export const DEFAULT_EVALS = 'evals';
 
 export const MANIFEST_LIMITS = {
   maxShortText: 100,
@@ -19,6 +25,8 @@ export const MANIFEST_LIMITS = {
 };
 
 const TOP_KEYS = ['formatVersion', 'title', 'entry', 'intent', 'constraints', 'unimplemented', 'data', 'ai', 'scenarios'];
+// 版 2 で足したキー
+const V2_KEYS = ['composition', 'compositions', 'evals'];
 const INTENT_KEYS = ['purpose', 'tryThis'];
 const DATA_KEYS = ['file', 'about'];
 
@@ -65,7 +73,7 @@ function texts(problems, where, value) {
 }
 
 // app/ からの相対パスにそろえる。app/ の外を指すもの(.. や絶対パス)は誤りにする
-function appPath(problems, where, value, { folder = false } = {}) {
+export function appPath(problems, where, value, { folder = false } = {}) {
   if (typeof value !== 'string' || value.trim() === '') {
     problems.add(where, 'app/ からの相対パスを、空でない文字列で書いてください');
     return undefined;
@@ -90,7 +98,7 @@ function appPath(problems, where, value, { folder = false } = {}) {
   return normalized;
 }
 
-async function kindOf(appDir, relative) {
+export async function kindOf(appDir, relative) {
   const stat = await fs.lstat(path.join(appDir, ...relative.split('/'))).catch(() => null);
   if (!stat) return 'none';
   if (stat.isFile()) return 'file';
@@ -112,9 +120,10 @@ export async function findEntryName(appDir) {
   return null;
 }
 
+// 目録がないときは、版 1 の目録として読む(今の試作品を変えない)
 async function defaults(appDir) {
   return {
-    formatVersion: MANIFEST_FORMAT_VERSION,
+    formatVersion: 1,
     title: null,
     entry: await findEntryName(appDir),
     intent: { purpose: null, tryThis: [] },
@@ -140,12 +149,18 @@ export async function parseManifest(source, appDir) {
     problems.add('', '全体を { … } のオブジェクトで書いてください');
     return { manifest: null, errors: problems.list };
   }
-  checkKeys(problems, '', raw, TOP_KEYS);
-  const manifest = await defaults(appDir);
-
-  if (raw.formatVersion !== MANIFEST_FORMAT_VERSION) {
-    problems.add('formatVersion', `${MANIFEST_FORMAT_VERSION} にしてください(今は ${JSON.stringify(raw.formatVersion) ?? 'なし'})`);
+  const version = MANIFEST_FORMAT_VERSIONS.includes(raw.formatVersion) ? raw.formatVersion : null;
+  if (version === null) {
+    problems.add('formatVersion', `${MANIFEST_FORMAT_VERSIONS.join(' か ')} にしてください(今は ${JSON.stringify(raw.formatVersion) ?? 'なし'})`);
   }
+  checkKeys(problems, '', raw, [...TOP_KEYS, ...V2_KEYS]);
+  if (version === 1) {
+    for (const key of V2_KEYS.filter((k) => Object.hasOwn(raw, k))) {
+      problems.add(key, '版 2 の項目です。使うなら formatVersion を 2 にしてください');
+    }
+  }
+  const manifest = await defaults(appDir);
+  if (version) manifest.formatVersion = version;
   manifest.title = text(problems, 'title', raw.title) ?? null;
 
   if (raw.entry !== undefined) {
@@ -216,8 +231,34 @@ export async function parseManifest(source, appDir) {
     }
   }
 
+  if (version === 2) await readV2Keys(problems, appDir, raw, manifest);
+
   if (problems.list.length > 0) return { manifest: null, errors: problems.list };
   return { manifest: { ...manifest, declared: true }, errors: [] };
+}
+
+// 版 2 の構成と場面の置き場所。書かなければ既定の場所(なくてもよい)。
+// composition は書いたらそのファイルがあること。compositions と evals は、あるならフォルダーにする
+async function readV2Keys(problems, appDir, raw, manifest) {
+  manifest.composition = (await kindOf(appDir, DEFAULT_COMPOSITION)) === 'none' ? null : DEFAULT_COMPOSITION;
+  manifest.compositions = DEFAULT_COMPOSITIONS;
+  manifest.evals = DEFAULT_EVALS;
+  if (raw.composition !== undefined) {
+    const composition = appPath(problems, 'composition', raw.composition);
+    if (composition !== undefined) {
+      if (path.posix.extname(composition) !== '.json') problems.add('composition', `.json のファイルを指してください: ${composition}`);
+      else await requireFile(problems, appDir, 'composition', composition);
+      manifest.composition = composition;
+    }
+  }
+  for (const key of ['compositions', 'evals']) {
+    if (raw[key] === undefined) continue;
+    const folder = appPath(problems, key, raw[key], { folder: true });
+    if (folder === undefined) continue;
+    const kind = await kindOf(appDir, folder);
+    if (kind !== 'none' && kind !== 'directory') problems.add(key, `app/${folder} はフォルダーにしてください`);
+    manifest[key] = folder;
+  }
 }
 
 // app/prototype.json を読む。なければ既定の値の目録を返し、誤りにはしない(今の試作品を壊さない)。

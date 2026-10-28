@@ -149,7 +149,7 @@ app/
 | `participants[].owner` | 持ち主の名前(英小文字、20 字まで)。記録と点で、誰の部品かを出す | `studio` |
 | `participants[].prompt[]`(`agent`) | プロンプトを組む順。`from: "assumptions"` は前提の値、`slot` は持ち主が書ける枠(`file` か `text`)。枠の長さの上限は前提が決める | 誤り |
 | `participants[].tools[]`(`agent`) | 渡すツールの名前。`tools.json` にあるものだけ。30 個まで | ツールなし |
-| `participants[].ai`(`harness`) | harness の定義のファイル | `ai.json` |
+| `participants[].ai`(`harness`) | harness の定義のファイル | 目録の `ai`(なければ `ai.json`)。sim-1 で、目録が `ai.json` 以外を指す試作品でも同じ設定を使うよう、こう決めた |
 | `participants[].returnTo`(`harness`) | harness の会話が終わった(`done`)ときに戻る参加者 | 戻らない |
 | `participants[].mock` | モックの決まり。`agent` は 3.3 のファイル、`human` は `{ "reply": "…" }` | `agent` は「モックなし」(モックの場面は `n/a`) |
 | `tools` | ツールの宣言のファイル | ツールなし |
@@ -324,6 +324,18 @@ app/
 - データのファイルは `app/` の中の JSON だけ。`.js` は読まない(ツールの口が生成コードを読まないため)。大きさは `app/` の検査の上限の中
 - `inputSchema` は、決まった部分だけを使える JSON Schema(`type`、`properties`、`required`、`enum`、`minimum`、`maximum`、`maxLength`、`items`)。ほかのキーは誤り
 - 変化の説明: 構成、ツール、ガードレールが変わったビルドでは、前と後の違いを作る会話に出す(`describeDefinitionChanges` と同じ考え)。とくに、ガードレールが減ったときは、目立つ印を付ける
+
+sim-1 で決めた細かい形(この文書に書いていなかったもの。コードは `src/server/sim/`、形の説明は [configuration.md](../configuration.md#構成appcompositionjson)):
+
+| 所 | 決めたこと | 理由 |
+|---|---|---|
+| 構成の `guards` | `on` は `agent` の参加者だけ。`layer: "tool"` は誤り(`tools.json` に書くよう返す)。出口の確かめの `rules` は `noNewNumbers`、`maxReplyChars`、`forbidden`。`enforce` を書かなければ止める(`true`) | harness の出口の確かめは `ai.json` の `rules` にあり、二重に書かせないため |
+| 構成の辺 | `returnTo` は、harness から戻り先への辺も要る。`carry` の名前は、受け取る harness の `ai.json` の項目だけ | 3.2 の「戻るのも引き継ぎ」と、2.5 の「項目の決まりで確かめる」を、書いた時点で確かめるため |
+| `tools.json` | `description` は要る。`inputSchema` は省ける(引数なし)。一番外は `object`、入れ子は 3 段まで。`search` の `sort` は `{ "field", "order": "asc" か "desc" }`。`match` の比べ方は 1 つまでで、書かなければ `equals`。`search` と `get` のデータはオブジェクトの配列。`fixed` は `data` か `value` のどちらか 1 つ。`requires` が指す記録は、どれかの `record` のツールが書くもの。`deny` は `looksLike` か `containsAny` と、`message` が要る | 形の検査で、動かす前に分かる誤りを止めるため |
+| モック | ボタンは文か `{ "label", "action" }`。カードは `title`、`text`、`items`(ボタン)。カルーセルは `cards`。`{result.…}` の置き換えは、`call` のある決まりの返事でだけ使える。`otherwise` は要る | どの決まりにも当たらないときの返事がないと、モックの結果が決まらないため |
+| 場面 | `turns` の 1 つは `{ "user" }` か `{ "action" }`。`kind: "tool"` には `entry`、`history`、`turns` を書けない。`guardBlocked` の `layer` には `permission`(3.6 の許可していない名前の断り)も書ける。確かめごとに書ける項目を決めた(`recordHas` は `record` と `equals`、`stateHas` は `field` と `equals`、`noAskAgain` は `words`、`noRepeat` は `times`) | 確かめの語を決まったものだけにするため(4.2) |
+| 置き場所 | `compositions/`、`assumptions/`、`mocks/`、`evals/` に `.js` などのコードがあれば誤り。構成のファイルが 1 つでもあれば、使われていない `tools.json`、前提、モックも検査する。構成のファイルがない試作品(構成 B)では、既定の場所の `tools.json`、`assumptions/`、`mocks/` を読まない。`evals/` はいつも検査する | 「`.js` のデータは誤り」を、置いただけのファイルにも効かせるため。一方で、今の試作品が画面の架空のデータを `mocks/` や `tools.json` の名前で置いていても、ビルドを壊さないため(R2) |
+| 変化の説明 | 作る会話の `ai-settings` の知らせに、`ai.json` の変化と並べて出す。ガードレールが減ったときは、先頭に「【ガードレールが減りました】」を付ける。減ったとみなすのは、守りをなくす、ツールの守りの項目を外す、上限を緩める、止める確かめを記録だけにする、出口の確かめをプロンプトの頼みに替える、付ける参加者を替える、`ai.json`(harness が使うほかの設定のファイルも)の `rules` を弱める。`deny` の断る文だけの変更は減ったとみなさない。比べるのは、既定の構成、`compositions/` の同じファイルの構成どうし、ツールの宣言のファイルどうし(既定の構成が使わないものも)。既定の構成のものでない行には、ファイル名を頭に付ける。既定の構成が構成 B どうしで、ほかの構成もなければ、今の `ai.json` の文だけ | 画面(`src/ui/studio.js`)を変えずに出すため(7.2)。構成 B の `rules` も出口の確かめ(3.7)なので |
 
 ## 3. 模擬の部品
 

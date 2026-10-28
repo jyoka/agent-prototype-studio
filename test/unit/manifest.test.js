@@ -94,8 +94,16 @@ test('目録に書かない項目は既定の値で埋める', async (t) => {
 
 // 目録の形の誤りは、ビルドの失敗として、どの項目がどう違うかを返す(S20)
 const BROKEN = [
-  ['formatVersion が違う', { ...VALID, formatVersion: 2 }, /^formatVersion: 1 にしてください/],
-  ['formatVersion がない', (({ formatVersion, ...rest }) => rest)(VALID), /^formatVersion: 1 にしてください\(今は なし\)/],
+  ['formatVersion が違う', { ...VALID, formatVersion: 3 }, /^formatVersion: 1 か 2 にしてください\(今は 3\)/],
+  ['formatVersion がない', (({ formatVersion, ...rest }) => rest)(VALID), /^formatVersion: 1 か 2 にしてください\(今は なし\)/],
+  ['版 1 に composition', { ...VALID, composition: 'composition.json' }, /^composition: 版 2 の項目です。使うなら formatVersion を 2 に/],
+  ['版 1 に compositions', { ...VALID, compositions: 'compositions' }, /^compositions: 版 2 の項目です/],
+  ['版 1 に evals', { ...VALID, evals: 'evals' }, /^evals: 版 2 の項目です/],
+  ['版 2 の composition がない', { ...VALID, formatVersion: 2, composition: 'none.json' }, /^composition: app\/none\.json がありません/],
+  ['版 2 の composition が app/ の外', { ...VALID, formatVersion: 2, composition: '../composition.json' }, /^composition: app\/ の外は指せません/],
+  ['版 2 の composition が .js', { ...VALID, formatVersion: 2, composition: 'data/items.js' }, /^composition: \.json のファイルを指してください/],
+  ['版 2 の evals がファイル', { ...VALID, formatVersion: 2, evals: 'data/items.js' }, /^evals: app\/data\/items\.js はフォルダーにしてください/],
+  ['版 2 の compositions が app/ の外', { ...VALID, formatVersion: 2, compositions: '../other' }, /^compositions: app\/ の外は指せません/],
   ['型が違う(title が数)', { ...VALID, title: 3 }, /^title: 空でない文字列で書いてください/],
   ['型が違う(tryThis が文字列)', { ...VALID, intent: { purpose: 'x', tryThis: 'ボタン' } }, /^intent\.tryThis: 50 個までの文字列の配列/],
   ['型が違う(data が オブジェクト)', { ...VALID, data: { file: 'data/items.js' } }, /^data: 50 個までの配列/],
@@ -155,4 +163,45 @@ test('目録が指す AI の設定の誤りは、そのファイルの名前で�
   const result = await buildApp({ appDir, buildsDir });
   assert.equal(result.ok, false);
   assert.equal(result.errors[0].file, 'app/settings/ai.json');
+});
+
+// 版 2(docs/design/agent-simulation.md の 2.3): 構成と場面の置き場所を足す。版 1 は今のまま読む
+test('版 2 の目録は、構成と場面の置き場所を持つ。書かなければ既定の場所', async (t) => {
+  const { appDir, buildsDir } = await makeApp(t, validFiles({ ...VALID, formatVersion: 2 }));
+  const { manifest, errors } = await readManifest(appDir);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(manifest, { ...VALID, formatVersion: 2, composition: null, compositions: 'compositions', evals: 'evals', declared: true });
+  const result = await buildApp({ appDir, buildsDir });
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+});
+
+test('版 2 の目録に書いた構成と場面の置き場所で読む', async (t) => {
+  const composition = {
+    formatVersion: 1,
+    driver: 'main',
+    participants: [{ id: 'main', kind: 'harness', ai: 'settings/ai.json' }],
+  };
+  const { appDir, buildsDir } = await makeApp(t, {
+    ...validFiles({ ...VALID, formatVersion: 2, composition: 'sim/default.json', compositions: 'sim/others', evals: 'sim/evals' }),
+    'sim/default.json': composition,
+    'sim/others/b.json': composition,
+  });
+  const { manifest, errors } = await readManifest(appDir);
+  assert.deepEqual(errors, []);
+  assert.equal(manifest.composition, 'sim/default.json');
+  assert.equal(manifest.compositions, 'sim/others');
+  assert.equal(manifest.evals, 'sim/evals');
+  const result = await buildApp({ appDir, buildsDir });
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.simulation.composition.file, 'sim/default.json');
+  assert.deepEqual(result.simulation.compositions.map((c) => c.file), ['sim/others/b.json']);
+});
+
+test('版 2 の目録で composition を書かなくても、app/composition.json があればそれを既定の構成にする', async (t) => {
+  const { appDir } = await makeApp(t, {
+    ...validFiles({ ...VALID, formatVersion: 2 }),
+    'composition.json': { formatVersion: 1, driver: 'main', participants: [{ id: 'main', kind: 'harness' }] },
+  });
+  const { manifest } = await readManifest(appDir);
+  assert.equal(manifest.composition, 'composition.json');
 });
