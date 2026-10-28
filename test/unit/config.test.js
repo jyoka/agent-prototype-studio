@@ -10,12 +10,18 @@ test('既定はホームの PrototypeStudio と 4317、4318 番', () => {
   assert.equal(config.studioPort, 4317);
   assert.equal(config.previewPort, 4318);
   assert.equal(config.openBrowser, true);
-  assert.equal(config.allowClaudeCode, false);
+  // 本物の AI は既定で選べる(使う前に画面で同意する)
+  assert.equal(config.allowClaudeCode, true);
 });
 
-test('実モデル(Claude Code)は STUDIO_ALLOW_CLAUDE_CODE=1 のときだけ許す', () => {
-  assert.equal(loadConfig({ STUDIO_ALLOW_CLAUDE_CODE: '1' }).allowClaudeCode, true);
-  for (const value of ['', '0', 'true', 'yes']) assert.equal(loadConfig({ STUDIO_ALLOW_CLAUDE_CODE: value }).allowClaudeCode, false, value);
+test('本物の AI(Claude Code)は STUDIO_ALLOW_CLAUDE_CODE=0 のときだけ選べない。ほかの値は誤りにする', () => {
+  assert.equal(loadConfig({ STUDIO_ALLOW_CLAUDE_CODE: '0' }).allowClaudeCode, false);
+  // 1 は前の決まりの名残り。書いても既定と同じ
+  for (const value of [undefined, '', '1']) assert.equal(loadConfig({ STUDIO_ALLOW_CLAUDE_CODE: value }).allowClaudeCode, true, String(value));
+  // 止めるつもりで書いた値を、黙って「選べる」にしない
+  for (const value of ['false', 'no', 'true', 'yes']) {
+    assert.throws(() => loadConfig({ STUDIO_ALLOW_CLAUDE_CODE: value }), (error) => error instanceof ConfigError && /STUDIO_ALLOW_CLAUDE_CODE は 0/.test(error.message), value);
+  }
 });
 
 test('環境変数で置き場とポートを変えられる', () => {

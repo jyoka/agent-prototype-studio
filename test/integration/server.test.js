@@ -307,7 +307,7 @@ test('版の API: 保存、一覧、復元と、その守り', async (t) => {
   studio.store.releaseVersions('sample-job-consult');
 });
 
-test('プロダクト内 AI の接続の API: 既定はモック、実モデルは許されるまで選べず、Studio 画面以外からは切り替えられない', async (t) => {
+test('プロダクト内 AI の接続の API: 既定はモック、実モデルは止める設定では選べず、Studio 画面以外からは切り替えられない', async (t) => {
   const { token, sp, host } = await withStudio(t);
   const base = '/api/projects/sample-job-consult/ai';
   const headers = { host, 'x-studio-token': token, origin: `http://${host}`, 'content-type': 'application/json' };
@@ -325,15 +325,16 @@ test('プロダクト内 AI の接続の API: 既定はモック、実モデル�
   assert.equal(choices.status, 200);
   assert.equal(choices.body.selected, 'mock');
   const claude = choices.body.options.find((o) => o.kind === 'claude-code');
+  // config に allowClaudeCode がない(STUDIO_ALLOW_CLAUDE_CODE=0 と同じ扱い)ので選べない。同意の確かめは consent.test.js
   assert.equal(claude.available, false);
-  assert.match(claude.reason, /STUDIO_ALLOW_CLAUDE_CODE=1/);
+  assert.equal(claude.code, 'disabled');
   assert.ok(['subscription', 'api-key'].includes(claude.billing.kind));
   assert.match(claude.sends.systemPrompt, /しおかぜ求人相談/);
 
-  const refused = await call(`${base}/connection`, { kind: 'claude-code', confirmed: true });
+  const refused = await call(`${base}/connection`, { kind: 'claude-code' });
   assert.equal(refused.status, 403);
-  assert.equal(refused.body.error.code, 'unavailable');
-  assert.equal((await call(`${base}/connection`, { kind: 'claude-code', confirmed: true }, { origin: 'http://localhost:1' })).status, 403);
+  assert.equal(refused.body.error.code, 'disabled');
+  assert.equal((await call(`${base}/connection`, { kind: 'claude-code' }, { origin: 'http://localhost:1' })).status, 403);
   assert.equal((await call(`${base}/connection`, { kind: 'mock' })).body.session.connection.kind, 'mock');
   // 待っている応答がなくても、止める要求は会話を変えない
   assert.equal((await call(`${base}/cancel`, {})).body.session.messages.length, 1);

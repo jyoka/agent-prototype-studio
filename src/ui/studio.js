@@ -123,6 +123,9 @@ let agent = null;
 const conversations = new Map();
 let sending = null;
 let makeError = null;
+// 本物の AI を使う前の同意(サーバーは src/server/real-ai.js)。同意のカードの画面(P25)ができるまでの、最小のつなぎ。
+// 直す欄の送信が同意の前で断られたら、{ projectId, view }(view は /api/real-ai の中身)を入れ、送るもの、送り先、料金を出す
+let makeConsent = null;
 // 詳細の欄に出している、プロダクト内 AI の会話と状態。
 // choices は選べる接続と、実行の前に出す「送るもの」と「費用」。confirm は実モデルへ切り替える前の確認。
 // retry は設定が変わる前の会話と、試し直しの結果(Studio の画面だけに出す。試作品には渡さない)
@@ -303,6 +306,7 @@ function renderList() {
       if (selectedId === project.id) return;
       selectedId = project.id;
       makeError = null;
+      makeConsent = null;
       versions.message = null;
       render();
       syncConversation();
@@ -473,6 +477,7 @@ function renderConversation(project) {
     return li;
   });
   if (makeError) nodes.push(element('li', makeError, 'make-error'));
+  if (makeConsent && makeConsent.projectId === project?.id) nodes.push(consentBlock(makeConsent.view));
   if (nodes.length === 0) nodes.push(element('li', 'まだ依頼はありません。', 'muted empty'));
   const atBottom = els.conversation.scrollHeight - els.conversation.scrollTop - els.conversation.clientHeight < 40;
   els.conversation.replaceChildren(...nodes);
@@ -520,12 +525,63 @@ async function readRuns(response, projectId) {
   }
 }
 
+// 同意の前に断られた送信のときに出す。「同意して送る」で同意し、欄に残っている依頼を送り直す
+function consentBlock(view) {
+  const { summary } = view;
+  const box = element('li', undefined, 'ai-confirm');
+  box.setAttribute('role', 'group');
+  box.setAttribute('aria-label', '本物の AI を使う前に');
+  const sends = element('ul');
+  sends.setAttribute('aria-label', '送るもの');
+  sends.append(...summary.sends.map((item) => element('li', item)));
+  box.append(
+    element('p', summary.runsOn, 'notice'),
+    element('p', '送るもの:'),
+    sends,
+    element('p', `送らないもの: ${summary.notSent}`),
+    element('p', `送り先: ${summary.to}`),
+    element('p', `料金: ${summary.cost.text}${summary.cost.limits}`),
+    element('p', summary.note, 'muted'),
+  );
+  const ok = element('button', '同意して送る');
+  ok.type = 'button';
+  ok.addEventListener('click', agreeAndSend);
+  const cancel = element('button', 'やめる');
+  cancel.type = 'button';
+  cancel.addEventListener('click', () => {
+    makeConsent = null;
+    makeError = '言葉で直すには、本物の AI を使うことへの同意が要ります。';
+    renderMake(selectedProject());
+  });
+  const buttons = element('div', undefined, 'ai-buttons');
+  buttons.append(ok, cancel);
+  box.append(buttons);
+  return box;
+}
+
+// 同意する。同意は Studio を止めるまで、直す AI と試作品の中の AI の両方に効く
+async function agreeToRealAi() {
+  await api('/api/real-ai/consent', { method: 'POST' });
+}
+
+async function agreeAndSend() {
+  try {
+    await agreeToRealAi();
+  } catch (error) {
+    handleError(error);
+    return;
+  }
+  makeConsent = null;
+  await submitRequest();
+}
+
 async function submitRequest() {
   const project = selectedProject();
   const text = els.requestText.value.trim();
   if (!project || !text || sending) return;
   sending = { projectId: project.id };
   makeError = null;
+  makeConsent = null;
   renderMake(project);
   try {
     const response = await send(`/api/projects/${encodeURIComponent(project.id)}/build-requests`, {
@@ -539,7 +595,14 @@ async function submitRequest() {
     els.requestText.value = '';
     await readRuns(response, project.id);
   } catch (error) {
-    if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) {
+    if (error instanceof ApiError && error.code === 'consent-required') {
+      // 依頼の文は欄に残す。同意の中身を読んで出す
+      try {
+        makeConsent = { projectId: project.id, view: await api('/api/real-ai') };
+      } catch (readError) {
+        handleError(readError);
+      }
+    } else if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) {
       makeError = `送れませんでした: ${error.message}`;
     } else if (error instanceof ApiError) {
       handleError(error);
@@ -1091,9 +1154,11 @@ async function selectConnection(kind, confirmed) {
   ai.switching = true;
   renderAi();
   try {
+    // 切り替える前の確認(送るもの、費用、確かめたことの印)を、本物の AI を使う同意にする(同意のカードの画面 P25 までのつなぎ)
+    if (confirmed) await agreeToRealAi();
     const { session, retry } = await api(`/api/projects/${encodeURIComponent(projectId)}/ai/connection`, {
       method: 'POST',
-      json: { kind, confirmed },
+      json: { kind },
     });
     if (ai.projectId !== projectId) return;
     ai.confirm = null;

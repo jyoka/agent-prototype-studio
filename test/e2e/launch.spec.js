@@ -71,7 +71,8 @@ test('npm start で起動し、ブラウザでサンプルの試作品を操作�
 test('STUDIO_AGENT を書かずに起動すると自動で、Claude Code がなければ直す AI は使えないと出す', async ({ page, home }) => {
   const studio = await launchStudio(home, { env: { STUDIO_AGENT: undefined, STUDIO_CLAUDE_BIN: path.join(home, 'no-such-claude') } });
   try {
-    expect(studio.output()).toContain('作る AI: Claude Code を使えません。claude が見つかりません');
+    // URL の行の後の表示は、別の書き込みで少し遅れて届くことがある(macOS のパイプは非同期)
+    await expect.poll(() => studio.output()).toContain('作る AI: Claude Code を使えません。claude が見つかりません');
     const { agent } = await studio.api('/api/projects');
     expect(agent).toMatchObject({ mode: 'auto', kind: 'claude', status: 'missing', ready: false, auth: null });
 

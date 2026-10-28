@@ -122,7 +122,8 @@ test('返事の守ることの確かめの結果(合格、やり直し、決ま�
   t.after(() => sessions.close());
   // モックの返事はいつも合う
   await sessions.send('p', '湖に行きたい');
-  sessions.select('p', 'claude-code', { confirmed: true });
+  sessions.consent.agree();
+  sessions.select('p', 'claude-code');
   await sessions.send('p', '[一度数を作る] 何泊がいいかな');
   await sessions.send('p', '[数を作る] 2泊で');
   const [fallback, retried, , passed] = sessions.trace('p').entries;
@@ -204,9 +205,10 @@ test('Claude Code(偽)に渡したもの、受け取ったもの、切り替え�
   });
   t.after(() => sessions.close());
   assert.match(sessions.connectionChoices('p').options[1].tools, /ツールを渡していません/);
-  sessions.select('p', 'claude-code', { confirmed: true });
+  sessions.consent.agree();
+  sessions.select('p', 'claude-code');
   // 同じ接続を選び直しても、記録は増やさない
-  sessions.select('p', 'claude-code', { confirmed: true });
+  sessions.select('p', 'claude-code');
 
   await sessions.send('p', '山の村で2泊');
   await assert.rejects(sessions.send('p', '[鍵を出す]'), (error) => {
@@ -260,7 +262,8 @@ test('応答を待つ間は「待っています」と渡したものが見え�
     connections: [createMockConnection(), createClaudeCodeConnection({ env, allowed: true })],
   });
   t.after(() => sessions.close());
-  sessions.select('p', 'claude-code', { confirmed: true });
+  sessions.consent.agree();
+  sessions.select('p', 'claude-code');
   const pending = sessions.send('p', '[遅い] 待つ');
   const [running] = sessions.trace('p').entries;
   assert.equal(running.status, 'running');
@@ -278,7 +281,8 @@ test('Claude Code を起動できなかったときは、渡すはずだった�
   // 選んだ後に Claude Code が消えた、という場面にする
   missing.availability = () => ({ available: true, reason: '' });
   const sessions = new AiSessions({ definitionOf: () => travel(), connections: [createMockConnection(), missing] });
-  sessions.select('p', 'claude-code', { confirmed: true });
+  sessions.consent.agree();
+  sessions.select('p', 'claude-code');
   await assert.rejects(sessions.send('p', '湖'), { code: 'not-found' });
   const [entry] = sessions.trace('p').entries;
   assert.equal(entry.input.notSent, true);

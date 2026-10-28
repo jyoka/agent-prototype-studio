@@ -32,7 +32,7 @@ export class ConnectionError extends Error {
 }
 
 // 送り先と課金を変える環境変数。値は読まず、あるかだけを見る
-const PROVIDER_ENV = ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'];
+export const PROVIDER_ENV = ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'];
 
 // 費用の上限の説明。--max-budget-usd は 1 回の呼び出しごとに効く。1 回の発言では、2 種の呼び出しをそれぞれ多くて ATTEMPTS 回
 const budgetText = () => {
@@ -459,6 +459,7 @@ function emptyWorkDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'studio-product-ai-'));
 }
 
+// allowed は本物の AI を選べるか(config.allowClaudeCode)。書かない呼び出しは選べない側にする
 export function createClaudeCodeConnection({ env = process.env, allowed = false, limits = CLAUDE_CODE_LIMITS } = {}) {
   const binName = env.STUDIO_CLAUDE_BIN || 'claude';
   const billing = billingOf(env);
@@ -471,18 +472,21 @@ export function createClaudeCodeConnection({ env = process.env, allowed = false,
     description: '利用者が入れた Claude Code を、本人のログインで動かします。発言のたびに実際の AI モデルを呼びます(抽出と言い方で、1 回の発言に 1 回から 4 回)。',
     billing,
     tools: 'Claude Code にはツールを渡していません(--tools "")。ファイル、コマンド、Web は使えません。',
-    // 選べるか。選べないときは、理由と次の手順を返す
+    // 選べるか。選べないときは、理由のコード(code)と、理由と次の手順を返す。
+    // allowed が false なのは、起動した人が STUDIO_ALLOW_CLAUDE_CODE=0 で本物の AI を止めたとき(既定は選べる)。
+    // 選べても、使う前に同意が要る(real-ai.js。AiSessions.useReal で確かめる)
     availability() {
       if (!allowed) {
         return {
           available: false,
-          reason:
-            '実際の AI モデルは、まだ使えない設定です。社内の利用条件とデータの扱いを確かめてから、STUDIO_ALLOW_CLAUDE_CODE=1 を付けて Studio を起動し直してください。',
+          code: 'disabled',
+          reason: '本物の AI は、使わない設定で起動されています。使いたいときは、Studio を起動した人に確かめてください。',
         };
       }
       if (!findExecutable(binName, env)) {
         return {
           available: false,
+          code: 'not-found',
           reason: `Claude Code が見つかりません(${binName})。Claude Code を入れてログインするか、STUDIO_CLAUDE_BIN で場所を指定してください。`,
         };
       }

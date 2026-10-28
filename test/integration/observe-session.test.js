@@ -194,10 +194,25 @@ test('観察を閉じると、応答を待っている観察の会話も止ま�
   assert.deepEqual(view.state, { place: '山の村', nights: null });
 });
 
-test('実モデルの接続とない接続では、観察を始めない', async (t) => {
+test('実モデルの接続は同意の前と止める設定では、ない接続はいつも、観察を始めない', async (t) => {
   const { aiSessions } = await boot(t);
-  aiSessions.connections.set('paid', { kind: 'paid', label: '有料(テスト用)', billing: { note: '費用がかかる' }, respond: async () => ({}) });
-  assert.throws(() => createObservationAi(aiSessions, 'travel', { connection: 'paid' }), { code: 'unavailable' });
+  let available = true;
+  aiSessions.connections.set('paid', {
+    kind: 'paid',
+    label: '有料(テスト用)',
+    billing: { note: '費用がかかる' },
+    availability: () => (available ? { available: true, reason: '' } : { available: false, code: 'disabled', reason: '止める設定' }),
+    respond: async () => ({}),
+  });
+  // 人の「確かめる」で本物の AI を使うときも、切り替えと同じ同意の口を通る
+  assert.throws(() => createObservationAi(aiSessions, 'travel', { connection: 'paid' }), { code: 'consent-required', message: /本物の AI で確かめるには/ });
   assert.throws(() => createObservationAi(aiSessions, 'travel', { connection: 'none' }), { code: 'invalid' });
+  aiSessions.consent.agree();
+  available = false;
+  assert.throws(() => createObservationAi(aiSessions, 'travel', { connection: 'paid' }), { code: 'disabled' });
   assert.equal(aiSessions.observations.size, 0);
+  // 同意の後で、選べるなら始められる
+  available = true;
+  const ai = createObservationAi(aiSessions, 'travel', { connection: 'paid' });
+  ai.close();
 });

@@ -31,6 +31,14 @@ function parseBudget(value) {
   return budget;
 }
 
+// 本物の AI(試作品の中の AI の Claude Code)を選べるか。既定は選べる(使う前に画面で同意する。real-ai.js)。
+// 0 で選べなくする(会社として止めたいとき)。1 は前の決まりの名残りで、書いても既定と同じ
+function parseAllowClaudeCode(value) {
+  if (value === undefined || value === '' || value === '1') return true;
+  if (value === '0') return false;
+  throw new ConfigError(`STUDIO_ALLOW_CLAUDE_CODE は 0(本物の AI を選べなくする)か、書かないでください(今の値: ${value})`);
+}
+
 // データの置き場。ADR-0001 の既定は ~/PrototypeStudio
 export function studioHome(env = process.env) {
   return path.resolve(env.STUDIO_HOME || path.join(os.homedir(), 'PrototypeStudio'));
@@ -52,8 +60,8 @@ export function loadConfig(env = process.env) {
     studioPort,
     previewPort,
     openBrowser: env.STUDIO_NO_OPEN !== '1',
-    // プロダクト内 AI の実モデル(Claude Code)は、社内の利用条件を確かめた人が明示して許すまで選べない
-    allowClaudeCode: env.STUDIO_ALLOW_CLAUDE_CODE === '1',
+    // 試作品の中の AI の本物の AI(Claude Code)。STUDIO_ALLOW_CLAUDE_CODE=0 のときだけ選べない
+    allowClaudeCode: parseAllowClaudeCode(env.STUDIO_ALLOW_CLAUDE_CODE),
     // 作る AI。既定は auto。偽接続は STUDIO_AGENT=fake と書いたときだけ
     agent,
     claudeBin: env.STUDIO_CLAUDE_BIN || null,

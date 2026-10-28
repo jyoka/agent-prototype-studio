@@ -11,7 +11,7 @@
 | `STUDIO_PREVIEW_PORT` | `4318` | 試作品を配信するポート。`0` で空いている番号 |
 | `STUDIO_NO_OPEN` | なし | `1` でブラウザを自動で開かない |
 | `STUDIO_AGENT` | `auto` | 作る AI。`auto`(自動)は、Claude Code が見つかり、版が足り、ログインしていれば Claude Code を使い、そうでなければ作る欄を使えない状態にして理由を出す。`claude` は Claude Code に固定する(判定は自動と同じ)。`fake` は偽接続で、モデルを呼ばない。テストと開発では `fake` か偽の `claude` を明示する |
-| `STUDIO_ALLOW_CLAUDE_CODE` | なし | `1` でプロダクト内 AI に Claude Code(実モデル)を選べるようにする。社内の利用条件を確かめてから付ける |
+| `STUDIO_ALLOW_CLAUDE_CODE` | なし | `0` でプロダクト内 AI に Claude Code(本物の AI)を選べなくする(会社として止めたいとき)。書かなければ選べる。使う前に画面で同意する([claude-code.md](claude-code.md#本物の-ai-を使う前の同意))。`0` と `1`(前の決まりの名残りで、書かないのと同じ)のほかの値では起動しない |
 | `STUDIO_CLAUDE_BIN` | PATH の `claude` | 起動する Claude Code の場所。作る AI(`STUDIO_AGENT` が `auto` か `claude`)とプロダクト内 AI の両方で使う。ない場所を指すと、作る AI は「ない」になる。テストでは偽の CLI を指す |
 | `STUDIO_MAX_BUDGET_USD` | `1` | 作る AI で、API キーなど、サブスクの枠でないときに、作る AI の 1 回の起動に付ける費用の上限(ドル)。直すラウンドを合わせて、1 つの依頼で 3 回まで起動するので、1 つの依頼では最大でこの 3 倍になる。プロダクト内 AI の上限(1 回の呼び出し 0.1 ドル)は変えない |
 

@@ -43,6 +43,8 @@ test.describe('実モデルの閉じたループ', () => {
 
       await page.getByLabel('依頼').fill(REQUEST);
       await page.getByRole('button', { name: '送る' }).click();
+      // 初めての送信は、本物の AI を使う前の同意を求める(src/server/real-ai.js)
+      await page.getByRole('group', { name: '本物の AI を使う前に' }).getByRole('button', { name: '同意して送る' }).click();
       const run = page.getByRole('list', { name: '作る会話' }).locator('> li.run').last();
       // 1 回目の関門の失敗(G5 か G6)が、作る会話に出る
       await expect(run.locator('[data-kind="launch-failed"], [data-kind="scenarios-failed"]').first()).toBeVisible({ timeout: RUN_TIMEOUT_MS });

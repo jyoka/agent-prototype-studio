@@ -184,7 +184,23 @@ test('Claude Code に切り替えると、版と認証の見込みを送る前�
     await expect(status).not.toContainText('fictional-value-for-test');
     await expect(page.locator('#examples')).toBeHidden();
 
+    // 初めての送信は、本物の AI を使う前の同意を求める。依頼の文は欄に残り、まだ送らない
     await sendRequest(page, '見出しを「本番の形で」にして');
+    const consent = page.getByRole('group', { name: '本物の AI を使う前に' });
+    await expect(consent).toContainText('AI は、あなたの Claude Code で動きます。');
+    await expect(consent).toContainText('料金: API キーの設定があるので、使った分だけ料金がかかります。');
+    await expect(consent).toContainText('直すときは、直す AI の 1 回の起動で 1 ドルまでです');
+    await expect(consent).not.toContainText('fictional-value-for-test');
+    await expect(page.getByLabel('依頼')).toHaveValue('見出しを「本番の形で」にして');
+    expect((await studio.api('/api/projects/sample-library/build-requests')).runs).toEqual([]);
+    // やめると送らず、同意が要ることを出す
+    await consent.getByRole('button', { name: 'やめる' }).click();
+    await expect(consent).toBeHidden();
+    await expect(page.getByRole('list', { name: '作る会話' })).toContainText('言葉で直すには、本物の AI を使うことへの同意が要ります。');
+    expect((await studio.api('/api/real-ai')).consent.agreed).toBe(false);
+    await page.getByRole('button', { name: '送る' }).click();
+    await consent.getByRole('button', { name: '同意して送る' }).click();
+    await expect(consent).toBeHidden();
     const run = lastRun(page);
     await expect(run.locator('.bubble.agent .who').first()).toHaveText('Claude Code');
     await expect(run).toContainText('ビルドに成功しました。試す画面に反映しました。');

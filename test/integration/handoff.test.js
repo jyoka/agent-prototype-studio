@@ -13,6 +13,13 @@ import { AiSessions } from '../../src/server/product-ai/session.js';
 import { createMockConnection } from '../../src/server/product-ai/mock.js';
 import { ProjectStore } from '../../src/server/store.js';
 import { ProjectVersions } from '../../src/server/versions.js';
+import { RealAiConsent } from '../../src/server/real-ai.js';
+
+function agreedConsent() {
+  const consent = new RealAiConsent();
+  consent.agree();
+  return consent;
+}
 
 // 求人ではない題材。引き継ぎの仕組みが題材に依存しないことを確かめる
 const TRAVEL_AI = {
@@ -74,7 +81,8 @@ const NOTES = { purpose: '湖の旅を相談で決められるか確かめる', 
 test('ソース、意図、AI の設定、会話と状態、未接続と未決事項を書き出し、モックと実モデルの応答を区別する', async (t) => {
   const { home, app, aiSessions, versions, handoffs } = await makeStudio(t);
   await aiSessions.send('travel', '湖に行きたい');
-  aiSessions.select('travel', 'real-fake', { confirmed: true });
+  aiSessions.consent.agree();
+  aiSessions.select('travel', 'real-fake');
   await aiSessions.send('travel', '2泊で');
   await versions.save('travel', { name: '湖の版' });
 
@@ -271,6 +279,8 @@ async function makeSampleStudio(t) {
     screenshots: [],
   });
   const requests = new BuildRequests({
+    // 本物の AI を使う前の同意は済んでいるものとする(同意の確かめは test/integration/consent.test.js)
+    consent: agreedConsent(),
     store,
     connection: { kind: 'fake', label: '偽接続', command: process.execPath, prefixArgs: [FAKE_CLI], billing: describeBilling(ENV), problem: null },
     env: ENV,
