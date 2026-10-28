@@ -283,25 +283,50 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
       const url = new URL(req.url, 'http://studio.invalid');
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
 
-      const uiFile = UI_FILES[url.pathname];
-      if (!uiFile || req.method !== 'GET') {
-        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('見つかりません');
-        return;
-      }
-      const body = await fs.readFile(path.join(UI_DIR, uiFile[0]));
-      res.writeHead(200, {
-        'Content-Type': uiFile[1],
-        'Content-Security-Policy': uiFile[2] === 'observe' ? observeCsp(ports.preview) : studioCsp(ports.preview),
-        'X-Frame-Options': 'DENY',
-        'X-Content-Type-Options': 'nosniff',
-        'Referrer-Policy': 'no-referrer',
-        'Cache-Control': 'no-store',
-      });
-      res.end(body);
+      await sendUiFile(req, res, UI_FILES[url.pathname], ports);
     } catch (error) {
       console.error(error);
       if (!res.headersSent) sendError(res, 500, 'internal', 'Studio のサーバーで問題が起きました。ターミナルの表示を確かめてください');
+    }
+  };
+}
+
+async function sendUiFile(req, res, uiFile, ports) {
+  if (!uiFile || req.method !== 'GET') {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('見つかりません');
+    return;
+  }
+  const body = await fs.readFile(path.join(UI_DIR, uiFile[0]));
+  res.writeHead(200, {
+    'Content-Type': uiFile[1],
+    'Content-Security-Policy': uiFile[2] === 'observe' ? observeCsp(ports.preview) : studioCsp(ports.preview),
+    'X-Frame-Options': 'DENY',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'Cache-Control': 'no-store',
+  });
+  res.end(body);
+}
+
+// 観察用の親ページだけを出す。Studio とは別に動く観察(CLI など。observe-entry.js の working)が、自分の loopback のポートで使う。
+// API はなく、起動ごとのトークンも持たない
+export function createObserveHostHandler({ ports }) {
+  return async (req, res) => {
+    try {
+      if (!isAllowedHost(req.headers.host, ports.studio)) {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Host が正しくありません');
+        return;
+      }
+      const uiFile = UI_FILES[new URL(req.url, 'http://observe.invalid').pathname];
+      await sendUiFile(req, res, uiFile?.[2] === 'observe' ? uiFile : undefined, ports);
+    } catch (error) {
+      console.error(error);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('観察用の親ページを出せませんでした');
+      }
     }
   };
 }
