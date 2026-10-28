@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { SAMPLES, chooseSample, expect, launchStudio, test, writeProject } from './studio.js';
+import { SAMPLES, chooseProject, chooseSample, expect, launchStudio, test, writeProject } from './studio.js';
 
 test('URL の鍵がない、または合わないときは、どうすればよいかを出す', async ({ page, home }) => {
   const studio = await launchStudio(home);
@@ -15,7 +15,7 @@ test('URL の鍵がない、または合わないときは、どうすればよ�
     await expect(page.locator('iframe')).toHaveCount(0);
 
     await page.goto(studio.url);
-    await expect(page.locator('#connection')).toHaveText('つながっています');
+    await expect(page.locator('#connection')).toBeHidden();
     await expect(page.getByRole('alert')).toBeHidden();
     expect(new URL(page.url()).hash).toBe('');
     await chooseSample(page, SAMPLES.library);
@@ -38,8 +38,9 @@ test('ビルドに失敗した試作品は、場所と直し方を出し、直�
   try {
     expect(studio.output()).toContain('ビルド失敗: broken-demo');
     await page.goto(studio.url);
-    await page.getByRole('button', { name: /壊れた試作品/ }).click();
-    await expect(page.getByRole('button', { name: /壊れた試作品/ })).toContainText('ビルドに失敗');
+    // 上の帯の一覧の行に、表示できないことを短く出す
+    const broken = await chooseProject(page, /壊れた試作品/);
+    await expect(broken).toContainText('表示できません');
 
     const status = page.locator('#build-status');
     await expect(status).toContainText('ビルドに失敗しました');
@@ -48,11 +49,11 @@ test('ビルドに失敗した試作品は、場所と直し方を出し、直�
     await expect(status).toContainText(appDir);
     await expect(page.locator('#frame-host')).toContainText('表示できる版がありません');
 
-    await page.getByRole('button', { name: /使えないライブラリ/ }).click();
+    await chooseProject(page, /使えないライブラリ/);
     await expect(status).toContainText('「lodash」は使えません');
 
     // 直して作り直す
-    await page.getByRole('button', { name: /壊れた試作品/ }).click();
+    await chooseProject(page, /壊れた試作品/);
     await fs.writeFile(
       path.join(appDir, 'main.jsx'),
       'const items = [1, 2];\ndocument.getElementById("root").textContent = "直りました " + items.join(",");\n',
@@ -84,7 +85,7 @@ test('試作品の実行時エラーを、中身つきで詳細の欄に出す',
   const studio = await launchStudio(home);
   try {
     await page.goto(studio.url);
-    await page.getByRole('button', { name: /エラーを出す試作品/ }).click();
+    await chooseProject(page, /エラーを出す試作品/);
     const events = page.locator('#events');
     // port を渡す前に起きた知らせも届く
     await expect(events).toContainText('console.error: 起動したときの知らせ');
@@ -100,7 +101,7 @@ test('試作品の実行時エラーを、中身つきで詳細の欄に出す',
 test('Studio のサーバーが止まったら、つながらないことと次の手順を出す', async ({ page, home }) => {
   const studio = await launchStudio(home);
   await page.goto(studio.url);
-  await expect(page.locator('#connection')).toHaveText('つながっています');
+  await expect(page.locator('#connection')).toBeHidden();
   await studio.stop();
   await expect(page.getByRole('alert')).toContainText('Studio のサーバーにつながりません', { timeout: 10_000 });
   await expect(page.getByRole('alert')).toContainText('npm start');

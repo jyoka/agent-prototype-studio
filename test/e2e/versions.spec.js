@@ -11,7 +11,8 @@ function parts(page) {
   const message = app.getByLabel('メッセージ');
   return {
     app,
-    badge: page.locator('#work-badge'),
+    // 上の帯の保存の印。保存していない変更があるときだけ出る
+    saveMark: page.locator('#save-mark'),
     status: page.locator('#working-status'),
     notice: page.locator('#versions-message'),
     versionList: page.getByRole('list', { name: '保存した版' }),
@@ -35,7 +36,8 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
     await chooseSample(page, SAMPLES.jobConsult);
     const ui = parts(page);
     await expect(ui.app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
-    await expect(ui.badge).toHaveText('作業中(まだ保存していません)');
+    await expect(ui.status).toHaveText('作業中: まだ保存した版はありません。良い状態になったら保存してください。');
+    await expect(ui.saveMark).toBeHidden();
     await expect(ui.versionList.getByRole('listitem')).toHaveCount(0);
 
     // 試して、良いところで保存する
@@ -45,7 +47,7 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
     await page.getByLabel('版の名前(なくてもよい)').fill('最初の良い版');
     await page.getByRole('button', { name: '今の作業中を保存' }).click();
     await expect(ui.notice).toHaveText('v1「最初の良い版」として保存しました。');
-    await expect(ui.badge).toHaveText('作業中 = 保存版 v1');
+    await expect(ui.saveMark).toBeHidden();
     await expect(ui.status).toHaveText('作業中は保存版 v1「最初の良い版」と同じです。');
     const v1 = ui.versionList.getByRole('listitem').filter({ hasText: 'v1' });
     await expect(v1).toContainText('最初の良い版');
@@ -57,7 +59,7 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
     await page.getByLabel('依頼').fill('見出しを「うみかぜ求人相談」にして');
     await page.getByRole('button', { name: '送る' }).click();
     await expect(ui.app.getByRole('heading', { name: 'うみかぜ求人相談' })).toBeVisible();
-    await expect(ui.badge).toHaveText('作業中(保存していない変更あり)');
+    await expect(ui.saveMark).toHaveText('保存していない変更があります');
     await expect(ui.status).toHaveText('作業中には、保存していない変更があります(保存版 v1「最初の良い版」から)。');
     await expect(v1).not.toContainText('作業中と同じ');
     await ui.say('アルバイトがいいです');
@@ -73,7 +75,8 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
     await expect(ui.log.last()).toHaveText('あなたの修正: 勤務地を「もみじ台」に直しました。');
     await expect(ui.conditions).toHaveText(['カフェのホール', '未定', 'もみじ台', '未定']);
     await expect(page.getByRole('definition')).toHaveText(['カフェのホール', '未定', 'もみじ台', '未定']);
-    await expect(ui.badge).toHaveText('作業中 = 保存版 v1');
+    await expect(ui.status).toHaveText('作業中は保存版 v1「最初の良い版」と同じです。');
+    await expect(ui.saveMark).toBeHidden();
     expect(await fs.readFile(appFile, 'utf8')).toContain('<h1>しおかぜ求人相談</h1>');
     const v2 = ui.versionList.getByRole('listitem').filter({ hasText: 'v2' });
     await expect(v2).toContainText('復元の前の作業中(自動)');
@@ -84,7 +87,8 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
     // 保存したときの初期条件から続けると、同じ応答が返る(本人の修正を踏まえる)
     await ui.say('アルバイトがいいです');
     await expect(ui.log.last()).toContainText(AFTER_CORRECTION);
-    await expect(ui.badge).toHaveText('作業中(会話が v1 から変わっています)');
+    await expect(ui.status).toHaveText('作業中のファイルは保存版 v1「最初の良い版」と同じです。会話と状態は、保存したときから変わっています。');
+    await expect(ui.saveMark).toBeVisible();
   } finally {
     await studio.stop();
   }
@@ -97,7 +101,7 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
     const ui = parts(page);
     await expect(ui.app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
     await expect(ui.log).toHaveCount(1);
-    await expect(ui.badge).toHaveText('作業中(ファイルは v1 と同じ)');
+    await expect(ui.saveMark).toBeHidden();
     await expect(ui.status).toContainText('会話と状態は最初のままです');
     await expect(ui.versionList.getByRole('listitem')).toHaveText([/^v2/, /^v1/]);
 
@@ -131,7 +135,7 @@ test('ビルドできない状態は保存せず、理由を出す。作る AI �
     const ui = parts(page);
     await expect(ui.app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
     await page.getByRole('button', { name: '今の作業中を保存' }).click();
-    await expect(ui.badge).toHaveText('作業中 = 保存版 v1');
+    await expect(ui.status).toHaveText('作業中は保存版 v1 と同じです。');
 
     await page.getByLabel('依頼').fill('壊して、直せないふりをして');
     await page.getByRole('button', { name: '送る' }).click();

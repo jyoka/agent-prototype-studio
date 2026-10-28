@@ -14,8 +14,8 @@ test('U1: 新しい置き場で開くと、AI と話せる求人相談が選ば�
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(studio.url);
 
-    // 一覧の順と名前。名前は目録の title と、試作品の中の AI があるかから作る
-    const list = page.getByRole('navigation', { name: '試作品の一覧' }).getByRole('button');
+    // 一覧の順と名前。名前は目録の title と、試作品の中の AI があるかから作る。一覧は上の帯のメニューで、最初は閉じている
+    const list = page.getByRole('navigation', { name: '試作品の一覧', includeHidden: true }).getByRole('button', { includeHidden: true });
     const names = [SAMPLES.jobConsult, SAMPLES.studyConsult, SAMPLES.library].map((sample) => sample.name);
     await expect(list).toHaveText(names.map((name) => new RegExp(`^${name.replace(/[()]/g, '\\$&')}`)));
 
@@ -42,7 +42,7 @@ test('npm start で起動し、ブラウザでサンプルの試作品を操作�
     expect(studio.output()).toContain('ビルド成功: sample-library');
 
     await page.goto(studio.url);
-    await expect(page.locator('#connection')).toHaveText('つながっています');
+    await expect(page.locator('#connection')).toBeHidden();
     // 鍵は URL から消え、履歴に残らない
     expect(new URL(page.url()).hash).toBe('');
     // 図書室(AI のない試作品)を明示して選ぶ
@@ -92,7 +92,7 @@ test('npm start で起動し、ブラウザでサンプルの試作品を操作�
 
     // 再読み込みしても、同じタブなら使い続けられる
     await page.reload();
-    await expect(page.locator('#connection')).toHaveText('つながっています');
+    await expect(page.locator('#connection')).toBeHidden();
     await chooseSample(page, SAMPLES.library);
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
   } finally {
@@ -103,7 +103,8 @@ test('npm start で起動し、ブラウザでサンプルの試作品を操作�
 test('STUDIO_AGENT を書かずに起動すると自動で、Claude Code がなければ直す AI は使えないと出す', async ({ page, home }) => {
   const studio = await launchStudio(home, { env: { STUDIO_AGENT: undefined, STUDIO_CLAUDE_BIN: path.join(home, 'no-such-claude') } });
   try {
-    expect(studio.output()).toContain('作る AI: Claude Code を使えません。claude が見つかりません');
+    // 起動の知らせは URL の後に出ることがあるので、出るまで待つ
+    await expect.poll(() => studio.output()).toContain('作る AI: Claude Code を使えません。claude が見つかりません');
     const { agent } = await studio.api('/api/projects');
     expect(agent).toMatchObject({ mode: 'auto', kind: 'claude', status: 'missing', ready: false, auth: null });
 

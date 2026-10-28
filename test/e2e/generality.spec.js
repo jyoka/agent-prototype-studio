@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, launchStudio, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, expect, launchStudio, openAiMenu, test } from './studio.js';
 
 // 求人でも LINE でもない題材(架空の学習相談)で、求人相談と同じ流れが通るかを確かめる(#281)。
 // 作成(サンプルを開く) → 試行(モックと偽の Claude Code) → 変更(画面と AI の振る舞い、試し直し) → 版 → 引き継ぎ。
@@ -126,7 +126,7 @@ async function runFlow(page, home, other, otherHome) {
     // 3. 版: 良いところで保存する
     await page.getByLabel('版の名前(なくてもよい)').fill('学習相談の最初の版');
     await page.getByRole('button', { name: '今の作業中を保存' }).click();
-    await expect(page.locator('#work-badge')).toHaveText('作業中 = 保存版 v1');
+    await expect(page.locator('#working-status')).toHaveText('作業中は保存版 v1「学習相談の最初の版」と同じです。');
 
     // 4. 変更(画面): 作る欄で見出しを変え、試す画面に反映する
     let run = await ui.request('見出しを「そよかぜ学習相談」にして');
@@ -163,6 +163,7 @@ async function runFlow(page, home, other, otherHome) {
     await page.screenshot({ path: test.info().outputPath('2-changed-and-retried.png'), fullPage: true });
 
     // 6. 試行(実モデルの経路): 偽の Claude Code に切り替える。応答の形と指示は、この題材の ai.json から作る
+    await openAiMenu(page);
     await page.getByRole('radio', { name: 'Claude Code' }).check();
     const confirm = page.getByRole('group', { name: 'Claude Code に切り替える前の確認' });
     await confirm.getByRole('checkbox').check();
@@ -240,6 +241,7 @@ async function runFlow(page, home, other, otherHome) {
   try {
     await page.goto(elsewhere.url);
     // 名前は目録の title から作るので、サンプルと同じ名前になる。ID で選ぶ
+    await page.locator('#project-menu-button').click();
     await page.locator('[data-project-id="handed-over-study"]').click();
     const ui = parts(page);
     await expect(ui.app.getByRole('heading', { name: 'そよかぜ学習相談' })).toBeVisible();

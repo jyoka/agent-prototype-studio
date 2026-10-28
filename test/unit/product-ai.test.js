@@ -214,7 +214,7 @@ test('会話が長くなりすぎたら、リセットを促す', async () => {
   const sessions = new AiSessions({ definitionOf: () => travel() });
   // あいさつの 1 件と、1 往復で 2 件
   for (let i = 0; i < (SESSION_LIMITS.maxMessages - 2) / 2; i += 1) await sessions.send('p', '湖');
-  await assert.rejects(sessions.send('p', '湖'), { code: 'too-long', message: /リセット/ });
+  await assert.rejects(sessions.send('p', '湖'), { code: 'too-long', message: /会話を最初から/ });
 });
 
 test('ビルドは AI の設定を検査し、誤りがあれば失敗として知らせる', async (t) => {

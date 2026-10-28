@@ -18,7 +18,7 @@ test('作る欄の依頼で試作品のファイルが変わり、試す画面�
   try {
     await page.goto(studio.url);
     await chooseSample(page, SAMPLES.library);
-    const make = page.getByRole('region', { name: '作る' });
+    const make = page.getByRole('region', { name: '言葉で直す' });
     // 送る前に、どの接続で、どの認証で動くかを見せる
     await expect(make.locator('#agent-status')).toContainText('接続: 偽接続');
     await expect(make.locator('#agent-status')).toContainText('Claude Code もモデルも呼ばないので、料金はかかりません');
@@ -113,7 +113,7 @@ test('権限の確認で断られた操作と、作る AI の失敗を会話に�
     await expect(run.locator('[data-kind="build-failed"]').first()).toContainText('前にビルドできた版のままです');
     await expect(page.locator('#build-status')).toContainText('ビルドに失敗しました');
     await expect(page.locator('#build-status')).toContainText('app/App.jsx(2 行');
-    await expect(page.locator('#build-status')).toContainText('中央には、前にビルドできた版を表示しています');
+    await expect(page.locator('#build-status')).toContainText('「試す」には、前にビルドできた版を表示しています');
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
 
     await sendRequest(page, '直して');
@@ -130,7 +130,7 @@ test('作業中は中断でき、その間はほかの依頼と作り直しを�
   try {
     await page.goto(studio.url);
     await chooseSample(page, SAMPLES.library);
-    await expect(page.locator('#connection')).toHaveText('つながっています');
+    await expect(page.locator('#connection')).toBeHidden();
     await sendRequest(page, 'ゆっくり進めて');
     const run = lastRun(page);
     await expect(run).toContainText('少しずつ進めています(1/60)');
@@ -147,7 +147,8 @@ test('作業中は中断でき、その間はほかの依頼と作り直しを�
     // 再読み込みしても、作業中の様子と中断のボタンが戻る
     await page.reload();
     await chooseSample(page, SAMPLES.library);
-    await expect(page.getByRole('button', { name: SAMPLES.library.name })).toContainText('作る AI が作業中');
+    const menu = page.getByRole('navigation', { name: '試作品の一覧', includeHidden: true });
+    await expect(menu.getByRole('button', { name: SAMPLES.library.name, includeHidden: true })).toContainText('作る AI が作業中');
     await expect(lastRun(page).locator('.run-status')).toContainText('偽接続が作業しています');
     await page.getByRole('button', { name: '中断' }).click();
     await expect(lastRun(page).locator('[data-kind="cancelled"]')).toContainText('中断しました');
