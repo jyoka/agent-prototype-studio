@@ -111,6 +111,22 @@ Claude Code の起動のしかた(どれも Claude Code の CLI のフラグで�
 
 2 種の呼び出しで違うのは `--json-schema` と `--system-prompt` だけ。発言、会話、決定の中身は argv に入れず、標準入力で渡す。作業フォルダーは、空の一時フォルダーにする。
 
+### 構成のある試作品(模擬のエージェント)
+
+`app/composition.json` のある試作品で「AI: Claude Code」を選ぶと、模擬のエージェントの返事ごとに `claude -p` を 1 回起動する。選ぶ前の同意は、上と同じ 1 つの同意。harness の参加者は、上と同じ抽出と言い方の呼び出しで話す。設計は [agent-simulation.md の 3.3](design/agent-simulation.md#33-模擬のエージェント)。実モデルでの確かめは、まだしていない(sim-7 で行う)。
+
+| フラグ | 理由 |
+|---|---|
+| `--restricted --setting-sources "" --disable-slash-commands --strict-mcp-config` | 利用者とプロジェクトの設定、CLAUDE.md、skills、commands、ほかの MCP を読ませない。`--safe-mode` は `--mcp-config` のサーバーも外すので付けない(作る AI と同じ組み合わせ) |
+| `--tools ""` | 組み込みの道具(ファイル、コマンド、Web)を渡さない |
+| `--mcp-config <.studio/sim/会話の ID/mcp.json> --allowedTools mcp__proto__<名前>,…` | 試作品のツールの MCP サーバー(`bin/tools-mcp.js`)を 1 つだけ渡し、構成でその参加者に書いたツールの名前だけを許す。ワイルドカードは使わない。ツールのない参加者には渡さない |
+| `--output-format stream-json --verbose --json-schema=…` | 道具の呼び出しの並びと、最後の返事を受け取る。返事は `{ "parts": [...] }` で、部品の種類は前提の `messageTypes` から作る |
+| `--system-prompt=…` | 前提の土台、プロンプトの枠、プロンプトの頼み、Studio の決まりを組んだもの |
+| `--max-turns <前提の maxPerReply + 1>`、`--max-budget-usd 0.2` | 1 回の返事のツールの呼び出しの数(8 まで)と、1 回の起動の費用を切る |
+| `--model=<前提の model.name>` | 前提がモデルを決めたときだけ。形の合わない名前は付けない |
+
+会話は標準入力で渡し、作業フォルダーは空の一時フォルダーにする。1 回の起動は、試作品ごとの 1 時間 120 回に数える。
+
 ## 作る AI と Claude Code
 
 作る AI は、`STUDIO_AGENT` で選ぶ。既定は `auto`(自動)。

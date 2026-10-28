@@ -31,7 +31,7 @@ const USAGE = [
   '                    なければ、起動ごとに新しい会話になる',
   '  --max-seconds     サーバーの全体の時間の上限(既定は 1800 秒)。超えたら、受けた呼び出しを書き終えてから終わる',
   '',
-  '標準入力と標準出力で MCP(JSON-RPC)に答えます。道具は app/tools.json のツールだけで、app/ を書き換えません。',
+  '標準入力と標準出力で MCP(JSON-RPC)に答えます。道具は app/tools.json(Studio が文脈で渡したときは構成の tools のファイル)のツールだけで、app/ を書き換えません。',
   '記録の店と呼び出しの記録は <プロジェクト>/.studio/sim/<会話の ID>/ に置きます。',
 ].join('\n');
 
@@ -91,13 +91,6 @@ async function resolveProject(arg) {
 const projectDir = await resolveProject(parsed.positionals[0]);
 const appDir = path.join(projectDir, 'app');
 
-// ツールの宣言とデータは、起動のときに 1 回だけ読む(app/ は読むだけ)。誤りがあれば起動しない
-if ((await kindOf(appDir, TOOLS_FILE)) !== 'file') usageError(`app/${TOOLS_FILE} がありません`);
-const { toolset, errors } = await readTools(appDir, TOOLS_FILE);
-if (!toolset) usageError(`app/${TOOLS_FILE} に誤りがあります:\n${errors.map((error) => `  ${error.text}`).join('\n')}`);
-const loaded = await loadToolData(appDir, toolset);
-if (loaded.errors.length > 0) usageError(`ツールのデータを読めません:\n${loaded.errors.map((error) => `  ${error.text}`).join('\n')}`);
-
 let conversation;
 try {
   conversation = await openConversation({ projectDir, conversationId, limits });
@@ -107,6 +100,15 @@ try {
 }
 // どう終わっても、ロックと書き途中のファイルは残さない。強制終了で残ったものは、次の起動で消す
 process.on('exit', conversation.release);
+
+// ツールの宣言とデータは、起動のときに 1 回だけ読む(app/ は読むだけ)。誤りがあれば起動しない。
+// 会話の進め方が文脈(.studio/sim/<会話の ID>/context.json)で構成の tools のファイルを渡したら、それを読む
+const toolsFile = conversation.context?.tools ?? TOOLS_FILE;
+if ((await kindOf(appDir, toolsFile)) !== 'file') usageError(`app/${toolsFile} がありません`);
+const { toolset, errors } = await readTools(appDir, toolsFile);
+if (!toolset) usageError(`app/${toolsFile} に誤りがあります:\n${errors.map((error) => `  ${error.text}`).join('\n')}`);
+const loaded = await loadToolData(appDir, toolset);
+if (loaded.errors.length > 0) usageError(`ツールのデータを読めません:\n${loaded.errors.map((error) => `  ${error.text}`).join('\n')}`);
 
 const session = new ToolsSession({ toolset, data: loaded.data, conversation, limits });
 const server = serveToolsMcp({ session, input: process.stdin, output: process.stdout, log: (message) => console.error(message) });

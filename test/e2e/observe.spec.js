@@ -72,7 +72,8 @@ test('正常な見本は passed になり、読み込みの時間と、指定し
 });
 
 test('何も描かない試作品は、エラーがなくても page.empty が true になる', async () => {
-  const report = await studio.observe('obs-empty', { viewports: [] });
+  // 基本のシナリオは描画を待ち続けるので、手順の上限を縮める(既定は 5 秒)
+  const report = await studio.observe('obs-empty', { viewports: [], limits: { stepTimeoutMs: 1_000 } });
   expect(report.errors).toEqual([]);
   expect(report.page).toMatchObject({ text: '', empty: true });
   // 基本のシナリオ(描画が空でない)で落ちる
@@ -89,7 +90,8 @@ test('ビルドの失敗は、ブラウザを開かずに build のエラーと 
 });
 
 test('描画中の例外は runtime のエラーになり、failed を返す', async () => {
-  const report = await studio.observe('obs-render-error');
+  // 描画が空のままなので、基本のシナリオの手順の上限を縮める(既定は 5 秒)
+  const report = await studio.observe('obs-render-error', { limits: { stepTimeoutMs: 1_000 } });
   expect(report.verdict).toBe('failed');
   expect(report.load.done).toBe(true);
   const error = report.errors.find((e) => e.kind === 'runtime');

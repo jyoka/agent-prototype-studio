@@ -17,10 +17,10 @@ export function createObservationAi(aiSessions, projectId, { connection = 'mock'
     return conversation;
   };
 
-  // request は観察器が確かめた { op: 'session' | 'send' | 'correct', text?, changes? }
+  // request は観察器が確かめた { op: 'session' | 'send' | 'correct', text?, action?, changes? }
   const ai = async (request) => {
     const id = open();
-    if (request.op === 'send') return aiSessions.send(projectId, request.text, { conversation: id });
+    if (request.op === 'send') return aiSessions.send(projectId, request.text, { conversation: id, action: request.action });
     if (request.op === 'correct') return aiSessions.correct(projectId, request.changes, { conversation: id });
     return aiSessions.view(projectId, { conversation: id });
   };

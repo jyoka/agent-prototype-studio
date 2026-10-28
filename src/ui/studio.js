@@ -50,6 +50,8 @@ const AI_WINDOW_MS = 5000;
 const MAX_AI_REQUESTS_PER_WINDOW = 10;
 const MAX_AI_IN_FLIGHT = 3;
 const MAX_AI_TEXT = 2000;
+// ボタンの action の長さ(形はサーバーが確かめる)
+const MAX_AI_ACTION = 40;
 const MAX_AI_CHANGES = 20;
 const EVENT_LABELS = {
   'runtime-error': '実行時エラー',
@@ -1992,7 +1994,9 @@ const isPlainObject = (value) => value !== null && typeof value === 'object' && 
 function validAiRequest(data) {
   if (!Number.isSafeInteger(data.id)) return false;
   if (data.op === 'session') return true;
-  if (data.op === 'send') return typeof data.text === 'string' && data.text.length <= MAX_AI_TEXT;
+  if (data.op === 'send') {
+    return typeof data.text === 'string' && data.text.length <= MAX_AI_TEXT && (data.action === undefined || (typeof data.action === 'string' && data.action.length <= MAX_AI_ACTION));
+  }
   if (data.op === 'correct') {
     if (!isPlainObject(data.changes)) return false;
     const entries = Object.entries(data.changes);
@@ -2038,7 +2042,7 @@ function createAiRelay(iframe, port, projectId) {
     const base = `/api/projects/${encodeURIComponent(projectId)}/ai`;
     const request =
       data.op === 'send'
-        ? api(`${base}/messages`, { method: 'POST', json: { text: data.text } })
+        ? api(`${base}/messages`, { method: 'POST', json: data.action === undefined ? { text: data.text } : { text: data.text, action: data.action } })
         : data.op === 'correct'
           ? api(`${base}/corrections`, { method: 'POST', json: { changes: data.changes } })
           : api(base);
