@@ -7,6 +7,7 @@ import { createMockConnection } from './mock.js';
 import { RealAiConsent } from '../real-ai.js';
 import { createMockAgent } from '../sim/agent-mock.js';
 import { ACTION_PATTERN } from '../sim/check.js';
+import { partKindsOf } from '../sim/parts.js';
 import { SimError, newSimConversationId, prepareSimulation, runTurn, startConversation } from '../sim/orchestrator.js';
 
 export const SESSION_LIMITS = {
@@ -57,6 +58,16 @@ function freshSimSession(prepared, key, conversationPrefix) {
     conversation,
     messages: conversation.messages,
   };
+}
+
+// 構成の中の構成(既定の composition.json と compositions/*.json)。既定を先に
+const compositionsOf = (simulation) => [simulation.composition, ...(simulation.compositions ?? []).map((item) => item.composition)];
+
+// 構成が使える前提(構成の assumptions.dir にあるもの)。agent の参加者がいない構成は前提を使わない
+function assumptionsOf(simulation, composition) {
+  const dir = composition.assumptions?.dir;
+  if (!dir || !composition.participants.some((p) => p.kind === 'agent')) return [];
+  return (simulation.assumptions ?? []).filter((item) => item.file.startsWith(`${dir}/`));
 }
 
 // 構成の会話で、記録に出す状態と、試作品に返す fields と state。harness の参加者が 1 人以上いれば、最初の harness のもの
@@ -241,6 +252,9 @@ export class AiSessions {
     this.observationSeq = 0;
     // 選んだ接続は、リセットしても変えない
     this.selected = new Map();
+    // 試す画面で選んだ構成と前提(開発者向けの詳細。docs/design/agent-simulation.md の 2.1、3.4)。{ composition: ファイル, assumptions: 前提の id }。
+    // 利用者の会話だけに効く。観察の会話は既定の構成と前提を使う。選んだ構成か前提がビルドにない間は、既定で話す(選んだものは消さない)
+    this.simChoices = new Map();
     // 設定が変わる前の、最後の会話。リセットしても消さない
     this.previous = new Map();
     // 実行の記録(#277)。試作品ごとに、リセットしても残す。メモリーにだけ置き、Studio を止めると消える
@@ -379,8 +393,12 @@ export class AiSessions {
     const definition = this.definition(projectId);
     const found = this.simulationFor(projectId);
     const selected = this.connectionOf(projectId).kind;
+    // 模擬のエージェントに送るもの(sends)は、選んだ構成のもの
+    const chosen = found ? { ...found.simulation, composition: this.chosenSim(projectId, found.simulation).composition } : null;
     return {
       selected,
+      // 構成と前提の選び方(構成のファイルがない試作品は null)
+      simulation: this.simulationChoices(projectId),
       options: [...this.connections.values()].map((connection) => ({
         kind: connection.kind,
         label: connection.label,
@@ -389,7 +407,7 @@ export class AiSessions {
         ...(connection.availability?.() ?? { available: true, reason: '' }),
         billing: connection.billing ?? null,
         // 構成のある試作品では、模擬のエージェントに送るもの
-        sends: found ? (this.agents.get(connection.kind)?.sends?.(found.simulation) ?? null) : (connection.sends?.(definition) ?? null),
+        sends: found ? (this.agents.get(connection.kind)?.sends?.(chosen) ?? null) : (connection.sends?.(definition) ?? null),
         ...(found ? { tools: this.agents.get(connection.kind)?.tools ?? connection.tools ?? null } : {}),
       })),
     };
@@ -510,26 +528,100 @@ export class AiSessions {
       return { key, create: () => freshSession(definition, key) };
     }
     const { simulation, aiOf } = found;
-    // 鍵はビルドの読んだもの(データは大きくなりうるので、同じビルドの間は覚えておく)と、harness の設定
+    // 鍵はビルドの読んだもの(データは大きくなりうるので、同じビルドの間は覚えておく)と、選んだ構成と前提と、harness の設定
     if (!this.simKeys) this.simKeys = new WeakMap();
     if (!this.simKeys.has(simulation)) {
       const { toolData, ...rest } = simulation;
       this.simKeys.set(simulation, JSON.stringify(rest));
     }
-    const harness = simulation.composition.participants.filter((p) => p.kind === 'harness').map((p) => aiOf(p.ai));
-    const key = `${this.simKeys.get(simulation)}\n${JSON.stringify(harness)}`;
+    const { composition, assumptionId } = this.chosenSim(projectId, simulation, conversation);
+    const harness = composition.participants.filter((p) => p.kind === 'harness').map((p) => aiOf(p.ai));
+    const key = `${this.simKeys.get(simulation)}\n${JSON.stringify([composition.file, assumptionId])}\n${JSON.stringify(harness)}`;
     const prefix = conversation === USER_CONVERSATION ? 'user' : conversation;
     return {
       key,
       create: () => {
         try {
-          return freshSimSession(prepareSimulation(simulation, { aiOf, dataNumbers: this.dataNumbersOf(projectId) ?? [] }), key, prefix);
+          const prepared = prepareSimulation({ ...simulation, composition }, { aiOf, dataNumbers: this.dataNumbersOf(projectId) ?? [], assumptionId: assumptionId ?? undefined });
+          return freshSimSession(prepared, key, prefix);
         } catch (error) {
           if (error instanceof SimError) throw new AiError(500, 'invalid', error.message);
           throw error;
         }
       },
     };
+  }
+
+  // 会話に使う構成と前提。利用者の会話は選んだもの、観察の会話と、選んだものがビルドにないときは既定(構成の既定の前提)
+  chosenSim(projectId, simulation, conversation = USER_CONVERSATION) {
+    const choice = conversation === USER_CONVERSATION ? this.simChoices.get(projectId) : null;
+    const composition = compositionsOf(simulation).find((c) => c.file === choice?.composition) ?? simulation.composition;
+    const ids = assumptionsOf(simulation, composition).map((item) => item.assumption.id);
+    const fallback = ids.includes(composition.assumptions?.default) ? composition.assumptions.default : null;
+    const chosen = composition.file === choice?.composition && ids.includes(choice?.assumptions) ? choice.assumptions : fallback;
+    return { composition, assumptionId: ids.length > 0 ? chosen : null };
+  }
+
+  // 開発者向けの詳細の、構成と前提の選び方(Studio の画面だけに出す)。構成のファイルがない試作品(構成 B)は null。
+  // 前提ごとに、使える部品(会話の枠が描ける部品との重なり)と、モデルの名前を出す
+  simulationChoices(projectId) {
+    const found = this.simulationFor(projectId);
+    if (!found) return null;
+    const { simulation } = found;
+    const { composition, assumptionId } = this.chosenSim(projectId, simulation);
+    return {
+      selected: { composition: composition.file, assumptions: assumptionId },
+      compositions: compositionsOf(simulation).map((c) => ({
+        file: c.file,
+        name: c.name ?? c.file,
+        default: c === simulation.composition,
+        participants: c.participants.map((p) => ({ id: p.id, label: p.label ?? p.id, kind: p.kind })),
+        defaultAssumptions: c.assumptions?.default ?? null,
+        assumptions: assumptionsOf(simulation, c).map(({ file, assumption }) => ({
+          id: assumption.id,
+          file,
+          name: assumption.name ?? assumption.id,
+          note: assumption.note ?? null,
+          model: assumption.model?.name ?? null,
+          standIn: assumption.model?.standIn ?? null,
+          parts: partKindsOf(assumption),
+        })),
+      })),
+    };
+  }
+
+  // 構成と前提を選ぶ(Studio の画面だけが送る)。選ぶと、利用者の会話を最初からにする(試し直しの前の会話には入れない)。
+  // composition は構成のファイル(app/ からの相対)、assumptions は前提の id(省くと、その構成の既定の前提)
+  chooseSimulation(projectId, { composition: file, assumptions } = {}) {
+    this.definition(projectId);
+    const found = this.simulationFor(projectId);
+    if (!found) throw new AiError(409, 'not-supported', 'この試作品には構成(app/composition.json)がないので、構成と前提は選べません');
+    const { simulation } = found;
+    const composition = compositionsOf(simulation).find((c) => c.file === file);
+    if (!composition) {
+      throw new AiError(400, 'invalid', `構成「${String(file)}」はありません。選べる構成: ${compositionsOf(simulation).map((c) => c.file).join('、')}`);
+    }
+    const ids = assumptionsOf(simulation, composition).map((item) => item.assumption.id);
+    if (assumptions !== undefined && assumptions !== null && !ids.includes(assumptions)) {
+      throw new AiError(400, 'invalid', `構成「${composition.file}」には前提「${String(assumptions)}」がありません。選べる前提: ${ids.join('、') || 'なし'}`);
+    }
+    const slot = slotOf(projectId, USER_CONVERSATION);
+    const current = this.sessions.get(slot);
+    if (current?.busy || current?.retrying) throw new AiError(409, 'busy', 'AI が応答しています。止めるか、終わってから選んでください');
+    this.simChoices.set(projectId, { composition: composition.file, assumptions: assumptions ?? composition.assumptions?.default ?? null });
+    this.forgetSim(projectId, current);
+    this.sessions.delete(slot);
+    const view = this.view(projectId);
+    const { sim } = this.session(projectId);
+    this.record(projectId, {
+      type: 'simulation',
+      from: 'studio',
+      status: 'ok',
+      connection: connectionOfRecord(this.connectionOf(projectId)),
+      composition: { name: sim.composition.name ?? null, file: sim.composition.file },
+      assumptions: sim.assumption ? { id: sim.assumption.id, name: sim.assumption.name ?? null, file: sim.assumptionFile } : null,
+    });
+    return view;
   }
 
   // 構成の会話の作業の場所(.studio/sim/<会話の ID>/)を消す。会話を最初からにしたとき、版を戻したとき、観察が終わったとき
@@ -968,6 +1060,8 @@ export class AiSessions {
       const kept = redactDeep(clipSimSteps(record));
       if (record.composition) kept.composition = { ...kept.composition, digest: record.composition.digest };
       if (record.assumptions) kept.assumptions = { ...kept.assumptions, digest: record.assumptions.digest };
+      // 参加者の名前と種類(画面の記録で、steps の参加者の id を名前で出すため)
+      kept.participants = redactDeep(session.sim.composition.participants.map((p) => ({ id: p.id, label: p.label ?? p.id, kind: p.kind })));
       Object.assign(entry, kept);
       if (meter) {
         const summary = meter.summary();

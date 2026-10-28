@@ -131,6 +131,8 @@ const els = {
   aiWaiting: $('ai-waiting'),
   retryBar: $('retry-bar'),
   aiTrace: $('ai-trace'),
+  simChoice: $('sim-choice'),
+  simChoiceBody: $('sim-choice-body'),
   checkAi: $('check-ai'),
   checkAiNote: $('check-ai-note'),
   checkConsent: $('check-consent'),
@@ -206,7 +208,7 @@ let makeError = null;
 // view は /api/real-ai の中身。info は印を押して開いた中身(place は try か make)。declined は直す欄で「やめる」を選んだ後
 const consent = { agreed: false, agreedAt: null, card: null, info: null, declined: false, agreeing: false, seq: 0 };
 // 開発者向けの詳細に出している、プロダクト内 AI の会話と状態。
-// choices は選べる接続と、実行の前に出す「送るもの」と「費用」。
+// choices は選べる接続と、実行の前に出す「送るもの」と「費用」。choices.simulation は構成と前提の選び方(構成のない試作品では null)。
 // retry は設定が変わる前の会話と、試し直しの結果(Studio の画面だけに出す。試作品には渡さない)
 // loaded は projectId の読み込みが終わったか(AI を使わない試作品では、終わっても session は null)
 const ai = { projectId: null, session: null, loaded: false, choices: null, seq: 0, switching: false, retry: null };
@@ -1803,6 +1805,7 @@ function renderAi() {
   renderTryConsent();
   renderRealAiMarks();
   renderFirstSteps(selectedProject());
+  renderSimChoice();
   els.aiSwitch.hidden = !session;
   if (!session) {
     setAiMenu(false);
@@ -1841,6 +1844,98 @@ function renderAi() {
   els.aiStatus.replaceChildren(...nodes);
   renderTrace();
   syncTracePolling();
+}
+
+// 返事の部品と参加者の種類の、画面の言葉
+const PART_WORDS = { text: '文', buttons: 'ボタン', card: 'カード', carousel: 'カルーセル', notice: '知らせ' };
+const PARTICIPANT_KINDS = { agent: '模擬のエージェント', harness: 'harness', human: '人(模擬)' };
+
+// 構成と前提の選び方(開発者向けの詳細。docs/design/agent-simulation.md の sim-10)。構成のファイルがない試作品では出さない(R2)。
+// 前提ごとに、使える部品とモデルを出す。選ぶと会話を最初からにする
+function renderSimChoice() {
+  const choices = ai.session && ai.projectId === selectedId ? ai.choices?.simulation : null;
+  els.simChoice.hidden = !choices;
+  if (!choices) {
+    els.simChoiceBody.replaceChildren();
+    return;
+  }
+  const disabled = waitingFor(ai.projectId) > 0 || ai.switching || retryingProjects.has(ai.projectId);
+  const { selected } = choices;
+  const current = choices.compositions.find((c) => c.file === selected.composition);
+  const radio = (name, value, checked, onChange) => {
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = name;
+    input.value = value;
+    input.checked = checked;
+    input.disabled = disabled;
+    input.addEventListener('change', onChange);
+    return input;
+  };
+  const compositions = element('fieldset', undefined, 'ai-picker');
+  compositions.append(element('legend', '構成を選ぶ'));
+  for (const composition of choices.compositions) {
+    const label = element('label');
+    const checked = composition.file === selected.composition;
+    label.append(
+      radio('sim-composition', composition.file, checked, () => chooseSimulation({ composition: composition.file })),
+      document.createTextNode(`${composition.name}(app/${composition.file}${composition.default ? '、既定' : ''})`),
+    );
+    const who = composition.participants.map((p) => `${p.label}(${PARTICIPANT_KINDS[p.kind] ?? p.kind})`).join('、');
+    compositions.append(label, element('p', `参加者: ${who}`, 'hint'));
+  }
+  const nodes = [element('p', '選ぶと、会話を最初からにします。試作品の中の AI は、選んだ構成と前提で答えます。', 'muted'), compositions];
+  if (current?.assumptions.length > 0) {
+    const assumptions = element('fieldset', undefined, 'ai-picker');
+    assumptions.append(element('legend', '前提を選ぶ'));
+    for (const assumption of current.assumptions) {
+      const label = element('label');
+      label.append(
+        radio('sim-assumptions', assumption.id, assumption.id === selected.assumptions, () =>
+          chooseSimulation({ composition: current.file, assumptions: assumption.id }),
+        ),
+        document.createTextNode(`${assumption.name}(${assumption.id}${assumption.id === current.defaultAssumptions ? '、既定' : ''})`),
+      );
+      const model = assumption.model ? `。モデル: ${assumption.model}${assumption.standIn ? '(代わりのモデル)' : ''}` : '';
+      assumptions.append(label, element('p', `使える部品: ${assumption.parts.map((kind) => PART_WORDS[kind] ?? kind).join('、')}${model}`, 'hint'));
+    }
+    nodes.push(assumptions);
+  } else {
+    nodes.push(element('p', 'この構成は前提を使いません(模擬のエージェントがいません)。', 'muted'));
+  }
+  els.simChoiceBody.replaceChildren(...nodes);
+}
+
+// 構成と前提を選ぶ。会話は最初からになるので、試作品も開き直す(「会話を最初から」と同じ)
+async function chooseSimulation(choice) {
+  const projectId = ai.projectId;
+  if (!projectId) return;
+  ai.switching = true;
+  renderAi();
+  try {
+    const { session, retry, simulation } = await api(`/api/projects/${encodeURIComponent(projectId)}/ai/simulation`, { method: 'POST', json: choice });
+    if (ai.projectId !== projectId) return;
+    if (ai.choices) ai.choices.simulation = simulation;
+    showAiSession(projectId, session, retry);
+    const { selected, compositions } = simulation;
+    const composition = compositions.find((c) => c.file === selected.composition);
+    const assumption = composition?.assumptions.find((a) => a.id === selected.assumptions);
+    addEvent('info', `構成「${composition?.name ?? selected.composition}」${assumption ? `と前提「${assumption.name}」` : ''}にしました。会話は最初からです。`);
+    const project = selectedProject();
+    if (project?.id === projectId && project.previewUrl) {
+      preview.unexpectedLoads = [];
+      showPreview(project.previewUrl, project.id);
+    }
+  } catch (error) {
+    if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) {
+      addEvent('warning', `構成と前提を選べませんでした: ${error.message}`);
+    } else {
+      handleError(error);
+    }
+  } finally {
+    ai.switching = false;
+    renderAi();
+  }
 }
 
 async function loadAi(projectId) {
@@ -2276,6 +2371,10 @@ function traceTitle(entry) {
   if (entry.type === 'correction') return '状態の修正(試作品から)';
   if (entry.type === 'connection') return `接続の切り替え: ${entry.previous.label} → ${entry.connection.label}(Studio の画面から)`;
   if (entry.type === 'open') return `観察の会話を始めました → ${connectionNote(entry.connection)}`;
+  if (entry.type === 'simulation') {
+    const assumption = entry.assumptions ? `、前提「${entry.assumptions.name ?? entry.assumptions.id}」` : '';
+    return `構成「${entry.composition.name ?? entry.composition.file}」${assumption}を選び、会話を最初からにしました(Studio の画面から)`;
+  }
   return '会話と状態を最初に戻しました(Studio の画面から)';
 }
 
@@ -2440,6 +2539,142 @@ function traceStages(entry) {
   return box;
 }
 
+// 守りの層と判定の言葉(docs/design/agent-simulation.md の 3.7)
+const LAYER_WORDS = { tool: 'ツールの守り', permission: '渡したツールの名前', prompt: 'プロンプトの頼み', output: '出口の確かめ', surface: '会話の枠' };
+const EFFECT_WORDS = { passed: '通した', blocked: '止めた', violated: '合わなかった(記録だけ)', retried: 'やり直させた', replaced: '決まった文に代えた', asked: '頼んだ' };
+const partWord = (kind) => PART_WORDS[kind] ?? kind;
+
+function guardText(guard) {
+  let effect = EFFECT_WORDS[guard.effect] ?? guard.effect;
+  if (guard.layer === 'surface') effect = guard.to ? `${partWord(guard.from)}を${partWord(guard.to)}に落とした` : `${partWord(guard.from)}を外した`;
+  const parts = [`${LAYER_WORDS[guard.layer] ?? guard.layer}「${guard.guard}」: ${effect}`];
+  if (guard.owner) parts.push(`持ち主 ${guard.owner}`);
+  if (guard.failed?.length) parts.push(`合わなかった決まり ${guard.failed.join('、')}`);
+  if (guard.reason) parts.push(`理由 ${guard.reason}`);
+  return parts.join('、');
+}
+
+function guardList(guards) {
+  const list = element('ul', undefined, 'sim-guards');
+  list.setAttribute('aria-label', '守りの層と判定');
+  for (const guard of guards) {
+    const li = element('li', guardText(guard));
+    li.dataset.layer = guard.layer;
+    li.dataset.effect = guard.effect;
+    list.append(li);
+  }
+  return list;
+}
+
+function partsText(parts) {
+  return (parts ?? []).map((part) => `${partWord(part.kind)}${part.items ? `(${part.items} 個)` : ''}${part.cards ? `(${part.cards} 枚)` : ''}`).join('、') || 'なし';
+}
+
+function toolResultText(result) {
+  if (!result) return '不明';
+  if (!result.ok) return `失敗: ${result.error}`;
+  const parts = [`成功、${result.chars} 字`];
+  if (Number.isFinite(result.count)) parts.push(`${result.count} 件`);
+  if (result.keys?.length) parts.push(`項目 ${result.keys.join('、')}`);
+  return parts.join('、');
+}
+
+// 模擬の会話の 1 ターン(sim-turn)の段の 1 つ。参加者の発言、ツールの呼び出し(引数と結果)、返事の部品と、それぞれの守りの判定
+function simStepItem(entry, step, index, nameOf) {
+  const li = element('li', undefined, 'sim-step');
+  const via = (step) => `${step.connection}${step.real ? '(実際の AI モデル)' : '(AI モデルは呼んでいません)'}`;
+  if (typeof step.tool === 'string') {
+    li.dataset.step = 'tool';
+    li.append(element('strong', `ツール ${step.tool}`), document.createTextNode(`(${nameOf(step.by)} が呼びました${Number.isFinite(step.ms) ? `、${step.ms} ミリ秒` : ''})`));
+    li.append(labeled('引数', JSON.stringify(step.args ?? {})), labeled('結果', toolResultText(step.result)));
+    if (step.fault) li.append(element('p', '前提の失敗(faults)に当たったので、失敗を返しました', 'notice'));
+    if (step.handoff) li.append(labeled('引き継ぎの頼み', nameOf(step.handoff.to)));
+  } else if (step.kind === 'agent') {
+    li.dataset.step = 'agent';
+    const facts = [`接続 ${via(step)}`];
+    if (Number.isFinite(step.ms)) facts.push(`${step.ms} ミリ秒`);
+    if (Number.isFinite(step.costUsd)) facts.push(`費用の目安 $${step.costUsd.toFixed(4)}`);
+    li.append(element('strong', `参加者 ${nameOf(step.participant)}(模擬のエージェント)`), document.createTextNode(`: ${facts.join('、')}`));
+    const pieces = (step.prompt?.pieces ?? []).map((piece) => `${piece.slot ? `枠 ${piece.slot}` : `前提の ${piece.key}`}(持ち主 ${piece.owner}、${piece.chars} 字)`);
+    if (pieces.length > 0) li.append(labeled('プロンプトの部品', pieces.join('、')));
+    if (step.command) {
+      const command = labeled('起動の形', '');
+      command.append(element('code', step.command.join(' ')));
+      li.append(command);
+    }
+    const asked = (step.prompt?.asked ?? []).map((id) => ({ layer: 'prompt', guard: id, effect: 'asked' }));
+    if (asked.length > 0) li.append(guardList(asked));
+  } else if (step.kind === 'harness') {
+    li.dataset.step = 'harness';
+    li.append(element('strong', `参加者 ${nameOf(step.participant)}(harness)`), document.createTextNode(`: 接続 ${via(step)}${Number.isFinite(step.ms) ? `、${step.ms} ミリ秒` : ''}`));
+    if (step.harness && Object.keys(step.harness).length > 0) li.append(traceStages({ id: `${entry.id}:${index}`, harness: step.harness }));
+  } else if (step.kind === 'human') {
+    li.dataset.step = 'human';
+    li.append(element('strong', `参加者 ${nameOf(step.participant)}(人)`), document.createTextNode(': 模擬の決まった返事'));
+  } else if (step.fallback) {
+    li.dataset.step = 'fallback';
+    li.append(element('strong', `${nameOf(step.participant)} の返事を決まった文に代えました`), document.createTextNode(`: ${step.reason}`));
+  } else if (step.handoffIgnored) {
+    li.dataset.step = 'handoff-ignored';
+    li.append(element('strong', `${nameOf(step.participant)} の引き継ぎ(${step.handoffIgnored.map(nameOf).join('、')})を使いませんでした`), document.createTextNode(`: ${step.reason}`));
+  } else if (step.output) {
+    li.dataset.step = 'output';
+    li.append(element('strong', `${nameOf(step.participant)} の返事の部品(${step.attempt} 回目)`), document.createTextNode(`: ${partsText(step.output.parts)}`));
+  }
+  if (step.guards?.length > 0) li.append(guardList(step.guards));
+  return li;
+}
+
+function handoffText(handoff, nameOf) {
+  const parts = [`${nameOf(handoff.from)} → ${nameOf(handoff.to)}: ${EFFECT_WORDS[handoff.effect] ?? handoff.effect}`];
+  if (handoff.reason) parts.push(`理由 ${handoff.reason}`);
+  if (handoff.carry?.accepted?.length) parts.push(`受け渡した値 ${handoff.carry.accepted.join('、')}`);
+  if (handoff.carry?.rejected?.length) parts.push(`入れなかった値 ${handoff.carry.rejected.map((r) => `${r.key}(${r.reason})`).join('、')}`);
+  if (handoff.refused) parts.push(`続けての引き継ぎ(${nameOf(handoff.refused.to)})は断った: ${handoff.refused.reason}`);
+  if (handoff.ignored?.length) parts.push(`使わなかった頼み ${handoff.ignored.map(nameOf).join('、')}`);
+  return parts.join('、');
+}
+
+// 開発の担当者向け。模擬の会話の 1 ターン(sim-turn。docs/design/agent-simulation.md の 4.1)の中身。
+// 構成と前提(指紋つき)、参加者、ツールの呼び出しの引数と結果、守りの層と判定、引き継ぎ、見える記録
+function traceSim(entry) {
+  const box = element('details', undefined, 'trace-internals');
+  keepOpen(box, `${entry.id}:sim`);
+  box.append(element('summary', '模擬の会話の中身: 参加者、ツール、守り(開発向け)'));
+  const labels = new Map((entry.participants ?? []).map((p) => [p.id, p.label]));
+  const nameOf = (id) => (labels.has(id) ? `${labels.get(id)}(${id})` : String(id));
+  // 指紋(sha256:…)は、見分けられる長さまで出す
+  const short = (digest) => (typeof digest === 'string' ? `${digest.slice(0, 'sha256:'.length + 12)}…` : '不明');
+  if (entry.composition) {
+    const file = entry.composition.file ? `app/${entry.composition.file}、` : '';
+    box.append(labeled('構成', `${entry.composition.name ?? ''}(${file}指紋 ${short(entry.composition.digest)})`));
+  }
+  if (entry.assumptions) {
+    const { id, file, digest, standIn } = entry.assumptions;
+    box.append(labeled('前提', `${id}(${file ? `app/${file}、` : ''}指紋 ${short(digest)}${standIn ? '、代わりのモデル' : ''})`));
+  }
+  if (entry.participants?.length) {
+    box.append(labeled('参加者', entry.participants.map((p) => `${p.label}(${p.id}、${PARTICIPANT_KINDS[p.kind] ?? p.kind})`).join('、')));
+  }
+  const facts = [];
+  if (Number.isFinite(entry.turn)) facts.push(`ターン ${entry.turn}`);
+  if (entry.active) facts.push(entry.active.before === entry.active.after ? `話す参加者 ${nameOf(entry.active.after)}` : `話す参加者 ${nameOf(entry.active.before)} → ${nameOf(entry.active.after)}`);
+  if (Number.isFinite(entry.input?.history)) facts.push(`渡した会話 ${entry.input.history} 件と、新しい発言`);
+  if (facts.length > 0) box.append(labeled('ターン', facts.join('、')));
+  if (entry.nodes?.length) box.append(labeled('通った節', entry.nodes.join(' → ')));
+  const steps = element('ol', undefined, 'sim-steps');
+  steps.setAttribute('aria-label', '模擬の会話の段');
+  steps.append(...entry.steps.map((step, index) => simStepItem(entry, step, index, nameOf)));
+  box.append(steps);
+  if (entry.handoff) box.append(labeled('引き継ぎ', handoffText(entry.handoff, nameOf)));
+  if (entry.returned) box.append(labeled('戻り', handoffText(entry.returned, nameOf)));
+  if (entry.views) {
+    const seen = (list) => (list ?? []).join('、') || 'なし';
+    box.append(labeled('見える記録(前提の logging)', `相手から ${seen(entry.views.partnerSees)}、DIP から ${seen(entry.views.dipSees)}`));
+  }
+  return box;
+}
+
 function traceItem(entry) {
   const li = element('li', undefined, 'trace-entry');
   li.dataset.type = entry.type;
@@ -2479,8 +2714,14 @@ function traceItem(entry) {
   if (entry.error) {
     li.append(labeled('理由', entry.error.message, 'failed'), labeled('次にすること', entry.error.next, 'trace-next'));
   }
-  if (entry.type === 'reply' && entry.input) li.append(traceInternals(entry));
-  if (entry.type === 'reply' && entry.harness) li.append(traceStages(entry));
+  if (entry.kind === 'sim-turn') {
+    li.dataset.kind = 'sim-turn';
+    if (entry.action) li.append(labeled('ボタンの action', entry.action));
+    if (entry.steps) li.append(traceSim(entry));
+  } else {
+    if (entry.type === 'reply' && entry.input) li.append(traceInternals(entry));
+    if (entry.type === 'reply' && entry.harness) li.append(traceStages(entry));
+  }
   return li;
 }
 

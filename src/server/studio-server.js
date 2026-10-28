@@ -214,7 +214,7 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     }
     const handoffMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/handoff$/.exec(url.pathname);
     if (handoffMatch && (req.method === 'GET' || req.method === 'POST')) return handleHandoff(req, res, handoffMatch[1]);
-    const aiMatch = /^\/api\/projects\/([^/]+)\/ai(?:\/(messages|corrections|reset|connections|connection|cancel|retry|trace|clear-trace))?$/.exec(
+    const aiMatch = /^\/api\/projects\/([^/]+)\/ai(?:\/(messages|corrections|reset|connections|connection|simulation|cancel|retry|trace|clear-trace))?$/.exec(
       url.pathname,
     );
     const aiGet = !aiMatch?.[2] || aiMatch[2] === 'connections' || aiMatch[2] === 'trace';
@@ -333,7 +333,8 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
   }
 
   // プロダクト内 AI。試作品からの要求は、Studio 画面が形を確かめてから、ここへ送る。
-  // 接続の切り替えと中断と試し直し(connections、connection、cancel、retry)と実行の記録(trace、clear-trace)は、Studio 画面だけが送る。試作品からは届かない。
+  // 接続の切り替えと中断と試し直し(connections、connection、cancel、retry)、構成と前提の選び方(simulation)と実行の記録(trace、clear-trace)は、
+  // Studio 画面だけが送る。試作品からは届かない。
   // 本物の接続への切り替えは、同意の前は断る(AiSessions.useReal。理由のコードは consent-required)。
   // retry は試し直せる会話と結果で、Studio 画面だけが使う(画面は試作品に session だけを渡す)
   async function handleAi(req, res, rawId, action) {
@@ -367,6 +368,8 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       let session;
       if (!action) session = aiSessions.view(id);
       else if (action === 'connection') session = aiSessions.select(id, body?.kind);
+      // 構成と前提を選ぶ(開発者向けの詳細)。会話は最初からになる。選び方も返す
+      else if (action === 'simulation') session = aiSessions.chooseSimulation(id, { composition: body?.composition, assumptions: body?.assumptions });
       else if (action === 'cancel') session = aiSessions.cancel(id);
       // action はボタンの action(構成のある会話で使う。studio.ai.send(text, { action }))
       else if (action === 'messages') session = await aiSessions.send(id, body?.text, { action: body?.action });
@@ -375,6 +378,7 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       else session = aiSessions.reset(id);
       // 話したことと試し直したことは、最初の一歩の案内の手順を進める(1 番、直した後なら 3 番)
       if (action === 'messages' || action === 'retry') firstSteps.tried(id);
+      if (action === 'simulation') return sendJson(res, 200, { session, retry: aiSessions.retryInfo(id), simulation: aiSessions.simulationChoices(id) });
       return sendJson(res, 200, { session, retry: aiSessions.retryInfo(id) });
     } catch (error) {
       if (error instanceof AiError) return sendError(res, error.status, error.code, error.message, error.next);

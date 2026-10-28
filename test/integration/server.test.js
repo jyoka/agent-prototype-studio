@@ -534,6 +534,50 @@ test('試し直しは構成のある会話でも動く。ボタンの action も
   assert.equal(retry.result.stopped, null);
 });
 
+test('構成と前提の選び方: 選ぶと利用者の会話が最初からになり、前提の部品で答える。観察の会話は既定のまま。構成のない試作品では null', async (t) => {
+  const { call, studio } = await withSimStudio(t);
+  const id = 'sample-part-time';
+  const base = `/api/projects/${id}/ai`;
+  const before = (await call(`${base}/connections`)).body.simulation;
+  assert.deepEqual(before.selected, { composition: 'composition.json', assumptions: 'partner-a' });
+  assert.deepEqual(before.compositions.map((c) => [c.file, c.default]), [['composition.json', true], ['compositions/c.json', false], ['compositions/c2.json', false]]);
+  assert.deepEqual(before.compositions[0].assumptions.map((a) => [a.id, a.parts]), [['partner-a', ['text', 'buttons', 'card', 'carousel']], ['partner-b', ['text', 'buttons']]]);
+  assert.deepEqual(before.compositions[2].assumptions.map((a) => a.id), ['caller-haiku', 'caller-opus', 'caller-sonnet']);
+  assert.deepEqual((await call(`${base}/messages`, { text: '詳しく見せて' })).body.session.messages.at(-1).parts.map((p) => p.kind), ['card']);
+
+  const chosen = (await call(`${base}/simulation`, { composition: 'composition.json', assumptions: 'partner-b' })).body;
+  assert.deepEqual(chosen.session.messages, []);
+  assert.deepEqual(chosen.simulation.selected, { composition: 'composition.json', assumptions: 'partner-b' });
+  // 選んだことは試し直しの前の会話にしない(設定が変わったのではない)
+  assert.equal(chosen.retry.available, false);
+  assert.deepEqual((await call(`${base}/messages`, { text: '詳しく見せて' })).body.session.messages.at(-1).parts.map((p) => p.kind), ['text']);
+  const [turn, picked] = (await call(`${base}/trace`)).body.entries;
+  assert.equal(turn.assumptions.id, 'partner-b');
+  assert.match(turn.assumptions.digest, /^sha256:[a-f0-9]{64}$/);
+  assert.deepEqual(turn.participants, [{ id: 'partner', label: 'そよかぜの案内役(模擬)', kind: 'agent' }]);
+  assert.deepEqual(picked, { ...picked, type: 'simulation', from: 'studio', status: 'ok', assumptions: { id: 'partner-b', name: '相手の仕様の推測 B(架空。文とボタンだけ)', file: 'assumptions/partner-b.json' } });
+  // 会話を最初からにしても、選んだ構成と前提は残る
+  await call(`${base}/reset`, {});
+  assert.equal((await call(`${base}/connections`)).body.simulation.selected.assumptions, 'partner-b');
+
+  // 観察の会話は、既定の構成と前提で答える(試す画面の選び方に左右されない)
+  const conversation = studio.aiSessions.openObservation(id);
+  const observed = await studio.aiSessions.send(id, '詳しく見せて', { conversation });
+  assert.deepEqual(observed.messages.at(-1).parts.map((p) => p.kind), ['card']);
+  studio.aiSessions.closeObservation(id, conversation);
+
+  // 構成を替えると、前提はその構成の既定になる。前提を使わない値は断る
+  const c2 = (await call(`${base}/simulation`, { composition: 'compositions/c2.json' })).body;
+  assert.deepEqual(c2.simulation.selected, { composition: 'compositions/c2.json', assumptions: 'caller-sonnet' });
+  assert.equal(c2.session.name, 'ツールだけを出し、呼び手を替えて試す(架空)');
+  assert.equal((await call(`${base}/simulation`, { composition: 'compositions/c2.json', assumptions: 'partner-a' })).status, 400);
+  assert.equal((await call(`${base}/simulation`, { composition: '../composition.json' })).status, 400);
+
+  // 構成のない試作品(構成 B)は、選び方が null で、選ぶ口は断る
+  assert.equal((await call('/api/projects/sample-job-consult/ai/connections')).body.simulation, null);
+  assert.equal((await call('/api/projects/sample-job-consult/ai/simulation', { composition: 'composition.json' })).body.error.code, 'not-supported');
+});
+
 // 人の「確かめる」(docs/design/harness.md の 3.1、P27)。表示中の試作品を、作るループと同じ観察の入口で観察する。
 // 作る run、ビルド、版の操作、ほかの確かめの間は 409 で断る(1 プロジェクト 1 実行)
 test('人の「確かめる」の API: 作る run、ビルド、版の操作の間は 409 で断り、終わると report を .studio/observations/ に書く', async (t) => {

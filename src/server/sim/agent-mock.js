@@ -34,6 +34,8 @@ export function createMockAgent() {
     kind: 'mock',
     label: 'モック',
     real: false,
+    // 開発者向けの詳細の「AI が使えるツール」に出す(構成のある試作品だけ)
+    tools: 'モックの決まり(app/mocks/)で応答します。決まりに書いたツールを、Studio の中のツールの口で呼びます。モデルは呼びません。',
     // 1 回の返事。mock はモックの決まり(mocks.js の parseMock)、input は { text, action }、turns はこの発言を含む利用者の発言の数。
     // 返す: { parts(部品の並び。会話の進め方が前提に合わせる), rule(当たった決まりの番号か 'otherwise') }
     async reply({ mock, input, turns, tools }) {

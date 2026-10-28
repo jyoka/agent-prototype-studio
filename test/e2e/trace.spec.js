@@ -282,3 +282,79 @@ test('試す画面で話している途中に観察を回しても、利用者�
     await studio.close();
   }
 });
+
+test('構成のある見本(バイト探し)の記録: 模擬の会話の参加者、ツールの呼び出しの引数と結果、守りの層と判定が出る。既定では隠れている', async ({ page, home }) => {
+  const studio = await launchStudio(home);
+  try {
+    await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.partTime);
+    const app = page.frameLocator('iframe[title="試作品"]');
+    const message = app.getByLabel('メッセージ');
+    const say = async (text) => {
+      await message.fill(text);
+      await app.getByRole('button', { name: '送る' }).click();
+      await expect(message).toHaveValue('');
+    };
+    await say('詳しく見せて');
+    await expect(app.getByRole('region', { name: '会話' }).getByRole('article', { name: '架空の品出し' })).toBeVisible();
+    // 同意の前の保存は、ツールの守り(requires)が止める
+    await say('そのまま保存して');
+    await expect(app.getByRole('region', { name: '会話' })).toContainText('記録「consent」がありません');
+
+    // 既定では隠れている(U5)
+    const trace = page.locator('#ai-trace');
+    await expect(trace).toBeHidden();
+    await openDevDetails(page);
+    const entries = trace.getByRole('list', { name: 'AI の実行の記録' }).locator(':scope > li');
+    await expect(trace).toContainText('AI が使えるツール: モックの決まり(app/mocks/)で応答します。決まりに書いたツールを、Studio の中のツールの口で呼びます。');
+    await expect(entries).toHaveCount(2);
+    const blocked = entries.first();
+    await expect(blocked).toContainText('発言 → モック(AI モデルは呼んでいません)');
+    await expect(blocked).toContainText('発言: そのまま保存して');
+    // 構成 B の「渡したもの」と harness の段は出さず、模擬の会話の中身を出す
+    await expect(blocked).not.toContainText('AI に渡したもの、受け取ったもの');
+    const summary = blocked.getByText('模擬の会話の中身: 参加者、ツール、守り(開発向け)');
+    await expect(blocked.getByRole('list', { name: '模擬の会話の段' })).toBeHidden();
+    await summary.click();
+    await expect(blocked).toContainText('構成: 相手の会社のエージェントと、こちらのツール(架空)(app/composition.json、指紋 sha256:');
+    await expect(blocked).toContainText('前提: partner-a(app/assumptions/partner-a.json、指紋 sha256:');
+    await expect(blocked).toContainText('参加者: そよかぜの案内役(模擬)(partner、模擬のエージェント)');
+    await expect(blocked).toContainText('ターン: ターン 2、話す参加者 そよかぜの案内役(模擬)(partner)、渡した会話 2 件と、新しい発言');
+
+    const steps = blocked.getByRole('list', { name: '模擬の会話の段' }).locator(':scope > li');
+    // 参加者の発言: 接続とプロンプトの部品と、プロンプトの頼み
+    const agent = steps.filter({ hasText: '参加者 そよかぜの案内役(模擬)(partner)(模擬のエージェント)' });
+    await expect(agent).toContainText('接続 mock(AI モデルは呼んでいません)');
+    await expect(agent).toContainText('プロンプトの部品: 前提の hostPrompt(持ち主 partner、');
+    await expect(agent).toContainText('枠 dip-guide(持ち主 dip、');
+    await expect(agent.getByRole('list', { name: '守りの層と判定' })).toHaveText(['プロンプトの頼み「no-contact-ask」: 頼んだ']);
+    // ツールの呼び出し: 引数と結果と、ツールの守りの判定(止めた層と理由)
+    const tool = steps.filter({ hasText: 'ツール save_wish' });
+    await expect(tool).toContainText('そよかぜの案内役(模擬)(partner) が呼びました');
+    await expect(tool).toContainText('引数: {"area":"みなと町"}');
+    await expect(tool).toContainText('結果: 失敗: 記録「consent」がありません');
+    await expect(tool.getByRole('list', { name: '守りの層と判定' }).locator('li[data-effect="blocked"]')).toHaveText(
+      'ツールの守り「requires」: 止めた、持ち主 dip、理由 記録「consent」がありません',
+    );
+    // 返事の部品と、出口の確かめ(記録だけの確かめ)
+    const output = steps.filter({ hasText: 'の返事の部品(1 回目)' });
+    await expect(output).toContainText('そよかぜの案内役(模擬)(partner) の返事の部品(1 回目): 文');
+    await expect(output.getByRole('list', { name: '守りの層と判定' })).toContainText('出口の確かめ「facts-from-tools」: 通した、持ち主 partner');
+    await expect(blocked).toContainText('見える記録(前提の logging): 相手から');
+
+    // 前のターンのツールは、成功して結果の長さと項目の名前が出る(全文は出さない)。結果の守り(hideFields)が除いた項目も分かる
+    const earlier = entries.nth(1);
+    await earlier.getByText('模擬の会話の中身: 参加者、ツール、守り(開発向け)').click();
+    const get = earlier.getByRole('list', { name: '模擬の会話の段' }).locator(':scope > li').filter({ hasText: 'ツール get_job' });
+    await expect(get).toContainText('引数: {"id":"m1"}');
+    await expect(get).toContainText(/結果: 成功、\d+ 字、項目 id、title、area、wage、days/);
+    await expect(get.getByRole('list', { name: '守りの層と判定' }).getByRole('listitem')).toHaveText([
+      'ツールの守り「schema」: 通した、持ち主 dip',
+      'ツールの守り「hideFields」: 止めた、持ち主 dip、理由 結果から contact を除きました',
+      'ツールの守り「maxResultChars」: 通した、持ち主 dip',
+    ]);
+    await expect(earlier).toContainText('の返事の部品(1 回目): カード');
+  } finally {
+    await studio.stop();
+  }
+});
