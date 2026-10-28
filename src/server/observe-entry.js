@@ -16,14 +16,14 @@ import { createObserveHostHandler } from './studio-server.js';
 
 // 観察の入口(docs/design/harness.md の 3.1、S5)。観察を呼ぶ所は、どれもこの observeProject を使い、
 // 同じ形の report(観察器の report)を返す。今の呼ぶ所は、作るループの関門 G5 と G6、Studio の observe()、
-// CLI(bin/observe.js)。後の MCP の道具(jyoka/tasks#311)と画面の「確かめる」(P27)も、ここから呼ぶ。
+// CLI(bin/observe.js)、観察の道具の MCP サーバー(observe-mcp.js)。後の画面の「確かめる」(P27)も、ここから呼ぶ。
 // 観察器(src/observer/)は会話の実装を import しない(S2)ので、AI の会話を作るこの入口は src/server/ に置く。
 //
 // モードは 2 つ:
 //   shown:   表示中のビルドを見る。動いている Studio の中から呼ぶ(作るループ、Studio の observe())。
 //            ビルドとプレビューの配信は、呼ぶ側(Studio)が shown で渡す
 //   working: 作業中の app/ を一時フォルダー(os.tmpdir() の下)にビルドし、loopback の空いているポートに
-//            自分のプレビューの配信と観察用の親ページを立てて見る(CLI、後の MCP の道具)。
+//            自分のプレビューの配信と観察用の親ページを立てて見る(CLI、観察の道具の MCP サーバー)。
 //            プロジェクトの .studio/builds/ と表示中のビルドには触れない。Studio の起動ごとのトークンも使わない。
 //            プロダクト内 AI は、この観察だけのモックの会話にする(実モデルは選べない)
 export const OBSERVE_MODES = ['shown', 'working'];
