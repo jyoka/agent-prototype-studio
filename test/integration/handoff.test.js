@@ -90,7 +90,8 @@ test('ソース、意図、AI の設定、会話と状態、未接続と未決�
   const manifest = JSON.parse(await fs.readFile(path.join(other, 'handoff.json'), 'utf8'));
   assert.equal(manifest.format, HANDOFF_FORMAT);
   assert.equal(manifest.formatVersion, 2);
-  assert.deepEqual(manifest.project, { id: 'travel', title: 'travel' });
+  // 名前は試作品の一覧と同じ(目録がないので ID に、AI と話せるかを添える)
+  assert.deepEqual(manifest.project, { id: 'travel', title: 'travel(AI と話せる)' });
   assert.deepEqual(manifest.notes, NOTES);
   assert.equal(manifest.working.text, '保存版 v1「湖の版」と同じ');
 
@@ -147,7 +148,7 @@ test('ソース、意図、AI の設定、会話と状態、未接続と未決�
 
   // 人が読む資料
   const readme = await fs.readFile(path.join(other, 'README.md'), 'utf8');
-  assert.match(readme, /^# 引き継ぎ: travel$/m);
+  assert.match(readme, /^# 引き継ぎ: travel\(AI と話せる\)$/m);
   assert.match(readme, /> 湖の旅を相談で決められるか確かめる/);
   assert.match(readme, /\| 実機 \| プロダクト内 AI\(実モデル\) \|/);
   assert.match(readme, /\| モック \| プロダクト内 AI\(モック\) \|/);
@@ -333,9 +334,9 @@ test('目録、シナリオ、最新の作る run と観察の report の要約�
   // シナリオ: app/ のものと Studio の基本のもの。手順ごとに確かめることの文を付ける
   assert.equal(manifest.scenarios.folder, 'app/scenarios');
   assert.deepEqual(manifest.scenarios.files.map((s) => [s.file, s.name, s.steps.length]), [
-    ['app/scenarios/talk-and-narrow.json', '希望を話すと、希望条件が埋まり、合う求人が絞られる', 8],
+    ['app/scenarios/talk-and-narrow.json', '希望を話すと、希望条件が埋まり、合う求人が絞られる', 9],
   ]);
-  assert.equal(manifest.scenarios.files[0].checks[2], 'プロダクト内 AI の状態の「jobType」が "カフェのホール" になる');
+  assert.equal(manifest.scenarios.files[0].checks[3], 'プロダクト内 AI の状態の「jobType」が "カフェのホール" になる');
   assert.equal(manifest.scenarios.base.length, 2);
   assert.match(readme, /\| `app\/scenarios\/talk-and-narrow\.json` \| 希望を話すと、希望条件が埋まり、合う求人が絞られる \| desktop \| 1\. /);
 

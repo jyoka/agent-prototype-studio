@@ -248,7 +248,8 @@ function selectedProject() {
 
 function render() {
   if (!selectedProject()) {
-    selectedId = projects.find((p) => p.id === 'sample-library')?.id ?? projects[0]?.id ?? null;
+    // 初めて開いたときは、AI と話せる試作品(求人相談)を選ぶ(ux-redesign.md 5 節)
+    selectedId = projects.find((p) => p.id === 'sample-job-consult')?.id ?? projects[0]?.id ?? null;
   }
   renderList();
   const project = selectedProject();

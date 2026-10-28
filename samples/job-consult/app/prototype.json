@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "title": "しおかぜ求人相談(架空)",
+  "title": "求人相談(架空)",
   "entry": "main.jsx",
   "intent": {
     "purpose": "求職者が希望を話すと、案内役が条件を読み取り、合う求人が絞られる体験を試す",
