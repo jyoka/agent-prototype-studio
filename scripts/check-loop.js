@@ -102,12 +102,12 @@ async function runLoop(studio, events, projectDir) {
 
 // 2. プロダクト内 AI を実モデルにして、見本のシナリオを 1 本回す。
 // 観察用の会話(createObservationAi)は実モデルを断る(画面の「確かめる」で同意を通すまで作らない、harness.md の 3.3)。
-// ここでは利用者が試す画面で Claude Code を選んだときと同じ入口(select の confirmed と AiSessions.send)を、ai 関数で観察器に渡す。
+// ここでは利用者が試す画面で Claude Code を選んだときと同じ入口(select と AiSessions.send)を、ai 関数で観察器に渡す。
 // 呼び出しは同じ harness の turn を通り、プロジェクトごとの上限にも数える
 async function runProductAi(studio) {
   console.log('プロダクト内 AI(実モデル): 見本のシナリオを 1 本回します');
   const sessions = studio.aiSessions;
-  sessions.select(PROJECT, 'claude-code', { confirmed: true });
+  sessions.select(PROJECT, 'claude-code');
   sessions.reset(PROJECT);
   const firstId = Math.max(0, ...sessions.trace(PROJECT).entries.map((entry) => entry.id));
   const entries = () =>
@@ -244,6 +244,12 @@ async function main() {
     return;
   }
   const outDir = path.resolve(optionValue('--out') ?? DEFAULT_OUT);
+  // 本物の AI を止める設定は、画面を通らないこの確かめにも効かせる(docs/design/agent-simulation.md の 8.2 の P24)
+  if (process.env.STUDIO_ALLOW_CLAUDE_CODE === '0') {
+    console.error('STUDIO_ALLOW_CLAUDE_CODE=0 なので、試作品の中の AI に本物の AI を使えません。止めました。');
+    process.exitCode = 1;
+    return;
+  }
   const connection = await resolveConnection({ agent: 'claude', claudeBin: process.env.STUDIO_CLAUDE_BIN || null });
   if (connection.problem) {
     console.error(`確かめられません: ${connection.problem}`);
@@ -271,6 +277,8 @@ async function main() {
     { home, studioPort: 0, previewPort: 0, agent: 'claude', claudeBin: process.env.STUDIO_CLAUDE_BIN || null, allowClaudeCode: true, maxBudgetUsd: 1 },
     { env: process.env, onAgentEvent: (event) => events.push(event) },
   );
+  // この確かめは画面を通らない。--real を付けて起動したことを、本物の AI を使う同意にする(src/server/real-ai.js)
+  studio.consent.agree();
   let loop;
   let productAi;
   let outside;

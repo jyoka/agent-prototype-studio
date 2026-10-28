@@ -21,7 +21,6 @@ const ASK_BY_EXAMPLE = 'すみません、うまく読み取れませんでし�
 
 function fakeEnv(home) {
   return {
-    STUDIO_ALLOW_CLAUDE_CODE: '1',
     STUDIO_CLAUDE_BIN: FAKE,
     FAKE_CLAUDE_LOG: path.join(home, 'fake-claude.jsonl'),
     ANTHROPIC_API_KEY: undefined,

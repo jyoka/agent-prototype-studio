@@ -11,6 +11,13 @@ import { startStudio } from '../../src/server/index.js';
 import { ensureSampleProjects } from '../../src/server/projects.js';
 import { STUDIO_ROOT } from '../../src/server/config.js';
 import { ProjectStore } from '../../src/server/store.js';
+import { RealAiConsent } from '../../src/server/real-ai.js';
+
+function agreedConsent() {
+  const consent = new RealAiConsent();
+  consent.agree();
+  return consent;
+}
 
 // 偽の claude(Node のスクリプト)を直接起動するため
 const posixOnly = { skip: process.platform === 'win32' ? '偽の claude を直接起動できないため' : false };
@@ -211,6 +218,8 @@ test('依頼の文は stdin だけで渡し、引数には入れない。作業�
   const store = new ProjectStore(home);
   const env = { PATH: process.env.PATH, RECORD_FILE: recordFile, ANTHROPIC_API_KEY: 'fictional-value' };
   const requests = new BuildRequests({
+    // 本物の AI を使う前の同意は済んでいるものとする(同意の確かめは test/integration/consent.test.js)
+    consent: agreedConsent(),
     store,
     env,
     connection: { kind: 'claude', label: '記録', command: process.execPath, prefixArgs: [recorder], billing: describeBilling(env), problem: null },
@@ -246,6 +255,8 @@ test('観察の道具の MCP の設定は、作る run のフォルダー(app/ �
   const store = new ProjectStore(home);
   const env = { PATH: process.env.PATH, RECORD_FILE: recordFile };
   const requests = new BuildRequests({
+    // 本物の AI を使う前の同意は済んでいるものとする(同意の確かめは test/integration/consent.test.js)
+    consent: agreedConsent(),
     store,
     env,
     connection: { kind: 'claude', label: '記録', command: process.execPath, prefixArgs: [recorder], billing: describeBilling(env), problem: null },
@@ -295,6 +306,8 @@ test('直すラウンドも同じ引数、同じ環境変数で起動し、作�
   await store.build('sample-library');
   const env = { PATH: process.env.PATH, RECORD_FILE: recordFile, ANTHROPIC_API_KEY: 'fictional-value' };
   const requests = new BuildRequests({
+    // 本物の AI を使う前の同意は済んでいるものとする(同意の確かめは test/integration/consent.test.js)
+    consent: agreedConsent(),
     store,
     env,
     // 関門 G5、G6 の観察。G6 には回したシナリオ(基本のシナリオ 1 本)が入る

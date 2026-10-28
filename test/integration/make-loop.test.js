@@ -11,6 +11,13 @@ import { STUDIO_ROOT } from '../../src/server/config.js';
 import { readFixPrompt } from '../../src/server/fix-prompt.js';
 import { ensureSampleProjects } from '../../src/server/projects.js';
 import { ProjectStore } from '../../src/server/store.js';
+import { RealAiConsent } from '../../src/server/real-ai.js';
+
+function agreedConsent() {
+  const consent = new RealAiConsent();
+  consent.agree();
+  return consent;
+}
 
 // 作るループを閉じる(docs/design/harness.md の 2.1〜2.4、S1、S12、S14)。
 // 作る AI は偽接続か、決まった手順で app/ を書く小さな台本(どちらもモデルを呼ばない)。
@@ -73,6 +80,8 @@ async function setup(t, { steps, observe = passedReport, scenarios = scenariosRe
   const calls = [];
   const scenarioCalls = [];
   const requests = new BuildRequests({
+    // 本物の AI を使う前の同意は済んでいるものとする(同意の確かめは test/integration/consent.test.js)
+    consent: agreedConsent(),
     store,
     connection,
     env,
@@ -487,7 +496,8 @@ test('関門の中のプロダクト内 AI はいつもモック。利用者が�
     env: { STUDIO_CLAUDE_BIN: PRODUCT_AI_CLI, FAKE_CLAUDE_LOG: log },
   });
   const id = 'sample-study-consult';
-  studio.aiSessions.select(id, 'claude-code', { confirmed: true });
+  studio.aiSessions.consent.agree();
+  studio.aiSessions.select(id, 'claude-code');
   assert.equal(studio.aiSessions.connectionChoices(id).selected, 'claude-code');
 
   const run = await send(id, '見出しを「あおぞら学習相談 二」にして');

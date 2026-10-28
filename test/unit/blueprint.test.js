@@ -11,6 +11,13 @@ import { ensureSampleProjects } from '../../src/server/projects.js';
 import { ProjectStore } from '../../src/server/store.js';
 import { ObserverBrowser } from '../../src/observer/browser.js';
 import { Observer } from '../../src/observer/observe.js';
+import { RealAiConsent } from '../../src/server/real-ai.js';
+
+function agreedConsent() {
+  const consent = new RealAiConsent();
+  consent.agree();
+  return consent;
+}
 
 // 作る run の blueprint(docs/design/harness.md の 2.1、2.2、S9、S11)。
 // 作る AI は偽接続(モデルを呼ばない)。観察器は、呼ぶ側が渡す observe 関数を差し替えて確かめる
@@ -44,6 +51,8 @@ async function setup(t, { connection = fakeConnection(), observe, scenarios = sc
   const calls = [];
   const scenarioCalls = [];
   const requests = new BuildRequests({
+    // 本物の AI を使う前の同意は済んでいるものとする(同意の確かめは test/integration/consent.test.js)
+    consent: agreedConsent(),
     store,
     connection,
     env: ENV,

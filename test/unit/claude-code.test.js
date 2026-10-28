@@ -354,15 +354,18 @@ test('閉じると、SIGINT を無視する CLI も止まるまで待ってか�
   await assert.rejects(fs.access(started.cwd));
 });
 
-test('許されていなければ選べず、切り替えには確認が要り、会話は切り替えても続く', async (t) => {
+test('止める設定なら選べず、切り替えには同意が要り、会話は切り替えても続く', async (t) => {
   const { env, calls } = await withLog(t);
   const definition = travel();
+  // STUDIO_ALLOW_CLAUDE_CODE=0 のとき(allowed が false)は、同意していても選べない
   const blocked = new AiSessions({ definitionOf: () => definition, connections: [createMockConnection(), createClaudeCodeConnection({ env })] });
+  blocked.consent.agree();
   const choices = blocked.connectionChoices('p');
   assert.equal(choices.selected, 'mock');
   assert.equal(choices.options[1].available, false);
-  assert.match(choices.options[1].reason, /STUDIO_ALLOW_CLAUDE_CODE=1/);
-  assert.throws(() => blocked.select('p', 'claude-code', { confirmed: true }), { code: 'unavailable' });
+  assert.equal(choices.options[1].code, 'disabled');
+  assert.match(choices.options[1].reason, /本物の AI は、使わない設定で起動されています/);
+  assert.throws(() => blocked.select('p', 'claude-code'), { code: 'disabled' });
 
   const real = createClaudeCodeConnection({ env, allowed: true });
   const sessions = new AiSessions({ definitionOf: () => definition, connections: [createMockConnection(), real] });
@@ -373,9 +376,11 @@ test('許されていなければ選べず、切り替えには確認が要り�
   assert.match(option.sends.systemPrompt, /^【抽出の指示】\n[\s\S]*\n【言い方の指示】\n- 架空の旅行会社の案内役です/);
 
   await sessions.send('p', '湖に行きたい');
-  assert.throws(() => sessions.select('p', 'claude-code'), { code: 'not-confirmed' });
+  assert.throws(() => sessions.select('p', 'claude-code'), { code: 'consent-required', message: /同意が要ります/ });
+  assert.equal(sessions.connectionChoices('p').selected, 'mock');
   assert.throws(() => sessions.select('p', 'nothing'), { code: 'invalid' });
-  assert.equal(sessions.select('p', 'claude-code', { confirmed: true }).connection.kind, 'claude-code');
+  sessions.consent.agree();
+  assert.equal(sessions.select('p', 'claude-code').connection.kind, 'claude-code');
 
   const view = await sessions.send('p', '山の村で2泊');
   assert.deepEqual(view.state, { place: '山の村', nights: 2 });
@@ -422,7 +427,8 @@ test('費用のかかる接続の応答は、1 つの会話で上限の回数ま
   });
   t.after(() => sessions.close());
   await sessions.send('p', '湖');
-  sessions.select('p', 'claude-code', { confirmed: true });
+  sessions.consent.agree();
+  sessions.select('p', 'claude-code');
   // 上限の手前まで、記録だけを足す(CLI を 30 回起動しないため)
   const session = sessions.session('p');
   for (let i = 0; i < SESSION_LIMITS.maxPaidReplies - 1; i += 1) {
@@ -433,6 +439,6 @@ test('費用のかかる接続の応答は、1 つの会話で上限の回数ま
   sessions.select('p', 'mock');
   assert.equal((await sessions.send('p', '山')).messages.at(-1).via, 'mock');
   sessions.reset('p');
-  sessions.select('p', 'claude-code', { confirmed: true });
+  sessions.select('p', 'claude-code');
   assert.equal((await sessions.send('p', '山')).messages.at(-1).via, 'claude-code');
 });
