@@ -92,3 +92,18 @@ test('app/ の検査で問題があれば、ビルドしない', { skip: process
     'app/link.txt シンボリックリンクは使えません',
   ]);
 });
+
+test('見本 3 つは目録を持ち、目録どおりにビルドできる', async (t) => {
+  const { buildsDir } = await makeApp(t, {});
+  for (const sample of ['job-consult', 'library', 'study-consult']) {
+    const appDir = path.join(STUDIO_ROOT, 'samples', sample, 'app');
+    const result = await buildApp({ appDir, buildsDir });
+    assert.equal(result.ok, true, `${sample}: ${JSON.stringify(result.errors)}`);
+    assert.equal(result.manifest.declared, true, sample);
+    assert.equal(result.manifest.entry, 'main.jsx', sample);
+    assert.ok(result.manifest.title && result.manifest.intent.purpose, sample);
+    assert.ok(result.manifest.constraints.includes('データはすべて架空'), sample);
+    assert.ok(result.manifest.data.length > 0, sample);
+    assert.equal(result.manifest.ai !== null, result.ai !== null, sample);
+  }
+});

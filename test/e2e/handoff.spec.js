@@ -131,6 +131,7 @@ async function exportAndCheck(page, home, other, otherHome) {
       'app/ai.json',
       'app/jobs.js',
       'app/main.jsx',
+      'app/prototype.json',
       'app/style.css',
       'handoff.json',
     ]);
