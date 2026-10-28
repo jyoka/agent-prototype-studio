@@ -14,6 +14,7 @@
   "scripts": {
     "start": "node bin/studio.js",
     "observe": "node bin/observe.js",
+    "observe:mcp": "node bin/observe-mcp.js",
     "test": "node --test \"test/unit/*.test.js\" \"test/integration/*.test.js\"",
     "test:e2e": "playwright test",
     "check:claude": "node scripts/check-claude-code.js",

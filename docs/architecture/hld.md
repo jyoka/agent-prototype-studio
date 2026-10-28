@@ -70,6 +70,7 @@ flowchart TB
     observeEntry["観察の入口<br/>src/server/observe-entry.js observeProject"]
     observer["観察器<br/>src/observer/observe.js、browser.js、<br/>operations.js、scenario.js"]
     observeCli["観察の CLI<br/>bin/observe.js(npm run observe)"]
+    observeMcp["観察の道具の MCP サーバー<br/>bin/observe-mcp.js、src/server/observe-mcp.js<br/>(作る AI に渡すのは jyoka/tasks#312)"]
 
     subgraph local["データの置き場: ~/PrototypeStudio"]
         app[("projects/ID/app/<br/>作る AI が書ける唯一の場所")]
@@ -110,6 +111,7 @@ flowchart TB
     handoff --> redact
     entry -- "observe()" --> observeEntry
     observeCli -- "working: app/ を一時にビルド" --> observeEntry
+    observeMcp -- "working: app/ を一時にビルド<br/>open は operate で文脈を開いたままにする" --> observeEntry
     observeEntry -- "observe()" --> observer
     observer -- "playwright-core で操作" --> host
     host -- "MessageChannel" --> oframe
@@ -136,6 +138,7 @@ flowchart TB
 | 観察器 | `src/observer/observe.js`、`src/observer/browser.js` | 表示中のビルドをヘッドレスの Playwright の Chromium で開き、読み込み、エラー、スクリーンショット、シナリオの結果、最後の画面、合否を report で返す。ブラウザは Studio の中で 1 つ。観察は 1 つずつ、毎回新しい文脈で回す。文脈は観察用の親ページと観察するビルドにだけ要求を出せ、名前の解決は loopback だけ([ADR 0002](../adr/0002-observer-and-harness.md))。作る AI、画面、版、会話の実装は import しない。設計は [harness.md の 3](../design/harness.md#3-観察) |
 | 観察の入口 | `src/server/observe-entry.js` | 観察を呼ぶ所が、どれも通る `observeProject`。同じ形の report を返す。モードは 2 つ。`shown` は Studio の表示中のビルドを見る。`working` は作業中の `app/` を一時フォルダーにビルドし、loopback の空いているポートに自分の試作品の配信と観察用の親ページを立てて見る。`working` の AI は、その観察だけのモックの会話。観察器は会話の実装を import しないので、入口は `src/server/` に置く |
 | 観察の CLI | `bin/observe.js` | `npm run observe -- <プロジェクト>`。入口を `working` で呼び、結果をターミナルに出す。終了コードは `passed` で 0 |
+| 観察の道具の MCP サーバー | `bin/observe-mcp.js`、`src/server/observe-mcp.js` | `npm run observe:mcp -- <プロジェクト>`。stdio の JSON-RPC で `initialize`、`tools/list`、`tools/call` に答え、決まった名前の 9 つの道具(`open`、`read_page`、`inspect`、`click`、`type`、`scroll`、`set_viewport`、`screenshot`、`run_scenarios`)を出す。入口を `working` で呼ぶ。プロジェクトの場所は起動の引数でだけ受け取り、`app/` に書かない。SDK は使わない。入口(会話の実装を使う)を import するので、観察器の境界(S2)の外の `src/server/` に置く |
 | 観察器の操作とシナリオ | `src/observer/operations.js`、`src/observer/scenario.js` | 7 つの操作(読む、要素の一覧と検査、クリック、入力、スクロール、画面幅、スクリーンショット)と 4 つの確かめ。シナリオの手順と、1 つずつの呼び出し(`observe()` の `operate`)が同じ関数を使う。シナリオの形の検査、`app/scenarios/` の読み込み、Studio の基本のシナリオ([形](../configuration.md#シナリオappscenariosjson)) |
 | 観察用の親ページ | `src/ui/observe.html`、`src/ui/observe.js` | Studio の `/observe.html` に置く静的なページ。試作品を同じ sandbox の iframe に入れ、エラーと AI の要求を `exposeBinding` で観察器に渡す。Studio の API は呼ばない(CSP の `connect-src 'none'`) |
 
@@ -199,15 +202,30 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 
 ### 観察する(ヘッドレスのブラウザで試作品を動かす)
 
-観察を呼ぶ所は、今は 3 つです。どれも観察の入口 `observeProject`(`src/server/observe-entry.js`)を通り、同じ形の report を返します(harness.md の S5)。
+観察を呼ぶ所は、今は 4 つです。どれも観察の入口 `observeProject`(`src/server/observe-entry.js`)を通り、同じ形の report を返します(harness.md の S5)。
 
 | 呼ぶ所 | 入口のモード | 見るもの | プロダクト内 AI | report とスクリーンショット |
 |---|---|---|---|---|
 | 作る run の関門 G5、G6(`build-requests.js` → `index.js` の `observeGate`) | `shown` | Studio の表示中のビルド | G5 は断る。G6 はいつもモックの観察用の会話 | `.studio/runs/<run-id>/rounds/<n>/` |
 | Studio の `observe(<id>, { scenarios, viewports, ai, aiConnection, operate, limits })`(`index.js`) | `shown` | Studio の表示中のビルド | 渡した `ai` 関数か、`aiConnection` の観察用の会話 | `.studio/observations/<観察の ID>/` |
 | CLI `npm run observe -- <プロジェクト>`(`bin/observe.js`) | `working` | 作業中の `app/` を一時フォルダーにビルドしたもの | いつもモック。実モデルは選べない | `.studio/observations/<観察の ID>/` |
+| 観察の道具の MCP サーバー `npm run observe:mcp -- <プロジェクト>`(`src/server/observe-mcp.js`) | `working` | 作業中の `app/` を一時フォルダーにビルドしたもの | いつもモック。実モデルは選べない | `.studio/observations/<観察の ID>/` |
 
-後の作る AI の観察の道具(MCP サーバー、jyoka/tasks#311)は `working` で、画面の「確かめる」(P27)は `shown` で、同じ入口を呼ぶ。
+画面の「確かめる」(P27)は `shown` で、同じ入口を呼ぶ。MCP サーバーを作る AI の起動に渡すのは jyoka/tasks#312 です。
+
+#### 観察の道具の MCP サーバー
+
+作る AI が自分で画面を読み、操作するための道具です(harness.md の S4)。道具の呼び出しは 1 つずつ順に回します。
+
+| 道具 | すること |
+|---|---|
+| `open` | 入口を `working` で呼び、基本のシナリオなしで開く。`operate` が返るまで観察器が文脈を開いたままにするので、次の `open` までは同じ文脈で操作を続けられる。ビルドの失敗、読み込み、エラー、最初のスクリーンショット(画像)を返す。前に開いた文脈は閉じ、その report を書く |
+| `read_page`、`inspect`、`click`、`type`、`scroll`、`set_viewport`、`screenshot` | 観察器の 7 つの操作。引数はシナリオの手順と同じ検査(`checkScenario`)を通し、シナリオと同じ `Operations.step` を呼ぶ。結果と、その呼び出しの間に出たエラー(`newErrors`)を返す。`screenshot` は画像で返す |
+| `run_scenarios` | 入口を `working` で、新しいビルドと新しいブラウザで呼び、基本のシナリオと `app/scenarios/` を回す。開いた文脈はそのまま |
+
+- 時間の上限: `open` は 90 秒、操作 1 回は 30 秒、`run_scenarios` は観察が 5 分。開いた文脈を使えるのは 10 分まで(観察器の `operate` の上限)。サーバーの全体は 30 分(`--max-seconds` で変えられる)
+- 操作が時間内に終わらなければ、文脈ごと閉じる。サーバーが終わる(入力が閉じる、全体の上限、SIGINT か SIGTERM)と、開いた文脈の report を書き、ブラウザと一時フォルダーを片付ける。片付けが 20 秒で終わらなければ、一時フォルダーと report のない観察のフォルダーを消して終わる
+- 画像は 1 MB まで。超えたら JPEG で撮り直し、それでも超えたら画像を返さずファイルの場所を返す。道具の結果の文は 2 万字で切る(ページの文字とアクセシビリティの木は、観察器が先に 3000 字と 5000 字で切る)
 
 1. 呼ぶ所が `observeProject({ projectDir, mode, ... })` を呼ぶ。`scenarios` を渡さなければ、目録の `scenarios` のフォルダー(既定は `app/scenarios/`)から読む。`aiConnection: 'mock'` で観察用の会話の `ai` 関数(`createObservationAi`)を作り、やり取りを report の `ai` に入れる。G5 はシナリオを回さず、基本のシナリオも回さない。G6 は目録のシナリオと基本のシナリオを回す。`outDir` を渡さなければ、`.studio/observations/<観察の ID>/` を新しく作り、`report.json` もそこに書く
    - `shown`: Studio が、表示中のビルドの結果と、Studio のプレビューの配信と `/observe.html` の URL を渡す

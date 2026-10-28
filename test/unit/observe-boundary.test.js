@@ -119,3 +119,31 @@ test('呼ぶ所が同じ入口を使う: 観察器を直接呼ぶのは入口だ
   assert.match(cli, /mode: 'working'/);
   assert.match(cli, /aiConnection: 'mock'/);
 });
+
+// 観察の道具の MCP サーバー(jyoka/tasks#311)も、CLI と同じ入口の、作業中の app/ を見るモードを使う(S5)
+const MCP_SERVER = path.join(ROOT, 'src', 'server', 'observe-mcp.js');
+
+test('観察の道具の MCP サーバーは同じ入口を使う: どの道具も observeProject を作業中の app/ のモードとモックの AI で呼ぶ', async () => {
+  const source = await fs.readFile(MCP_SERVER, 'utf8');
+  const fromEntry = importsOf(source).some((spec) => path.resolve(path.dirname(MCP_SERVER), spec) === ENTRY);
+  assert.ok(fromEntry, 'MCP サーバーが観察の入口を import していません');
+  // 観察器を直接 import しない(Observer を作らない)。使ってよいのは操作の失敗とシナリオの検査だけ
+  for (const spec of importsOf(source)) {
+    const target = path.resolve(path.dirname(MCP_SERVER), spec);
+    if (!path.relative(OBSERVER_DIR, target).startsWith('..')) {
+      assert.ok(['operations.js', 'scenario.js'].includes(path.basename(target)), `MCP サーバーが ${spec} を import しています`);
+    }
+  }
+  assert.doesNotMatch(source, /new Observer\(/);
+  const calls = source.split(/\bobserveProject\(\{/).slice(1).map((rest) => rest.slice(0, rest.indexOf('});')));
+  assert.equal(calls.length, 2, 'open と run_scenarios の 2 か所で呼ぶ');
+  for (const call of calls) {
+    assert.match(call, /mode: 'working'/);
+    assert.match(call, /aiConnection: 'mock'/);
+    // プロジェクトの場所は起動の引数で受け取ったものだけ
+    assert.match(call, /projectDir: this\.projectDir,/);
+  }
+  // stdio の起動の口は、この MCP サーバーを使う
+  const bin = await fs.readFile(path.join(ROOT, 'bin', 'observe-mcp.js'), 'utf8');
+  assert.match(bin, /import\('\.\.\/src\/server\/observe-mcp\.js'\)/);
+});
