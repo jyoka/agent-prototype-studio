@@ -10,14 +10,32 @@ const FIX_AI = '直す AI';
 const RUN_STATUS = {
   running: () => `${FIX_AI} が作業しています…`,
   done: () => '終わりました',
-  failed: () => '失敗しました',
+  // 関門で失敗したまま止めたときは、直しきれなかったことと、何がうまくいかないかを言う
+  failed: (run) => {
+    const gate = failedGate(run);
+    if (!gate) return '失敗しました';
+    const what = (RUN_STATUS[`failed:${gate.name}`] ?? (() => `${gateLabel(gate)}で問題が見つかりました`))(gate);
+    return `終わりました。${FIX_AI} が直しきれませんでした。${what}`;
+  },
   cancelled: () => '中断しました',
   'timed-out': () => '時間の上限を超えたので止めました',
-  passed: () => '終わりました。Studio が確かめた関門は、すべて通りました',
-  fixed: () => '終わりました。作る AI が直すラウンドで直し、Studio が確かめた関門は、すべて通りました',
-  unverified: () => '終わりました。起動の確認はしていません(未確認)',
-  unchanged: () => '終わりました。app/ は変わっていません',
+  // 作るループの結果(harness.md の 2.4)。結果の帯の 1 文になる。U3 の言葉を使わない(ux-redesign.md 4 節)
+  passed: () => '終わりました。確かめました。問題は見つかりませんでした',
+  fixed: () => `終わりました。確かめて見つけた問題を、${FIX_AI} が直しました`,
+  unverified: (run) => {
+    const reason = firstSentence(run.gates?.find((gate) => gate.status === 'unverified')?.reason);
+    return `終わりました。自動の確かめができませんでした${reason ? `(${reason})` : ''}`;
+  },
+  unchanged: () => '終わりました。試作品のファイルは変わっていません',
   'agent-failed': () => `${FIX_AI} が失敗しました`,
+  // 直しきれなかったときの「何がうまくいかないか」。関門の名前(run.gates の name)ごとの行。
+  // 新しい関門は、ここと ITEM_LABELS の gate: の行を足すだけで、結果の帯に出る
+  'failed:changes': () => `${FIX_AI} が、試作品のファイルを変えませんでした`,
+  'failed:inspect': () => '試作品のファイルの名前か大きさに問題があります',
+  'failed:contract': () => 'AI の設定か、確かめ方のファイルの形に誤りがあります',
+  'failed:compile': () => '試作品のファイルに誤りがあり、新しい状態を表示できません',
+  'failed:launch': () => '試作品を開くと、誤りが出ます',
+  'failed:scenarios': () => '決めた手順で試すと、思ったとおりに動きません',
 };
 const ITEM_LABELS = {
   tool: '操作',
@@ -44,6 +62,13 @@ const ITEM_LABELS = {
   round: '直すラウンド',
   'fix-request': '直す依頼(Studio から作る AI へ)',
   'gave-up': '人に返す',
+  // 結果の帯の「確かめた中身」に出す、関門の名前(run.gates の name ごと)。U3 の言葉を使わない
+  'gate:changes': '変わったところ',
+  'gate:inspect': 'ファイルの名前と大きさ',
+  'gate:contract': 'AI の設定と確かめ方の形',
+  'gate:compile': '表示の準備',
+  'gate:launch': '開いて表示できるか',
+  'gate:scenarios': '決めた手順で動くか',
 };
 // 試作品からプロダクト内 AI への要求。連打で実モデルを呼び続けないよう、数を絞る
 const AI_WINDOW_MS = 5000;
@@ -97,6 +122,15 @@ const els = {
   retryBar: $('retry-bar'),
   aiTrace: $('ai-trace'),
   frameHost: $('frame-host'),
+  frameLabel: $('frame-label'),
+  previewBroken: $('preview-broken'),
+  previewBrokenLead: $('preview-broken-lead'),
+  previewBrokenFix: $('preview-broken-fix'),
+  previewBrokenErrors: $('preview-broken-errors'),
+  shotDialog: $('shot-dialog'),
+  shotDialogImage: $('shot-dialog-image'),
+  shotDialogCaption: $('shot-dialog-caption'),
+  shotDialogClose: $('shot-dialog-close'),
   buildStatus: $('build-status'),
   events: $('events'),
   eventsEmpty: $('events-empty'),
@@ -271,8 +305,9 @@ async function refresh() {
       render();
       await syncConversation();
     }
-    // 作業中のファイルは、Studio の外でも変わり得るので、毎回確かめる
+    // 作業中のファイルは、Studio の外でも変わり得るので、毎回確かめる(保存の印と、証拠が古いかの印)
     await loadVersions();
+    await loadEvidence();
   } catch (error) {
     if (seq < appliedSeq) return;
     handleError(error);
@@ -296,6 +331,7 @@ function render() {
   els.rebuild.disabled = !project || project.building || project.running || project.versioning;
   renderBuild(project);
   renderMake(project);
+  renderPreviewBroken(project);
   renderVersions(project);
   if ((project?.id ?? null) !== handoff.target) loadHandoff(project?.id ?? null);
   renderHandoff(project);
@@ -345,7 +381,8 @@ function renderList() {
       closeConsent();
       versions.message = null;
       render();
-      syncConversation();
+      // 会話を読んでから、前の証拠が古いかを読む(一覧の次の読み込みを待たない)
+      syncConversation().then(() => loadEvidence());
       loadVersions();
     });
     li.append(button);
@@ -405,6 +442,29 @@ function renderBuild(project) {
   }
   els.buildStatus.replaceChildren(...nodes);
 }
+
+// 試作品を表示できないとき(ux-redesign.md 7-6)。試す欄の上に、表示できないことと、前に表示できた状態を出していることを出す。
+// 「直す AI に直してもらう」は依頼の欄に文を入れるだけで、送るのは利用者。誤りの場所(ファイルと行)は「開発者向け」の中だけ。
+// 直す AI が直している間(直すラウンドでビルドし直す)と、ビルドの間は出さない
+const FIX_DISPLAY_REQUEST = '表示できるように直して';
+
+function renderPreviewBroken(project) {
+  const build = project?.lastBuild;
+  const broken = Boolean(project && build && !build.ok && !project.running && !project.building);
+  els.previewBroken.hidden = !broken;
+  els.frameLabel.hidden = !(broken && project.previewUrl);
+  if (!broken) return;
+  els.previewBrokenLead.textContent = project.previewUrl
+    ? '試作品のファイルに誤りがあります。下には、前に表示できた状態を出しています。'
+    : '試作品のファイルに誤りがあります。前に表示できた状態もありません。';
+  els.previewBrokenFix.disabled = els.requestText.disabled;
+  els.previewBrokenErrors.replaceChildren(...(build.errors ?? []).map(problemItem));
+}
+
+els.previewBrokenFix.addEventListener('click', () => {
+  setMorePanel(false);
+  fillRequest(FIX_DISPLAY_REQUEST);
+});
 
 // 開発者向けの詳細の「直す AI(作る AI)の接続」。接続の種類、版、認証の見込み、実行ファイル、使えない理由を出す
 function renderAgentStatus() {
@@ -621,6 +681,292 @@ function runDevDetails(run) {
   return box;
 }
 
+// 作るループの結果の帯(harness.md の 7.2、ux-redesign.md 4 節)。直す欄の依頼ごとに、状態の 1 文、
+// 確かめた画面幅のスクリーンショット(押すと大きく)、直した回数を出す。関門ごとの結果、失敗の中身、
+// シナリオの手順、直す依頼の文は「確かめた中身を見る」の中、節の列と report の場所は、その中の「開発者向け」に置く。
+// 関門の並びは run.gates(run.json の関門の一覧)のまま出し、G1〜G6 を画面に決め打ちで書かない(agent-simulation.md の 8.2)
+const EVIDENCE_STATUSES = new Set(['passed', 'fixed', 'failed', 'unverified', 'unchanged']);
+const GATE_RESULT = { passed: '問題なし', failed: '問題あり', unverified: '確かめられませんでした', unchanged: '変わっていません', skipped: '行っていません' };
+const STEP_RESULT = { passed: '通った', failed: '通らなかった', skipped: '行っていない' };
+const SHOT_LABELS = { mobile: 'スマートフォン', tablet: 'タブレット', desktop: 'パソコン' };
+const ERROR_KINDS = { runtime: '実行時のエラー', 'console-error': '画面の知らせのエラー', 'unhandled-rejection': '処理されない誤り', timeout: '時間切れ' };
+const STALE_TEXT = 'この後に変わりました';
+// 開いている「確かめた中身を見る」と、その中の開く操作(再描画で閉じないよう、実行の ID と場所で覚える)
+const openEvidence = new Set();
+// 証拠が古いか(/api/projects/:id/evidence)。runs は実行の ID ごとの stale
+const evidence = { projectId: null, runs: new Map(), seq: 0, snapshot: '' };
+// スクリーンショット。画像の API はトークンを要るので、fetch で読んで data: の URL にする(CSP の img-src は 'self' と data: だけ)
+// 読めなかった画像は、同じ描画のたびに読み直さない。覚えておく画像の数には上限を付ける
+const MAX_SHOTS = 60;
+const shotUrls = new Map();
+const shotLoads = new Map();
+const shotFailed = new Set();
+
+function firstSentence(text) {
+  if (typeof text !== 'string' || !text) return '';
+  return text.split('。')[0].trim();
+}
+
+function gateLabel(gate) {
+  return ITEM_LABELS[`gate:${gate.name}`] ?? gate.label ?? gate.name;
+}
+
+// 直しきれなかった関門。直すラウンドで何も変わらなかったときは、前のラウンドの失敗(残っていれば)を先に言う
+function failedGate(run) {
+  const gates = run.gates ?? [];
+  return gates.find((gate) => gate.status === 'failed') ?? gates.find((gate) => gate.status === 'unchanged' && run.round > 1) ?? null;
+}
+
+function hasEvidence(run) {
+  return EVIDENCE_STATUSES.has(run.status) && (run.gates ?? []).some((gate) => gate.status !== 'skipped');
+}
+
+function keepOpenAs(box, key) {
+  box.open = openEvidence.has(key);
+  box.addEventListener('toggle', () => (box.open ? openEvidence.add(key) : openEvidence.delete(key)));
+  return box;
+}
+
+function shotKey(projectId, file) {
+  return `${projectId}\n${file}`;
+}
+
+function loadShot(projectId, file) {
+  const key = shotKey(projectId, file);
+  if (shotFailed.has(key)) return Promise.reject(new Error('画像を読めませんでした'));
+  if (!shotLoads.has(key)) {
+    const loading = (async () => {
+      const response = await send(`/api/projects/${encodeURIComponent(projectId)}/evidence/screenshot?file=${encodeURIComponent(file)}`);
+      if (!response.ok) throw new Error(`サーバーが ${response.status} を返しました`);
+      const blob = await response.blob();
+      const url = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+      shotUrls.set(key, url);
+      // 古いものから忘れる(忘れた画像は、また描くときに読み直す)
+      for (const old of shotUrls.keys()) {
+        if (shotUrls.size <= MAX_SHOTS) break;
+        shotUrls.delete(old);
+        shotLoads.delete(old);
+      }
+      return url;
+    })();
+    loading.catch(() => {
+      shotLoads.delete(key);
+      shotFailed.add(key);
+    });
+    shotLoads.set(key, loading);
+  }
+  return shotLoads.get(key);
+}
+
+function shotImage(projectId, file, alt) {
+  const img = element('img');
+  img.alt = alt;
+  const ready = shotUrls.get(shotKey(projectId, file));
+  if (ready) img.src = ready;
+  else {
+    loadShot(projectId, file)
+      .then((url) => {
+        img.src = url;
+      })
+      .catch(() => img.replaceWith(element('span', '画像を読めませんでした', 'muted')));
+  }
+  return img;
+}
+
+function shotName(shot) {
+  return SHOT_LABELS[shot.name] ?? shot.name;
+}
+
+// 押すと大きく見る小さな画像
+function shotButton(projectId, shot, caption) {
+  const button = element('button', undefined, 'shot');
+  button.type = 'button';
+  button.setAttribute('aria-label', `${caption}を大きく見る`);
+  button.append(shotImage(projectId, shot.file, caption));
+  button.addEventListener('click', () => openShot(projectId, shot.file, caption));
+  return button;
+}
+
+function openShot(projectId, file, caption) {
+  els.shotDialogImage.replaceChildren(shotImage(projectId, file, caption));
+  els.shotDialogCaption.textContent = caption;
+  if (!els.shotDialog.open) els.shotDialog.showModal();
+}
+
+function gateProblems(gate) {
+  const list = element('ul', undefined, 'evidence-problems');
+  if (gate.reason) list.append(element('li', `理由: ${gate.reason}`));
+  if (gate.summary && !gate.errors?.length && !gate.failures?.length) list.append(element('li', gate.summary));
+  for (const failure of gate.failures ?? []) {
+    const where = failure.step ? `の ${failure.step} 番目の手順` : '';
+    const li = element('li', `「${failure.scenario}」${where}で通りませんでした`);
+    if (failure.expected) li.append(element('span', `期待: ${failure.expected}`, 'evidence-line'));
+    li.append(element('span', `実際: ${failure.actual}`, 'evidence-line'));
+    list.append(li);
+  }
+  for (const error of gate.errors ?? []) {
+    list.append(element('li', error.text !== undefined ? `誤り: ${error.text}` : `${ERROR_KINDS[error.kind] ?? error.kind}: ${error.message}`));
+  }
+  const more = (gate.errorCount ?? 0) - (gate.errors?.length ?? 0);
+  if (more > 0) list.append(element('li', `ほか ${more} 件`));
+  return list;
+}
+
+// 関門ごとの結果。失敗と未確認には中身を添える
+function gateList(gates, label) {
+  const list = element('ul', undefined, 'evidence-gates');
+  list.setAttribute('aria-label', label);
+  for (const gate of gates) {
+    const li = element('li');
+    li.dataset.status = gate.status;
+    li.append(element('span', gateLabel(gate), 'gate-name'), document.createTextNode(': '), element('span', GATE_RESULT[gate.status] ?? gate.status, 'gate-result'));
+    if (gate.status === 'failed' || gate.status === 'unverified') li.append(gateProblems(gate));
+    list.append(li);
+  }
+  return list;
+}
+
+// シナリオの手順と結果。関門の結果に scenarios があるものだけ(どの関門かは決め打ちにしない)
+function scenarioSteps(projectId, gates) {
+  const nodes = [];
+  for (const gate of gates) {
+    for (const scenario of gate.scenarios ?? []) {
+      const box = element('div', undefined, 'evidence-scenario');
+      box.dataset.verdict = scenario.verdict;
+      const name = scenario.base ? `${scenario.name}(Studio がいつも確かめる手順)` : scenario.name;
+      box.append(element('p', `「${name}」: ${scenario.verdict === 'passed' ? '通った' : '通らなかった'}`, 'evidence-scenario-name'));
+      const steps = element('ol');
+      steps.setAttribute('aria-label', `「${scenario.name}」の手順`);
+      steps.append(...scenario.steps.map((step) => element('li', `${step.text}: ${STEP_RESULT[step.status] ?? step.status}`)));
+      if (scenario.steps.length > 0) box.append(steps);
+      const shot = (gate.failures ?? []).find((failure) => failure.scenario === scenario.name && failure.screenshot);
+      if (shot) box.append(shotButton(projectId, { file: shot.screenshot }, `「${scenario.name}」で通らなかったときの画面`));
+      nodes.push(box);
+    }
+  }
+  return nodes;
+}
+
+// 直すラウンドごとの、見つけた問題と、直す AI に返した依頼の文
+function fixHistory(run) {
+  const nodes = [];
+  for (const request of run.fixRequests ?? []) {
+    const before = run.rounds?.find((round) => round.round === request.round - 1);
+    const gate = (before?.gates ?? []).find((g) => g.status === 'failed');
+    const box = element('div', undefined, 'evidence-fix');
+    const subject = gate ? `「${gateLabel(gate)}」で問題が見つかったので、${FIX_AI} に直してもらいました` : `${FIX_AI} に直してもらいました`;
+    box.append(element('p', `${request.round - 1} 回目: ${subject}`));
+    const text = keepOpenAs(element('details', undefined, 'evidence-raw'), `${run.id}:fix:${request.round}`);
+    text.append(element('summary', `${FIX_AI} に返した依頼の文`), element('pre', request.text));
+    box.append(text);
+    nodes.push(box);
+  }
+  return nodes;
+}
+
+// 開発者向け: 節の列、関門の ID、report と run.json の場所、誤りの場所
+function evidenceDev(run) {
+  const box = keepOpenAs(element('details', undefined, 'evidence-dev'), `${run.id}:dev`);
+  box.append(element('summary', '開発者向け: 節の列と記録の場所'));
+  const rounds = element('ul');
+  rounds.setAttribute('aria-label', '節の列');
+  for (const round of run.rounds ?? []) {
+    const names = (run.nodes ?? []).filter((node) => node.round === round.round).map((node) => (node.gate ? `${node.gate} ${node.name}` : node.name));
+    rounds.append(element('li', `ラウンド ${round.round}: ${names.join(' → ')}`));
+  }
+  box.append(rounds);
+  const gates = element('ul');
+  gates.setAttribute('aria-label', '関門');
+  for (const gate of run.gates ?? []) {
+    const li = element('li', `${gate.id} ${gate.label}(${gate.name}): ${gate.status}`);
+    for (const error of gate.errors ?? []) {
+      if (error.file) li.append(element('span', `${error.file}${error.line ? `:${error.line}${error.column ? `:${error.column}` : ''}` : ''} ${error.text ?? ''}`, 'evidence-line'));
+    }
+    gates.append(li);
+  }
+  box.append(gates);
+  const files = element('ul');
+  files.setAttribute('aria-label', '記録の場所');
+  if (run.evidence?.run) files.append(element('li', run.evidence.run));
+  for (const round of run.rounds ?? []) {
+    for (const gate of round.gates ?? []) if (gate.report) files.append(element('li', `${gate.report}(ラウンド ${round.round}、${gate.id})`));
+  }
+  box.append(files);
+  if (run.appDigest) box.append(element('p', `確かめた app/ の指紋: ${run.appDigest.slice(0, 12)}`, 'muted'));
+  return box;
+}
+
+function evidenceBand(projectId, run) {
+  const band = element('div', undefined, 'evidence');
+  band.setAttribute('role', 'group');
+  band.setAttribute('aria-label', '確かめた結果');
+  band.dataset.status = run.status;
+  const stale = evidence.projectId === projectId && evidence.runs.get(run.id) === true;
+  band.dataset.stale = String(stale);
+  band.append(element('p', RUN_STATUS[run.status](run), 'run-status'));
+  if (stale) {
+    const mark = element('p', undefined, 'evidence-stale');
+    mark.append(element('strong', STALE_TEXT), document.createTextNode('。この結果は、今の試作品より前のものです。'));
+    band.append(mark);
+  }
+  const shots = (run.gates ?? []).flatMap((gate) => gate.screenshots ?? []);
+  if (shots.length > 0) {
+    const list = element('ul', undefined, 'evidence-shots');
+    list.setAttribute('aria-label', '確かめた画面');
+    list.append(
+      ...shots.map((shot) => {
+        const caption = `${shotName(shot)}の幅で確かめた画面`;
+        const li = element('li');
+        li.append(shotButton(projectId, shot, caption), element('span', shot.width ? `${shotName(shot)}(幅 ${shot.width})` : shotName(shot), 'muted'));
+        return li;
+      }),
+    );
+    band.append(list);
+  }
+  const fixes = (run.round ?? 1) - 1;
+  if (fixes > 0) {
+    const what = run.status === 'failed' ? '直そうとした回数' : '直した回数';
+    band.append(element('p', `${FIX_AI} が${what}: ${fixes} 回(${run.maxFixRounds ?? fixes} 回まで)`, 'evidence-rounds muted'));
+  }
+  // P27 の「もう一度確かめる」を置く場所
+  band.append(element('div', undefined, 'evidence-actions'));
+  const more = keepOpenAs(element('details', undefined, 'evidence-more'), `${run.id}:more`);
+  more.append(element('summary', '確かめた中身を見る'), gateList(run.gates ?? [], '確かめたこと'));
+  const steps = scenarioSteps(projectId, run.gates ?? []);
+  if (steps.length > 0) more.append(element('p', '決めた手順', 'card-label'), ...steps);
+  const history = fixHistory(run);
+  if (history.length > 0) more.append(element('p', '見つけた問題と直したこと', 'card-label'), ...history);
+  more.append(evidenceDev(run));
+  band.append(more);
+  return band;
+}
+
+// 証拠が古いかを読む。古いかは、今の app/ の指紋と、run が確かめた指紋で決まる(次の依頼、版の復元、手で変えたとき)
+async function loadEvidence() {
+  const project = selectedProject();
+  const runs = project ? conversations.get(project.id)?.runs ?? [] : [];
+  if (!project || !runs.some((run) => run.appDigest && run.status !== 'running')) return;
+  const seq = ++evidence.seq;
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(project.id)}/evidence`);
+    if (seq !== evidence.seq || project.id !== selectedId) return;
+    const snapshot = JSON.stringify(data.runs);
+    if (evidence.projectId === project.id && snapshot === evidence.snapshot) return;
+    evidence.projectId = project.id;
+    evidence.snapshot = snapshot;
+    evidence.runs = new Map(data.runs.map((run) => [run.id, run.stale]));
+    renderConversation(selectedProject());
+  } catch (error) {
+    if (seq !== evidence.seq) return;
+    handleError(error);
+  }
+}
+
 function renderConversation(project) {
   const runs = project ? conversations.get(project.id)?.runs ?? [] : [];
   const nodes = runs.map((run) => {
@@ -658,7 +1004,8 @@ function renderConversation(project) {
     li.append(steps);
     const updated = updatedText(run);
     if (updated) li.append(element('p', updated, 'run-updated'));
-    li.append(element('p', (RUN_STATUS[run.status] ?? (() => run.status))(run), 'run-status'));
+    if (hasEvidence(run)) li.append(evidenceBand(project.id, run));
+    else li.append(element('p', (RUN_STATUS[run.status] ?? (() => run.status))(run), 'run-status'));
     li.append(runDevDetails(run));
     return li;
   });
@@ -690,6 +1037,8 @@ async function syncConversation() {
     const data = await api(`/api/projects/${encodeURIComponent(project.id)}/build-requests`);
     conversations.set(project.id, { version: project.runsVersion, runs: data.runs });
     if (project.id === selectedId) renderMake(selectedProject());
+    // 終わった run が増えたら、前の証拠が古くなったかを読み直す
+    if (project.id === selectedId) await loadEvidence();
   } catch (error) {
     handleError(error);
   }
@@ -2215,6 +2564,12 @@ els.rebuild.addEventListener('click', async () => {
   await refresh();
   // つながらないときも、ボタンと開発者向けの詳細を元に戻す
   render();
+});
+
+els.shotDialogClose.addEventListener('click', () => els.shotDialog.close());
+// 画像の外(dialog の余白)を押しても閉じる
+els.shotDialog.addEventListener('click', (event) => {
+  if (event.target === els.shotDialog) els.shotDialog.close();
 });
 
 els.handoffForm.addEventListener('submit', (event) => {

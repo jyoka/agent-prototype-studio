@@ -1,6 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { SAMPLES, chooseProject, chooseSample, expect, launchStudio, openDevDetails, test, writeProject } from './studio.js';
+import { ROOT, SAMPLES, chooseProject, chooseSample, closeMore, expect, expectNoDevWords, launchStudio, openDevDetails, test, writeProject } from './studio.js';
+
+// 「分かるか」の確かめ(ux-redesign.md 9 節)のスクリーンショットの置き場。test-results/ は git が無視する
+const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
 
 test('URL の鍵がない、または合わないときは、どうすればよいかを出す', async ({ page, home }) => {
   const studio = await launchStudio(home);
@@ -63,6 +66,79 @@ test('ビルドに失敗した試作品は、場所と直し方を出し、直�
     await page.getByRole('button', { name: 'ファイルから作り直す' }).click();
     await expect(status).toContainText('ビルドに成功しました');
     await expect(page.frameLocator('iframe[title="試作品"]').getByText('直りました 1,2')).toBeVisible();
+  } finally {
+    await studio.stop();
+  }
+});
+
+test('試作品を表示できないときは、試す欄の上に理由と前の状態を出し、「直す AI に直してもらう」で依頼の欄に文を入れる(7-6)', async ({ page, home }) => {
+  const appDir = await writeProject(
+    home,
+    'shop-demo',
+    { 'main.jsx': 'document.getElementById("root").textContent = "架空の雑貨店 ひだまり堂";\n' },
+    '架空の雑貨店',
+  );
+  const studio = await launchStudio(home);
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(studio.url);
+    await chooseProject(page, /架空の雑貨店/);
+    const app = page.frameLocator('iframe[title="試作品"]');
+    await expect(app.getByText('架空の雑貨店 ひだまり堂')).toBeVisible();
+    const notice = page.getByRole('group', { name: '試作品を表示できません' });
+    await expect(notice).toBeHidden();
+
+    // 手でファイルを壊して作り直す(直す AI の変更でも、同じく表示できなくなる)
+    await fs.writeFile(path.join(appDir, 'main.jsx'), 'const items = [1, 2;\ndocument.getElementById("root").textContent = items.join(",");\n');
+    await openDevDetails(page);
+    await page.getByRole('button', { name: 'ファイルから作り直す' }).click();
+    await expect(page.locator('#build-status')).toContainText('ビルドに失敗しました');
+    await closeMore(page);
+
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText('試作品のファイルに誤りがあります。下には、前に表示できた状態を出しています。');
+    await expect(page.getByText('試作品(前に表示できた状態)')).toBeVisible();
+    // 試す欄は、前に表示できた状態のまま
+    await expect(app.getByText('架空の雑貨店 ひだまり堂')).toBeVisible();
+    // 誤りの場所は開発者向けの中にだけあり、見える文字に開発の言葉はない(U3)
+    const places = notice.getByRole('list', { name: '誤りの場所' });
+    await expect(places).toBeHidden();
+    await expectNoDevWords(notice);
+    await expectNoDevWords(page.locator('#frame-label'));
+    await page.screenshot({ path: path.join(UX_SHOTS, 'P26-cannot-display.png') });
+    await notice.getByText('開発者向け: 誤りの場所(ファイルと行)').click();
+    await expect(places).toContainText('app/main.jsx(1 行');
+
+    // 押すと依頼の欄に文が入るだけで、送らない
+    await notice.getByRole('button', { name: '直す AI に直してもらう' }).click();
+    await expect(page.getByLabel('依頼')).toHaveValue('表示できるように直して');
+    await expect(page.getByLabel('依頼')).toBeFocused();
+    await expect(page.getByRole('list', { name: '作る会話' })).toContainText('まだ依頼はありません');
+    expect((await studio.api('/api/projects/shop-demo/build-requests')).runs).toEqual([]);
+
+    // 直して作り直すと、表示できないことの知らせは消える
+    await fs.writeFile(path.join(appDir, 'main.jsx'), 'document.getElementById("root").textContent = "架空の雑貨店 直りました";\n');
+    await openDevDetails(page);
+    await page.getByRole('button', { name: 'ファイルから作り直す' }).click();
+    await expect(page.locator('#build-status')).toContainText('ビルドに成功しました');
+    await expect(notice).toBeHidden();
+    await expect(page.locator('#frame-label')).toBeHidden();
+    await expect(app.getByText('架空の雑貨店 直りました')).toBeVisible();
+  } finally {
+    await studio.stop();
+  }
+});
+
+test('前に表示できた状態がない試作品も、表示できないことを試す欄の上に出す(7-6)', async ({ page, home }) => {
+  await writeProject(home, 'broken-first', { 'main.jsx': 'const items = [1, 2;\n' }, '最初から壊れた試作品');
+  const studio = await launchStudio(home);
+  try {
+    await page.goto(studio.url);
+    await chooseProject(page, /最初から壊れた試作品/);
+    const notice = page.getByRole('group', { name: '試作品を表示できません' });
+    await expect(notice).toContainText('試作品のファイルに誤りがあります。前に表示できた状態もありません。');
+    await expect(page.locator('#frame-label')).toBeHidden();
+    await expectNoDevWords(notice);
   } finally {
     await studio.stop();
   }

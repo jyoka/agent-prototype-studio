@@ -49,6 +49,17 @@
       <!-- 試作品の中の AI の応答を待つ間だけ、「応答を止める」を出す -->
       <div id="ai-waiting" class="ai-waiting" role="status" hidden></div>
       <div id="retry-bar" class="retry-bar" role="region" aria-label="試し直す" hidden></div>
+      <!-- 試作品を表示できないとき(ux-redesign.md 7-6)。誤りの場所は「開発者向け」の中にだけ出す -->
+      <div id="preview-broken" class="preview-broken" role="group" aria-labelledby="preview-broken-heading" hidden>
+        <h3 id="preview-broken-heading">試作品を表示できません</h3>
+        <p id="preview-broken-lead"></p>
+        <button type="button" id="preview-broken-fix">直す AI に直してもらう</button>
+        <details id="preview-broken-dev" class="card-dev">
+          <summary>開発者向け: 誤りの場所(ファイルと行)</summary>
+          <ul id="preview-broken-errors" class="problem-list" aria-label="誤りの場所"></ul>
+        </details>
+      </div>
+      <p id="frame-label" class="frame-label" hidden>試作品(前に表示できた状態)</p>
       <div id="frame-host" class="frame-host">
         <p id="frame-placeholder" class="placeholder">読み込んでいます…</p>
       </div>
@@ -164,5 +175,13 @@
       </section>
     </details>
   </aside>
+  <!-- 結果の帯のスクリーンショットを大きく見る -->
+  <dialog id="shot-dialog" class="shot-dialog" aria-labelledby="shot-dialog-caption">
+    <div class="shot-dialog-head">
+      <p id="shot-dialog-caption"></p>
+      <button type="button" id="shot-dialog-close" aria-label="閉じる">×</button>
+    </div>
+    <div id="shot-dialog-image" class="shot-dialog-image"></div>
+  </dialog>
 </body>
 </html>

@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { startAgentProcess, STOP_STEPS_MS } from './agent-process.js';
-import { diffSnapshots, MAX_SNAPSHOT_ENTRIES, snapshotApp } from './app-snapshot.js';
+import { diffSnapshots, digestSnapshot, MAX_SNAPSHOT_ENTRIES, snapshotApp } from './app-snapshot.js';
 import { buildClaudeArgs, DEFAULT_MAX_BUDGET_USD, MAX_TURNS, OBSERVE_TOOLS, writeObserveMcpConfig } from './claude-args.js';
 import { describeStep } from '../observer/scenario.js';
 import { buildFixPrompt, describeFailure, ERROR_KIND_TEXT } from './fix-prompt.js';
@@ -28,6 +28,9 @@ export const SCENARIO_GATE_LIMITS = Object.freeze({ scenarioTimeoutMs: 60_000, g
 // 関門 G6 の結果に残す、失敗したシナリオの数と、そのときの画面の文字の長さ
 const MAX_GATE_FAILURES = 20;
 const MAX_FAILURE_PAGE_TEXT = 2000;
+// 関門 G6 の結果に残す、シナリオの数と 1 本の手順の数(結果の帯の「確かめた中身」で手順を見せる)
+const MAX_GATE_SCENARIOS = 20;
+const MAX_GATE_STEPS = 50;
 export const RUN_FORMAT = 'prototype-studio-run';
 // 直すラウンドの上限。作る AI の起動は、1 つの依頼で最初の 1 回と合わせて 3 回まで(harness.md の 2.2、2026-10-28 の決定)
 export const MAX_FIX_ROUNDS = 2;
@@ -104,14 +107,25 @@ function scenarioGate(report, reason) {
       expected: step ? clip(describeStep(step), 300) : null,
       actual: clip(scenario.failed?.message ?? 'シナリオが通りませんでした'),
       pageText: scenario.failed?.pageText ? clip(scenario.failed.pageText.replace(/\s+/g, ' ').trim(), MAX_FAILURE_PAGE_TEXT) : null,
+      // 失敗したときの画面のスクリーンショット(観察器が書いた場所。呼ぶ側がプロジェクトからの場所に直す)
+      screenshot: typeof scenario.failed?.screenshot?.file === 'string' ? scenario.failed.screenshot.file : null,
     };
   });
+  // シナリオごとの手順と結果。結果の帯の「確かめた中身」に出す
+  const steps = scenarios.slice(0, MAX_GATE_SCENARIOS).map((scenario) => ({
+    name: clip(scenario.name, 200),
+    base: scenario.base === true,
+    file: scenario.file ?? null,
+    verdict: scenario.verdict,
+    steps: (scenario.steps ?? []).slice(0, MAX_GATE_STEPS).map((step) => ({ n: step.n, text: clip(describeStep(step.step), 300), status: step.status })),
+  }));
   const base = {
     verdict: report.verdict,
     scenarioCount: scenarios.length,
     baseCount: scenarios.filter((scenario) => scenario.base).length,
     failedCount: failed.length,
     failures,
+    scenarios: steps,
     errorCount: report.errors?.length ?? 0,
     errors,
   };
@@ -267,12 +281,17 @@ export class BuildRequests {
       nodes: [],
       gates: freshGates(),
       round: 1,
+      maxFixRounds: MAX_FIX_ROUNDS,
       rounds: [{ round: 1, input: 'request', changedFiles: [], gates: null }],
       launches: [],
       // 作る AI の道具の呼び出しの回数(すべてのラウンドの合計)。observe は観察の道具の分
       toolCalls: { count: 0, observe: 0, byTool: {} },
       // 直すラウンドで app/ のシナリオが変わったら、ラウンドとファイルを残す(確かめ方が変わった印)
       scenariosChanged: [],
+      // 直す依頼の文(ラウンドごと)。元の依頼を含むので、画面にだけ返し、run.json には入れない
+      fixRequests: [],
+      // 関門が確かめた app/ の中身の指紋。今の app/ と違えば、証拠は古い(S6。evidence.js)
+      appDigest: null,
       evidence: null,
     };
     this.onNode({ projectId: id, runId: run.id, node: 'accept', kind: 'code' });
@@ -501,6 +520,7 @@ export class BuildRequests {
     run.changedFiles = diffSnapshots(before, after);
     const changed = diffSnapshots(roundBefore, after);
     state.currentRound.changedFiles = changed;
+    run.appDigest = digestSnapshot(after);
     const fixing = run.round > 1;
     if (roundBefore.size >= MAX_SNAPSHOT_ENTRIES || after.size >= MAX_SNAPSHOT_ENTRIES) {
       this.addItem(id, run, 'info', `app/ のファイルが ${MAX_SNAPSHOT_ENTRIES} 個を超えているので、変わったファイルを確かめきれません。ビルドし直します。`);
@@ -565,6 +585,7 @@ export class BuildRequests {
     const failedAt = build.ok ? null : (BUILD_GATES.includes(build.stage) ? build.stage : 'compile');
     state.buildFailedAt = failedAt;
     run.build = { ok: build.ok, errorCount: build.errors?.length ?? 0, stage: failedAt, buildId: build.buildId ?? null, appDigest: build.appDigest ?? null };
+    run.appDigest = build.appDigest ?? run.appDigest;
     const failedIndex = failedAt ? BUILD_GATES.indexOf(failedAt) : BUILD_GATES.length;
     for (const [index, name] of BUILD_GATES.entries()) {
       if (index < failedIndex) this.setGate(run, name, { status: 'passed' });
@@ -626,6 +647,10 @@ export class BuildRequests {
     }
     const gate = launchGate(report, reason);
     gate.report = report ? this.relativeToProject(paths, reportFile) : null;
+    // 確かめた画面幅ごとのスクリーンショット。結果の帯に小さく出す(場所はプロジェクトから。evidence.js が読む)
+    gate.screenshots = (report?.screenshots ?? [])
+      .filter((shot) => typeof shot?.file === 'string')
+      .map((shot) => ({ name: shot.name, width: shot.width ?? null, height: shot.height ?? null, file: this.relativeToProject(paths, shot.file) }));
     this.setGate(run, 'launch', gate);
     const launched = run.gates.find((g) => g.name === 'launch');
     if (gate.status === 'passed') {
@@ -698,6 +723,7 @@ export class BuildRequests {
       ? { status: 'failed', summary: timeoutText, errorCount: 1, errors: [{ kind: 'timeout', message: timeoutText }], failures: [] }
       : scenarioGate(report, reason);
     gate.report = report ? this.relativeToProject(paths, reportFile) : null;
+    for (const failure of gate.failures ?? []) if (failure.screenshot) failure.screenshot = this.relativeToProject(paths, failure.screenshot);
     this.setGate(run, 'scenarios', gate);
     const checked = run.gates.find((g) => g.name === 'scenarios');
     if (gate.status === 'passed') {
@@ -746,6 +772,7 @@ export class BuildRequests {
     state.lastFailure = failed;
     state.roundBefore = state.after;
     run.round += 1;
+    run.fixRequests.push({ round: run.round, gate: failed.id, text: state.fixPrompt });
     run.gates = freshGates();
     // 直す依頼の文は元の依頼を含むので、run.json には入れない。何を返したかだけを残す
     state.currentRound = {
@@ -839,6 +866,8 @@ export class BuildRequests {
       // 直すラウンドで app/ のシナリオが変わったら、確かめ方が変わった印(ラウンドとファイル)
       scenariosChanged: run.scenariosChanged,
       build: run.build,
+      // 関門が確かめた app/ の中身の指紋(古くなったかの判定に使う。S6)
+      appDigest: run.appDigest,
       reports: run.rounds.flatMap((round) => (round.gates ?? []).filter((gate) => gate.report).map((gate) => ({ gate: gate.id, round: round.round, file: gate.report }))),
     };
     await fs.mkdir(dir, { recursive: true });
