@@ -126,4 +126,12 @@ export class ObserverBrowser {
     await this.queue;
     await this.restart();
   }
+
+  // 動いている観察を待たずに止める(観察の道具のサーバーが中断されたとき)。動いている観察は、ブラウザが閉じて失敗で終わる。
+  // 起動の途中なら、起動したらすぐ閉じる。この後の観察は断る
+  async abort() {
+    this.closed = true;
+    this.starting?.then((browser) => browser.close()).catch(() => {});
+    await this.restart();
+  }
 }

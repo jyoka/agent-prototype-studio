@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
@@ -38,6 +38,8 @@ function startServer(project, args = []) {
   child.stderr.on('data', (chunk) => {
     stderr += chunk;
   });
+  // サーバーが先に終わった後に書くと EPIPE になる。答えが来ないことは、各テストが待ちの上限で確かめる
+  child.stdin.on('error', () => {});
   child.stdout.on('data', (chunk) => {
     buffer += chunk;
     let index;
@@ -58,6 +60,8 @@ function startServer(project, args = []) {
         waiting.delete(id);
         reject(new Error(`${method} の答えが ${REQUEST_TIMEOUT_MS / 1000} 秒で来ません。stderr: ${stderr}`));
       }, REQUEST_TIMEOUT_MS);
+      // 中断のテストでは答えが来ないので、この待ちでテストの終わりを延ばさない
+      timer.unref();
       waiting.set(id, (message) => {
         clearTimeout(timer);
         waiting.delete(id);
@@ -116,7 +120,31 @@ async function fingerprint(dir) {
   return files;
 }
 
+// サーバーは TMPDIR(tmp)の下に、起動ごとの一時フォルダー(prototype-studio-observe-mcp-<pid>-…)を 1 つ作る。
+// 作業中のビルドも、Playwright のプロフィールなども、その中にできる(src/server/observe-temp.js)
+const SERVER_TEMP = /^prototype-studio-observe-mcp-\d+-[A-Za-z0-9]{6}$/;
 const leftovers = async () => (await fs.readdir(tmp)).filter((name) => name.startsWith('prototype-studio-observe-'));
+const buildTemps = async () => {
+  const builds = [];
+  for (const name of await leftovers()) {
+    if (!SERVER_TEMP.test(name)) continue;
+    for (const inner of await fs.readdir(path.join(tmp, name))) if (inner.startsWith('prototype-studio-observe-')) builds.push(inner);
+  }
+  return builds;
+};
+
+// tmp の下を使っているプロセス(Chromium は --user-data-dir に tmp の下のプロフィールを持つ)
+function browserProcesses() {
+  const lines = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' }).split('\n');
+  return lines.filter((line) => line.includes(tmp) && !/\bps -axo\b/.test(line)).map((line) => line.trim());
+}
+
+// ブラウザのプロセスが終わるのを待つ(親が強制終了されたブラウザは、パイプが閉じて少し後に終わる)
+async function waitBrowsersGone(ms = 10_000) {
+  const until = Date.now() + ms;
+  while (browserProcesses().length > 0 && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 200));
+  return browserProcesses();
+}
 
 function assertPng(image) {
   assert.equal(image.mimeType, 'image/png');
@@ -169,8 +197,9 @@ test('stdio で道具を順に呼ぶと、見本の求人相談で入力した�
     // スクリーンショットは .studio/observations/<obs-id>/ に置く(app/ の外)
     const sessionDir = path.dirname(opened.data.screenshot);
     assert.equal(path.dirname(sessionDir), path.join(paths.studio, 'observations'));
-    // 一時のビルドは、開いている間だけある
+    // 一時のビルドは、開いている間だけ、サーバーの一時フォルダーの中にある
     assert.equal((await leftovers()).length, 1);
+    assert.equal((await buildTemps()).length, 1);
 
     const greeted = await server.call('read_page');
     assert.equal(greeted.isError, false, greeted.text);
@@ -344,40 +373,15 @@ root.append(button);
   assert.deepEqual(await fingerprint(path.join(root, 'app')), before);
 });
 
-test('サーバーの全体の時間の上限を超えると、入力が開いたままでも、ブラウザと一時フォルダーを片付けて終わる', { timeout: TEST_TIMEOUT_MS }, async () => {
-  const server = startServer(JOB, ['--max-seconds', '3']);
-  await server.initialize();
-  // 開いている途中か、開いた後に上限が来る。どちらでも片付けて終わる
-  server.call('open').catch(() => {});
-  let timer;
-  const exit = await Promise.race([
-    server.exited,
-    new Promise((resolve) => {
-      timer = setTimeout(() => resolve(null), EXIT_TIMEOUT_MS);
-    }),
-  ]);
-  clearTimeout(timer);
-  if (exit === null) {
-    server.child.kill('SIGKILL');
-    await server.exited;
-    assert.fail(`時間の上限で終わりませんでした。stderr: ${server.stderr()}`);
-  }
-  assert.equal(exit.code, 0, server.stderr());
-  assert.match(server.stderr(), /時間の上限/);
-  assert.deepEqual(await leftovers(), []);
-  // report のない観察のフォルダーは残さない
-  const dir = path.join(projectPaths(home, JOB).studio, 'observations');
-  for (const id of await fs.readdir(dir)) await fs.access(path.join(dir, id, 'report.json'));
-});
-
-// 開いている途中で止まっても、一時フォルダーと report のない観察のフォルダーは残さない
+// 開いている途中で止まっても、一時フォルダー(Playwright のものも)、ブラウザのプロセス、report のない観察のフォルダーは残さない
 async function assertCleanedUp(server, exit) {
   if (exit === null) {
     server.child.kill('SIGKILL');
     await server.exited;
     assert.fail(`MCP サーバーが終わりません。stderr: ${server.stderr()}`);
   }
-  assert.deepEqual(await leftovers(), [], server.stderr());
+  assert.deepEqual(await waitBrowsersGone(), [], server.stderr());
+  assert.deepEqual(await fs.readdir(tmp), [], server.stderr());
   const dir = path.join(projectPaths(home, JOB).studio, 'observations');
   for (const id of await fs.readdir(dir)) await fs.access(path.join(dir, id, 'report.json'));
 }
@@ -392,30 +396,92 @@ const exitWithin = (server) => {
   ]).finally(() => clearTimeout(timer));
 };
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// open を呼び、waitMs 後に中断する。待ちの長さで、ビルド、ブラウザの起動、読み込み、開いた後のどこかに当たる
+async function interruptOpen(waitMs, interrupt, args = []) {
+  const server = startServer(JOB, args);
+  await server.initialize();
+  server.call('open').catch(() => {});
+  await sleep(waitMs);
+  interrupt?.(server);
+  const exit = await exitWithin(server);
+  await assertCleanedUp(server, exit);
+  return { server, exit };
+}
+
+const WAITS_MS = [300, 900, 1_500, 3_000];
+
 test('相手(作る AI)が open の途中で消えても、MCP サーバーは片付けて終わる', { timeout: TEST_TIMEOUT_MS }, async () => {
-  for (const waitMs of [300, 1_200]) {
-    const server = startServer(JOB);
-    await server.initialize();
-    server.call('open').catch(() => {});
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  for (const waitMs of WAITS_MS) {
     // 相手のプロセスが終わると、両方のパイプが閉じる
-    server.child.stdout.destroy();
-    server.child.stdin.end();
-    const exit = await exitWithin(server);
-    await assertCleanedUp(server, exit);
+    const { server, exit } = await interruptOpen(waitMs, (running) => {
+      running.child.stdout.destroy();
+      running.child.stdin.end();
+    });
     // 書けなかった答え(EPIPE)で落ちずに、入力が閉じたときと同じに終わる
     assert.equal(exit.code, 0, server.stderr());
   }
 });
 
-test('open の途中で SIGINT を受けても、一時フォルダーを残さずに終わる', { timeout: TEST_TIMEOUT_MS }, async () => {
-  for (const waitMs of [500, 900, 1_500]) {
-    const server = startServer(JOB);
-    await server.initialize();
-    server.call('open').catch(() => {});
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
-    server.child.kill('SIGINT');
-    await assertCleanedUp(server, await exitWithin(server));
+test('open の途中で SIGINT を受けても、一時フォルダーとブラウザを残さずに終わる', { timeout: TEST_TIMEOUT_MS }, async () => {
+  for (const waitMs of WAITS_MS) {
+    const { server, exit } = await interruptOpen(waitMs, (running) => running.child.kill('SIGINT'));
+    assert.equal(exit.code, 130, server.stderr());
+  }
+});
+
+test('open の途中で SIGTERM を受けても、一時フォルダーとブラウザを残さずに終わる', { timeout: TEST_TIMEOUT_MS }, async () => {
+  for (const waitMs of WAITS_MS) {
+    const { server, exit } = await interruptOpen(waitMs, (running) => running.child.kill('SIGTERM'));
+    assert.equal(exit.code, 130, server.stderr());
+  }
+});
+
+test('サーバーの全体の時間の上限を超えると、open の途中でも、ブラウザと一時フォルダーを片付けて終わる', { timeout: TEST_TIMEOUT_MS }, async () => {
+  // 上限の後も、入力は開いたまま
+  for (const seconds of ['0.3', '0.9', '1.5', '3']) {
+    const { server, exit } = await interruptOpen(0, null, ['--max-seconds', seconds]);
+    assert.equal(exit.code, 0, server.stderr());
+    assert.match(server.stderr(), /時間の上限/);
+  }
+});
+
+test('片付けの途中で強制終了されて残った一時フォルダーは、次の起動で消す。自分のものでないものは消さない', { timeout: TEST_TIMEOUT_MS }, async () => {
+  // 自分のものでないもの: 動いているプロセス(このテスト)の名前、CLI の作業中のビルド、ほかのプログラムのもの
+  const foreign = [`prototype-studio-observe-mcp-${process.pid}-AbC123`, 'prototype-studio-observe-AbC123', 'playwright_chromiumdev_profile-AbC123', 'other-tool-AbC123'];
+  for (const name of foreign) {
+    await fs.mkdir(path.join(tmp, name));
+    await fs.writeFile(path.join(tmp, name, 'keep.txt'), 'fictional');
+  }
+  try {
+    const killed = startServer(JOB);
+    await killed.initialize();
+    killed.call('open').catch(() => {});
+    // ブラウザの起動と読み込みの途中で、片付けを待たずに止める(ADR-0001 の止め方の最後の SIGKILL)
+    await sleep(700);
+    killed.child.kill('SIGKILL');
+    await killed.exited;
+    // ブラウザはパイプが閉じて終わる。一時フォルダーは残る
+    assert.deepEqual(await waitBrowsersGone(), []);
+    const stale = (await fs.readdir(tmp)).filter((name) => SERVER_TEMP.test(name) && name.includes(`-${killed.child.pid}-`));
+    assert.equal(stale.length, 1, JSON.stringify(await fs.readdir(tmp)));
+
+    // 次の起動は、答える前に古い一時フォルダーを消す
+    const next = startServer(JOB);
+    try {
+      await next.initialize();
+      const names = await fs.readdir(tmp);
+      assert.equal(names.includes(stale[0]), false, JSON.stringify(names));
+      assert.deepEqual(names.filter((name) => SERVER_TEMP.test(name) && name.includes(`-${next.child.pid}-`)).length, 1);
+      for (const name of foreign) assert.equal(await fs.readFile(path.join(tmp, name, 'keep.txt'), 'utf8'), 'fictional');
+    } finally {
+      const exit = await next.stop();
+      assert.equal(exit.code, 0, next.stderr());
+    }
+    assert.deepEqual((await fs.readdir(tmp)).sort(), [...foreign].sort());
+  } finally {
+    for (const name of foreign) await fs.rm(path.join(tmp, name), { recursive: true, force: true });
   }
 });
 
