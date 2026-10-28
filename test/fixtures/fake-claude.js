@@ -18,10 +18,18 @@
 // 言い方の返事は、ふだんは Studio の守ること(数字を作らない、聞く問いの原文を入れる)に合う。
 // FAKE_CLAUDE_EXTRACTIONS があれば、そのファイル(JSON の { 発言: { updates, intent } })に書いた抽出を返す(モックと同じ抽出を返すため)。
 // FAKE_CLAUDE_LOG があれば、受け取った argv、cwd、stdin、関係する環境変数の「名前」を 1 行ずつ書く(値は書かない)。
+// 模擬のエージェント(src/server/sim/agent-claude-code.js の buildSimArgs)の起動(--output-format stream-json と --json-schema の parts)には、
+// 本物と同じく --mcp-config のツールの MCP サーバーを子として起動し、tools/list と tools/call で道具を呼び、stream-json を出す。
+// 呼ぶ道具は FAKE_CLAUDE_TOOL_CALLS のファイル(JSON の { 発言: [{ "tool": 名前, "args": { … } }] })に書いたもの。
+// ボタンの action があれば、キーは "action:<action>"。--allowedTools にない名前は、本物と同じくサーバーを呼ばずに断る。
+// 呼びすぎ(--max-turns - 1 を超える)は、本物と同じく error_max_turns で止まる。題材の言葉は持たない。返事は文の部品 1 つ。
+//   [数を作る] [一度数を作る] は言い方と同じく、どこにも出てこない数(987)を返事に書く(出口の確かめ)
 // 作る AI の接続の判定(agent-connection.js)のために、`--version` と `auth status` にも答える。
 // auth status は本物(2.1.312)と同じ形で、架空のメールアドレスと組織を含む(Studio が出さないかの確かめ)。
 // FAKE_CLAUDE_AUTH=logged-out なら、ログインしていない形を終了コード 1 で返す。
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import readline from 'node:readline';
 
 const argv = process.argv.slice(2);
 const FAKE_AUTH_SECRETS = ['fictional-user@example.com', '架空の組織', 'fictional-org-0000'];
@@ -69,6 +77,13 @@ function main() {
   if (process.env.FAKE_CLAUDE_LOG) {
     const envNames = Object.keys(process.env).filter((name) => /ANTHROPIC|CLAUDE/.test(name)).sort();
     fs.appendFileSync(process.env.FAKE_CLAUDE_LOG, `${JSON.stringify({ pid: process.pid, argv, cwd: process.cwd(), envNames, stdin })}\n`);
+  }
+  if (option('--output-format') === 'stream-json' && /"parts"/.test(option('--json-schema') ?? '')) {
+    simAgent().catch((error) => {
+      process.stderr.write(`偽の CLI: ${error.message}\n`);
+      process.exit(4);
+    });
+    return;
   }
   const missing = REQUIRED.filter((name) => !argv.includes(name));
   if (missing.length > 0 || option('--tools') !== '' || option('--output-format') !== 'json') {
@@ -151,4 +166,95 @@ function phrase(text) {
   const made = text.includes('[数を作る]') || (text.includes('[一度数を作る]') && !guardRetry) ? '合う候補は 987 件です。' : '';
   const asked = text.includes('[問いを抜く]') ? '' : question;
   return { reply: `偽の Claude Code です。これまでの会話を受け取りました(修正の記録${corrected ? 'あり' : 'なし'})。「${text}」への返事です。${made}${asked}` };
+}
+
+// 模擬のエージェントの起動。引数の守り(--safe-mode なし、組み込みの道具なし、設定を読まない)を確かめてから動く
+const SIM_REQUIRED = ['-p', '--restricted', '--disable-slash-commands', '--strict-mcp-config', '--no-session-persistence', '--verbose'];
+
+function writeEvent(event) {
+  process.stdout.write(`${JSON.stringify(event)}\n`);
+}
+
+// MCP サーバーを子として起動し、1 行 1 つの JSON-RPC で話す
+function startServer(config) {
+  const child = spawn(config.command, config.args, { stdio: ['pipe', 'pipe', 'inherit'] });
+  const waiting = new Map();
+  let nextId = 1;
+  readline.createInterface({ input: child.stdout }).on('line', (line) => {
+    let message;
+    try {
+      message = JSON.parse(line);
+    } catch {
+      return;
+    }
+    waiting.get(message.id)?.(message);
+    waiting.delete(message.id);
+  });
+  const exited = new Promise((resolve) => child.once('exit', resolve));
+  return {
+    request(method, params) {
+      const id = nextId++;
+      return new Promise((resolve) => {
+        waiting.set(id, resolve);
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
+      });
+    },
+    notify(method) {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method })}\n`);
+    },
+    async close() {
+      child.stdin.end();
+      const timer = setTimeout(() => child.kill('SIGKILL'), 20_000);
+      await exited;
+      clearTimeout(timer);
+    },
+  };
+}
+
+async function simAgent() {
+  const missing = SIM_REQUIRED.filter((name) => !argv.includes(name));
+  if (missing.length > 0 || argv.includes('--safe-mode') || option('--tools') !== '' || option('--setting-sources') !== '') {
+    process.stderr.write(`偽の CLI: 模擬のエージェントの引数が足りないか、違います: ${missing.join(' ')}\n`);
+    process.exit(3);
+  }
+  const text = section('新しい発言');
+  const action = section('押したボタン');
+  const allowed = (option('--allowedTools') ?? '').split(',').filter(Boolean);
+  const maxTurns = Number(option('--max-turns') ?? 2);
+  const given = process.env.FAKE_CLAUDE_TOOL_CALLS ? JSON.parse(fs.readFileSync(process.env.FAKE_CLAUDE_TOOL_CALLS, 'utf8')) : {};
+  const key = action ? `action:${action}` : text;
+  const wanted = Object.hasOwn(given, key) ? given[key] : [];
+  const configFile = option('--mcp-config');
+  const config = configFile ? JSON.parse(fs.readFileSync(configFile, 'utf8')).mcpServers?.proto : null;
+  const server = config && wanted.length > 0 ? startServer(config) : null;
+  let listed = [];
+  if (server) {
+    await server.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'fake-claude', version: '0' } });
+    server.notify('notifications/initialized');
+    listed = (await server.request('tools/list', {})).result.tools.map((tool) => `mcp__proto__${tool.name}`);
+  }
+  writeEvent({ type: 'system', subtype: 'init', tools: listed.filter((name) => allowed.includes(name)), mcp_servers: server ? [{ name: 'proto', status: 'connected' }] : [] });
+  let turns = 0;
+  for (const [i, call] of wanted.entries()) {
+    turns += 1;
+    if (turns >= maxTurns) {
+      if (server) await server.close();
+      writeEvent({ type: 'result', subtype: 'error_max_turns', is_error: true, num_turns: turns, duration_ms: 5, total_cost_usd: 0.002 });
+      process.exit(1);
+    }
+    const name = `mcp__proto__${call.tool}`;
+    const id = `toolu_fake_${i}`;
+    writeEvent({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input: call.args ?? {} }] } });
+    if (!allowed.includes(name) || !listed.includes(name)) {
+      writeEvent({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content: `Permission to use ${name} has been denied.` }] } });
+      continue;
+    }
+    const answer = (await server.request('tools/call', { name: call.tool, arguments: call.args ?? {} })).result;
+    writeEvent({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: Boolean(answer.isError), content: answer.content }] } });
+  }
+  if (server) await server.close();
+  const retrying = stdin.includes('<前の返事の問題>');
+  const made = text.includes('[数を作る]') || (text.includes('[一度数を作る]') && !retrying) ? '合う候補は 987 件です。' : '';
+  const parts = [{ kind: 'text', text: `偽の Claude Code です。「${text}」への返事です。${made}` }];
+  writeEvent({ type: 'result', subtype: 'success', is_error: false, num_turns: turns + 1, duration_ms: 5, total_cost_usd: 0.002, result: '', structured_output: { parts } });
 }

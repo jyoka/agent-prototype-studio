@@ -6,7 +6,8 @@ import readline from 'node:readline';
 import { isProcessAlive } from '../observe-temp.js';
 import { redactDeep } from '../redact.js';
 import { isPlainObject } from './check.js';
-import { callTool } from './tool-gate.js';
+import { callTool, refusedEntry } from './tool-gate.js';
+import { TOOL_LIMITS } from './tools.js';
 
 // ツールの MCP サーバー(docs/design/agent-simulation.md の 3.6、7.3 の sim-3)。
 // 試作品のツール(app/tools.json)を、ツールの口(tool-gate.js の callTool)を通して MCP の道具として出す。
@@ -17,6 +18,11 @@ import { callTool } from './tool-gate.js';
 //   counts.json  … ツールごとの呼び出しの数(callTool の context.calls)。maxCallsPerConversation を、起動し直しても続けて数える
 //   calls.jsonl  … 呼び出しの記録(ツールの口が返した記録の 1 件に、伏せた結果の全文を足したもの)。1 回の呼び出しで 1 行
 //   server.lock  … 動いているサーバーのプロセスの番号。同じ会話に 2 つのサーバーが同時に書かないようにする
+//   context.json … 会話の進め方(Studio)が起動の前に書く文脈。呼んだ参加者、その参加者に渡すツールの名前、構成の引き継ぎの辺、
+//                  前提のツールの呼び方、ツールの宣言のファイル、1 回の返事のツールの数の上限(sim-4。起動の引数は 3 つのまま)。
+//                  なければ単独の起動
+//   handoff.json … 引き継ぎのツールが通ったときの、行き先と受け渡す値(伏せない)。Studio が返事の後に読んで消す
+//   mcp.json     … 模擬のエージェントに渡す MCP の設定(Studio が書く。このサーバーは読まない)
 
 export const PROTOCOL_VERSIONS = Object.freeze(['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']);
 export const SERVER_INFO = Object.freeze({ name: 'prototype-studio-tools', version: '0.1.0' });
@@ -34,12 +40,20 @@ export const TOOLS_MCP_LIMITS = Object.freeze({
   maxStateBytes: 5 * 1024 * 1024,
 });
 
-export const SIM_FILES = Object.freeze({ store: 'store.json', counts: 'counts.json', calls: 'calls.jsonl', lock: 'server.lock' });
+export const SIM_FILES = Object.freeze({
+  store: 'store.json',
+  counts: 'counts.json',
+  calls: 'calls.jsonl',
+  lock: 'server.lock',
+  context: 'context.json',
+  handoff: 'handoff.json',
+  mcp: 'mcp.json',
+});
 
 // 受け取る 1 行の長さ。ツールの引数はツールの口が 2 万文字で断るので、これより長いものは読まない
 const MAX_LINE = 1024 * 1024;
 // 書き途中のファイルの名前: <store.json か counts.json>.<書いたプロセスの番号>.<8 文字>.tmp
-const TEMP_NAME = /^(?:store|counts)\.json\.([1-9]\d*)\.[0-9a-f]{8}\.tmp$/;
+const TEMP_NAME = /^(?:store|counts|handoff)\.json\.([1-9]\d*)\.[0-9a-f]{8}\.tmp$/;
 
 export class ToolsMcpError extends Error {}
 
@@ -88,16 +102,13 @@ async function readState(dir, name, check, maxBytes) {
 
 const isCounts = (value) => isPlainObject(value) && Object.values(value).every((count) => Number.isSafeInteger(count) && count >= 0);
 
-// 会話のフォルダー(.studio/sim/<会話の ID>/)を開く。
-// 作ったフォルダーの中を、シンボリックリンクでよそ(app/ など)へ向けられていないかを確かめ、
-// 前の起動が強制終了されて残した書き途中のファイルを消し、ロックを取り、記録の店と呼び出しの数を読む。
-// 返す release() は、ロックと書き途中のファイルを同期で消す(process の exit からも呼べる)
-export async function openConversation({ projectDir, conversationId, limits = {}, isAlive = isProcessAlive }) {
+// 会話のフォルダー(.studio/sim/<会話の ID>/)を、.studio、sim、<会話の ID> と 1 段ずつ確かめてから作る
+// (リンクの先に、フォルダーを作らないため)。中の記録のファイルが普通のファイルでなければ誤り。
+// ツールの MCP サーバーと、起動の前に文脈を書く会話の進め方(Studio)の両方が使う
+export async function ensureSimDir(projectDir, conversationId) {
   if (!CONVERSATION_ID_PATTERN.test(conversationId ?? '')) {
     throw new ToolsMcpError(`会話の ID が使えない形です: ${JSON.stringify(conversationId)}(英小文字、数字、- だけで 64 字まで)`);
   }
-  const { maxStateBytes } = { ...TOOLS_MCP_LIMITS, ...limits };
-  // .studio、sim、<会話の ID> を 1 段ずつ確かめてから作る(リンクの先に、フォルダーを作らないため)
   let dir = projectDir;
   for (const part of ['.studio', 'sim', conversationId]) {
     dir = path.join(dir, part);
@@ -108,10 +119,137 @@ export async function openConversation({ projectDir, conversationId, limits = {}
     if (stat && !stat.isDirectory()) throw new ToolsMcpError(`${path.relative(projectDir, dir)} がフォルダーではありません`);
     if (!stat) await fs.mkdir(dir).catch((error) => (error.code === 'EEXIST' ? undefined : Promise.reject(error)));
   }
-  for (const name of [SIM_FILES.store, SIM_FILES.counts, SIM_FILES.calls]) {
+  for (const name of [SIM_FILES.store, SIM_FILES.counts, SIM_FILES.calls, SIM_FILES.context, SIM_FILES.handoff, SIM_FILES.mcp]) {
     const stat = await fs.lstat(path.join(dir, name)).catch(() => null);
     if (stat && !stat.isFile()) throw new ToolsMcpError(`${name} がファイルではありません`);
   }
+  return dir;
+}
+
+// 会話のフォルダーを消す(会話を最初からにしたとき、版を戻したとき)。.studio と sim がシンボリックリンクなら消さない
+// (リンクの先の、別の場所のフォルダーを消さないため)。動いているサーバーがあっても、消すのは呼ぶ側が止めた後
+export function removeSimDir(projectDir, conversationId) {
+  if (!projectDir || !CONVERSATION_ID_PATTERN.test(conversationId ?? '')) return;
+  let dir = projectDir;
+  for (const part of ['.studio', 'sim', conversationId]) {
+    dir = path.join(dir, part);
+    let stat;
+    try {
+      stat = fsSync.lstatSync(dir);
+    } catch {
+      return;
+    }
+    if (stat.isSymbolicLink() || !stat.isDirectory()) return;
+  }
+  fsSync.rmSync(dir, { recursive: true, force: true });
+}
+
+// プロジェクトの模擬の会話の作業の場所(.studio/sim/)を全部消す。Studio の起動のとき(前の起動の会話は、メモリーにもう残っていない)
+export async function removeAllSimDirs(projectDir) {
+  let dir = projectDir;
+  for (const part of ['.studio', 'sim']) {
+    dir = path.join(dir, part);
+    const stat = await fs.lstat(dir).catch(() => null);
+    if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) return;
+  }
+  await fs.rm(dir, { recursive: true, force: true });
+}
+
+const ID = /^[a-z][a-z0-9-]{0,39}$/;
+const TOOL_NAME = /^[a-z][a-z0-9_]{0,39}$/;
+const KEY = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
+const intIn = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
+const toolsFileOk = (value) =>
+  typeof value === 'string' && value.endsWith('.json') && value.length <= 200 && !/[\\\0]/.test(value) && !value.startsWith('/') && !value.split('/').some((part) => part === '..' || part === '' || part === '.');
+
+// context.json(会話の進め方が書く文脈)を確かめる。Studio だけが書くファイルだが、形と上限をここでも確かめ、合わなければ起動しない
+export function parseContext(value) {
+  const fail = (what) => {
+    throw new ToolsMcpError(`${SIM_FILES.context} の ${what} の形が正しくありません`);
+  };
+  if (!isPlainObject(value) || value.formatVersion !== 1) fail('formatVersion');
+  const context = {};
+  if (value.by !== undefined) {
+    if (typeof value.by !== 'string' || !ID.test(value.by)) fail('by');
+    context.by = value.by;
+  }
+  // 呼んだ参加者に渡すツールの名前(構成の参加者の tools)。あれば、道具の一覧に出すのも、呼べるのも、この名前だけ(S14)
+  if (value.allowedTools !== undefined) {
+    const ok = Array.isArray(value.allowedTools) && value.allowedTools.length <= TOOL_LIMITS.maxTools
+      && value.allowedTools.every((name) => typeof name === 'string' && TOOL_NAME.test(name));
+    if (!ok) fail('allowedTools');
+    context.allowedTools = [...value.allowedTools];
+  }
+  if (value.handoffs !== undefined) {
+    if (!Array.isArray(value.handoffs) || value.handoffs.length > 20) fail('handoffs');
+    context.handoffs = value.handoffs.map((edge) => {
+      const ok = isPlainObject(edge) && ID.test(edge.from ?? '') && ID.test(edge.to ?? '')
+        && Array.isArray(edge.carry) && edge.carry.length <= 20 && edge.carry.every((key) => typeof key === 'string' && KEY.test(key));
+      if (!ok) fail('handoffs');
+      return { from: edge.from, to: edge.to, carry: [...edge.carry] };
+    });
+  }
+  if (value.toolCalling !== undefined) {
+    const calling = value.toolCalling;
+    if (!isPlainObject(calling)) fail('toolCalling');
+    const checked = {};
+    if (calling.delayMs !== undefined) {
+      if (!intIn(calling.delayMs, 0, 10_000)) fail('toolCalling.delayMs');
+      checked.delayMs = calling.delayMs;
+    }
+    if (calling.resultMaxChars !== undefined) {
+      if (!intIn(calling.resultMaxChars, 1, 20_000)) fail('toolCalling.resultMaxChars');
+      checked.resultMaxChars = calling.resultMaxChars;
+    }
+    if (calling.faults !== undefined) {
+      const ok = Array.isArray(calling.faults) && calling.faults.length <= 10
+        && calling.faults.every((fault) => isPlainObject(fault) && TOOL_NAME.test(fault.tool ?? '') && intIn(fault.onCall, 1, 100));
+      if (!ok) fail('toolCalling.faults');
+      checked.faults = calling.faults.map((fault) => ({ tool: fault.tool, onCall: fault.onCall }));
+    }
+    context.assumption = { toolCalling: checked };
+  }
+  if (value.maxPerReply !== undefined) {
+    if (!intIn(value.maxPerReply, 1, 8)) fail('maxPerReply');
+    context.maxPerReply = value.maxPerReply;
+  }
+  if (value.userId !== undefined) {
+    if (typeof value.userId !== 'string' || !/^[a-z0-9-]{1,64}$/.test(value.userId)) fail('userId');
+    context.userId = value.userId;
+  }
+  if (value.tools !== undefined) {
+    if (!toolsFileOk(value.tools)) fail('tools');
+    context.tools = value.tools;
+  }
+  return context;
+}
+
+// 会話のフォルダーの文脈を読む。なければ null(単独の起動)
+export async function readContext(dir) {
+  const file = path.join(dir, SIM_FILES.context);
+  const stat = await fs.lstat(file).catch((error) => (error.code === 'ENOENT' ? null : Promise.reject(error)));
+  if (!stat) return null;
+  if (!stat.isFile()) throw new ToolsMcpError(`${SIM_FILES.context} がファイルではありません`);
+  if (stat.size > 64 * 1024) throw new ToolsMcpError(`${SIM_FILES.context} が大きすぎます`);
+  let value;
+  try {
+    value = JSON.parse(await fs.readFile(file, 'utf8'));
+  } catch {
+    throw new ToolsMcpError(`${SIM_FILES.context} を JSON として読めません`);
+  }
+  return parseContext(value);
+}
+
+// 会話のフォルダー(.studio/sim/<会話の ID>/)を開く。
+// 作ったフォルダーの中を、シンボリックリンクでよそ(app/ など)へ向けられていないかを確かめ、
+// 前の起動が強制終了されて残した書き途中のファイルを消し、ロックを取り、記録の店と呼び出しの数を読む。
+// 返す release() は、ロックと書き途中のファイルを同期で消す(process の exit からも呼べる)
+export async function openConversation({ projectDir, conversationId, limits = {}, isAlive = isProcessAlive }) {
+  if (!CONVERSATION_ID_PATTERN.test(conversationId ?? '')) {
+    throw new ToolsMcpError(`会話の ID が使えない形です: ${JSON.stringify(conversationId)}(英小文字、数字、- だけで 64 字まで)`);
+  }
+  const { maxStateBytes } = { ...TOOLS_MCP_LIMITS, ...limits };
+  const dir = await ensureSimDir(projectDir, conversationId);
 
   for (const name of await fs.readdir(dir)) {
     const pid = Number(TEMP_NAME.exec(name)?.[1]);
@@ -150,7 +288,8 @@ export async function openConversation({ projectDir, conversationId, limits = {}
   try {
     const store = await readState(dir, SIM_FILES.store, isPlainObject, maxStateBytes);
     const counts = await readState(dir, SIM_FILES.counts, isCounts, maxStateBytes);
-    return { dir, conversationId, store, counts, temps, release };
+    const context = await readContext(dir);
+    return { dir, conversationId, store, counts, context, temps, release };
   } catch (error) {
     release();
     throw error;
@@ -158,7 +297,7 @@ export async function openConversation({ projectDir, conversationId, limits = {}
 }
 
 // 書き途中のファイルに書いてから名前を変える(Studio が書き途中の store.json を読まないため)
-async function writeAtomic(conversation, name, value) {
+export async function writeAtomic(conversation, name, value) {
   const file = path.join(conversation.dir, name);
   const temp = `${file}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
   conversation.temps.add(temp);
@@ -193,10 +332,17 @@ export class ToolsSession {
     this.limits = { ...TOOLS_MCP_LIMITS, ...limits };
     this.queue = Promise.resolve();
     this.closed = false;
+    // 会話の進め方が書いた文脈(呼んだ参加者、辺、前提)。単独の起動では空
+    this.context = conversation.context ?? {};
+    // このサーバーの起動の間(模擬のエージェントの 1 回の返事)に呼ばれた数。context の maxPerReply で切る
+    this.replyCalls = 0;
+    this.handoffs = [];
   }
 
+  // 道具の一覧。文脈に参加者のツールの名前があれば、その名前だけを出す(ほかの参加者のツールの説明を渡さない。S14)
   list() {
-    return this.toolset.tools.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: listedSchema(tool.inputSchema) }));
+    const { allowedTools } = this.context;
+    return this.toolset.tools.filter((tool) => !allowedTools || allowedTools.includes(tool.name)).map((tool) => ({ name: tool.name, description: tool.description, inputSchema: listedSchema(tool.inputSchema) }));
   }
 
   call(name, args) {
@@ -209,11 +355,29 @@ export class ToolsSession {
   // 書けなければ、メモリーの店と数を進めずに誤りを返す
   async dispatch(name, args) {
     if (this.closed) return { content: [{ type: 'text', text: 'ツールのサーバーは終わるところです' }], isError: true };
+    const { by, handoffs, assumption, userId, maxPerReply, allowedTools } = this.context;
+    this.replyCalls += 1;
+    // 参加者に渡していないツールは、ツールの口に渡さず、記録だけ残す(模擬のエージェントのモックと同じ断り方。orchestrator.js)
+    if (allowedTools && !allowedTools.includes(name)) {
+      return this.refuse({ name, args, by, layer: 'permission', guard: 'allowedTools', reason: '構成でこの参加者に渡していないツール' }, `「${name}」は使えないツールです`);
+    }
+    // 1 回の返事で呼べる数(前提の toolCalling.maxPerReply)。超えた呼び出しはツールの口に渡さず、記録だけ残す
+    if (maxPerReply !== undefined && this.replyCalls > maxPerReply) {
+      const reason = `1 回の返事で呼べるツールは ${maxPerReply} 回までです`;
+      return this.refuse({ name, args, by, guard: 'maxPerReply', reason }, reason);
+    }
     const outcome = await callTool({
       tools: this.toolset,
       data: this.data,
       store: this.store,
-      context: { conversationId: this.conversation.conversationId, calls: this.counts },
+      context: {
+        conversationId: this.conversation.conversationId,
+        calls: this.counts,
+        ...(by ? { by } : {}),
+        ...(handoffs ? { handoffs } : {}),
+        ...(assumption ? { assumption } : {}),
+        ...(userId ? { userId } : {}),
+      },
       name,
       args,
     });
@@ -222,13 +386,27 @@ export class ToolsSession {
       await fs.appendFile(path.join(this.conversation.dir, SIM_FILES.calls), `${JSON.stringify(line)}\n`);
       await writeAtomic(this.conversation, SIM_FILES.store, outcome.store);
       await writeAtomic(this.conversation, SIM_FILES.counts, outcome.calls);
+      // 引き継ぎの行き先と受け渡す値は、伏せずに別のファイルで Studio に渡す(記録の calls.jsonl は伏せた形のまま)
+      if (outcome.handoff) await writeAtomic(this.conversation, SIM_FILES.handoff, [...this.handoffs, outcome.handoff]);
     } catch (error) {
       return { content: [{ type: 'text', text: `呼び出しの記録を書けませんでした: ${String(error?.message ?? error).slice(0, 300)}` }], isError: true };
     }
     this.store = outcome.store;
     this.counts = outcome.calls;
+    if (outcome.handoff) this.handoffs.push(outcome.handoff);
     if (!outcome.ok) return { content: [{ type: 'text', text: outcome.error }], isError: true };
     return { content: [{ type: 'text', text: JSON.stringify(outcome.result ?? null) }] };
+  }
+
+  // ツールの口に渡さずに断る。断りの記録を calls.jsonl に 1 行足し、text を誤りとして返す
+  async refuse(refusal, text) {
+    const line = { at: new Date().toISOString(), ...refusedEntry(refusal) };
+    try {
+      await fs.appendFile(path.join(this.conversation.dir, SIM_FILES.calls), `${JSON.stringify(line)}\n`);
+    } catch {
+      // 記録を書けなくても、断ることは変えない
+    }
+    return { content: [{ type: 'text', text }], isError: true };
   }
 
   // 受けた呼び出し(順番を待っているものも)が書き終えるのを、上限まで待つ。その後の呼び出しは断る。

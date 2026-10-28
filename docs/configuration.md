@@ -222,7 +222,7 @@
 | 呼び方 | 中身 |
 |---|---|
 | `studio.ai.session()` | 今の会話と状態 |
-| `studio.ai.send(text)` | 利用者の発言を送り、AI の応答を受け取る |
+| `studio.ai.send(text, { action })` | 利用者の発言を送り、AI の応答を受け取る。`action` はボタンの名前(英小文字で始め、英小文字、数字、`_`、`-` だけで 40 字まで)で、構成のある試作品だけが使う。書かなくてよい。構成 B では受け取っても使わない |
 | `studio.ai.correct({ key: 値 })` | AI が理解した状態を本人が直す。`null` で未定に戻す。次の応答はこの修正を踏まえる |
 | `studio.ai.onChange(listener)` | Studio の画面で接続が切り替わったとき、新しい会話と状態を受け取る。戻り値の関数で受け取りをやめる |
 
@@ -234,7 +234,7 @@
 
 ## 構成(`app/composition.json`)
 
-構成は、試作品の中で誰が会話を回し、誰が何を持つかを書いたデータ。設計は [agent-simulation.md の 2 節](design/agent-simulation.md#2-構成の書き方)、決定は [ADR-0003](adr/0003-agent-simulation.md)(案)。今は、形の検査と構成 B の読み替えと、ツールの口(ツールを宣言どおりに動かすコード)と、ツールの MCP サーバー(`npm run tools:mcp`。[usage.md](usage.md#ツールの-mcp-サーバーnpm-run-toolsmcp))を作った。構成で会話を回すほかの部品(模擬のエージェント、会話の枠、場面の回し)は、まだない。試す画面は、構成があっても今までどおり `ai.json` で応答する。
+構成は、試作品の中で誰が会話を回し、誰が何を持つかを書いたデータ。設計は [agent-simulation.md の 2 節](design/agent-simulation.md#2-構成の書き方)、決定は [ADR-0003](adr/0003-agent-simulation.md)(案)。今は、形の検査と構成 B の読み替えと、ツールの口(ツールを宣言どおりに動かすコード)と、ツールの MCP サーバー(`npm run tools:mcp`。[usage.md](usage.md#ツールの-mcp-サーバーnpm-run-toolsmcp))と、会話の進め方と模擬のエージェントを作った。`composition.json` のある試作品は、試す画面で構成どおりに会話が回る(下の「構成のある会話」)。会話の枠の部品(`studio-talk`)と場面の回しは、まだない。
 
 - `composition.json` のない試作品は、`ai.json` の harness 1 つの構成(構成 B)として読む。今の試作品と見本は、何も書き足さずに今までどおり動く。`ai.json` もなければ、AI のない試作品
 - 置き場所と形は次のとおり。形の例は設計の 2.2〜2.5、3.3、3.4、4.2 にある
@@ -256,6 +256,26 @@
 - 場面の `entry` の参加者が、ある構成にいなくても誤りにしない(その構成では、その場面を当てはまらないものとして扱う)
 - ツールの守り(`requires`、`deny`、`hideFields`、`maxCallsPerConversation`、`maxResultChars`)は、ツールの口のコードが守る。当たった呼び出しは実行せず、守りの名前と理由を記録に残す。`inputSchema` にない引数も断る。`hideFields` は呼び出しを断らず、項目を除いて返す。細かい振る舞いは [設計の 3.5](design/agent-simulation.md#35-ツールの口)
 - 作る AI が構成、ツール、ガードレールを変えたビルドでは、前と比べた結果を言葉で直す欄に出す。ガードレールを外したり弱めたりしたときは、先頭に「【ガードレールが減りました】」の印を付ける。`ai.json` の `rules` を弱めたときも同じ。比べるのは、既定の構成、`compositions/` の同じファイルの構成どうし、ツールの宣言のファイルどうし。既定の構成のものでない行には、どのファイルの変化かを頭に付ける
+
+### 構成のある会話
+
+`composition.json` のある試作品は、`studio.ai` の会話を会話の進め方(`src/server/sim/orchestrator.js`)が回す。決まりは [agent-simulation.md の 3.2 と「sim-4 で決めた細かい振る舞い」](design/agent-simulation.md#32-1-ターンの進め方)にある。
+
+- 誰が話すか、引き継ぎ(辺にあるものだけ、1 ターン 1 回、`limits.maxHandoffs` まで。戻るのも数える)、受け渡す値の検査、`limits.maxTurns` は Studio のコードが決める。模擬のエージェントが決めるのは、返事の中身とツールの選び方だけ
+- 接続は、プロダクト内 AI と同じく「AI: モック」か「AI: Claude Code」。既定はモック(`app/mocks/*.json` の決まりで返す)。Claude Code に切り替えるときも、本物の AI を使う前の同意が要る
+- 前提は、構成の `assumptions.default`。返事の部品は、前提の `messageTypes` にあるものだけ。ないものは文に落とし、記録に残す
+- 返る会話には、構成 B の形(`connection`、`name`、`fields`、`state`、`messages`、`busy`)に加えて、次が入る。ツールの呼び出しの中身は返さない(「AI の実行の記録」にだけ出る)
+
+| キー | 中身 |
+|---|---|
+| `participants` | 参加者(`id`、`label`、`kind`) |
+| `active` | 今話す参加者(次の発言を受ける参加者)の `id` |
+| `records` | 記録の店(`record` のツールが入れたもの) |
+| `messages[].from`、`messages[].parts` | AI の発言の、話した参加者と返事の部品。`text` は部品を文にしたもの。1 ターンで引き継いだときは、2 人分の発言が続く |
+| `fields`、`state` | harness の参加者(最初の 1 人)の項目と状態。harness がいなければ空 |
+
+- `studio.ai.correct` は、構成のある会話では使えない(`not-supported` で断る)
+- 構成のある会話は、まだ版に入れない。版を戻すと、会話は最初から始まる
 
 ## データの置き場
 

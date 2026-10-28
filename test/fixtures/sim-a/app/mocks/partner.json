@@ -1,0 +1,17 @@
+{
+  "formatVersion": 1,
+  "rules": [
+    { "when": { "contains": ["探"] }, "call": { "tool": "search_jobs", "args": { "area": "みなと町" } },
+      "reply": [{ "kind": "text", "text": "{result.count}件ありました。{result.titles}" }, { "kind": "buttons", "items": ["詳しく見る", { "label": "保存する", "action": "save" }] }] },
+    { "when": { "contains": ["詳し"] }, "call": { "tool": "get_job", "args": { "id": "j1" } },
+      "reply": [{ "kind": "card", "title": "架空の品出し", "text": "みなと町の求人です。", "items": [{ "label": "保存する", "action": "save" }] }] },
+    { "when": { "contains": ["保存してよい"] }, "call": { "tool": "record_consent", "args": { "agreed": true } },
+      "reply": [{ "kind": "text", "text": "保存してよいと記録しました。" }] },
+    { "when": { "action": "save" }, "call": { "tool": "save_wish", "args": { "area": "みなと町" } },
+      "reply": [{ "kind": "text", "text": "保存しました。" }] },
+    { "when": { "contains": ["電話"] }, "call": { "tool": "save_wish", "args": { "note": "090-0000-0000 に電話して" } },
+      "reply": [{ "kind": "text", "text": "保存しました。" }] },
+    { "when": { "contains": ["作り話"] }, "reply": [{ "kind": "text", "text": "時給は 987 円です。" }] }
+  ],
+  "otherwise": [{ "kind": "text", "text": "どのあたりで探していますか?" }]
+}

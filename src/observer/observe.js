@@ -38,6 +38,8 @@ const MAX_STACK = 4000;
 const MAX_URL = 500;
 const MAX_AI_REQUESTS = 50;
 const MAX_AI_TEXT = 2000;
+// ボタンの action の長さ(形は Studio のサーバーが確かめる)
+const MAX_AI_ACTION = 40;
 const MAX_AI_CHANGES = 20;
 // report の ai に入れるやり取りの数(会話の始まりと、要求の上限の分)
 const MAX_AI_ENTRIES = MAX_AI_REQUESTS + 1;
@@ -60,7 +62,9 @@ const text = (value, max) => String(value ?? '').slice(0, max);
 function validAiRequest(data) {
   if (!isPlainObject(data) || !Number.isSafeInteger(data.id)) return false;
   if (data.op === 'session') return true;
-  if (data.op === 'send') return typeof data.text === 'string' && data.text.length <= MAX_AI_TEXT;
+  if (data.op === 'send') {
+    return typeof data.text === 'string' && data.text.length <= MAX_AI_TEXT && (data.action === undefined || (typeof data.action === 'string' && data.action.length <= MAX_AI_ACTION));
+  }
   if (data.op === 'correct') {
     if (!isPlainObject(data.changes)) return false;
     const entries = Object.entries(data.changes);
@@ -77,7 +81,7 @@ function validAiRequest(data) {
 }
 
 function aiRequestOf(data) {
-  if (data.op === 'send') return { op: 'send', text: data.text };
+  if (data.op === 'send') return data.action === undefined ? { op: 'send', text: data.text } : { op: 'send', text: data.text, action: data.action };
   if (data.op === 'correct') return { op: 'correct', changes: { ...data.changes } };
   return { op: 'session' };
 }

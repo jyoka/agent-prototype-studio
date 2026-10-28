@@ -250,6 +250,19 @@ function summarize(outcome) {
   return summary;
 }
 
+// ツールの口の外で断った呼び出し(1 回の返事のツールの数の上限、許可していない名前)の、記録の 1 件。
+// ツールの口の記録(callTool の entry)と同じ形で、同じく伏せる。layer は tool(前提の上限)か permission(許可していない名前)
+export function refusedEntry({ name, args, by, layer = 'tool', guard, reason, owner = 'studio' }) {
+  return redactRecord({
+    tool: String(name),
+    ...(by ? { by } : {}),
+    args: jsonCopy(args),
+    result: { ok: false, error: reason },
+    ms: 0,
+    guards: [{ layer, guard, effect: 'blocked', owner, reason }],
+  });
+}
+
 // 1 回のツールの呼び出し。
 // tools: 検査した tools.json(parseTools の toolset)。data: loadToolData の data。store: 会話ごとの記録の店({ 記録の名前: 値 })。
 // context: { conversationId, userId, by(呼んだ参加者), calls({ ツールの名前: これまでの回数 }), assumption(前提。toolCalling を見る),
