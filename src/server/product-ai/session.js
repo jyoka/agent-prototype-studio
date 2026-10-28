@@ -2,7 +2,7 @@ import { redact, redactDeep } from '../redact.js';
 import { ConnectionError } from './claude-code.js';
 import { formatValue, normalizeValue } from './definition.js';
 import { checkProgress, shownValue, startProgress, turn } from './harness.js';
-import { CALL_LIMITS, ProjectCallWindow, createTurnMeter } from './limits.js';
+import { CALL_LIMITS, ProjectCallWindow, TURN_LIMITS, createTurnMeter } from './limits.js';
 import { createMockConnection } from './mock.js';
 
 export const SESSION_LIMITS = {
@@ -142,6 +142,7 @@ function clipStages(stages) {
   const clipped = structuredClone(stages);
   if (clipped.extract?.output) clipped.extract.output.updates = clip(JSON.stringify(clipped.extract.output.updates));
   if (clipped.phrase?.stdin) clipped.phrase.stdin = clip(clipped.phrase.stdin);
+  if (clipped.phrase?.retryStdin) clipped.phrase.retryStdin = clip(clipped.phrase.retryStdin);
   return clipped;
 }
 
@@ -169,8 +170,11 @@ const CONNECTION_ERRORS = {
 // 作業中の会話はメモリーにだけ置く。Studio を止めると消える。残すときは版として保存する(versions.js)。
 // 設定が変わって会話が最初に戻ったら、前の会話を 1 つ覚えておき、同じ発言と修正を新しい設定で送り直せる(試し直す、#279)。
 export class AiSessions {
-  constructor({ definitionOf, connections = [createMockConnection()], projectCalls = new ProjectCallWindow() }) {
+  // dataNumbersOf は、表示中の版の架空のデータに出てくる数(返事の noNewNumbers の確かめに使う)。turnDeadlineMs は 1 ターンの期限
+  constructor({ definitionOf, dataNumbersOf = () => [], connections = [createMockConnection()], projectCalls = new ProjectCallWindow(), turnDeadlineMs = TURN_LIMITS.deadlineMs }) {
     this.definitionOf = definitionOf;
+    this.dataNumbersOf = dataNumbersOf;
+    this.turnDeadlineMs = turnDeadlineMs;
     this.connections = new Map(connections.map((connection) => [connection.kind, connection]));
     this.defaultKind = connections[0].kind;
     // 会話。slotOf(プロジェクト, 会話の ID) で引く
@@ -626,7 +630,16 @@ export class AiSessions {
     let result;
     try {
       if (meter) this.projectCalls.ensure(projectId, 2);
-      result = await turn({ connection, ...input, progress: { ...session.progress }, signal: session.controller.signal, meter, trace: stages });
+      result = await turn({
+        connection,
+        ...input,
+        progress: { ...session.progress },
+        signal: session.controller.signal,
+        meter,
+        trace: stages,
+        dataNumbers: this.dataNumbersOf(projectId) ?? [],
+        deadlineMs: this.turnDeadlineMs,
+      });
     } catch (error) {
       // 応答を待つ間にリセットや設定の切り替えがあったら、そちらを伝える
       if (this.sessions.get(slot) !== session) throw new AiError(409, 'reset', '応答を待つ間に会話が最初に戻りました');

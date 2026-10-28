@@ -113,6 +113,35 @@ test('モックの発言、修正、リセットを記録する。モックは�
   assert.equal(sessions.clearTrace('p').entries.length, 0);
 });
 
+test('返事の守ることの確かめの結果(合格、やり直し、決まった文に代えた)と、合わなかった決まりの名前が記録に残る(S18)', async (t) => {
+  const env = await fakeEnv(t);
+  const sessions = new AiSessions({
+    definitionOf: () => travel(),
+    connections: [createMockConnection(), createClaudeCodeConnection({ env, allowed: true })],
+  });
+  t.after(() => sessions.close());
+  // モックの返事はいつも合う
+  await sessions.send('p', '湖に行きたい');
+  sessions.select('p', 'claude-code', { confirmed: true });
+  await sessions.send('p', '[一度数を作る] 何泊がいいかな');
+  await sessions.send('p', '[数を作る] 2泊で');
+  const [fallback, retried, , passed] = sessions.trace('p').entries;
+  assert.equal(passed.harness.guards.result, 'passed');
+  assert.deepEqual(passed.harness.guards.failed, []);
+  assert.equal(retried.harness.guards.result, 'retried');
+  assert.deepEqual(retried.harness.guards.failed, ['noNewNumbers']);
+  assert.match(retried.harness.guards.checks[0].failed[0].detail, /「987」/);
+  assert.deepEqual(retried.harness.guards.checks[1].failed, []);
+  assert.match(retried.harness.phrase.retryStdin, /<前の返事の問題>/);
+  assert.equal(fallback.harness.guards.result, 'fallback');
+  assert.deepEqual(fallback.harness.guards.failed, ['noNewNumbers']);
+  assert.match(fallback.harness.guards.reason, /mock の型の文に代えた/);
+  assert.equal(fallback.harness.phrase.fallback, fallback.harness.guards.reason);
+  // 記録の返事は、決まった文に代えた後の返事
+  assert.equal(fallback.output.reply, sessions.view('p').messages.at(-1).text);
+  assert.doesNotMatch(fallback.output.reply, /987/);
+});
+
 test('失敗は理由と次にすることを記録し、決まりに合わない値は状態に入れなかったことを残す', async () => {
   const definition = travel();
   let answer = { reply: 'はい', updates: { place: '海の町', nights: 3, unknown: 'x' } };

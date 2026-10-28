@@ -12,6 +12,10 @@
 //   [範囲外] 項目の決まりに合わない値と、ない項目を返す(状態に入れないか)
 //   [抽出が壊れる] [言い方が壊れる]       その呼び出しで、いつも形の合わない出力を返す(やり直しと代わりの値)
 //   [抽出が一度壊れる] [言い方が一度壊れる] やり直し(stdin の <前の出力の問題>)でなければ、形の合わない出力を返す
+//   [数を作る]     言い方で、どこにも出てこない数(987)を書く(守ることの確かめ。やり直しても直らない)
+//   [一度数を作る] 守ることのやり直し(stdin の <前の返事の問題>)でなければ、どこにも出てこない数を書く
+//   [問いを抜く]   言い方で、<言うこと> の聞く問いの原文を返事に入れない
+// 言い方の返事は、ふだんは Studio の守ること(数字を作らない、聞く問いの原文を入れる)に合う。
 // FAKE_CLAUDE_EXTRACTIONS があれば、そのファイル(JSON の { 発言: { updates, intent } })に書いた抽出を返す(モックと同じ抽出を返すため)。
 // FAKE_CLAUDE_LOG があれば、受け取った argv、cwd、stdin、関係する環境変数の「名前」を 1 行ずつ書く(値は書かない)。
 import fs from 'node:fs';
@@ -113,8 +117,13 @@ function extract(schema, text) {
   return { updates, intent: Object.keys(updates).length > 0 ? 'answer' : null };
 }
 
+// 渡された会話に修正の記録があったかを返事に書く(会話の数は書かない。どこにも出てこない数になるため)
 function phrase(text) {
   const history = section('これまでの会話').split('\n').filter((line) => line.startsWith('['));
-  const corrections = history.filter((line) => line.startsWith('[利用者の修正]')).length;
-  return { reply: `偽の Claude Code です。これまでの会話 ${history.length} 件(修正 ${corrections} 件)を受け取りました。「${text}」への返事です。` };
+  const corrected = history.some((line) => line.startsWith('[利用者の修正]'));
+  const question = /^- 聞く問い\(この文をそのまま入れる\): (.*)$/m.exec(section('言うこと'))?.[1] ?? '';
+  const guardRetry = stdin.includes('<前の返事の問題>');
+  const made = text.includes('[数を作る]') || (text.includes('[一度数を作る]') && !guardRetry) ? '合う候補は 987 件です。' : '';
+  const asked = text.includes('[問いを抜く]') ? '' : question;
+  return { reply: `偽の Claude Code です。これまでの会話を受け取りました(修正の記録${corrected ? 'あり' : 'なし'})。「${text}」への返事です。${made}${asked}` };
 }
