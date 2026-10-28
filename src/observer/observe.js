@@ -21,6 +21,8 @@ export const DEFAULT_LIMITS = Object.freeze({
   loadTimeoutMs: 15_000,
   // 読み込みの後、描画中の例外と遅れて出るエラーを待つ時間
   settleMs: 500,
+  // 観察の全体の上限。null なら loadTimeoutMs + settleMs + 30 秒。超えたら文脈ごと閉じる(ADR-0001 の T8)
+  observeTimeoutMs: null,
 });
 
 const HOST_TIMEOUT_MS = 10_000;
@@ -32,6 +34,7 @@ const EXTRA_TIMEOUT_MS = 30_000;
 const MAX_ERRORS = 50;
 const MAX_MESSAGE = 1000;
 const MAX_STACK = 4000;
+const MAX_URL = 500;
 const MAX_AI_REQUESTS = 50;
 const MAX_AI_TEXT = 2000;
 const MAX_AI_CHANGES = 20;
@@ -117,6 +120,26 @@ function buildErrors(result) {
   }));
 }
 
+// 観察の文脈から出してよい要求: 観察用の親ページとその script(同じ名前の .js)、観察するビルドのファイル。
+// Studio の API、他のプロジェクトと他の版、外部への要求は断つ(S8、S13)。CSP の前で断てないもの
+// (frame-src が通す、プレビューの origin の中の他のプロジェクトへの移動など)もここで止まる
+function requestFilter(build) {
+  const host = new URL(build.hostUrl);
+  const hostFiles = new Set([host.pathname, host.pathname.replace(/\.html$/, '.js')]);
+  const preview = new URL(build.previewUrl);
+  return (url) => {
+    let target;
+    try {
+      target = new URL(url);
+    } catch {
+      return false;
+    }
+    if (target.origin === host.origin) return hostFiles.has(target.pathname);
+    if (target.origin === preview.origin) return target.pathname.startsWith(preview.pathname);
+    return false;
+  };
+}
+
 function waitFor(promise, ms) {
   let timer;
   return Promise.race([
@@ -196,13 +219,16 @@ export class Observer {
 
     if (names.length > 0 && !outDir) throw new TypeError('スクリーンショットを置く outDir を渡してください');
     const first = VIEWPORTS[names[0] ?? 'desktop'];
+    const observeTimeoutMs = limit.observeTimeoutMs ?? limit.loadTimeoutMs + limit.settleMs + EXTRA_TIMEOUT_MS;
     // 時間を超えて返った操作が、返した後の report を書き換えないように、写しに書く
     const draft = structuredClone(report);
     try {
-      await this.browser.withContext({ viewport: { ...first } }, (context, browser) =>
+      // service worker の要求は route を通らないので、使わせない。ダウンロードも受けない
+      const options = { viewport: { ...first }, serviceWorkers: 'block', acceptDownloads: false };
+      await this.browser.withContext(options, (context, browser) =>
         within(
           this.run({ context, browser, build, names, ai, limit, outDir, report: draft }),
-          limit.loadTimeoutMs + limit.settleMs + EXTRA_TIMEOUT_MS,
+          observeTimeoutMs,
           '観察が時間内に終わりませんでした',
         ),
       );
@@ -226,13 +252,34 @@ export class Observer {
   async run({ context, browser, build, names, ai, limit, outDir, report }) {
     report.browser = { name: 'chromium', version: browser.version() };
     report.load.timeoutMs = limit.loadTimeoutMs;
+    const addError = (kind, message, stack = '', extra = {}) => {
+      if (report.errors.length >= MAX_ERRORS) return;
+      report.errors.push({ kind, message: text(message, MAX_MESSAGE), stack: text(stack, MAX_STACK), ...extra, at: new Date().toISOString() });
+    };
+    // 断った要求は errors に残す。blockedBy は断ったもの(route は観察器、csp は試作品の CSP)
+    const addBlocked = (url, blockedBy) => {
+      const message =
+        blockedBy === 'route'
+          ? `試作品が観察するビルドの外へ要求を出したので、断ちました: ${url}`
+          : `試作品の CSP が要求を断ちました: ${url}`;
+      addError('blocked-request', message, '', { url: text(url, MAX_URL), blockedBy });
+    };
+
+    // ページを開く前に、文脈のすべての要求(iframe の中も)を調べる
+    const allowed = requestFilter(build);
+    await context.route('**/*', (route) => {
+      const url = route.request().url();
+      if (allowed(url)) return route.continue().catch(() => {});
+      addBlocked(url, 'route');
+      return route.abort('blockedbyclient').catch(() => {});
+    });
+    // CSP が断った要求は route に届かない。ブラウザが知らせる失敗から拾う(fetch など、要求にならないものは拾えない)
+    context.on('requestfailed', (request) => {
+      if (request.failure()?.errorText === 'csp') addBlocked(request.url(), 'csp');
+    });
+
     const page = await context.newPage();
     const fromHost = (source) => source.page === page && source.frame === page.mainFrame();
-
-    const addError = (kind, message, stack = '') => {
-      if (report.errors.length >= MAX_ERRORS) return;
-      report.errors.push({ kind, message: text(message, MAX_MESSAGE), stack: text(stack, MAX_STACK), at: new Date().toISOString() });
-    };
 
     let onLoad;
     const loaded = new Promise((resolve) => {
