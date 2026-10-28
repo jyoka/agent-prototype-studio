@@ -124,12 +124,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     dataNumbersOf: (id) => store.dataNumbers(id),
     connections: [createMockConnection(), createClaudeCodeConnection({ env, allowed: config.allowClaudeCode === true })],
     consent,
-    simulationOf: (id) => {
-      const simulation = store.simulation(id);
-      if (!simulation) return null;
-      const manifestAi = store.manifest(id)?.ai;
-      return { simulation, aiOf: (file) => simulation.harnessAis?.[file] ?? (file === manifestAi ? store.aiDefinition(id) : null) };
-    },
+    simulationOf: (id) => store.simulationContext(id),
     agents: [createMockAgent(), createClaudeCodeAgent({ env })],
     projectDirOf: (id) => projectPaths(config.home, id).root,
   });

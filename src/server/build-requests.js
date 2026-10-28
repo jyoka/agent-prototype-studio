@@ -10,7 +10,10 @@ import { buildFixPrompt, describeFailure, ERROR_KIND_TEXT } from './fix-prompt.j
 import { AI_FILE, describeDefinitionChanges } from './product-ai/definition.js';
 import { RealAiConsent } from './real-ai.js';
 import { readMessage } from './stream-json.js';
-import { describeSimulationChanges, referencedFiles, weakenedAiRules } from './sim/changes.js';
+import { describeSimulationChanges, guardFingerprint, referencedFiles, weakenedAiRules } from './sim/changes.js';
+import { createEvalWriter, failuresOf, runEvals } from './sim/eval-run.js';
+import { createMockAgent } from './sim/agent-mock.js';
+import { createMockConnection } from './product-ai/mock.js';
 
 export const MAX_REQUEST_CHARS = 4000;
 export const DEFAULT_AGENT_TIMEOUT_MS = 10 * 60_000;
@@ -25,6 +28,8 @@ const MAX_GATE_TEXT = 1000;
 const LAUNCH_VIEWPORTS = ['mobile', 'tablet', 'desktop'];
 // 関門 G6 の時間の上限: シナリオ 1 本と、関門の全体(harness.md の 2.2)。超えたら、その関門の失敗
 export const SCENARIO_GATE_LIMITS = Object.freeze({ scenarioTimeoutMs: 60_000, gateTimeoutMs: 3 * 60_000 });
+// 関門 GE の結果に残す、通らなかった確かめの数
+const MAX_GATE_EVAL_FAILURES = 20;
 // 関門 G6 の結果に残す、失敗したシナリオの数と、そのときの画面の文字の長さ
 const MAX_GATE_FAILURES = 20;
 const MAX_FAILURE_PAGE_TEXT = 2000;
@@ -38,6 +43,7 @@ export const MAX_FIX_ROUNDS = 2;
 // 作る run の節の並び(blueprint。docs/design/harness.md の 2.1、2.2)。
 // kind が code の節は決まった手順で、作る AI の接続(this.connection)に触れない。触れるのは model の節だけ。
 // 関門は安い順に回し、失敗した段で止める(S11)。G2〜G4 は buildApp の 1 回の呼び出しで、誤りの段の名前で分ける。
+// GE(場面)は、ブラウザを使わないので G5、G6 より前に回す(docs/design/agent-simulation.md の 4.5)。
 // 関門が失敗したら、節 fix が直す依頼を作り、作る AI の節に戻す(直すラウンド。MAX_FIX_ROUNDS 回まで)。直した後は G1 から回し直す
 export const BLUEPRINT = Object.freeze([
   { name: 'accept', kind: 'code', label: '受け付け' },
@@ -47,6 +53,7 @@ export const BLUEPRINT = Object.freeze([
   { name: 'inspect', kind: 'code', gate: 'G2', label: '検査' },
   { name: 'contract', kind: 'code', gate: 'G3', label: '契約' },
   { name: 'compile', kind: 'code', gate: 'G4', label: 'ビルド' },
+  { name: 'evals', kind: 'code', gate: 'GE', label: '場面' },
   { name: 'launch', kind: 'code', gate: 'G5', label: '起動の確認' },
   { name: 'scenarios', kind: 'code', gate: 'G6', label: 'シナリオ' },
   { name: 'fix', kind: 'code', label: '直す依頼' },
@@ -67,7 +74,7 @@ const gateErrors = (errors) =>
 // 失敗の指紋。依頼の前から同じ失敗が出ていたかを比べる。行と列は、前後の行が変わるとずれるので入れない
 function failureSignature(gate) {
   const errors = [
-    ...(gate.failures ?? []).map((f) => `${f.file ?? ''} ${f.scenario} ${f.step ?? ''} ${f.actual}`),
+    ...(gate.failures ?? []).map((f) => `${f.file ?? ''} ${f.scenario ?? f.eval} ${f.step ?? f.check ?? ''} ${f.actual}`),
     ...(gate.errors ?? []).map((e) => (e.text !== undefined ? `${e.file} ${e.text}` : `${e.kind} ${e.message}`)),
   ].sort();
   return JSON.stringify([gate.name, errors.length > 0 ? errors : [gate.summary ?? '']]);
@@ -143,6 +150,41 @@ function scenarioGate(report, reason) {
   } else {
     summary = 'シナリオの確かめで失敗しました';
   }
+  return { ...base, status: 'failed', summary };
+}
+
+// 関門 GE の結果を、場面の回しの結果から決める。通らなかった確かめごとに、場面の id、確かめ、期待と実際、
+// ツールの呼び出しの要約を残す(直す依頼に入れる)
+function evalsGate(result) {
+  const all = failuresOf(result);
+  const failures = all.slice(0, MAX_GATE_EVAL_FAILURES).map((f) => ({
+    eval: f.eval,
+    file: f.file,
+    kind: f.kind,
+    check: f.check,
+    expected: f.expected === null ? null : clip(f.expected, 300),
+    actual: clip(f.actual ?? '', 300),
+    tools: clip(f.tools.join('、'), 500),
+  }));
+  const evals = result.groups.flatMap((group) => group.evals);
+  const base = {
+    verdict: result.verdict,
+    evalCount: evals.length,
+    passedCount: evals.filter((e) => e.verdict === 'passed').length,
+    notApplicableCount: evals.filter((e) => e.verdict === 'n/a').length,
+    unjudgedCount: evals.filter((e) => e.verdict === 'unjudged').length,
+    failedCount: all.length,
+    failures,
+  };
+  if (result.status === 'error') {
+    // 回しそのものが途中で失敗した(harness の設定が読めないなど)。それまでの失敗も一緒に返す
+    const message = clip(`場面を回せませんでした: ${result.stopReason ?? '理由はわかりません'}`, 300);
+    return { ...base, status: 'failed', summary: message, errorCount: 1, errors: [{ kind: 'evals', message }] };
+  }
+  if (all.length === 0) return { ...base, status: 'passed' };
+  const first = failures[0];
+  const where = first.check ? `の確かめ「${first.check}」` : '';
+  const summary = `場面「${first.eval}」${where}が通りませんでした(${clip(first.actual, 200)})${all.length > 1 ? `。ほか ${all.length - 1} 件` : ''}`;
   return { ...base, status: 'failed', summary };
 }
 
@@ -288,6 +330,9 @@ export class BuildRequests {
       toolCalls: { count: 0, observe: 0, byTool: {} },
       // 直すラウンドで app/ のシナリオが変わったら、ラウンドとファイルを残す(確かめ方が変わった印)
       scenariosChanged: [],
+      // 直すラウンドで場面(app/evals/)やガードレールが変わったら、同じく残す(docs/design/agent-simulation.md の 4.5)
+      evalsChanged: [],
+      guardsChanged: [],
       // 直す依頼の文(ラウンドごと)。元の依頼を含むので、画面にだけ返し、run.json には入れない
       fixRequests: [],
       // 関門が確かめた app/ の中身の指紋。今の app/ と違えば、証拠は古い(S6。evidence.js)
@@ -356,8 +401,9 @@ export class BuildRequests {
     state.roundBefore = state.before;
     state.aiBefore = this.store.aiDefinition(state.id);
     state.simulationBefore = this.store.simulation(state.id);
-    // シナリオの置き場所(表示中の版の目録)。直すラウンドでシナリオが変わったかを見るのに使う
+    // シナリオと場面の置き場所(表示中の版の目録)。直すラウンドで確かめ方が変わったかを見るのに使う
     state.scenarioFolder = this.store.manifest(state.id)?.scenarios ?? null;
+    state.evalFolder = this.store.manifest(state.id)?.evals ?? null;
     state.appDirs = [state.paths.app, await fs.realpath(state.paths.app)];
     state.knownFailure = this.knownFailure(state.id);
     return { next: 'agent', outcome: 'passed' };
@@ -545,12 +591,44 @@ export class BuildRequests {
   // シナリオの置き場所は、依頼の前と今の目録の両方を見る(目録で置き場所を変えても見逃さない)
   noteScenarioChanges(state, changed) {
     const { id, run } = state;
-    const folders = new Set(['scenarios', state.scenarioFolder, this.store.manifest(id)?.scenarios].filter(Boolean));
-    const prefixes = [...folders].map((folder) => `app/${folder}/`);
-    const files = changed.filter((change) => prefixes.some((prefix) => change.file.startsWith(prefix)));
-    if (files.length === 0) return;
-    run.scenariosChanged.push({ round: run.round, files: files.slice(0, 50) });
-    state.currentRound.scenariosChanged = true;
+    const inFolders = (folders) => {
+      const prefixes = [...new Set(folders.filter(Boolean))].map((folder) => `app/${folder}/`);
+      return changed.filter((change) => prefixes.some((prefix) => change.file.startsWith(prefix)));
+    };
+    const scenarios = inFolders(['scenarios', state.scenarioFolder, this.store.manifest(id)?.scenarios]);
+    if (scenarios.length > 0) {
+      run.scenariosChanged.push({ round: run.round, files: scenarios.slice(0, 50) });
+      state.currentRound.scenariosChanged = true;
+    }
+    // 場面(関門 GE が回す)も同じ。場面を弱めて通すことを防ぐ
+    const evals = inFolders(['evals', state.evalFolder, this.store.manifest(id)?.evals]);
+    if (evals.length > 0) {
+      run.evalsChanged.push({ round: run.round, files: evals.slice(0, 50) });
+      state.currentRound.evalsChanged = true;
+    }
+  }
+
+  // 直すラウンドで、ガードレール(構成の守りと引き継ぎの辺、ツールの守り、ai.json の rules)が変わったか。
+  // ラウンドの前の表示中のビルドと、このラウンドのビルドを比べる(ファイルの名前でなく中身で)。ビルドに失敗したら比べない
+  noteGuardChanges(state) {
+    const { id, run } = state;
+    const now = guardFingerprint(this.store.simulation(id), this.store.aiDefinition(id));
+    if (run.round > 1 && state.roundGuards !== undefined && now !== state.roundGuards) {
+      // 守りを書くファイル: 構成、ツールの宣言、ai.json(harness が使うほかの設定のファイルも)
+      const simulation = this.store.simulation(id);
+      const guardFiles = new Set([
+        `app/${AI_FILE}`,
+        'app/composition.json',
+        ...Object.keys(simulation?.tools ?? {}).map((file) => `app/${file}`),
+        ...Object.keys(simulation?.harnessAis ?? {}).map((file) => `app/${file}`),
+        ...[simulation?.composition?.file, ...(simulation?.compositions ?? []).map((item) => item.file)].filter(Boolean).map((file) => `app/${file}`),
+      ]);
+      const files = (state.currentRound.changedFiles ?? [])
+        .filter((change) => guardFiles.has(change.file) || change.file.startsWith('app/compositions/'))
+        .slice(0, 50);
+      run.guardsChanged.push({ round: run.round, files });
+      state.currentRound.guardsChanged = true;
+    }
   }
 
   // 直すラウンドで app/ が変わらなかったとき。前のラウンドの失敗を隠さない:
@@ -600,6 +678,7 @@ export class BuildRequests {
       this.markPreexisting(state, run.gates.find((gate) => gate.name === failedAt));
     }
     this.reportAiChanges(id, run, { ai: state.aiBefore, simulation: state.simulationBefore }, build.ok);
+    if (build.ok) this.noteGuardChanges(state);
     return this.buildStep(state, 'inspect');
   }
 
@@ -615,7 +694,59 @@ export class BuildRequests {
   buildStep(state, name) {
     const index = BUILD_GATES.indexOf(name);
     if (state.buildFailedAt === name) return { next: 'fix', outcome: 'failed' };
-    return { next: BUILD_GATES[index + 1] ?? 'launch', outcome: 'passed' };
+    return { next: BUILD_GATES[index + 1] ?? 'evals', outcome: 'passed' };
+  }
+
+  // 節 evals(GE 場面): app/evals/ の場面を、既定の構成と既定の前提で、模擬のエージェントも harness もモックにして回す。
+  // ツールだけの場面(kind: tool)はツールの口を直接呼ぶ。実モデルは呼ばない(関門に実モデルの回しは入れない。S11、S25)。
+  // 場面がなければ「場面なし」で通る(R2)。結果は rounds/<ラウンド>/evals/ に result.json と report.md で残す
+  async node_evals(state) {
+    const { id, paths, run } = state;
+    if (run.status === 'cancelled' || run.status === 'timed-out' || this.closing) {
+      const reason = this.closing ? 'Studio を止めているので、場面は回しません' : '作る AI を止めたので、場面は回しません';
+      this.setGate(run, 'evals', { status: 'skipped', reason });
+      return { next: 'launch', outcome: 'skipped' };
+    }
+    const context = this.store.simulationContext(id);
+    const evals = context?.simulation?.evals ?? [];
+    if (!context?.simulation?.composition || evals.length === 0) {
+      this.setGate(run, 'evals', { status: 'passed', evalCount: 0, summary: '場面なし' });
+      return { next: 'launch', outcome: 'passed' };
+    }
+    const mock = { kind: 'mock', real: false, agent: createMockAgent(), harness: createMockConnection() };
+    const parts = path.relative(paths.root, path.join(this.runDir(paths, run), 'rounds', String(run.round), 'evals')).split(path.sep);
+    let gate;
+    try {
+      const writer = await createEvalWriter({ root: paths.root, parts });
+      const { result, traces } = await runEvals({
+        simulation: context.simulation,
+        aiOf: context.aiOf,
+        dataNumbers: context.dataNumbers,
+        appDigest: run.build?.appDigest ?? null,
+        project: id,
+        plan: { connections: ['mock'] },
+        connectionFor: () => mock,
+        projectDir: paths.root,
+      });
+      await writer.write(result, traces, { report: true });
+      gate = evalsGate(result);
+      gate.report = this.relativeToProject(paths, path.join(writer.dir, 'result.json'));
+    } catch (error) {
+      const message = `場面を回せませんでした: ${clip(error?.message ?? error, 300)}`;
+      gate = { status: 'failed', summary: message, evalCount: evals.length, failedCount: 0, failures: [], errorCount: 1, errors: [{ kind: 'evals', message }] };
+    }
+    this.setGate(run, 'evals', gate);
+    if (gate.status === 'passed') {
+      const rest = [gate.notApplicableCount ? `n/a ${gate.notApplicableCount} 本` : '', gate.unjudgedCount ? `採点だけの ${gate.unjudgedCount} 本` : ''].filter(Boolean).join('、');
+      this.addItem(id, run, 'evals-ok', `場面を確かめました。${gate.evalCount} 本のうち ${gate.passedCount} 本が通り、通らない場面はありませんでした${rest ? `(ほかに ${rest})` : ''}。模擬のエージェントと harness はモックです。`);
+      return { next: 'launch', outcome: 'passed' };
+    }
+    this.addItem(id, run, 'evals-failed', `確かめで失敗あり: ${gate.summary}。試す画面は新しいビルドにしたので、そこで動きを確かめられます。`);
+    // 依頼の前のビルドでも同じ場面が通っていなかったら、印を付ける(起動の確認とシナリオの失敗と同じ扱い)
+    const failed = run.gates.find((g) => g.name === 'evals');
+    this.markPreexisting(state, failed);
+    this.launchFailures.set(id, { buildId: run.build?.buildId ?? null, signature: failureSignature(failed) });
+    return { next: 'fix', outcome: 'failed' };
   }
 
   // 節 launch(G5 起動の確認): 新しいビルドを観察器で開く。15 秒以内に描画が終わり、
@@ -770,6 +901,8 @@ export class BuildRequests {
 
     state.fixPrompt = buildFixPrompt({ request: run.request, gate: failed, changedFiles: run.changedFiles });
     state.lastFailure = failed;
+    // 次のラウンドでガードレールが変わったかを、このときの表示中のビルドと比べる
+    state.roundGuards = guardFingerprint(this.store.simulation(id), this.store.aiDefinition(id));
     state.roundBefore = state.after;
     run.round += 1;
     run.fixRequests.push({ round: run.round, gate: failed.id, text: state.fixPrompt });
@@ -802,7 +935,7 @@ export class BuildRequests {
     if (run.gates.some((gate) => gate.status !== 'skipped')) {
       const parts = run.gates
         .filter((gate) => gate.status !== 'skipped')
-        .map((gate) => `${gate.id} ${gate.label}: ${GATE_STATUS_TEXT[gate.status] ?? gate.status}`);
+        .map((gate) => `${gate.id} ${gate.label}: ${GATE_STATUS_TEXT[gate.status] ?? gate.status}${gate.evalCount === 0 && gate.status === 'passed' ? '(場面なし)' : ''}`);
       const when = run.round > 1 ? `(直すラウンド ${run.round - 1} の後)` : '';
       this.addItem(id, run, 'gates', `Studio が確かめた結果${when}: ${parts.join('、')}`);
     }
@@ -816,8 +949,32 @@ export class BuildRequests {
         `確かめ方が変わりました: 直すラウンド ${rounds} で、作る AI がシナリオを変えました(${files.join('、')})。シナリオを弱めたり消したりして通していないか、変わったシナリオを確かめてください。`,
       );
     }
+    this.noteChangedChecks(id, run);
     this.log(`作る AI の実行が終わりました: ${id}(${run.status}、起動 ${run.launches.length} 回、変わったファイル ${run.changedFiles.length} 個)`);
     return { next: null, outcome: 'passed' };
+  }
+
+  // 直すラウンドで場面とガードレールが変わったことを、作る会話に出す(シナリオの「確かめ方が変わりました」と同じ考え)
+  noteChangedChecks(id, run) {
+    const filesOf = (changes) => [...new Set(changes.flatMap((change) => change.files.map((file) => file.file)))];
+    const roundsOf = (changes) => changes.map((change) => change.round - 1).join('、');
+    if (run.evalsChanged.length > 0) {
+      this.addItem(
+        id,
+        run,
+        'evals-changed',
+        `確かめ方が変わりました: 直すラウンド ${roundsOf(run.evalsChanged)} で、作る AI が場面を変えました(${filesOf(run.evalsChanged).join('、')})。場面を弱めたり消したりして通していないか、変わった場面を確かめてください。`,
+      );
+    }
+    if (run.guardsChanged.length > 0) {
+      const files = filesOf(run.guardsChanged);
+      this.addItem(
+        id,
+        run,
+        'guards-changed',
+        `ガードレールが変わりました: 直すラウンド ${roundsOf(run.guardsChanged)} で、作る AI が守り(構成の guards と引き継ぎの辺、tools.json の守り、ai.json の rules)を変えました${files.length > 0 ? `(${files.join('、')})` : ''}。ガードレールを弱めて通していないか、確かめてください。`,
+      );
+    }
   }
 
   runDir(paths, run) {
@@ -865,6 +1022,9 @@ export class BuildRequests {
       changedFiles: run.changedFiles,
       // 直すラウンドで app/ のシナリオが変わったら、確かめ方が変わった印(ラウンドとファイル)
       scenariosChanged: run.scenariosChanged,
+      // 直すラウンドで場面とガードレールが変わった印
+      evalsChanged: run.evalsChanged,
+      guardsChanged: run.guardsChanged,
       build: run.build,
       // 関門が確かめた app/ の中身の指紋(古くなったかの判定に使う。S6)
       appDigest: run.appDigest,

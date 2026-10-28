@@ -200,8 +200,12 @@ export function parseSimStream(stdout) {
     return { output: null, format: 'broken', problem: '1 回の返事のツールの呼び出しが、前提の上限に達した', meta, toolUses, acceptNonZero: true };
   }
   if (result.is_error || (typeof result.subtype === 'string' && result.subtype !== 'success')) {
-    if (result.subtype === 'error_max_budget_usd') throw new ConnectionError('budget', `1 回の起動の費用の上限($${SIM_AGENT_LIMITS.maxBudgetUsd})に当たったので止めました`);
-    throw failure(result.result ?? result.subtype, 'Claude Code がエラーを返しました');
+    // 失敗した起動の費用も、場面の回しの台帳に数えられるよう、誤りに付ける
+    const error = result.subtype === 'error_max_budget_usd'
+      ? new ConnectionError('budget', `1 回の起動の費用の上限($${SIM_AGENT_LIMITS.maxBudgetUsd})に当たったので止めました`)
+      : failure(result.result ?? result.subtype, 'Claude Code がエラーを返しました');
+    error.costUsd = meta.costUsd;
+    throw error;
   }
   if (isPlainObject(result.structured_output)) return { output: result.structured_output, format: 'structured', problem: null, meta, toolUses };
   const output = parseJsonObject(result.result);

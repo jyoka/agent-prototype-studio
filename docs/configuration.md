@@ -234,7 +234,7 @@
 
 ## 構成(`app/composition.json`)
 
-構成は、試作品の中で誰が会話を回し、誰が何を持つかを書いたデータ。設計は [agent-simulation.md の 2 節](design/agent-simulation.md#2-構成の書き方)、決定は [ADR-0003](adr/0003-agent-simulation.md)(案)。今は、形の検査と構成 B の読み替えと、ツールの口(ツールを宣言どおりに動かすコード)と、ツールの MCP サーバー(`npm run tools:mcp`。[usage.md](usage.md#ツールの-mcp-サーバーnpm-run-toolsmcp))と、会話の進め方と模擬のエージェントと、会話の枠の部品(`studio-talk`)を作った。`composition.json` のある試作品は、試す画面で構成どおりに会話が回る(下の「構成のある会話」)。場面の回しは、まだない。見本は `samples/part-time/app/`(バイト探し。構成 A)。
+構成は、試作品の中で誰が会話を回し、誰が何を持つかを書いたデータ。設計は [agent-simulation.md の 2 節](design/agent-simulation.md#2-構成の書き方)、決定は [ADR-0003](adr/0003-agent-simulation.md)(案)。今は、形の検査と構成 B の読み替えと、ツールの口(ツールを宣言どおりに動かすコード)と、ツールの MCP サーバー(`npm run tools:mcp`。[usage.md](usage.md#ツールの-mcp-サーバーnpm-run-toolsmcp))と、会話の進め方と模擬のエージェントと、会話の枠の部品(`studio-talk`)を作った。`composition.json` のある試作品は、試す画面で構成どおりに会話が回る(下の「構成のある会話」)。場面(`app/evals/`)は、作るループの関門 GE がモックで回し、`npm run evals` で構成と前提を変えて回せる(下の「場面」)。見本は `samples/part-time/app/`(バイト探し。構成 A)。
 
 - `composition.json` のない試作品は、`ai.json` の harness 1 つの構成(構成 B)として読む。今の試作品と見本は、何も書き足さずに今までどおり動く。`ai.json` もなければ、AI のない試作品
 - 置き場所と形は次のとおり。形の例は設計の 2.2〜2.5、3.3、3.4、4.2 にある
@@ -278,6 +278,19 @@
 - `studio.ai.correct` は、構成のある会話では使えない(`not-supported` で断る)
 - 構成のある会話は、まだ版に入れない。版を戻すと、会話は最初から始まる
 - 試作品の一覧では、`composition.json` のある試作品も「AI と話せる」と出る(`ai.json` がなくても)
+
+### 場面(`app/evals/*.json`)
+
+場面は、会話の確かめの 1 単位。形は [agent-simulation.md の 4.2](design/agent-simulation.md#42-場面appevalsjson)。回し方は [usage.md の「場面を回す」](usage.md#場面を回すnpm-run-evals)。
+
+- 作る run は、ビルド(G4)が通った後、起動の確認(G5)の前に、関門 GE で場面を回す。既定の構成と既定の前提で、模擬のエージェントも harness もモック。実モデルは呼ばない。場面がなければ「場面なし」で通る
+- 通らなかった確かめは、場面の `id`、確かめ、期待と実際、ツールの呼び出しの要約にして、作る AI に直させる。直すラウンドで場面やガードレールを変えたら、作る会話に「確かめ方が変わりました」「ガードレールが変わりました」と出す
+- 場面ごとに、新しい会話と新しい記録の店で始める。`records` を書けば、記録の店はその値から始まる。`history` は会話の履歴に入るだけで、harness の状態は変えない
+- 返事の確かめ(`replyContains` など)は、場面の `turns` で返した返事の全部を見る(`history` の発言は見ない)。`replyContains` はどれかの返事にあれば通る。`replyNotContains`、`replyMaxChars`、`partKinds`、`noNewNumbers` は、どの返事も満たせば通る
+- `toolCalled` は、ツールの口まで届いた呼び出し(守りで断ったものも)を数える。`noToolCall` は、呼ぼうとしたもの(許可していない名前も)を全部数える。`args` は書いた引数を含めば通る
+- `guardBlocked`、`noGuardBlock` の `layer`: `tool` と `permission` は断った(`blocked`)とき、`output` は止める出口の確かめがやり直させたか決まった文に代えたとき。`prompt` は、効いたかをコードで決められないので `n/a`
+- `recordHas` は、記録が配列(`append`)なら最後の 1 件を見る。`noAskAgain` は `words` を書かなければ、そのターンの前に決まっていた項目の `ai.json` の問いを見る。`noRepeat` の `times` の既定は 1
+- `judge` は、この回しでは採点しない(未採点)
 
 ### 会話の枠(`studio-talk`)
 

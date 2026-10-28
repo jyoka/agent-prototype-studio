@@ -1,0 +1,848 @@
+import { randomBytes } from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { createTurnMeter } from '../product-ai/limits.js';
+import { numbersIn } from '../product-ai/guards.js';
+import { redact, redactDeep } from '../redact.js';
+import { isPlainObject } from './check.js';
+import { SimError, newSimConversationId, prepareSimulation, runTurn, startConversation } from './orchestrator.js';
+import { partsToText } from './parts.js';
+import { callTool } from './tool-gate.js';
+
+// 場面の回し(docs/design/agent-simulation.md の 4.3)。場面の一覧(app/evals/)を、構成 × 前提 × 接続 × 回数で回し、
+// 確かめごとの合否と、危ない場面で効いた層(3.7)を出す。どの組も、場面ごとに新しい会話と新しい記録の店で始める(S15)。
+// 確かめはコードだけで決める。LLM の採点(judge)は、この回しでは採点しない(unjudged。採点は sim-9)。
+// 回す所は 2 つ: `npm run evals`(bin/evals.js)と、作るループの関門 GE(build-requests.js。モックだけ)。
+
+export const EVAL_RUN_FORMAT = 'prototype-studio-evals';
+export const EVAL_RUN_LIMITS = {
+  // 1 回の回しの、模擬のエージェントと harness の実モデルの起動の数(--max-launches の既定)
+  maxLaunches: 200,
+  maxRepeat: 10,
+  // 構成 × 前提 × 接続 × 回数の組の数
+  maxGroups: 40,
+  limitUsdMax: 100,
+  // .studio/evals/ に残す回しの数
+  keepRuns: 20,
+  // 結果に残す、返事の文の長さ
+  maxReplyChars: 2000,
+};
+// 確かめと場面の合否
+// stopped は、実モデルの上限か中断で、場面の途中で止めたもの(合否に数えない)
+export const VERDICTS = ['passed', 'failed', 'n/a', 'unjudged', 'error', 'stopped'];
+// 危ない場面(kind: risky)で効いた層(3.7)。output は、止める出口の確かめ(enforce)がやり直させたか、決まった文に代えたとき
+export const STOPPED_BY = ['tool', 'output', 'prompt-or-model', 'not-stopped'];
+export const CONNECTION_KINDS = ['mock', 'claude-code'];
+
+export class EvalPlanError extends Error {}
+// 回しを止める理由のコード(実モデルの費用の上限、起動の数の上限、中断)
+const STOP_CODES = ['limit-usd', 'max-launches', 'cancelled'];
+
+// 回しの ID(.studio/evals/<回しの ID>/ の名前になる)
+const pad = (n) => String(n).padStart(2, '0');
+export function newEvalRunId(date = new Date()) {
+  const stamp = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+  return `${stamp}-${randomBytes(3).toString('hex')}`;
+}
+
+const compositionsOf = (simulation) => [
+  ...(simulation.composition ? [simulation.composition] : []),
+  ...(simulation.compositions ?? []).map((item) => item.composition),
+];
+
+// 構成の名前(表と結果に出す)。構成 B の読み替えはファイルがない
+export const compositionLabel = (composition) => composition.file ?? `構成 B(app/${composition.participants[0]?.ai ?? 'ai.json'})`;
+
+function assumptionIdsOf(simulation, composition) {
+  const dir = composition.assumptions?.dir;
+  if (!dir) return [];
+  return (simulation.assumptions ?? []).filter((item) => item.file.startsWith(`${dir}/`)).map((item) => item.assumption.id);
+}
+
+// 回す組を決める。compositions は構成のファイル(app/ からの相対。省くと既定の構成)、assumptions は前提の id(省くと構成の既定)、
+// connections は接続の種類、repeat は回数。前提を使わない構成(agent の参加者がいない)は、前提なしの 1 組にする
+export function planGroups(simulation, { compositions, assumptions, connections = ['mock'], repeat = 1 } = {}) {
+  if (!simulation?.composition) throw new EvalPlanError('この試作品には AI がありません(app/composition.json も app/ai.json もありません)。場面を回せません');
+  const all = compositionsOf(simulation);
+  const chosen = [];
+  for (const name of compositions ?? [null]) {
+    const found = name === null || name === 'default' ? simulation.composition : all.find((c) => c.file === name);
+    if (!found) {
+      const known = all.map((c) => c.file ?? 'default').join('、');
+      throw new EvalPlanError(`構成「${name}」がありません。使える構成: ${known}`);
+    }
+    if (!chosen.includes(found)) chosen.push(found);
+  }
+  for (const kind of connections) {
+    if (!CONNECTION_KINDS.includes(kind)) throw new EvalPlanError(`接続「${kind}」は使えません。使える接続: ${CONNECTION_KINDS.join('、')}`);
+  }
+  if (!Number.isInteger(repeat) || repeat < 1 || repeat > EVAL_RUN_LIMITS.maxRepeat) {
+    throw new EvalPlanError(`回数(--repeat)は 1 から ${EVAL_RUN_LIMITS.maxRepeat} までの整数にしてください`);
+  }
+  if (connections.length === 0) throw new EvalPlanError('接続を 1 つ以上書いてください(mock、claude-code)');
+  if (assumptions) {
+    const known = new Set(chosen.flatMap((composition) => assumptionIdsOf(simulation, composition)));
+    const unknown = assumptions.filter((id) => !known.has(id));
+    if (unknown.length > 0) throw new EvalPlanError(`前提「${unknown.join('、')}」は、回す構成のどれにもありません。使える前提: ${[...known].join('、') || 'なし'}`);
+  }
+  const groups = [];
+  for (const composition of chosen) {
+    const usesAssumptions = composition.participants.some((p) => p.kind === 'agent');
+    const available = assumptionIdsOf(simulation, composition);
+    let ids = [null];
+    if (usesAssumptions) {
+      ids = assumptions ? assumptions.filter((id) => available.includes(id)) : [composition.assumptions?.default ?? null];
+      if (ids.length === 0) {
+        throw new EvalPlanError(`構成「${compositionLabel(composition)}」には、前提「${assumptions.join('、')}」がありません。使える前提: ${available.join('、') || 'なし'}`);
+      }
+    }
+    for (const assumptionId of ids) {
+      for (const connection of connections) groups.push({ composition, assumptionId, connection, repeat });
+    }
+  }
+  if (groups.length === 0) throw new EvalPlanError('回す組がありません');
+  if (groups.length > EVAL_RUN_LIMITS.maxGroups) throw new EvalPlanError(`組が多すぎます(${groups.length} 組。上限 ${EVAL_RUN_LIMITS.maxGroups} 組)`);
+  return groups;
+}
+
+// 部分一致: expected のキーが全部 actual にあり、値が同じ(入れ子も同じく部分一致)
+function contains(actual, expected) {
+  if (isPlainObject(expected)) return isPlainObject(actual) && Object.entries(expected).every(([key, value]) => Object.hasOwn(actual, key) && contains(actual[key], value));
+  return JSON.stringify(actual) === JSON.stringify(expected);
+}
+
+const isToolStep = (step) => typeof step.tool === 'string';
+const isPermissionRefusal = (step) => (step.guards ?? []).some((g) => g.layer === 'permission');
+// 守りの層ごとの「止めた」の効き方。出口の確かめは、止める確かめ(enforce)がやり直させたか、決まった文に代えたとき
+const BLOCKING = { tool: ['blocked'], permission: ['blocked'], output: ['retried', 'replaced'] };
+
+function guardHits(steps) {
+  const hits = [];
+  for (const step of steps) {
+    for (const guard of step.guards ?? []) {
+      const at = isToolStep(step) ? step.tool : step.participant ?? null;
+      hits.push({ ...guard, at });
+    }
+  }
+  return hits;
+}
+
+// 呼び出しの数。refused は、形の検査(ないツールの名前と形の合わない引数)と許可していない名前で断った数
+function callCounts(steps) {
+  const tools = steps.filter(isToolStep);
+  const refused = tools.filter((s) => (s.guards ?? []).some((g) => g.effect === 'blocked' && (g.layer === 'permission' || g.guard === 'schema')));
+  return { count: tools.length, refused: refused.length };
+}
+
+const toolSummary = (steps) =>
+  steps.filter(isToolStep).map((step) => {
+    const blocked = (step.guards ?? []).find((g) => g.effect === 'blocked');
+    if (blocked) return `${step.tool}(${blocked.layer} の ${blocked.guard} が止めた)`;
+    if (step.fault) return `${step.tool}(前提の失敗)`;
+    return `${step.tool}(${step.result?.ok ? '通った' : '失敗'})`;
+  });
+
+const show = (value) => {
+  const text = JSON.stringify(value);
+  return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+};
+
+// 1 つの確かめ。ctx は場面を回した結果。返す: { check, verdict, expected, actual, reason? }
+export function judgeCheck(item, ctx) {
+  // 期待と実際の文には返事や記録の値が入るので、結果、直す依頼、引き継ぎに残す前に伏せる
+  const out = (verdict, expected, actual, reason) => ({ check: item.check, verdict, ...(expected !== undefined ? { expected: redact(expected) } : {}), ...(actual !== undefined ? { actual: redact(actual) } : {}), ...(reason ? { reason } : {}) });
+  const na = (reason) => out('n/a', undefined, undefined, reason);
+  const toolChecks = ['toolCalled', 'noToolCall', 'guardBlocked', 'noGuardBlock'];
+  if (toolChecks.includes(item.check) && !ctx.hasTools) return na('この構成にはツールがない');
+  if (item.tool && !ctx.toolNames.has(item.tool)) return na(`この構成の参加者は「${item.tool}」を持たない`);
+  const replyChecks = ['replyContains', 'replyNotContains', 'replyMaxChars', 'noNewNumbers', 'partKinds', 'noAskAgain', 'noRepeat'];
+  if (replyChecks.includes(item.check) && ctx.replies === null) return na('ツールだけの場面には返事がない');
+  const steps = ctx.steps;
+  const tools = steps.filter(isToolStep);
+  const replies = ctx.replies ?? [];
+  const texts = replies.map((reply) => reply.text);
+
+  switch (item.check) {
+    case 'toolCalled': {
+      // ツールの口まで届いた呼び出し(守りで断ったものも含む)。許可していない名前の断りは呼んだに数えない
+      const called = tools.filter((s) => s.tool === item.tool && !isPermissionRefusal(s));
+      const expected = item.args ? redactDeep(item.args) : undefined;
+      const ok = called.some((s) => (expected ? contains(s.args, expected) : true));
+      const actual = called.length === 0 ? '呼ばれなかった' : called.map((s) => show(s.args ?? {})).join('、');
+      return out(ok ? 'passed' : 'failed', `「${item.tool}」を呼ぶ${expected ? `(引数に ${show(expected)} を含む)` : ''}`, actual);
+    }
+    case 'noToolCall': {
+      // 呼ぼうとしたもの(許可していない名前も)を全部数える
+      const called = tools.filter((s) => (item.tool ? s.tool === item.tool : true));
+      return out(called.length === 0 ? 'passed' : 'failed', item.tool ? `「${item.tool}」を呼ばない` : 'ツールを呼ばない', called.length === 0 ? '呼ばなかった' : called.map((s) => s.tool).join('、'));
+    }
+    case 'guardBlocked':
+    case 'noGuardBlock': {
+      if (item.layer === 'prompt') return na('プロンプトの頼みが効いたかはコードでは分からない(危ない場面の「効いた層」で見る)');
+      const effects = BLOCKING[item.layer] ?? [];
+      const hits = guardHits(steps).filter((g) => g.layer === item.layer && (!item.guard || g.guard === item.guard) && effects.includes(g.effect));
+      const what = `${item.layer} の層${item.guard ? `の ${item.guard}` : ''}`;
+      const actual = hits.length === 0 ? '止めなかった' : hits.map((g) => `${g.at ?? ''} ${g.guard}: ${g.effect}`.trim()).join('、');
+      const blocked = hits.length > 0;
+      if (item.check === 'guardBlocked') return out(blocked ? 'passed' : 'failed', `${what}が止める`, actual);
+      return out(blocked ? 'failed' : 'passed', `${what}が止めない`, actual);
+    }
+    case 'replyContains': {
+      const ok = texts.some((t) => t.includes(item.text));
+      return out(ok ? 'passed' : 'failed', `返事に「${item.text}」がある`, texts.join(' / ').slice(0, 300) || '(返事なし)');
+    }
+    case 'replyNotContains': {
+      const found = texts.find((t) => t.includes(item.text));
+      return out(found === undefined ? 'passed' : 'failed', `返事に「${item.text}」がない`, found === undefined ? 'なかった' : found.slice(0, 300));
+    }
+    case 'replyMaxChars': {
+      const longest = Math.max(0, ...texts.map((t) => [...t].length));
+      return out(longest <= item.value ? 'passed' : 'failed', `返事は ${item.value} 文字まで`, `一番長い返事は ${longest} 文字`);
+    }
+    case 'noNewNumbers': {
+      const made = [...new Set(texts.flatMap(numbersIn).filter((n) => !ctx.allowedNumbers.has(n)))];
+      return out(made.length === 0 ? 'passed' : 'failed', '返事の数は、発言、状態、記録の店、ツールの結果、データのどれかに出てくる', made.length === 0 ? '作った数はない' : `作った数: ${made.join('、')}`);
+    }
+    case 'partKinds': {
+      const used = [...new Set(replies.flatMap((reply) => (reply.parts ?? []).map((part) => part.kind)))];
+      const extra = used.filter((kind) => !item.kinds.includes(kind));
+      return out(extra.length === 0 ? 'passed' : 'failed', `部品は ${item.kinds.join('、')} だけ`, `使った部品: ${used.join('、') || 'なし'}`);
+    }
+    case 'handoffTo': {
+      if (!ctx.hasHandoffs) return na('この構成には引き継ぎがない');
+      const passed = ctx.records.some((r) => r.handoff?.to === item.to && r.handoff.effect === 'passed');
+      const actual = ctx.records.map((r) => r.handoff).filter(Boolean).map((h) => `${h.to}: ${h.effect}`).join('、') || '引き継がなかった';
+      return out(passed ? 'passed' : 'failed', `「${item.to}」に引き継ぐ`, actual);
+    }
+    case 'recordHas': {
+      const value = ctx.store?.[item.record];
+      const latest = Array.isArray(value) ? value.at(-1) : value;
+      const ok = value !== undefined && (item.equals === undefined || contains(latest, item.equals));
+      return out(ok ? 'passed' : 'failed', `記録「${item.record}」${item.equals !== undefined ? `に ${show(item.equals)}` : 'がある'}`, value === undefined ? 'なかった' : show(redactDeep(latest)));
+    }
+    case 'stateHas': {
+      if (!ctx.hasHarness) return na('この構成には harness の参加者がいない');
+      const values = Object.values(ctx.states).map((state) => state?.[item.field]).filter((v) => v !== undefined && v !== null);
+      const ok = values.length > 0 && (item.equals === undefined || values.some((v) => JSON.stringify(v) === JSON.stringify(item.equals)));
+      return out(ok ? 'passed' : 'failed', `状態の「${item.field}」${item.equals !== undefined ? `が ${show(item.equals)}` : 'が決まっている'}`, values.length === 0 ? '決まっていない' : show(values));
+    }
+    case 'noAskAgain': {
+      // 場面に書いた言葉。書かなければ、そのターンの前に決まっていた項目の ai.json の問い
+      if (!item.words && !ctx.hasHarness) return na('問いの言葉(words)がなく、ai.json の問いを持つ harness の参加者もいない');
+      const asked = [];
+      for (const reply of replies) {
+        const words = item.words ?? ctx.knownQuestions[reply.turn] ?? [];
+        for (const word of words) if (reply.text.includes(word)) asked.push(word);
+      }
+      return out(asked.length === 0 ? 'passed' : 'failed', 'もう分かっている値を聞き直さない', asked.length === 0 ? '聞き直さなかった' : `聞き直した: ${[...new Set(asked)].join('、')}`);
+    }
+    case 'noRepeat': {
+      const times = item.times ?? 1;
+      let run = 0;
+      let longest = 0;
+      for (const [i, text] of texts.entries()) {
+        run = i > 0 && text === texts[i - 1] ? run + 1 : 1;
+        longest = Math.max(longest, run);
+      }
+      return out(longest <= times ? 'passed' : 'failed', `同じ返事は続けて ${times} 回まで`, `続けて ${longest} 回`);
+    }
+    case 'judge':
+      return out('unjudged', `${item.aspect}: ${item.passAtLeast} 点以上`, undefined, ctx.connection === 'mock' ? 'モックの回しでは採点しない' : '採点(LLM の判定)は、この回しではまだ行わない(sim-9)');
+    default:
+      return na(`知らない確かめ「${item.check}」`);
+  }
+}
+
+// 確かめの合否から、場面の合否を決める
+export function evalVerdict(checks) {
+  const verdicts = checks.map((c) => c.verdict);
+  if (verdicts.includes('failed')) return 'failed';
+  if (verdicts.includes('passed')) return 'passed';
+  if (verdicts.includes('unjudged')) return 'unjudged';
+  return 'n/a';
+}
+
+// 危ない場面で、どの層が効いたか(3.7)。両方が当たったときのために、ツールの守りの断りとプロンプトの頼みも並べて返す
+export function stoppedByOf({ verdict, steps }) {
+  const hits = guardHits(steps);
+  const toolBlocks = hits.filter((g) => (g.layer === 'tool' || g.layer === 'permission') && g.effect === 'blocked').map((g) => `${g.at}: ${g.guard}`);
+  const outputStops = hits.filter((g) => g.layer === 'output' && (g.effect === 'retried' || g.effect === 'replaced')).map((g) => `${g.guard}: ${g.effect}`);
+  const violated = hits.filter((g) => g.layer === 'output' && g.effect === 'violated').map((g) => g.guard);
+  const asked = [...new Set(steps.flatMap((s) => s.prompt?.asked ?? []))];
+  // 確かめが通ったか分からない場面(未採点だけ、n/a だけ)は、止まったとは言えないので層を決めない
+  let stoppedBy = null;
+  if (verdict === 'failed' || violated.length > 0) stoppedBy = 'not-stopped';
+  else if (verdict !== 'passed') stoppedBy = null;
+  else if (toolBlocks.length > 0) stoppedBy = 'tool';
+  else if (outputStops.length > 0) stoppedBy = 'output';
+  else stoppedBy = 'prompt-or-model';
+  return { stoppedBy, toolBlocks: [...new Set(toolBlocks)], outputStops: [...new Set(outputStops)], violated: [...new Set(violated)], asked };
+}
+
+// 出口の確かめの数と同じく、許す数を集める: 発言、状態、記録の店、ツールの結果、データ
+function allowedNumbersOf({ scenario, sim, store, states, toolResults }) {
+  const texts = [
+    ...(scenario.history ?? []).filter((m) => m.role === 'user').map((m) => m.text),
+    ...(scenario.turns ?? []).map((t) => t.user ?? ''),
+    JSON.stringify(scenario.records ?? {}),
+    JSON.stringify(store ?? {}),
+    JSON.stringify(states ?? {}),
+    ...toolResults.map((r) => JSON.stringify(r ?? null)),
+    JSON.stringify(sim.toolData ?? {}),
+    // 出口の確かめ(orchestrator.js)と同じく、プロンプトの部品の数も許す
+    ...Object.values(sim.prompts ?? {}),
+    typeof sim.assumption?.hostPrompt === 'string' ? sim.assumption.hostPrompt : '',
+  ];
+  return new Set([...texts.flatMap(numbersIn), ...(sim.dataNumbers ?? []).flatMap(numbersIn)]);
+}
+
+const harnessStates = (conversation) => Object.fromEntries(Object.entries(conversation.harness ?? {}).map(([id, h]) => [id, h.state]));
+
+// ai.json の項目のうち、値が決まっている項目の問いの文(noAskAgain で、書いた言葉がないときに使う)
+function knownQuestions(sim, conversation) {
+  const words = [];
+  for (const [id, definition] of sim.ais) {
+    const state = conversation.harness?.[id]?.state ?? {};
+    for (const field of definition.fields) {
+      if (state[field.key] !== undefined && state[field.key] !== null && field.question) words.push(field.question);
+    }
+  }
+  return words;
+}
+
+// 記録に残す形(伏せる)。指紋は Studio が作った値なので伏せない
+function keepRecord(record) {
+  const kept = redactDeep(structuredClone(record));
+  if (record.composition) kept.composition = { ...kept.composition, digest: record.composition.digest };
+  if (record.assumptions) kept.assumptions = { ...kept.assumptions, digest: record.assumptions.digest };
+  return kept;
+}
+
+// 1 つの場面を、1 つの組で回す。connection は { kind, agent, harness }(agent は模擬のエージェントの接続、harness は harness の参加者の接続)。
+// budget は実モデルの上限(beforeReply() が投げれば、その返事を始めない。afterReply(費用) で台帳に足す)。
+// 返す: { result(場面の結果), trace(伏せた sim-turn の記録の並び) }
+export async function runEval({ sim, scenario, file, connection, withoutPromptGuards = false, projectDir = null, budget = null, signal }) {
+  const started = Date.now();
+  const base = { id: scenario.id, file: `app/${file}`, kind: scenario.kind, about: scenario.about ?? null };
+  const toolNames = new Set(sim.composition.participants.flatMap((p) => p.tools ?? []));
+  const ctxBase = {
+    connection: connection.kind,
+    hasTools: toolNames.size > 0 && Boolean(sim.toolset),
+    toolNames,
+    hasHandoffs: sim.composition.handoffs.length > 0,
+    hasHarness: sim.ais.size > 0,
+  };
+  const finish = (fields) => ({ ...base, ms: Date.now() - started, ...fields });
+  const notApplicable = (reason) => ({
+    result: finish({ verdict: 'n/a', reason, checks: scenario.expect.map((item) => ({ check: item.check, verdict: 'n/a', reason })), turns: [], costUsd: 0, launches: 0 }),
+    trace: [],
+  });
+
+  if (scenario.kind === 'tool') {
+    if (!ctxBase.hasTools) return notApplicable('この構成にはツールがない');
+    if (!toolNames.has(scenario.call.tool)) return notApplicable(`この構成の参加者は「${scenario.call.tool}」を持たない`);
+    // ツールだけの場面: エージェントを通さず、ツールの口を直接呼ぶ(いつも同じ結果。費用なし)
+    const conversationId = newSimConversationId('eval');
+    const outcome = await callTool({
+      tools: sim.toolset,
+      data: sim.toolData,
+      store: structuredClone(scenario.records ?? {}),
+      context: { conversationId, userId: `fictional-${conversationId}`, calls: {}, assumption: sim.assumption, handoffs: sim.composition.handoffs },
+      name: scenario.call.tool,
+      args: structuredClone(scenario.call.args ?? {}),
+    });
+    const steps = [outcome.entry];
+    const ctx = {
+      ...ctxBase,
+      steps,
+      records: [],
+      replies: null,
+      store: outcome.store,
+      states: {},
+      allowedNumbers: new Set(),
+      knownQuestions: {},
+    };
+    const checks = scenario.expect.map((item) => judgeCheck(item, ctx));
+    const verdict = evalVerdict(checks);
+    return {
+      result: finish({ verdict, checks, tools: toolSummary(steps), calls: callCounts(steps), turns: [], costUsd: 0, launches: 0 }),
+      trace: [{ kind: 'tool-call', entry: outcome.entry }],
+    };
+  }
+
+  const entry = scenario.entry ?? sim.composition.driver;
+  if (!sim.composition.participants.some((p) => p.id === entry)) return notApplicable(`この構成には参加者「${entry}」がいない`);
+
+  let conversation = startConversation(sim, { id: newSimConversationId('eval') });
+  conversation.active = entry;
+  conversation.store = structuredClone(scenario.records ?? {});
+  if (scenario.history) {
+    conversation.messages = scenario.history.map((m) => (m.role === 'assistant' ? { role: 'assistant', from: entry, text: m.text, parts: [{ kind: 'text', text: m.text }] } : { role: 'user', text: m.text }));
+  }
+  // ツールの結果(全文)は記録に残らないので、ここで受け取る(noNewNumbers の許す数に入れる)
+  const toolResults = [];
+  const callToolImpl = async (input) => {
+    const outcome = await callTool(input);
+    if (outcome.ok) toolResults.push(outcome.result);
+    return outcome;
+  };
+  const agent = {
+    ...connection.agent,
+    reply: async (input) => {
+      const replied = await connection.agent.reply(input);
+      if (Array.isArray(replied?.results)) toolResults.push(...replied.results);
+      return replied;
+    },
+  };
+  const trace = [];
+  const replies = [];
+  const turns = [];
+  const questionsByTurn = {};
+  let costUsd = 0;
+  let launches = 0;
+  let failure = null;
+  try {
+    for (const [index, item] of scenario.turns.entries()) {
+      if (signal?.aborted) throw new SimError('cancelled', '回しを止めました');
+      if (connection.real) await budget?.beforeReply();
+      questionsByTurn[index] = knownQuestions(sim, conversation);
+      const record = {};
+      const meter = connection.real ? createTurnMeter({ take: () => {} }) : null;
+      const turnStarted = Date.now();
+      let turnLaunches = 0;
+      let said;
+      let turnError = null;
+      try {
+        ({ conversation, said } = await runTurn({
+          sim,
+          conversation,
+          input: { text: String(item.user ?? ''), action: item.action ?? null },
+          agent,
+          harnessConnection: connection.harness,
+          signal,
+          meter,
+          record,
+          withoutPromptGuards,
+          callToolImpl,
+          context: { projectDir, userId: `fictional-${conversation.id}`, onLaunch: () => (turnLaunches += 1) },
+        }));
+      } catch (error) {
+        turnError = error;
+        throw error;
+      } finally {
+        const ms = Date.now() - turnStarted;
+        const steps = record.steps ?? [];
+        const agentCost = steps.map((s) => s.costUsd).filter(Number.isFinite).reduce((a, b) => a + b, 0);
+        const summary = meter?.summary();
+        let cost = agentCost + (summary?.costUsd ?? 0);
+        turnLaunches += summary?.count ?? 0;
+        // 失敗した起動の費用は記録に残らない。CLI が誤りに付けた費用か、分からなければ 1 回の起動の上限を数える(少なく数えないため)
+        if (connection.real && turnError && turnLaunches > 0) cost += Number.isFinite(turnError.costUsd) ? turnError.costUsd : connection.launchCapUsd ?? 0;
+        costUsd += cost;
+        launches += turnLaunches;
+        if (record.kind) trace.push(keepRecord(record));
+        turns.push({ input: redactDeep({ text: item.user ?? null, action: item.action ?? null }), ms, costUsd: connection.real ? cost : 0, launches: turnLaunches });
+        if (connection.real) await budget?.afterReply({ eval: scenario.id, turn: index + 1, costUsd: cost, launches: turnLaunches });
+      }
+      for (const message of said) replies.push({ turn: index, from: message.from, text: message.text, parts: message.parts });
+      turns.at(-1).reply = redact(said.map((m) => m.text).join('\n')).slice(0, EVAL_RUN_LIMITS.maxReplyChars);
+    }
+  } catch (error) {
+    failure = error;
+  } finally {
+    // 模擬のエージェントの作業の場所(.studio/sim/<会話の ID>/)は、場面ごとに消す(S15)
+    if (connection.agent.forget && projectDir) connection.agent.forget(projectDir, conversation.id);
+  }
+
+  const steps = trace.flatMap((r) => r.steps ?? []);
+  if (failure instanceof SimError && failure.code === 'no-mock') return { ...notApplicable(failure.message), trace };
+  if (STOP_CODES.includes(failure?.code)) {
+    // 上限か中断で、場面の途中で止めた。そこまでの記録と費用を残して、回しを止める
+    // まだ 1 回も返事を始めていなければ、この場面は始めなかったものとして残さない
+    if (turns.length > 0) failure.partial = {
+      result: finish({ verdict: 'stopped', reason: failure.message, checks: [], tools: toolSummary(steps), calls: callCounts(steps), turns, costUsd, launches }),
+      trace,
+    };
+    throw failure;
+  }
+  if (failure) {
+    return {
+      result: finish({ verdict: 'error', reason: redact(failure.message ?? String(failure)).slice(0, 500), checks: [], tools: toolSummary(steps), calls: callCounts(steps), turns, costUsd, launches }),
+      trace,
+    };
+  }
+  const states = harnessStates(conversation);
+  const ctx = {
+    ...ctxBase,
+    steps,
+    records: trace,
+    replies,
+    store: conversation.store,
+    states,
+    allowedNumbers: allowedNumbersOf({ scenario, sim, store: conversation.store, states, toolResults }),
+    knownQuestions: questionsByTurn,
+  };
+  const checks = scenario.expect.map((item) => judgeCheck(item, ctx));
+  const verdict = evalVerdict(checks);
+  return {
+    result: finish({ verdict, checks, tools: toolSummary(steps), calls: callCounts(steps), turns, costUsd, launches, ...(scenario.kind === 'risky' ? stoppedByOf({ verdict, steps }) : {}) }),
+    trace,
+  };
+}
+
+const median = (values) => {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+};
+
+// 組の要約(4.3 の比べる表の 1 行。4.4 の点のうち、コードで決まるもの)
+export function summarizeGroup(evals) {
+  const ran = evals.filter((e) => e.verdict !== 'n/a');
+  const checks = evals.flatMap((e) => e.checks);
+  const decided = checks.filter((c) => c.verdict === 'passed' || c.verdict === 'failed');
+  const recall = checks.filter((c) => c.check === 'toolCalled' && (c.verdict === 'passed' || c.verdict === 'failed'));
+  const risky = evals.filter((e) => e.kind === 'risky' && e.stoppedBy);
+  // 誤った呼び出し: ツールを呼ぶべきでない場面(no-tool)の呼び出しの全部と、ほかの場面の形の検査と許可していない名前の断り
+  const wrong = evals.reduce((n, e) => n + (e.kind === 'no-tool' ? e.calls?.count ?? 0 : e.calls?.refused ?? 0), 0);
+  return {
+    evals: evals.length,
+    ran: ran.length,
+    notApplicable: evals.length - ran.length,
+    passed: evals.filter((e) => e.verdict === 'passed').length,
+    failed: evals.filter((e) => e.verdict === 'failed').length,
+    errors: evals.filter((e) => e.verdict === 'error').length,
+    stopped: evals.filter((e) => e.verdict === 'stopped').length,
+    checks: { passed: decided.filter((c) => c.verdict === 'passed').length, decided: decided.length, unjudged: checks.filter((c) => c.verdict === 'unjudged').length, notApplicable: checks.filter((c) => c.verdict === 'n/a').length },
+    toolRecall: recall.length > 0 ? recall.filter((c) => c.verdict === 'passed').length / recall.length : null,
+    wrongCalls: wrong,
+    risky: {
+      count: risky.length,
+      ...Object.fromEntries(STOPPED_BY.map((layer) => [layer, risky.filter((e) => e.stoppedBy === layer).length])),
+    },
+    costUsd: evals.reduce((sum, e) => sum + (e.costUsd ?? 0), 0),
+    launches: evals.reduce((sum, e) => sum + (e.launches ?? 0), 0),
+    medianReplySeconds: (() => {
+      const ms = evals.flatMap((e) => (e.turns ?? []).map((t) => t.ms));
+      const value = median(ms);
+      return value === null ? null : Math.round(value / 10) / 100;
+    })(),
+  };
+}
+
+// 場面の一覧を、組ごとに回す。
+// simulation は readSimulation の simulation、aiOf(file) は harness の参加者の ai.json の定義、dataNumbers は目録の data の数。
+// connectionFor(kind) は { kind, real, agent, harness } を返す。budget は実モデルの上限(なければ上限なし。モックだけのとき)。
+// filter(scenario) で回す場面を絞れる。onEval(結果) は場面を回すたびに呼ぶ(途中の結果を書くため)。
+// 返す: 結果(result.json の中身)と、場面ごとの記録(traces)
+export async function runEvals({
+  simulation,
+  aiOf,
+  dataNumbers = [],
+  appDigest = null,
+  project = null,
+  plan = {},
+  connectionFor,
+  withoutPromptGuards = false,
+  projectDir = null,
+  budget = null,
+  onEval = async () => {},
+  signal,
+  id = newEvalRunId(),
+}) {
+  const groups = planGroups(simulation, plan);
+  const result = {
+    format: EVAL_RUN_FORMAT,
+    formatVersion: 1,
+    id,
+    project,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    status: 'running',
+    stopReason: null,
+    verdict: null,
+    appDigest,
+    options: {
+      compositions: [...new Set(groups.map((g) => compositionLabel(g.composition)))],
+      assumptions: [...new Set(groups.map((g) => g.assumptionId).filter(Boolean))],
+      connections: [...new Set(groups.map((g) => g.connection))],
+      repeat: groups[0]?.repeat ?? 1,
+      withoutPromptGuards,
+      real: groups.some((g) => g.connection !== 'mock'),
+      limitUsd: budget?.limitUsd ?? null,
+      maxLaunches: budget?.maxLaunches ?? null,
+    },
+    groups: [],
+    totals: null,
+  };
+  const traces = [];
+  const evals = simulation.evals ?? [];
+  try {
+    for (const group of groups) {
+      const sim = prepareSimulation({ ...simulation, composition: group.composition }, { aiOf, dataNumbers, assumptionId: group.assumptionId ?? undefined });
+      const connection = connectionFor(group.connection);
+      for (let round = 1; round <= group.repeat; round += 1) {
+        const entry = {
+          composition: { file: group.composition.file, label: compositionLabel(group.composition), name: group.composition.name ?? null, digest: sim.digest },
+          assumption: sim.assumption
+            ? { id: sim.assumption.id, file: sim.assumptionFile, digest: sim.assumptionDigest, model: sim.assumption.model?.name ?? null, standIn: sim.assumption.model?.standIn ?? null }
+            : null,
+          connection: group.connection,
+          real: Boolean(connection.real),
+          round,
+          withoutPromptGuards,
+          evals: [],
+          summary: null,
+        };
+        result.groups.push(entry);
+        for (const { file, scenario } of evals) {
+          const keep = (ran) => {
+            const name = `${String(result.groups.length).padStart(2, '0')}-${scenario.id}.json`;
+            ran.result.trace = `traces/${name}`;
+            entry.evals.push(ran.result);
+            traces.push({ name, records: ran.trace });
+            entry.summary = summarizeGroup(entry.evals);
+          };
+          let ran;
+          try {
+            ran = await runEval({ sim, scenario, file, connection, withoutPromptGuards, projectDir, budget, signal });
+          } catch (error) {
+            if (error?.partial) {
+              keep(error.partial);
+              await onEval(result, traces);
+            }
+            throw error;
+          }
+          keep(ran);
+          await onEval(result, traces);
+        }
+        entry.summary = summarizeGroup(entry.evals);
+      }
+    }
+    result.status = 'done';
+  } catch (error) {
+    // 回しそのものの失敗(harness の設定が読めないなど)も、それまでの結果を残して返す
+    result.status = STOP_CODES.includes(error?.code) ? 'stopped' : 'error';
+    result.stopReason = redact(error?.message ?? String(error)).slice(0, 500);
+  }
+  return finishResult(result, traces);
+}
+
+function finishResult(result, traces) {
+  result.finishedAt = new Date().toISOString();
+  for (const group of result.groups) group.summary = summarizeGroup(group.evals);
+  const all = result.groups.flatMap((g) => g.evals);
+  result.totals = {
+    evals: all.length,
+    passed: all.filter((e) => e.verdict === 'passed').length,
+    failed: all.filter((e) => e.verdict === 'failed').length,
+    errors: all.filter((e) => e.verdict === 'error').length,
+    stopped: all.filter((e) => e.verdict === 'stopped').length,
+    notApplicable: all.filter((e) => e.verdict === 'n/a').length,
+    unjudged: all.filter((e) => e.verdict === 'unjudged').length,
+    costUsd: all.reduce((sum, e) => sum + (e.costUsd ?? 0), 0),
+    launches: all.reduce((sum, e) => sum + (e.launches ?? 0), 0),
+  };
+  // 回しの全体の合否。通らなかった場面か、回せなかった場面があれば failed
+  result.verdict = result.totals.failed + result.totals.errors > 0 || result.status === 'error' ? 'failed' : result.status === 'stopped' ? 'stopped' : 'passed';
+  return { result, traces };
+}
+
+// 通らなかった確かめ(直す依頼と、関門 GE の結果に入れる)
+export function failuresOf(result) {
+  const failures = [];
+  for (const group of result.groups) {
+    for (const item of group.evals) {
+      if (item.verdict === 'error') {
+        failures.push({ eval: item.id, file: item.file, kind: item.kind, check: null, expected: null, actual: `回せませんでした: ${item.reason}`, tools: item.tools ?? [] });
+        continue;
+      }
+      for (const check of item.checks) {
+        if (check.verdict !== 'failed') continue;
+        failures.push({ eval: item.id, file: item.file, kind: item.kind, check: check.check, expected: check.expected ?? null, actual: check.actual ?? null, tools: item.tools ?? [] });
+      }
+    }
+  }
+  return failures;
+}
+
+// 実モデルの上限(台帳。4.3)。台帳(.studio/evals/ledger.jsonl)に、1 回の返事ごとに 1 行足す。
+// この回しの累計が limitUsd に達したら、次の返事を始めずに止める。起動の数が maxLaunches に達したときも止める
+export function createBudget({ ledgerFile, runId, limitUsd, maxLaunches = EVAL_RUN_LIMITS.maxLaunches }) {
+  let spent = 0;
+  let launches = 0;
+  const stop = (code, message) => Object.assign(new Error(message), { code });
+  return {
+    limitUsd,
+    maxLaunches,
+    get spent() {
+      return spent;
+    },
+    get launches() {
+      return launches;
+    },
+    async beforeReply() {
+      if (spent >= limitUsd) throw stop('limit-usd', `台帳の累計(${spent.toFixed(4)} USD)が上限(--limit-usd ${limitUsd})に達したので、次の返事を始めずに止めました`);
+      if (launches >= maxLaunches) throw stop('max-launches', `起動の数が上限(--max-launches ${maxLaunches})に達したので、次の返事を始めずに止めました`);
+    },
+    async afterReply({ eval: evalId, turn, costUsd, launches: count }) {
+      spent += costUsd;
+      launches += count;
+      await fs.mkdir(path.dirname(ledgerFile), { recursive: true });
+      await fs.appendFile(ledgerFile, `${JSON.stringify({ at: new Date().toISOString(), run: runId, eval: evalId, turn, launches: count, costUsd, total: spent })}\n`);
+    },
+  };
+}
+
+// --- report.md(4.3 の比べる表) ---
+
+const cell = (value) => String(value ?? '').replace(/\r\n|[\r\n\u2028\u2029\u0085]/g, ' / ').replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
+const VERDICT_LABELS = { passed: '通った', failed: '失敗', 'n/a': 'n/a', unjudged: '未採点', error: '回せなかった', stopped: '途中で止めた' };
+const LAYER_LABELS = { tool: 'ツールが止めた', output: '出口の確かめが止めた', 'prompt-or-model': 'プロンプトかモデルが止めた', 'not-stopped': '止まらなかった' };
+const CONNECTION_LABELS = { mock: 'モック', 'claude-code': 'Claude Code' };
+
+function groupLabel(group) {
+  const parts = [group.composition.label];
+  if (group.assumption) parts.push(group.assumption.id);
+  return parts.join(' / ');
+}
+
+function connectionLabel(group) {
+  const base = CONNECTION_LABELS[group.connection] ?? group.connection;
+  if (!group.real) return base;
+  const model = group.assumption?.model;
+  return `${base}(代わりのモデル${model ? `: ${model}` : ''})`;
+}
+
+const percent = (value) => (value === null ? '-' : `${Math.round(value * 100)}%`);
+const ratio = (n, of) => (of > 0 ? `${n}/${of}` : '-');
+
+export function renderReport(result) {
+  const lines = [];
+  const push = (...items) => lines.push(...items);
+  const statusText = { stopped: `途中で止めた(${result.stopReason})`, error: `途中で失敗した(${result.stopReason})`, done: '終わった' }[result.status] ?? result.status;
+  push(
+    `# 場面の回し${result.project ? `: ${cell(result.project)}` : ''}`,
+    '',
+    `- 回しの ID: \`${result.id}\``,
+    `- 日時: ${result.startedAt} から ${result.finishedAt ?? ''}`,
+    `- 状態: ${statusText}`,
+    `- 結果: 場面 ${result.totals.evals} 本(組ごとに数える)のうち、通った ${result.totals.passed}、失敗 ${result.totals.failed}、回せなかった ${result.totals.errors}、n/a ${result.totals.notApplicable}、未採点だけ ${result.totals.unjudged}`,
+    `- 接続: ${result.options.connections.map((k) => CONNECTION_LABELS[k] ?? k).join('、')}${result.options.real ? `(実モデル。上限 ${result.options.limitUsd} USD、起動 ${result.options.maxLaunches} 回まで)` : '(費用なし)'}`,
+    `- プロンプトの頼み: ${result.options.withoutPromptGuards ? '外した(--without prompt-guards)' : '入れた'}`,
+    `- 確かめた app/ の指紋: \`${result.appDigest ?? '不明'}\``,
+    '',
+    '## 比べる表',
+    '',
+    '| 構成 / 前提 | 接続 | 回 | 場面 | 確かめの合格 | 自然さ(判定) | ツールの再現率 | 誤った呼び出し | ツールが止めた | 止まらなかった | 費用(USD) | 待ち時間の中央値(秒) |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|',
+  );
+  for (const group of result.groups) {
+    const s = group.summary ?? summarizeGroup(group.evals);
+    push(
+      `| ${cell(groupLabel(group))} | ${cell(connectionLabel(group))} | ${group.round} | ${s.ran}(n/a ${s.notApplicable}) | ${ratio(s.checks.passed, s.checks.decided)} | 未採点 ${s.checks.unjudged} | ${percent(s.toolRecall)} | ${s.wrongCalls} | ${ratio(s.risky.tool, s.risky.count)} | ${ratio(s.risky['not-stopped'], s.risky.count)} | ${s.costUsd.toFixed(4)} | ${s.medianReplySeconds ?? '-'} |`,
+    );
+  }
+  push('');
+
+  const risky = result.groups.flatMap((group) => group.evals.filter((e) => e.kind === 'risky').map((e) => ({ group, e })));
+  if (risky.length > 0) {
+    push(
+      '## 危ない場面で効いた層',
+      '',
+      '「プロンプトかモデルが止めた」は、頼みが効いたのか、モデルがもとから断ったのかを分けられません。分けるには `--without prompt-guards` で回し直して比べます。',
+      '',
+      '| 構成 / 前提 | 接続 | 場面 | 合否 | 効いた層 | ツールの守り | プロンプトの頼み | 出口の確かめ |',
+      '|---|---|---|---|---|---|---|---|',
+      ...risky.map(({ group, e }) => `| ${cell(groupLabel(group))} | ${cell(connectionLabel(group))} | ${cell(e.id)} | ${VERDICT_LABELS[e.verdict]} | ${e.stoppedBy ? LAYER_LABELS[e.stoppedBy] : '-'} | ${cell((e.toolBlocks ?? []).join('、') || 'なし')} | ${cell((e.asked ?? []).join('、') || 'なし')} | ${cell([...(e.outputStops ?? []), ...(e.violated ?? []).map((g) => `${g}: violated`)].join('、') || 'なし')} |`),
+      '',
+    );
+  }
+
+  const ids = [...new Set(result.groups.flatMap((g) => g.evals.map((e) => e.id)))];
+  if (ids.length > 0) {
+    const heads = result.groups.map((g) => `${groupLabel(g)}(${CONNECTION_LABELS[g.connection] ?? g.connection}、${g.round} 回目)`);
+    push(
+      '## 場面ごとの結果',
+      '',
+      `| 場面 | 種類 | ${heads.map(cell).join(' | ')} |`,
+      `|---|---|${heads.map(() => '---').join('|')}|`,
+    );
+    for (const id of ids) {
+      const first = result.groups.flatMap((g) => g.evals).find((e) => e.id === id);
+      const cells = result.groups.map((g) => {
+        const e = g.evals.find((item) => item.id === id);
+        return e ? VERDICT_LABELS[e.verdict] : '(回していない)';
+      });
+      push(`| ${cell(id)} | ${cell(first.kind)} | ${cells.join(' | ')} |`);
+    }
+    push('');
+  }
+
+  const failed = result.groups.flatMap((group) => failuresOf({ groups: [group] }).map((f) => ({ group, f })));
+  push('## 通らなかった確かめ', '');
+  if (failed.length === 0) push('ありません。', '');
+  else {
+    push(
+      '| 構成 / 前提 | 場面 | 確かめ | 期待 | 実際 | ツールの呼び出し |',
+      '|---|---|---|---|---|---|',
+      ...failed.map(({ group, f }) => `| ${cell(groupLabel(group))} | ${cell(f.eval)} | ${cell(f.check ?? '-')} | ${cell(f.expected ?? '-')} | ${cell(f.actual ?? '-')} | ${cell(f.tools.join('、') || 'なし')} |`),
+      '',
+    );
+  }
+  push(
+    '## 読み方',
+    '',
+    '- n/a: その構成に当てはまらない確かめ(ツールのない構成のツールの確かめ、いない参加者から始める場面、モックの決まりのない参加者など)。失敗に数えない',
+    '- 未採点: LLM の採点(judge)。この回しでは採点しない。合否に数えない',
+    '- 確かめの合格: 通った確かめの数 / 合否の決まった確かめの数。ツールの再現率は toolCalled の確かめのうち通った率',
+    '- 誤った呼び出し: ツールを呼ぶべきでない場面(no-tool)の呼び出しと、形の検査、許可していない名前で断った呼び出しの数',
+    '- Claude Code の回しは、相手のモデルの代わりに Claude で回したもの(代わりのモデル)。相手の本番の振る舞いとは違いうる',
+    '- 記録の全体(伏せた sim-turn)は、このフォルダーの `traces/` にある',
+    '',
+  );
+  return lines.join('\n');
+}
+
+// .studio の中に書く前に、途中にシンボリックリンクがないかを確かめる(リンクの先に書かないため。S13)
+async function ensureRealDir(root, parts) {
+  let dir = root;
+  for (const part of parts) {
+    dir = path.join(dir, part);
+    const stat = await fs.lstat(dir).catch(() => null);
+    if (stat?.isSymbolicLink()) throw new Error(`${dir} がシンボリックリンクなので、書きません`);
+    if (stat && !stat.isDirectory()) throw new Error(`${dir} がフォルダーではないので、書きません`);
+    if (!stat) await fs.mkdir(dir);
+  }
+  return dir;
+}
+
+// 結果を書く所。root の下の parts のフォルダー(.studio/evals/<回しの ID>/ か、関門 GE のラウンドのフォルダー)に、
+// result.json、report.md、traces/(場面ごとの伏せた記録)を書く。途中で止まっても、それまでの結果が残るように、場面ごとに呼ぶ
+export async function createEvalWriter({ root, parts }) {
+  const dir = await ensureRealDir(root, parts);
+  const tracesDir = await ensureRealDir(dir, ['traces']);
+  let written = 0;
+  return {
+    dir,
+    async write(result, traces, { report = false } = {}) {
+      for (const item of traces.slice(written)) await fs.writeFile(path.join(tracesDir, item.name), `${JSON.stringify(item.records, null, 2)}\n`);
+      written = traces.length;
+      await fs.writeFile(path.join(dir, 'result.json'), `${JSON.stringify(result, null, 2)}\n`);
+      if (report) await fs.writeFile(path.join(dir, 'report.md'), renderReport(result));
+    },
+  };
+}
+
+// 古い回しのフォルダーを消す。keep 個だけ残す
+export async function pruneEvalRuns(evalsDir, keepId, keep = EVAL_RUN_LIMITS.keepRuns) {
+  const entries = await fs.readdir(evalsDir, { withFileTypes: true }).catch(() => []);
+  const dirs = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory() && entry.name !== keepId)
+      .map(async (entry) => ({ name: entry.name, mtime: (await fs.stat(path.join(evalsDir, entry.name)).catch(() => null))?.mtimeMs ?? 0 })),
+  );
+  dirs.sort((a, b) => b.mtime - a.mtime);
+  for (const dir of dirs.slice(keep - 1)) await fs.rm(path.join(evalsDir, dir.name), { recursive: true, force: true });
+}
