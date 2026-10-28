@@ -74,7 +74,9 @@ const els = {
   saveMark: $('save-mark'),
   saveNow: $('save-now'),
   more: $('more'),
-  details: $('details'),
+  morePanel: $('more-panel'),
+  moreClose: $('more-close'),
+  devDetails: $('dev-details'),
   reopen: $('reopen'),
   rebuild: $('rebuild'),
   reset: $('reset'),
@@ -82,6 +84,7 @@ const els = {
   aiMenu: $('ai-menu'),
   aiBadge: $('ai-badge'),
   aiStatus: $('ai-status'),
+  aiWaiting: $('ai-waiting'),
   retryBar: $('retry-bar'),
   aiTrace: $('ai-trace'),
   frameHost: $('frame-host'),
@@ -133,7 +136,7 @@ let makeError = null;
 // 本物の AI を使う前の同意(サーバーは src/server/real-ai.js)。同意のカードの画面(P25)ができるまでの、最小のつなぎ。
 // 直す欄の送信が同意の前で断られたら、{ projectId, view }(view は /api/real-ai の中身)を入れ、送るもの、送り先、料金を出す
 let makeConsent = null;
-// 詳細の欄に出している、プロダクト内 AI の会話と状態。
+// 開発者向けの詳細に出している、プロダクト内 AI の会話と状態。
 // choices は選べる接続と、実行の前に出す「送るもの」と「費用」。confirm は実モデルへ切り替える前の確認。
 // retry は設定が変わる前の会話と、試し直しの結果(Studio の画面だけに出す。試作品には渡さない)
 const ai = { projectId: null, session: null, choices: null, seq: 0, confirm: null, switching: false, retry: null };
@@ -145,9 +148,9 @@ const TRACE_POLL_MS = 1000;
 // 応答を待っている発言の数を、試作品ごとに数える。開き直しや作り直しの後も「止める」を出し続けるため
 const waitingByProject = new Map();
 const waitingFor = (projectId) => waitingByProject.get(projectId) ?? 0;
-// 詳細の欄の「版」。保存した版の一覧と、作業中がどの版と同じか
+// その他の引き出しの「保存した状態」。保存した版の一覧と、作業中がどの版と同じか
 const versions = { projectId: null, data: null, seq: 0, busy: false, message: null };
-// 詳細の欄の「本番開発への引き継ぎ」(#280)。メモは試作品を選んだときだけ読み、書いている途中の文を上書きしない
+// その他の引き出しの「本番開発へ渡す」(#280)。メモは試作品を選んだときだけ読み、書いている途中の文を上書きしない
 // target は読み込みを頼んだ試作品、projectId は読み終えた試作品
 const handoff = { target: undefined, projectId: null, seq: 0, busy: false, result: null, message: null, last: null };
 
@@ -277,7 +280,7 @@ function render() {
   if (!project) {
     showPlaceholder('試作品がありません。');
   } else if (!project.previewUrl) {
-    showPlaceholder('表示できる版がありません。下の「詳細」を見てください。');
+    showPlaceholder('表示できる版がありません。「その他」の「開発者向けの詳細」を見てください。');
   } else if (project.previewUrl !== preview.url) {
     clearEvents();
     showPreview(project.previewUrl, project.id);
@@ -370,7 +373,7 @@ function renderBuild(project) {
     list.setAttribute('aria-label', 'ビルドの問題');
     list.append(...build.errors.map(problemItem));
     nodes.push(list);
-    nodes.push(element('p', '直し方: app/ の中のファイルを直してから「作り直す」を押してください。', 'hint'));
+    nodes.push(element('p', '直し方: app/ の中のファイルを直してから「ファイルから作り直す」を押してください。', 'hint'));
     const where = element('p', 'ファイルの場所: ', 'hint');
     where.append(element('code', project.appDir));
     nodes.push(where);
@@ -775,7 +778,7 @@ function renderRetry() {
   const busy = info.retrying || retryingProjects.has(ai.projectId);
   let text;
   if (busy) text = `前の会話(${counts})を、今の設定で送り直しています…`;
-  else if (info.result) text = `前の会話(${counts})を、今の設定で送り直しました。前と今の応答は、下の「詳細」の「試し直しの結果」で比べられます。`;
+  else if (info.result) text = `前の会話(${counts})を、今の設定で送り直しました。前と今の応答は、「その他」の「開発者向けの詳細」の「試し直しの結果」で比べられます。`;
   else if (fresh) text = `プロダクト内 AI の設定が変わったので、会話は新しい設定で最初から始まっています。前の会話(${counts})を、今の設定で送り直せます。`;
   else text = `設定が変わる前の会話(${counts})を、今の設定で送り直せます。今の会話は最初に戻ります。`;
   const nodes = [element('p', text)];
@@ -790,11 +793,28 @@ function renderRetry() {
   els.retryBar.replaceChildren(...nodes, button);
 }
 
-// プロダクト内 AI の接続(モックか実モデルか)と、AI が理解した状態を出す
+// 応答を待つ間だけ、試す欄の上に「応答を止める」を出す。開発者向けの詳細を閉じていても止められるように
+function renderAiWaiting() {
+  const { session } = ai;
+  const waiting = Boolean(session) && waitingFor(ai.projectId) > 0;
+  els.aiWaiting.hidden = !waiting;
+  if (!waiting) {
+    els.aiWaiting.replaceChildren();
+    return;
+  }
+  const stop = element('button', '応答を止める');
+  stop.type = 'button';
+  stop.addEventListener('click', cancelAi);
+  els.aiWaiting.replaceChildren(element('span', `${session.connection.label} の応答を待っています…`), stop);
+}
+
+// プロダクト内 AI の接続(モックか実モデルか)と、AI が理解した状態を出す。
+// 接続の選び方は試す欄の上の「AI: … ▾」に、状態は開発者向けの詳細に出す(試作品の中と二重に出さない)
 function renderAi() {
   const { session } = ai;
   renderRetry();
   renderExamples();
+  renderAiWaiting();
   els.aiSwitch.hidden = !session;
   if (!session) {
     setAiMenu(false);
@@ -813,25 +833,16 @@ function renderAi() {
   connection.dataset.kind = session.connection.kind;
   connection.append(element('strong', `接続: ${session.connection.label}`), document.createTextNode(` ${session.connection.description}`));
   const nodes = [connection];
-  // 実モデルを選んでいる間は、発言の前にいつも送り先と費用が見えるようにする
-  const current = ai.choices?.options.find((o) => o.kind === session.connection.kind);
-  if (current?.billing && !ai.confirm) nodes.push(sendsBlock(current));
-  // 接続の選び方は、試す欄の上の「AI: … ▾」の中に出す
+  // 接続の選び方は、試す欄の上の「AI: … ▾」の中に出す。
+  // 実モデルを選んでいる間は、送り先と費用もそこで見られるようにする(「AI: …」の印そのものは、いつも見える)
   const menu = [connectionPicker(session)];
+  const current = ai.choices?.options.find((o) => o.kind === session.connection.kind);
+  if (current?.billing && !ai.confirm) menu.push(sendsBlock(current));
   if (ai.confirm) {
     const option = ai.choices?.options.find((o) => o.kind === ai.confirm.kind);
     if (option) menu.push(confirmBlock(option));
   }
   els.aiMenu.replaceChildren(...menu);
-  if (waitingFor(ai.projectId) > 0) {
-    const waiting = element('div', undefined, 'ai-waiting');
-    waiting.setAttribute('role', 'status');
-    const stop = element('button', '応答を止める');
-    stop.type = 'button';
-    stop.addEventListener('click', cancelAi);
-    waiting.append(element('span', `${session.connection.label} の応答を待っています…`), stop);
-    nodes.push(waiting);
-  }
   const last = lastReplyText(session);
   if (last) nodes.push(element('p', last, 'muted ai-last'));
   const list = element('dl', undefined, 'ai-state');
@@ -1632,8 +1643,8 @@ function onFrameLoad(iframe) {
   preview.unexpectedLoads = preview.unexpectedLoads.filter((time) => now - time < 10_000);
   preview.unexpectedLoads.push(now);
   if (preview.unexpectedLoads.length > MAX_UNEXPECTED_LOADS) {
-    addEvent('warning', '試作品が何度も別のページへ移動しようとしたので、止めました。「開き直す」で最初から開けます。');
-    showPlaceholder('試作品を止めました。下の「詳細」を見てください。');
+    addEvent('warning', '試作品が何度も別のページへ移動しようとしたので、止めました。「その他」の「画面を読み込み直す」で最初から開けます。');
+    showPlaceholder('試作品を止めました。「その他」の「開発者向けの詳細」を見てください。');
     return;
   }
   addEvent('warning', '試作品が別のページへ移動しようとしたので、最初から開き直しました。試作品は Studio の外へ移動できません。');
@@ -1697,7 +1708,7 @@ function createAiRelay(iframe, port, projectId) {
           ? api(`${base}/corrections`, { method: 'POST', json: { changes: data.changes } })
           : api(base);
     inFlight += 1;
-    // 応答を待つ間は、詳細の欄に「止める」を出す
+    // 応答を待つ間は、試す欄の上に「止める」を出す
     const waiting = data.op === 'send';
     if (waiting) {
       waitingByProject.set(projectId, waitingFor(projectId) + 1);
@@ -1786,15 +1797,32 @@ document.addEventListener('keydown', (event) => {
   } else if (!els.aiMenu.hidden) {
     setAiMenu(false);
     els.aiSwitch.focus();
+  } else if (!els.morePanel.hidden) {
+    setMorePanel(false);
+    els.more.focus();
   }
 });
 
 els.saveNow.addEventListener('click', () => saveVersion());
 
-// 今の詳細は 2 列の下にある。P22 で「その他」の引き出しにするまでは、そこへ移る
-els.more.addEventListener('click', () => {
-  els.details.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  els.details.focus({ preventScroll: true });
+// 上の帯の「その他」で、右から引き出しを開く。閉じるボタン、もう一度「その他」、Esc で閉じる。
+// 開いている間も、左の試作品は使える(開発者向けの詳細の記録を見ながら試すため)
+function setMorePanel(open) {
+  els.morePanel.hidden = !open;
+  els.more.setAttribute('aria-expanded', String(open));
+  if (open) els.morePanel.focus();
+}
+
+els.more.addEventListener('click', () => setMorePanel(els.morePanel.hidden));
+
+els.moreClose.addEventListener('click', () => {
+  setMorePanel(false);
+  els.more.focus();
+});
+
+// 開発者向けの詳細を開いたら、その見出しを引き出しの上へ送る。下に隠れたまま開いても分からないため
+els.devDetails.addEventListener('toggle', () => {
+  if (els.devDetails.open) els.devDetails.scrollIntoView({ block: 'start' });
 });
 
 els.reopen.addEventListener('click', () => {
@@ -1843,7 +1871,7 @@ els.rebuild.addEventListener('click', async () => {
   }
   lastSnapshot = '';
   await refresh();
-  // つながらないときも、ボタンと詳細の欄を元に戻す
+  // つながらないときも、ボタンと開発者向けの詳細を元に戻す
   render();
 });
 

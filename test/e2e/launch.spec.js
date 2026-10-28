@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, launchStudio, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, expect, launchStudio, openDevDetails, test } from './studio.js';
 
 // 「分かるか」の確かめ(ux-redesign.md 9 節)のスクリーンショットの置き場。test-results/ は git が無視する
 const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
@@ -87,7 +87,8 @@ test('npm start で起動し、ブラウザでサンプルの試作品を操作�
     await expect(app.locator('.summary')).toHaveText('全 9 冊、貸出できる本 7 冊');
     await expect(detail.getByRole('heading', { name: '架空の星座あつめ' })).toBeVisible();
 
-    // 試作品からエラーは届いていない
+    // 試作品からエラーは届いていない(その他 → 開発者向けの詳細の「試作品からの知らせ」)
+    await openDevDetails(page);
     await expect(page.locator('#events-empty')).toBeVisible();
 
     // 再読み込みしても、同じタブなら使い続けられる

@@ -1,10 +1,11 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseProject, chooseSample, expect, launchStudio, openAiMenu, test, writeProject } from './studio.js';
+import { ROOT, SAMPLES, chooseProject, chooseSample, expect, launchStudio, openAiMenu, openMore, test, writeProject } from './studio.js';
 
 // 本番開発への引き継ぎを、画面の操作で書き出し、別の場所で確かめる。
 // 作る AI は偽接続、プロダクト内 AI はモックと偽の Claude Code で、実モデルは呼ばない。
+// 保存と本番開発へ渡す欄は、上の帯の「その他」の引き出しにある
 
 const FAKE = path.join(ROOT, 'test', 'fixtures', 'fake-claude.js');
 const AFTER_JOB = '職種「カフェのホール」と理解しました。';
@@ -80,12 +81,13 @@ async function exportAndCheck(page, home, other, otherHome) {
     await say('雇用は正社員がいいです');
     await expect(log.last()).toContainText('偽の Claude Code です');
 
+    await openMore(page);
     await page.getByLabel('版の名前(なくてもよい)').fill('引き継ぐ版');
     await page.getByRole('button', { name: '今の作業中を保存' }).click();
     await expect(page.locator('#working-status')).toHaveText('作業中は保存版 v1「引き継ぐ版」と同じです。');
 
     // 意図と未決事項を書いて、書き出す
-    const handoff = page.getByRole('region', { name: '本番開発への引き継ぎ' });
+    const handoff = page.getByRole('region', { name: '本番開発へ渡す' });
     await handoff.getByLabel('目的(この試作品で確かめたいこと)').fill('求職者が、AI の理解した条件を直しながら相談を続けられるか確かめる');
     await handoff.getByLabel('決まったこと').fill('条件は 職種、雇用区分、勤務地、時給の下限 の 4 つ');
     await handoff.getByLabel('未決事項').fill('求人の検索を本物の API にするか。問い合わせ先 hanako@example.com');
@@ -99,6 +101,7 @@ async function exportAndCheck(page, home, other, otherHome) {
     // 開き直すと、書いたメモと、前に書き出した場所が出る
     await page.reload();
     await chooseSample(page, SAMPLES.jobConsult);
+    await openMore(page);
     await expect(handoff.getByLabel('決まったこと')).toHaveValue('条件は 職種、雇用区分、勤務地、時給の下限 の 4 つ');
     await expect(result).toContainText(`前に書き出したもの`);
     await expect(result).toContainText(dir);
@@ -212,7 +215,8 @@ test('秘密情報らしい文字列があると書き出さず、場所を画�
     await page.goto(studio.url);
     await chooseProject(page, /鍵を書いた試作品/);
     await expect(page.frameLocator('iframe[title="試作品"]').locator('#root')).toHaveText('鍵あり');
-    const handoff = page.getByRole('region', { name: '本番開発への引き継ぎ' });
+    await openMore(page);
+    const handoff = page.getByRole('region', { name: '本番開発へ渡す' });
     await handoff.getByRole('button', { name: '引き継ぎ用に書き出す' }).click();
     const result = page.locator('#handoff-result');
     await expect(result).toContainText('書き出せませんでした: 秘密情報らしい文字列があるので、書き出しませんでした。消してから書き出してください(app/config.js:1 API キーらしい文字列)');

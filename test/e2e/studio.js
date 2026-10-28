@@ -195,3 +195,29 @@ export async function openAiMenu(page) {
   if ((await aiSwitch.getAttribute('aria-expanded')) !== 'true') await aiSwitch.click();
   await expect(page.locator('#ai-menu')).toBeVisible();
 }
+
+// 上の帯の「その他」を押して、右の引き出しを開く(開いていれば、そのまま)。
+// 保存した状態、本番開発へ渡す、画面を読み込み直す、開発者向けの詳細は、この中にある
+export async function openMore(page) {
+  const more = page.getByRole('banner').getByRole('button', { name: 'その他' });
+  if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click();
+  const panel = page.getByRole('complementary', { name: 'その他' });
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+// 引き出しを閉じる(閉じていれば、そのまま)。引き出しは右の「言葉で直す」の上に重なるので、直す欄を使う前に閉じる
+export async function closeMore(page) {
+  const more = page.getByRole('banner').getByRole('button', { name: 'その他' });
+  if ((await more.getAttribute('aria-expanded')) === 'true') await page.locator('#more-close').click();
+  await expect(page.locator('#more-panel')).toBeHidden();
+}
+
+// その他 → 開発者向けの詳細を開く(開いていれば、そのまま)。ビルド、プロダクト内 AI、AI の実行の記録、試作品からの知らせがある
+export async function openDevDetails(page) {
+  await openMore(page);
+  const details = page.locator('#dev-details');
+  if (!(await details.evaluate((el) => el.open))) await details.locator(':scope > summary').click();
+  await expect(page.locator('#build-status')).toBeVisible();
+  return details;
+}
