@@ -71,7 +71,7 @@ npm start                  # 既定のブラウザで Studio が開く
 
 版の戻し方、本番開発への引き継ぎ、実行の記録、画面の見方は [docs/usage.md](docs/usage.md) にあります。
 
-ターミナルから試作品を観察するときは `npm run observe -- <プロジェクト>` を使います([docs/usage.md の「ターミナルで観察する」](docs/usage.md#ターミナルで観察するnpm-run-observe))。
+ターミナルから試作品を観察するときは `npm run observe -- <プロジェクト>` を使います([docs/usage.md の「ターミナルで観察する」](docs/usage.md#ターミナルで観察するnpm-run-observe))。試作品の場面(`app/evals/`)を構成と前提を変えて回すときは `npm run evals -- <プロジェクト>` を使います([docs/usage.md の「場面を回す」](docs/usage.md#場面を回すnpm-run-evals))。
 
 ## ドキュメント
 

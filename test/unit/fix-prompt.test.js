@@ -19,7 +19,7 @@ test('直す依頼は決まった型で、元の依頼、失敗した関門の�
       'Studio が確かめたところ、次の関門で失敗しました: G4 ビルド',
       'app/App.jsx:2:21 Unexpected ";"',
       '変わったファイル: app/App.jsx',
-      '失敗だけを直してください。シナリオ(app/scenarios/)を弱めたり消したりして通さないでください。',
+      '失敗だけを直してください。シナリオ(app/scenarios/)、場面(app/evals/)、ガードレール(構成の guards、tools.json の守り、ai.json の rules)を弱めたり消したりして通さないでください。',
     ].join('\n'),
   );
   // 変わり方(modified など)は入れない。名前だけ
@@ -111,7 +111,7 @@ test('失敗の中身は 8,000 文字までに切る', () => {
   assert.match(failure, /\(長いので、ここで切りました\)$/);
   // 元の依頼と、終わりの決まった文は切られない
   assert.equal(lines[0], `前の依頼: ${REQUEST}`);
-  assert.equal(lines.at(-1), '失敗だけを直してください。シナリオ(app/scenarios/)を弱めたり消したりして通さないでください。');
+  assert.equal(lines.at(-1), '失敗だけを直してください。シナリオ(app/scenarios/)、場面(app/evals/)、ガードレール(構成の guards、tools.json の守り、ai.json の rules)を弱めたり消したりして通さないでください。');
 });
 
 test('変わったファイルの名前は数を絞り、残りの数を書く', () => {
@@ -132,4 +132,50 @@ test('直す依頼の文から、元の依頼と失敗した関門を読める�
   assert.deepEqual(readFixPrompt(trickyPrompt), { request: tricky, gate: 'G4 ビルド' });
   assert.equal(readFixPrompt(REQUEST), null);
   assert.equal(readFixPrompt('前の依頼: 壊して'), null);
+});
+
+test('場面(関門 GE)の失敗は、場面の id、通らなかった確かめ、期待と実際、ツールの呼び出しの要約を入れる', () => {
+  const gate = {
+    id: 'GE',
+    name: 'evals',
+    label: '場面',
+    status: 'failed',
+    summary: '場面「risky-save」の確かめ「guardBlocked」が通りませんでした(止めなかった)。ほか 2 件',
+    report: '.studio/runs/0123456789abcdef/rounds/1/evals/result.json',
+    evalCount: 12,
+    failedCount: 3,
+    failures: [
+      {
+        eval: 'risky-save',
+        file: 'app/evals/risky-save.json',
+        kind: 'risky',
+        check: 'guardBlocked',
+        expected: 'tool の層の requires が止める',
+        actual: '止めなかった',
+        tools: 'save_wish(通った)',
+      },
+      { eval: 'broken', file: 'app/evals/broken.json', kind: 'aside', check: null, expected: null, actual: '回せませんでした: 架空の誤り', tools: '' },
+    ],
+  };
+  const prompt = buildFixPrompt({ request: REQUEST, gate, changedFiles: [{ file: 'app/tools.json', change: 'modified' }] });
+  assert.equal(
+    prompt,
+    [
+      `前の依頼: ${REQUEST}`,
+      'Studio が確かめたところ、次の関門で失敗しました: GE 場面',
+      '場面「risky-save」(app/evals/risky-save.json)の確かめ「guardBlocked」が通りませんでした',
+      '期待: tool の層の requires が止める',
+      '実際: 止めなかった',
+      'ツールの呼び出し: save_wish(通った)',
+      '場面「broken」(app/evals/broken.json)を回せませんでした',
+      '実際: 回せませんでした: 架空の誤り',
+      'ツールの呼び出し: なし',
+      'ほか 1 件の確かめも通りませんでした',
+      '変わったファイル: app/tools.json',
+      '失敗だけを直してください。シナリオ(app/scenarios/)、場面(app/evals/)、ガードレール(構成の guards、tools.json の守り、ai.json の rules)を弱めたり消したりして通さないでください。',
+    ].join('\n'),
+  );
+  // report の場所は入れない
+  assert.ok(!prompt.includes('.studio/runs'));
+  assert.deepEqual(readFixPrompt(prompt), { request: REQUEST, gate: 'GE 場面' });
 });

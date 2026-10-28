@@ -42,7 +42,7 @@ function scenariosReport() {
 
 // 台本の作る AI。呼ばれるたびに、受け取ったもの(引数、cwd、stdin、環境変数の名前)を RECORD_FILE に 1 行で残し、
 // STEPS の n 番目の動きをする。break: App.jsx にビルドできない行を足す。touch: その行を消し、コメントを 1 行足す。
-// hang: 止められるまで終わらない
+// hang: 止められるまで終わらない。{ "write": { ファイル: 中身 } }: app/ の中のファイルを書く
 const SCRIPT = `import fs from 'node:fs';
 const stdin = fs.readFileSync(0, 'utf8');
 const log = process.env.RECORD_FILE;
@@ -56,17 +56,18 @@ if (step === 'hang') {
 } else {
   if (step === 'break') fs.writeFileSync('App.jsx', text + BAD);
   if (step === 'touch') fs.writeFileSync('App.jsx', text.replace(BAD, '') + '// 手直し ' + n + '\\n');
+  if (step && typeof step === 'object') for (const [file, content] of Object.entries(step.write ?? {})) fs.writeFileSync(file, content);
   console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'ok', permission_denials: [] }));
 }
 `;
 
-async function setup(t, { steps, observe = passedReport, scenarios = scenariosReport, timeoutMs, scenarioLimits } = {}) {
+async function setup(t, { steps, project = PROJECT, observe = passedReport, scenarios = scenariosReport, timeoutMs, scenarioLimits } = {}) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-make-loop-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   await ensureSampleProjects(home, path.join(STUDIO_ROOT, 'samples'));
   const store = new ProjectStore(home);
   // Studio の起動と同じく、先に 1 回ビルドしておく
-  await store.build(PROJECT);
+  await store.build(project);
   const recordFile = path.join(home, 'record.ndjson');
   let env = ENV;
   let connection = { kind: 'fake', label: '偽接続', command: process.execPath, prefixArgs: [FAKE_CLI], billing: describeBilling(ENV), problem: null };
@@ -96,9 +97,9 @@ async function setup(t, { steps, observe = passedReport, scenarios = scenariosRe
       return observe(calls.length);
     },
   });
-  const root = path.join(home, 'projects', PROJECT);
+  const root = path.join(home, 'projects', project);
   const start = async (text) => {
-    const started = await requests.start(PROJECT, text);
+    const started = await requests.start(project, text);
     return { run: started.run, ended: new Promise((resolve) => started.subscribe(() => {}, resolve)) };
   };
   const send = async (text) => (await start(text)).ended;
@@ -129,10 +130,10 @@ test('関門の失敗を直す依頼にして作る AI に返し、直った版�
   // ラウンドごとの節の列。直した後は G1 から回し直す
   assert.deepEqual(record.rounds.map((round) => round.nodes), [
     ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', 'fix'],
-    ['agent', 'changes', 'inspect', 'contract', 'compile', 'launch', 'scenarios', 'evidence'],
+    ['agent', 'changes', 'inspect', 'contract', 'compile', 'evals', 'launch', 'scenarios', 'evidence'],
   ]);
-  assert.deepEqual(gateStatus(record.rounds[0].gates), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'failed', G5: 'skipped', G6: 'skipped' });
-  assert.deepEqual(gateStatus(record.rounds[1].gates), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', G5: 'passed', G6: 'passed' });
+  assert.deepEqual(gateStatus(record.rounds[0].gates), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'failed', GE: 'skipped', G5: 'skipped', G6: 'skipped' });
+  assert.deepEqual(gateStatus(record.rounds[1].gates), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', GE: 'passed', G5: 'passed', G6: 'passed' });
   assert.deepEqual(record.gates, record.rounds[1].gates);
   assert.equal(record.rounds[1].input, 'fix');
   assert.equal(record.rounds[1].fixOf.round, 1);
@@ -158,7 +159,7 @@ test('関門の失敗を直す依頼にして作る AI に返し、直った版�
   assert.equal(run.items.find((item) => item.kind === 'round').text, '直すラウンド 1/2: 作る AI を起動し直します(起動 2/3 回目)。');
   assert.match(run.items.find((item) => item.kind === 'fix-request').text, /^G4 ビルドの失敗\(app\/App\.jsx:2:\d+ .+\)を作る AI に返しました。添えたのは、元の依頼、失敗の中身、変わったファイルの名前\(1 個\)だけです。$/);
   assert.ok(run.items.some((item) => item.kind === 'assistant' && item.text.startsWith('Studio の直す依頼を読みました(失敗した関門: G4 ビルド)')));
-  assert.equal(run.items.find((item) => item.kind === 'gates').text, 'Studio が確かめた結果(直すラウンド 1 の後): G1 変更の確認: 通った、G2 検査: 通った、G3 契約: 通った、G4 ビルド: 通った、G5 起動の確認: 通った、G6 シナリオ: 通った');
+  assert.equal(run.items.find((item) => item.kind === 'gates').text, 'Studio が確かめた結果(直すラウンド 1 の後): G1 変更の確認: 通った、G2 検査: 通った、G3 契約: 通った、G4 ビルド: 通った、GE 場面: 通った(場面なし)、G5 起動の確認: 通った、G6 シナリオ: 通った');
 });
 
 test('起動の確認(G5)の失敗も直す依頼にして返す。2 回目の直す依頼には、直前のラウンドの失敗だけを入れる', async (t) => {
@@ -232,6 +233,103 @@ test('直せない作る AI では、起動は 3 回で止まり、failed と証
   assert.ok(run.items.some((item) => item.kind === 'gates' && item.text.includes('G4 ビルド: 失敗')));
 });
 
+test('場面のない見本は、関門 GE が「場面なし」で通り、場面の結果を残さない(R2)', async (t) => {
+  const { root, send, readRun } = await setup(t, { steps: ['touch'] });
+  const run = await send('少し直して');
+  assert.equal(run.status, 'passed', JSON.stringify(run.items, null, 2));
+  const record = await readRun(run);
+  const ge = record.gates.find((gate) => gate.id === 'GE');
+  assert.deepEqual(ge, { id: 'GE', name: 'evals', label: '場面', status: 'passed', evalCount: 0, summary: '場面なし' });
+  // GE は G4 の後、G5 の前
+  assert.deepEqual(record.gates.map((gate) => gate.id), ['G1', 'G2', 'G3', 'G4', 'GE', 'G5', 'G6']);
+  assert.ok(!kinds(run).includes('evals-ok'));
+  assert.ok(!record.reports.some((report) => report.gate === 'GE'));
+  assert.equal(await fs.stat(path.join(root, '.studio', 'runs', run.id, 'rounds', '1', 'evals')).catch(() => null), null);
+  assert.deepEqual([record.evalsChanged, record.guardsChanged], [[], []]);
+});
+
+// 見本のバイト探し(構成 A)。場面 12 本がある。台本の作る AI が、通らない場面を足し、直すラウンドで場面とツールの守りを変える
+const BROKEN_EVAL = {
+  formatVersion: 1,
+  id: 'broken-reply',
+  kind: 'no-tool',
+  about: '台本の作る AI が足した、通らない場面(架空)',
+  turns: [{ user: 'こんにちは' }],
+  expect: [{ check: 'replyContains', text: '架空の合言葉' }],
+};
+
+test('関門 GE: 場面を G4 の後、G5 の前にモックで回し、通らない確かめを直す依頼に入れる。直すラウンドで場面とガードレールが変わったら印を残す', async (t) => {
+  const tools = JSON.parse(await fs.readFile(path.join(STUDIO_ROOT, 'samples', 'part-time', 'app', 'tools.json'), 'utf8'));
+  tools.tools.find((tool) => tool.name === 'search_jobs').guards.maxCallsPerConversation = 12;
+  const fixed = { ...BROKEN_EVAL, expect: [{ check: 'replyMaxChars', value: 300 }] };
+  const { root, send, readRun, records, calls } = await setup(t, {
+    project: 'sample-part-time',
+    steps: [
+      { write: { 'evals/broken-reply.json': JSON.stringify(BROKEN_EVAL) } },
+      { write: { 'evals/broken-reply.json': JSON.stringify(fixed), 'tools.json': JSON.stringify(tools) } },
+    ],
+  });
+  const run = await send('場面を足して');
+  assert.equal(run.status, 'fixed', JSON.stringify(run.items, null, 2));
+  const record = await readRun(run);
+  // 1 回目は GE で止まり、G5 と G6 は回さない。直した後は GE から先も回す
+  assert.deepEqual(record.rounds.map((round) => round.nodes), [
+    ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', 'evals', 'fix'],
+    ['agent', 'changes', 'inspect', 'contract', 'compile', 'evals', 'launch', 'scenarios', 'evidence'],
+  ]);
+  assert.deepEqual(gateStatus(record.rounds[0].gates), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', GE: 'failed', G5: 'skipped', G6: 'skipped' });
+  assert.equal(calls.length, 1);
+  assert.equal(record.rounds[1].fixOf.gate, 'GE');
+
+  // 失敗の中身: 場面の id、通らなかった確かめ、期待と実際、ツールの呼び出しの要約
+  const ge = record.rounds[0].gates.find((gate) => gate.id === 'GE');
+  assert.equal(ge.evalCount, 13);
+  assert.equal(ge.failedCount, 1);
+  const [failure] = ge.failures;
+  assert.deepEqual(
+    { eval: failure.eval, file: failure.file, check: failure.check, expected: failure.expected, tools: failure.tools },
+    { eval: 'broken-reply', file: 'app/evals/broken-reply.json', check: 'replyContains', expected: '返事に「架空の合言葉」がある', tools: '' },
+  );
+  assert.match(failure.actual, /お試しの AI は決まった言葉だけ分かります/);
+  assert.match(run.items.find((item) => item.kind === 'evals-failed').text, /^確かめで失敗あり: 場面「broken-reply」の確かめ「replyContains」が通りませんでした/);
+
+  // 直す依頼(2 回目の作る AI の stdin)に、場面の失敗と、場面とガードレールを弱めない決まりが入る
+  const stdin = (await records())[1].stdin;
+  assert.ok(stdin.includes('Studio が確かめたところ、次の関門で失敗しました: GE 場面'), stdin);
+  assert.ok(stdin.includes('場面「broken-reply」(app/evals/broken-reply.json)の確かめ「replyContains」が通りませんでした\n期待: 返事に「架空の合言葉」がある\n実際: '));
+  assert.ok(stdin.includes('ツールの呼び出し: なし'));
+  assert.ok(stdin.trimEnd().endsWith('場面(app/evals/)、ガードレール(構成の guards、tools.json の守り、ai.json の rules)を弱めたり消したりして通さないでください。'));
+
+  // 場面の回しの結果は、ラウンドごとに rounds/<ラウンド>/evals/ に残り、run.json の reports から指す
+  assert.deepEqual(record.reports.filter((report) => report.gate === 'GE'), [
+    { gate: 'GE', round: 1, file: `.studio/runs/${run.id}/rounds/1/evals/result.json` },
+    { gate: 'GE', round: 2, file: `.studio/runs/${run.id}/rounds/2/evals/result.json` },
+  ]);
+  const first = JSON.parse(await fs.readFile(path.join(root, `.studio/runs/${run.id}/rounds/1/evals/result.json`), 'utf8'));
+  assert.equal(first.verdict, 'failed');
+  // 結果は、回した app/ の指紋を持つ。直すラウンドで app/ が変わったので、2 回目とは違う
+  const secondResult = JSON.parse(await fs.readFile(path.join(root, `.studio/runs/${run.id}/rounds/2/evals/result.json`), 'utf8'));
+  assert.equal(typeof first.appDigest, 'string');
+  assert.notEqual(first.appDigest, secondResult.appDigest);
+  assert.equal(secondResult.appDigest, record.build.appDigest);
+  assert.deepEqual(first.options.connections, ['mock']);
+  assert.match(await fs.readFile(path.join(root, `.studio/runs/${run.id}/rounds/1/evals/report.md`), 'utf8'), /\| broken-reply \| no-tool \| 失敗 \|/);
+  const second = record.gates.find((gate) => gate.id === 'GE');
+  assert.deepEqual([second.status, second.evalCount, second.failedCount], ['passed', 13, 0]);
+  assert.ok(run.items.find((item) => item.kind === 'evals-ok').text.startsWith('場面を確かめました。13 本のうち 13 本が通り'));
+
+  // 直すラウンドで場面とツールの守りが変わった印
+  assert.deepEqual(record.evalsChanged, [{ round: 2, files: [{ file: 'app/evals/broken-reply.json', change: 'modified' }] }]);
+  assert.deepEqual(record.guardsChanged, [{ round: 2, files: [{ file: 'app/tools.json', change: 'modified' }] }]);
+  assert.deepEqual(record.rounds.map((round) => [round.evalsChanged ?? false, round.guardsChanged ?? false]), [[false, false], [true, true]]);
+  assert.equal(
+    run.items.find((item) => item.kind === 'evals-changed').text,
+    '確かめ方が変わりました: 直すラウンド 1 で、作る AI が場面を変えました(app/evals/broken-reply.json)。場面を弱めたり消したりして通していないか、変わった場面を確かめてください。',
+  );
+  assert.match(run.items.find((item) => item.kind === 'guards-changed').text, /^ガードレールが変わりました: 直すラウンド 1 で、.*\(app\/tools\.json\)。/);
+  assert.ok(kinds(run).indexOf('guards-changed') > kinds(run).indexOf('gates'));
+});
+
 test('直すラウンドで app/ が変わらなかったら、そこで failed になり、前の失敗を隠さない', async (t) => {
   // 起動の確認がいつも失敗する。偽接続は直す依頼を受けても、失敗の原因が見つからず何も変えない
   const { calls, send, readRun } = await setup(t, { observe: () => failedReport() });
@@ -241,10 +339,10 @@ test('直すラウンドで app/ が変わらなかったら、そこで failed 
   assert.equal(calls.length, 1);
   const record = await readRun(run);
   assert.deepEqual(record.rounds[1].nodes, ['agent', 'changes', 'evidence']);
-  assert.deepEqual(gateStatus(record.rounds[1].gates), { G1: 'unchanged', G2: 'skipped', G3: 'skipped', G4: 'skipped', G5: 'skipped', G6: 'skipped' });
+  assert.deepEqual(gateStatus(record.rounds[1].gates), { G1: 'unchanged', G2: 'skipped', G3: 'skipped', G4: 'skipped', GE: 'skipped', G5: 'skipped', G6: 'skipped' });
   assert.deepEqual(record.rounds[1].changedFiles, []);
   // 結果には、前のラウンドの G5 の失敗が残る
-  assert.deepEqual(gateStatus(record.gates), { G1: 'unchanged', G2: 'passed', G3: 'passed', G4: 'passed', G5: 'failed', G6: 'skipped' });
+  assert.deepEqual(gateStatus(record.gates), { G1: 'unchanged', G2: 'passed', G3: 'passed', G4: 'passed', GE: 'passed', G5: 'failed', G6: 'skipped' });
   assert.equal(record.gates.find((gate) => gate.id === 'G1').detail, '直すラウンドで app/ が変わりませんでした');
   const gaveUp = run.items.find((item) => item.kind === 'gave-up');
   assert.match(gaveUp.text, /^直すラウンドで app\/ が変わらなかったので、ここで止めました。前のラウンドの失敗\(G5 起動の確認\)は直っていません。/);
@@ -427,8 +525,8 @@ test('関門 G6 で app/scenarios/ と基本のシナリオを回し、失敗を
   assert.equal(run.status, 'fixed', JSON.stringify(run.items, null, 2));
   const record = await readJson('sample-library', run.evidence.run);
   assert.deepEqual(record.rounds.map((round) => round.nodes), [
-    ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', 'launch', 'scenarios', 'fix'],
-    ['agent', 'changes', 'inspect', 'contract', 'compile', 'launch', 'scenarios', 'evidence'],
+    ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', 'evals', 'launch', 'scenarios', 'fix'],
+    ['agent', 'changes', 'inspect', 'contract', 'compile', 'evals', 'launch', 'scenarios', 'evidence'],
   ]);
   assert.deepEqual(record.rounds.map((round) => gateStatus(round.gates).G6), ['failed', 'passed']);
   assert.equal(record.rounds[1].fixOf.gate, 'G6');

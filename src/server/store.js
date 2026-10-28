@@ -59,6 +59,18 @@ export class ProjectStore {
     return this.state.get(id)?.simulation ?? null;
   }
 
+  // 会話の進め方と場面の回しに渡すもの: 表示中の版の構成など、harness の参加者の ai.json を返す関数(aiOf)、目録の data の数
+  simulationContext(id) {
+    const simulation = this.simulation(id);
+    if (!simulation) return null;
+    const manifestAi = this.manifest(id)?.ai;
+    return {
+      simulation,
+      aiOf: (file) => simulation.harnessAis?.[file] ?? (file === manifestAi ? this.aiDefinition(id) : null),
+      dataNumbers: this.dataNumbers(id),
+    };
+  }
+
   // 表示中の版の架空のデータ(目録の data)に出てくる数。プロダクト内 AI の返事の確かめに使う
   dataNumbers(id) {
     return this.state.get(id)?.dataNumbers ?? [];

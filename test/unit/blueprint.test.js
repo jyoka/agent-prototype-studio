@@ -112,7 +112,7 @@ test('作る run は節の並びで動き、通った節の列と関門の結果
   assert.deepEqual(record.nodes.map((node) => node.name), PASSED_NODES);
   assert.deepEqual(record.nodes.map((node) => node.kind), BLUEPRINT.filter((node) => node.name !== 'fix').map((node) => node.kind));
   assert.ok(record.nodes.every((node) => node.outcome === 'passed' && node.durationMs >= 0), JSON.stringify(record.nodes));
-  assert.deepEqual(gateStatus(record), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', G5: 'passed', G6: 'passed' });
+  assert.deepEqual(gateStatus(record), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', GE: 'passed', G5: 'passed', G6: 'passed' });
   assert.deepEqual(record.changedFiles, [{ file: 'app/App.jsx', change: 'modified' }]);
   // 作る AI の起動の回数と時間
   assert.equal(record.agentLaunches.count, 1);
@@ -143,7 +143,15 @@ test('作る run は節の並びで動き、通った節の列と関門の結果
   assert.ok(run.items.some((item) => item.kind === 'launch-ok'));
   assert.equal(run.items.find((item) => item.kind === 'scenarios-ok').text, 'シナリオを確かめました。基本のシナリオ 1 本と、app/ のシナリオ 0 本が、すべて通りました(プロダクト内 AI はモック)。');
   const gates = run.items.find((item) => item.kind === 'gates');
-  assert.equal(gates.text, 'Studio が確かめた結果: G1 変更の確認: 通った、G2 検査: 通った、G3 契約: 通った、G4 ビルド: 通った、G5 起動の確認: 通った、G6 シナリオ: 通った');
+  assert.equal(gates.text, 'Studio が確かめた結果: G1 変更の確認: 通った、G2 検査: 通った、G3 契約: 通った、G4 ビルド: 通った、GE 場面: 通った(場面なし)、G5 起動の確認: 通った、G6 シナリオ: 通った');
+});
+
+test('関門の並びは安い順で、場面の関門 GE はビルド(G4)の後、ブラウザを使う起動の確認(G5)の前(S11)', () => {
+  const gates = BLUEPRINT.filter((node) => node.gate);
+  assert.deepEqual(gates.map((node) => node.gate), ['G1', 'G2', 'G3', 'G4', 'GE', 'G5', 'G6']);
+  assert.deepEqual(BLUEPRINT.find((node) => node.gate === 'GE'), { name: 'evals', kind: 'code', gate: 'GE', label: '場面' });
+  // GE は決まった手順の節。作る AI の接続に触れない
+  assert.equal(BLUEPRINT.filter((node) => node.kind === 'model').length, 1);
 });
 
 test('決まった節の間に呼ぶと例外を出す接続を渡しても、run が終わる', async (t) => {
@@ -194,7 +202,7 @@ test('ビルドが失敗したら、起動の確認を行わず、失敗した�
   const record = await readRun(run);
   assert.deepEqual(record.rounds[0].nodes, ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', 'fix']);
   assert.equal(record.nodes.find((node) => node.name === 'compile').outcome, 'failed');
-  assert.deepEqual(gateStatus(record), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'failed', G5: 'skipped', G6: 'skipped' });
+  assert.deepEqual(gateStatus(record), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'failed', GE: 'skipped', G5: 'skipped', G6: 'skipped' });
   assert.equal(record.build.stage, 'compile');
   const g4 = record.gates.find((gate) => gate.id === 'G4');
   assert.equal(g4.errors[0].file, 'app/App.jsx');
@@ -221,11 +229,11 @@ test('契約の誤りは G3 で止まり、ビルドと起動の確認を行わ�
   assert.equal(run.status, 'failed');
   assert.equal(calls.length, 0);
   const record = await readRun(run);
-  assert.deepEqual(gateStatus(record.rounds[0]), { G1: 'passed', G2: 'passed', G3: 'failed', G4: 'skipped', G5: 'skipped', G6: 'skipped' });
+  assert.deepEqual(gateStatus(record.rounds[0]), { G1: 'passed', G2: 'passed', G3: 'failed', G4: 'skipped', GE: 'skipped', G5: 'skipped', G6: 'skipped' });
   assert.deepEqual(record.rounds[0].nodes, ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'fix']);
   // 書くだけの作る AI は、直すラウンドで同じ中身を書くので app/ が変わらず、そこで止まる。前の失敗は結果に残る
   assert.deepEqual(record.rounds[1].nodes, ['agent', 'changes', 'evidence']);
-  assert.deepEqual(gateStatus(record), { G1: 'unchanged', G2: 'passed', G3: 'failed', G4: 'skipped', G5: 'skipped', G6: 'skipped' });
+  assert.deepEqual(gateStatus(record), { G1: 'unchanged', G2: 'passed', G3: 'failed', G4: 'skipped', GE: 'skipped', G5: 'skipped', G6: 'skipped' });
   assert.equal(record.gates.find((gate) => gate.id === 'G3').errors[0].file, 'app/prototype.json');
 });
 
@@ -245,11 +253,11 @@ test('ビルドが通って起動の確認で失敗したら、試す画面は�
   assert.match(item.text, /^確かめで失敗あり: 起動の確認で実行時のエラーがありました\(架空の在庫表が読めません\)/);
   assert.match(item.text, /試す画面は新しいビルドにした/);
   const record = await readRun(run);
-  assert.deepEqual(gateStatus(record.rounds[0]), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', G5: 'failed', G6: 'skipped' });
+  assert.deepEqual(gateStatus(record.rounds[0]), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', GE: 'passed', G5: 'failed', G6: 'skipped' });
   // 起動の確認が失敗した版では、シナリオの関門は行わない
   assert.equal(scenarioCalls.length, 0);
   // 偽接続は直す依頼を受けても直すところが見つからず、app/ を変えない。前の失敗は結果に残る
-  assert.deepEqual(gateStatus(record), { G1: 'unchanged', G2: 'passed', G3: 'passed', G4: 'passed', G5: 'failed', G6: 'skipped' });
+  assert.deepEqual(gateStatus(record), { G1: 'unchanged', G2: 'passed', G3: 'passed', G4: 'passed', GE: 'passed', G5: 'failed', G6: 'skipped' });
   assert.deepEqual(record.gates.find((gate) => gate.id === 'G5').errors, [{ kind: 'runtime', message: '架空の在庫表が読めません' }]);
 });
 
@@ -286,7 +294,7 @@ test('観察器が使えない(Chromium がない)ときは、起動の確認を
   const run = await env.send('見出しを「未確認の図書室」にして');
   assert.equal(run.status, 'unverified');
   const record = await env.readRun(run);
-  assert.deepEqual(gateStatus(record), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', G5: 'unverified', G6: 'unverified' });
+  assert.deepEqual(gateStatus(record), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', GE: 'passed', G5: 'unverified', G6: 'unverified' });
   assert.equal(record.gates.find((gate) => gate.id === 'G6').reason, '起動の確認が未確認なので、シナリオは回していません');
   const g5 = record.gates.find((gate) => gate.id === 'G5');
   assert.match(g5.reason, /Playwright の Chromium が見つかりません/);
@@ -309,7 +317,7 @@ test('app/ が変わらなければ unchanged で、関門 G2 から先は行わ
   assert.equal(calls.length, 0);
   const record = await readRun(run);
   assert.deepEqual(record.nodes.map((node) => node.name), ['accept', 'fingerprint', 'agent', 'changes', 'evidence']);
-  assert.deepEqual(gateStatus(record), { G1: 'unchanged', G2: 'skipped', G3: 'skipped', G4: 'skipped', G5: 'skipped', G6: 'skipped' });
+  assert.deepEqual(gateStatus(record), { G1: 'unchanged', G2: 'skipped', G3: 'skipped', G4: 'skipped', GE: 'skipped', G5: 'skipped', G6: 'skipped' });
 });
 
 test('作る AI が失敗したら agent-failed。起動の回数と結果は run.json に残る', async (t) => {

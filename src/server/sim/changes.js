@@ -283,3 +283,17 @@ export function referencedFiles(simulation) {
   }
   return [...files].map((file) => `app/${file}`);
 }
+
+// ガードレールの指紋。直すラウンドでガードレールが変わったか(guardsChanged の印)を見るのに使う。
+// 中身: 構成ごとの守り(guards)、引き継ぎの辺(handoffs)、参加者に渡すツールの名前、ツールごとの守り、harness の ai.json の rules(目録の ai も)
+export function guardFingerprint(simulation, ai) {
+  if (!simulation) return JSON.stringify({ ai: ai?.rules ?? null });
+  const compositions = [simulation.composition, ...(simulation.compositions ?? []).map((item) => item.composition)].filter(Boolean);
+  return JSON.stringify({
+    // 参加者に渡すツールの名前も守り(許可していない名前は permission の層で断る)。外すと、その確かめが n/a になるため
+    compositions: compositions.map((c) => [c.file ?? null, c.guards ?? [], c.handoffs ?? [], c.participants.map((p) => [p.id, p.kind, p.tools ?? null])]),
+    tools: Object.entries(simulation.tools ?? {}).sort(([a], [b]) => (a < b ? -1 : 1)).map(([file, toolset]) => [file, toolset.tools.map((tool) => [tool.name, tool.guards ?? null])]),
+    ai: ai?.rules ?? null,
+    harness: Object.entries(simulation.harnessAis ?? {}).sort(([a], [b]) => (a < b ? -1 : 1)).map(([file, definition]) => [file, definition.rules]),
+  });
+}

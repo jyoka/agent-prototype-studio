@@ -155,7 +155,7 @@ async function exportAndCheck(page, home, other, otherHome) {
 
     const manifest = JSON.parse(await fs.readFile(path.join(other, 'handoff.json'), 'utf8'));
     expect(manifest.format).toBe('prototype-studio-handoff');
-    expect(manifest.formatVersion).toBe(2);
+    expect(manifest.formatVersion).toBe(3);
     // 目録の未実装 3 つと制約が、未接続の行に足される
     expect(manifest.capabilities.map((c) => c.kind)).toEqual(['real', 'real', 'mock', 'mock', 'mock', ...Array(9).fill('missing')]);
     expect(manifest.prototype.file).toBe('app/prototype.json');
@@ -163,7 +163,7 @@ async function exportAndCheck(page, home, other, otherHome) {
     expect(manifest.scenarios.files.map((s) => s.file)).toEqual(['app/scenarios/talk-and-narrow.json']);
     // 最新の作る run(見出しの変更)は、本物の観察器で全関門が通り、今の app/ と同じ中身で確かめた
     expect(manifest.evidence.run.status).toBe('passed');
-    expect(manifest.evidence.run.gates.map((g) => g.status)).toEqual(Array(6).fill('passed'));
+    expect(manifest.evidence.run.gates.map((g) => g.status)).toEqual(Array(7).fill('passed'));
     expect(manifest.evidence.run.stale).toBe(false);
     expect(manifest.evidence.run.reports.map((r) => [r.gate, r.verdict])).toEqual([['G5', 'passed'], ['G6', 'passed']]);
     expect(manifest.conversation.messages.filter((m) => m.role === 'assistant').map((m) => [m.via, m.real])).toEqual([

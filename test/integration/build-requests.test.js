@@ -54,7 +54,7 @@ async function withStudio(t, env = {}) {
 
 const RUNS = '/api/projects/sample-library/build-requests';
 
-// app/ を変えた run は、関門 G5、G6(観察器)まで回る。Playwright の Chromium がない環境では未確認になる(通ったとは扱わない)
+// app/ を変えた run は、関門 GE(場面)、G5、G6(観察器)まで回る。Playwright の Chromium がない環境では未確認になる(通ったとは扱わない)
 function assertGatesPassed(run) {
   const launch = run.gates.find((gate) => gate.id === 'G5');
   const scenarios = run.gates.find((gate) => gate.id === 'G6');
@@ -66,7 +66,9 @@ function assertGatesPassed(run) {
     assert.equal(launch.status, 'passed');
     assert.equal(scenarios.status, 'passed');
   }
-  assert.deepEqual(run.gates.slice(0, 4).map((gate) => gate.status), ['passed', 'passed', 'passed', 'passed']);
+  // G1〜G4 と、場面のない見本の GE(「場面なし」で通る)
+  assert.deepEqual(run.gates.slice(0, 5).map((gate) => gate.status), ['passed', 'passed', 'passed', 'passed', 'passed']);
+  assert.equal(run.gates[4].id, 'GE');
 }
 
 test('作る欄の API の守り(トークン、Origin、形、プロジェクト)', async (t) => {
@@ -108,7 +110,7 @@ test('依頼を流しながら返し、変わったファイルをビルドし�
   // 通った節の列と関門の結果は .studio/runs/<run-id>/run.json に残る
   const record = JSON.parse(await fs.readFile(path.join(studio.store.home, 'projects', 'sample-library', last.evidence.run), 'utf8'));
   const observed = last.status === 'unverified' ? ['launch'] : ['launch', 'scenarios'];
-  assert.deepEqual(record.nodes.map((node) => node.name), ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', ...observed, 'evidence']);
+  assert.deepEqual(record.nodes.map((node) => node.name), ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', 'evals', ...observed, 'evidence']);
   assert.deepEqual(record.gates, last.gates);
 
   const list = JSON.parse((await request(sp, { pathname: RUNS, headers })).body);

@@ -92,4 +92,5 @@ E2E と観察器のブラウザがないときは、`npm run install:chromium` �
 
 - 不具合は、利用者から見た動きを再現する E2E を先に書き、失敗するのを見てから直します
 - 実モデルで守りが効くかは、`npm run check:claude` で確かめます。実モデルを呼ぶので、人が決めたときだけ動かします([docs/claude-code.md の「実機で確かめる」](docs/claude-code.md#実機で確かめる))
+- 場面を実モデルで回す `npm run evals -- <プロジェクト> --real`(`STUDIO_ALLOW_CLAUDE_CODE=1` と `--limit-usd` が要る)も、人が決めたときだけです。テストは偽の `claude` で回します([docs/usage.md の「場面を回す」](docs/usage.md#場面を回すnpm-run-evals))
 - 実モデルで閉じたループが回るかは、`npm run check:loop -- --real` と `STUDIO_REAL=1 npx playwright test test/e2e/real-loop.spec.js` で確かめます。これも人が決めたときだけです。`npm run test:e2e` では、`real-loop.spec.js` は飛ばされます([docs/claude-code.md の「閉じたループを実機で確かめる」](docs/claude-code.md#閉じたループを実機で確かめる))

@@ -12,17 +12,23 @@ import { extractPrompt, extractSchema, phrasePrompt, phraseSchema } from './prod
 import { formatValue } from './product-ai/definition.js';
 import { findPersonalData, findSecrets, redact, redactDeep } from './redact.js';
 import { BusyError } from './store.js';
+import { EVAL_RUN_FORMAT, failuresOf } from './sim/eval-run.js';
+import { digestOf } from './sim/orchestrator.js';
 
 // 本番開発への引き継ぎ(#280、#313)。試作品のソース、意図、AI の設定、モックと状態、未接続と未決事項、
-// 目録とシナリオ、最新の証拠の要約を、1 つのフォルダーに書き出す。中身は決まった手順で作り、AI の判断は入れない(ADR-0001、Stripe の Minions)。
+// 目録とシナリオ、最新の証拠の要約、構成とツールと前提、場面と最新の場面の回しの要約を、1 つのフォルダーに書き出す。中身は決まった手順で作り、AI の判断は入れない(ADR-0001、Stripe の Minions)。
 // 形は docs/handoff.md に書く。標準化は仮で、使われ方を見て直す。
 
 export const HANDOFF_FORMAT = 'prototype-studio-handoff';
-export const HANDOFF_FORMAT_VERSION = 2;
+export const HANDOFF_FORMAT_VERSION = 3;
 export const MAX_NOTE_LENGTH = 4000;
 const NOTE_KEYS = ['purpose', 'decided', 'undecided'];
 const NOTES_FILE = 'handoff-notes.json';
 const MAX_FINDINGS = 20;
+// 最新の場面の回しの要約に入れる、通らなかった確かめの数
+const MAX_EVAL_FAILURES = 20;
+// 試作品が import する、Studio の中の同梱の部品(書き出しには入らない)
+const STUDIO_IMPORT = /from\s+['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
 
 // 秘密を入れるためのファイル。中を見ずに、書き出しから外す
 // .env.example のような見本は外さない(中は他のファイルと同じく調べる)
@@ -83,6 +89,7 @@ async function scanFiles(appDir) {
   const personal = [];
   const signs = { network: [], storage: [], todo: [] };
   const dataFiles = [];
+  const studioParts = new Set();
   async function walk(dir) {
     for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
@@ -102,6 +109,10 @@ async function scanFiles(appDir) {
       for (const found of findSecrets(text)) secrets.push({ file: shown, ...found });
       for (const found of findPersonalData(text)) personal.push({ file: shown, ...found });
       if (CODE_FILE.test(entry.name)) {
+        for (const match of text.matchAll(STUDIO_IMPORT)) {
+          const name = match[1] ?? match[2];
+          if (STUDIO_PACKAGES.includes(name)) studioParts.add(name);
+        }
         text.split(/\r?\n/).forEach((line, index) => {
           for (const [pattern, kind] of CODE_SIGNS) {
             if (pattern.test(line)) signs[kind].push({ file: shown, line: index + 1, text: redact(line.trim()).slice(0, 120) });
@@ -115,7 +126,7 @@ async function scanFiles(appDir) {
   }
   await walk(appDir);
   files.sort((a, b) => a.path.localeCompare(b.path));
-  return { files, secrets, personal, signs, dataFiles: dataFiles.sort() };
+  return { files, secrets, personal, signs, dataFiles: dataFiles.sort(), studioParts: [...studioParts].sort() };
 }
 
 const where = (found) => `${found.file}:${found.line}`;
@@ -236,8 +247,92 @@ async function latestEvidence(paths, appDigest) {
   };
 }
 
+// 最新の場面の回し(.studio/evals/<回しの ID>/result.json。npm run evals が書く)の要約。
+// 回した app/ の指紋が今の app/ と違えば、古い(stale)。指紋が分からなければ stale は null
+async function latestEvalRun(paths, appDigest) {
+  const evalsDir = path.join(paths.studio, 'evals');
+  let found = null;
+  for (const entry of await fs.readdir(evalsDir, { withFileTypes: true }).catch(() => [])) {
+    if (!entry.isDirectory()) continue;
+    const result = await readJson(path.join(evalsDir, entry.name, 'result.json'));
+    if (result?.format !== EVAL_RUN_FORMAT || result.id !== entry.name || typeof result.startedAt !== 'string' || !Array.isArray(result.groups)) continue;
+    if (!found || result.startedAt > found.startedAt) found = result;
+  }
+  if (!found) return null;
+  return {
+    file: `.studio/evals/${found.id}/result.json`,
+    report: `.studio/evals/${found.id}/report.md`,
+    id: found.id,
+    startedAt: found.startedAt,
+    finishedAt: found.finishedAt ?? null,
+    status: found.status,
+    verdict: found.verdict ?? null,
+    stopReason: found.stopReason ?? null,
+    appDigest: found.appDigest ?? null,
+    stale: typeof found.appDigest === 'string' ? found.appDigest !== appDigest : null,
+    real: Boolean(found.options?.real),
+    withoutPromptGuards: Boolean(found.options?.withoutPromptGuards),
+    totals: found.totals ?? null,
+    groups: found.groups.map((group) => ({
+      composition: group.composition?.label ?? null,
+      compositionDigest: group.composition?.digest ?? null,
+      assumption: group.assumption?.id ?? null,
+      assumptionDigest: group.assumption?.digest ?? null,
+      connection: group.connection,
+      real: Boolean(group.real),
+      round: group.round,
+      summary: group.summary ?? null,
+      // 危ない場面で効いた層(ツールの守り、出口の確かめ、プロンプトかモデル、止まらなかった)
+      risky: (group.evals ?? []).filter((e) => e.kind === 'risky').map((e) => ({ id: e.id, verdict: e.verdict, stoppedBy: e.stoppedBy ?? null, toolBlocks: e.toolBlocks ?? [], asked: e.asked ?? [] })),
+    })),
+    failures: failuresOf(found).slice(0, MAX_EVAL_FAILURES).map(({ eval: id, file, check, expected, actual }) => ({ eval: id, file, check, expected, actual })),
+  };
+}
+
+// 構成、ツール、前提、プロンプトの枠、場面(書き出した app/ の写しをビルドしたもの)と、最新の場面の回しの要約。
+// 構成のファイルのない試作品(構成 B)は、compositions が空で、AI の設定は ai の項目にある
+function describeSimulation(simulation, latestRun) {
+  const compositionOf = (composition, isDefault) => ({
+    file: `app/${composition.file}`,
+    default: isDefault,
+    name: composition.name ?? null,
+    driver: composition.driver,
+    participants: composition.participants.map((p) => ({
+      id: p.id,
+      kind: p.kind,
+      label: p.label ?? null,
+      owner: p.owner,
+      ...(p.kind === 'agent' ? { prompt: p.prompt, tools: p.tools ?? [], mock: p.mock ? `app/${p.mock}` : null } : {}),
+      ...(p.kind === 'harness' ? { ai: `app/${p.ai}`, returnTo: p.returnTo ?? null } : {}),
+      ...(p.kind === 'human' ? { mock: p.mock ?? null } : {}),
+    })),
+    tools: composition.tools ? `app/${composition.tools}` : null,
+    handoffs: composition.handoffs,
+    guards: composition.guards,
+    surface: composition.surface,
+    assumptions: composition.assumptions,
+    limits: composition.limits,
+  });
+  const compositions = [
+    ...(simulation?.composition?.file ? [compositionOf(simulation.composition, true)] : []),
+    ...(simulation?.compositions ?? []).map((item) => compositionOf(item.composition, false)),
+  ];
+  return {
+    compositions,
+    tools: Object.entries(simulation?.tools ?? {}).map(([file, toolset]) => ({
+      file: `app/${file}`,
+      owner: toolset.owner,
+      tools: toolset.tools.map((tool) => ({ name: tool.name, description: tool.description, owner: tool.owner, inputSchema: tool.inputSchema, do: tool.do, guards: tool.guards ?? {} })),
+    })),
+    assumptions: (simulation?.assumptions ?? []).map(({ file, assumption }) => ({ file: `app/${file}`, digest: digestOf(assumption), ...assumption })),
+    prompts: Object.entries(simulation?.prompts ?? {}).map(([file, text]) => ({ file: `app/${file}`, chars: text.length })),
+    evals: (simulation?.evals ?? []).map(({ file, scenario }) => ({ file: `app/${file}`, id: scenario.id, kind: scenario.kind, about: scenario.about ?? null, checks: scenario.expect.map((item) => item.check) })),
+    latestRun,
+  };
+}
+
 // 実機、モック、未接続の一覧。どの試作品にも出る行と、見つけたものから出る行がある
-function capabilities({ fileCount, ai, conversation, scan, prototype }) {
+function capabilities({ fileCount, ai, conversation, scan, prototype, simulation }) {
   const rows = [];
   const add = (kind, item, prototype, production, evidence = []) => rows.push({ kind, item, prototype, production, evidence });
   const replies = conversation?.messages.filter((m) => m.role === 'assistant' && m.via) ?? [];
@@ -271,6 +366,35 @@ function capabilities({ fileCount, ai, conversation, scan, prototype }) {
       '会話と状態の置き場',
       'Studio のサーバーのメモリーが持ち、試作品は window.studio.ai(session、send、correct、onChange)で呼ぶ。Studio を止めると消える。',
       '本番のサーバーに、会話と状態を持つ API を作る。window.studio.ai の呼び方と、返す形(state、messages)が見本になる。',
+    );
+  }
+  // 構成(app/composition.json など)のある試作品の、模擬のエージェント、ツール、会話の枠
+  const agents = (simulation?.compositions ?? []).flatMap((c) => c.participants.filter((p) => p.kind === 'agent').map((p) => `${p.label ?? p.id}(${c.file})`));
+  if (agents.length > 0) {
+    add(
+      'mock',
+      '模擬のエージェント',
+      `構成の参加者 ${agents.join('、')} は、モックの決まり(app/mocks/)か、相手のモデルの代わりの Claude Code で動く。相手の本物のエージェントではない。相手の仕様の分からない所は前提(app/assumptions/)の推測。`,
+      '相手の本物のエージェントとつなぎ、前提の推測(モデル、プロンプト、使えるメッセージ、ツールの呼び方、記録の取り方)を本物の仕様で確かめる。',
+      [...new Set([...(simulation.compositions ?? []).map((c) => c.file), ...simulation.assumptions.map((a) => a.file)])],
+    );
+  }
+  const toolCount = (simulation?.tools ?? []).reduce((n, t) => n + t.tools.length, 0);
+  if (toolCount > 0) {
+    add(
+      'real',
+      'ツール(宣言)',
+      `${simulation.tools.map((t) => t.file).join('、')} の宣言(${toolCount} 個)を、Studio のツールの口が動かす。ツールの守り(requires、deny、hideFields など)は試作品の中で実際に効く。データは架空で、記録の店は会話ごとにメモリーに置く。`,
+      '本番の API として作る。inputSchema と守りが仕様の見本。記録の店は本番の保存先と同意の記録に置き換える。',
+      simulation.tools.map((t) => t.file),
+    );
+  }
+  if (scan.studioParts.length > 0) {
+    add(
+      'mock',
+      '会話の枠(studio-talk)',
+      `試作品は Studio が同梱する部品(${scan.studioParts.join('、')})で会話の見た目を描く。部品のコードは Studio の中にあり、この書き出しには入らない。`,
+      '本番の画面(相手のトークアプリの部品や、自社の画面)で作り直す。部品の種類(文、ボタン、カード、カルーセル、知らせ)が見本。',
     );
   }
   // 目録に架空のデータの宣言があれば、推定の代わりにそれを出す
@@ -332,7 +456,7 @@ function capabilities({ fileCount, ai, conversation, scan, prototype }) {
 }
 
 // Studio が見つけた、決める必要のあること
-function studioQuestions({ ai, conversation, working, scan, excluded, evidence }) {
+function studioQuestions({ ai, conversation, working, scan, excluded, evidence, simulation }) {
   const questions = [];
   if (ai && !conversation.messages.some((m) => m.real)) {
     questions.push('プロダクト内 AI を実モデルで試していない(会話の応答はモックだけ)。ai.json の instructions どおりに振る舞うかは、確かめていない。');
@@ -347,6 +471,18 @@ function studioQuestions({ ai, conversation, working, scan, excluded, evidence }
   }
   if (scan.signs.todo.length > 0) questions.push(`コードに未実装の印がある(${listWhere(scan.signs.todo)})。`);
   if (excluded.length > 0) questions.push(`秘密を入れるファイルを書き出しから外した(${excluded.map((e) => e.path).join('、')})。本番で要る設定か確かめる。`);
+  if (simulation.assumptions.length > 0) questions.push('相手の仕様は前提(app/assumptions/)の推測で、本物の仕様ではない。本物の仕様で確かめる。');
+  const latestEvals = simulation.latestRun;
+  if (simulation.evals.length > 0 && !latestEvals) {
+    questions.push('場面(app/evals/)を npm run evals で回した結果がない。場面の結果は、作るループの関門 GE(モック)のものだけ。');
+  }
+  if (latestEvals) {
+    if (latestEvals.stale === true) questions.push(`最新の場面の回し(${localTime(latestEvals.startedAt)})は、今の app/ と違う中身で回したもので、古い。`);
+    if (latestEvals.stale === null) questions.push(`最新の場面の回し(${localTime(latestEvals.startedAt)})が、どの app/ の中身で回したものか分からない。`);
+    if (!latestEvals.real) questions.push('場面をモックでだけ回した。実モデル(相手のモデルの代わりの Claude)では回していない。');
+    if (latestEvals.status === 'stopped') questions.push(`最新の場面の回しは途中で止まった(${latestEvals.stopReason ?? '理由は不明'})。`);
+    if (latestEvals.status === 'error' || latestEvals.status === 'running') questions.push(`最新の場面の回しは、終わる前に失敗した(${latestEvals.stopReason ?? '理由は不明'})。`);
+  }
   const { run } = evidence;
   if (!run) {
     questions.push('作る run の記録がない。Studio の関門(ビルド、起動の確認、シナリオ)で確かめた証拠は入っていない。');
@@ -466,6 +602,93 @@ function evidenceLines(evidence) {
   return lines;
 }
 
+const EVAL_VERDICT_LABELS = { passed: '通った', failed: '失敗', stopped: '途中で止めた' };
+const LAYER_LABELS = { tool: 'ツールが止めた', output: '出口の確かめが止めた', 'prompt-or-model': 'プロンプトかモデルが止めた', 'not-stopped': '止まらなかった' };
+
+function simulationLines(simulation) {
+  const lines = [];
+  if (simulation.compositions.length > 0) {
+    lines.push(
+      '## 構成とツール(模擬)',
+      '',
+      '試作品の中で、誰が会話を回し、誰がどのツールとプロンプトの枠を持つかを表したデータです。全部の中身は handoff.json の `simulation` と、写した `app/` にあります。',
+      '',
+      '| 構成 | 名前 | 回し手 | 参加者(種類、持ち主) | ガードレール(層、持ち主) |',
+      '|---|---|---|---|---|',
+      ...simulation.compositions.map((c) => `| ${code(c.file)}${c.default ? '(既定)' : ''} | ${cell(c.name ?? '')} | ${cell(c.driver)} | ${cell(c.participants.map((p) => `${p.id}(${p.kind}、${p.owner})`).join('、'))} | ${cell(c.guards.map((g) => `${g.id}(${g.layer}、${g.owner}${g.layer === 'output' ? `、${g.enforce === false ? '記録だけ' : '止める'}` : ''})`).join('、') || 'なし')} |`),
+      '',
+    );
+  }
+  if (simulation.tools.length > 0) {
+    lines.push(
+      'ツール(宣言)とツールの守り:',
+      '',
+      '| ファイル | ツール | 処理 | 守り | 説明 |',
+      '|---|---|---|---|---|',
+      ...simulation.tools.flatMap((t) => t.tools.map((tool) => `| ${code(t.file)} | ${code(tool.name)} | ${cell(tool.do.op)} | ${cell(Object.keys(tool.guards).join('、') || 'なし')} | ${cell(tool.description)} |`)),
+      '',
+    );
+  }
+  if (simulation.assumptions.length > 0) {
+    lines.push(
+      '前提(相手の仕様の推測。本物の仕様ではない):',
+      '',
+      '| ファイル | id | 名前 | モデル(代わり) | 使えるメッセージ |',
+      '|---|---|---|---|---|',
+      ...simulation.assumptions.map((a) => `| ${code(a.file)} | ${cell(a.id)} | ${cell(a.name ?? '')} | ${cell(a.model?.name ?? '')} | ${cell((a.messageTypes ?? []).join('、'))} |`),
+      '',
+    );
+  }
+  if (simulation.evals.length === 0 && !simulation.latestRun) return lines;
+  lines.push('## 場面(確かめ方)と最新の回し', '');
+  if (simulation.evals.length > 0) {
+    lines.push(
+      '場面は会話の確かめの 1 単位です。作るループの関門 GE がモックで回し、`npm run evals` で構成と前提を変えて回せます。',
+      '',
+      '| ファイル | id | 種類 | 中身 | 確かめ |',
+      '|---|---|---|---|---|',
+      ...simulation.evals.map((e) => `| ${code(e.file)} | ${cell(e.id)} | ${cell(e.kind)} | ${cell(e.about ?? '')} | ${cell(e.checks.join('、'))} |`),
+      '',
+    );
+  }
+  const latest = simulation.latestRun;
+  if (!latest) {
+    lines.push('`npm run evals` で場面を回した結果はありません。', '');
+    return lines;
+  }
+  const freshness = latest.stale === true ? '**古い**(今の app/ と違う中身で回した)' : latest.stale === false ? '今の app/ と同じ中身' : '分からない';
+  lines.push(
+    `最新の場面の回しの要約です。結果と比べる表の全体は、試作品のフォルダーの ${code(latest.file)} と ${code(latest.report)} にあります(この引き継ぎには入れていません)。`,
+    '',
+    `- 結果: ${EVAL_VERDICT_LABELS[latest.verdict] ?? cell(latest.verdict ?? '不明')}(${latest.status === 'done' ? '最後まで回した' : `途中で${latest.status === 'stopped' ? '止めた' : '失敗した'}: ${cell(latest.stopReason ?? '')}`})`,
+    `- 日時: ${localTime(latest.startedAt)} から ${localTime(latest.finishedAt)}`,
+    `- 接続: ${latest.real ? '実モデル(相手のモデルの代わりの Claude)' : 'モック'}。プロンプトの頼み: ${latest.withoutPromptGuards ? '外した' : '入れた'}`,
+    `- 回した app/ の中身: ${freshness}`,
+    '',
+    '| 構成 / 前提 | 接続 | 回 | 通った場面 | 失敗 | n/a | 確かめの合格 | ツールが止めた | 止まらなかった | 費用(USD) |',
+    '|---|---|---|---|---|---|---|---|---|---|',
+    ...latest.groups.map((g) => {
+      const s = g.summary;
+      const label = `${g.composition}${g.assumption ? ` / ${g.assumption}` : ''}`;
+      if (!s) return `| ${cell(label)} | ${cell(g.connection)} | ${g.round} | - | - | - | - | - | - | - |`;
+      return `| ${cell(label)} | ${cell(g.connection)} | ${g.round} | ${s.passed} | ${s.failed + s.errors} | ${s.notApplicable} | ${s.checks.passed}/${s.checks.decided} | ${s.risky.tool}/${s.risky.count} | ${s.risky['not-stopped']}/${s.risky.count} | ${Number(s.costUsd ?? 0).toFixed(4)} |`;
+    }),
+    '',
+  );
+  const risky = latest.groups.flatMap((g) => g.risky.map((r) => ({ g, r })));
+  if (risky.length > 0) {
+    lines.push(
+      '危ない場面で効いた層:',
+      '',
+      '| 構成 / 前提 | 場面 | 効いた層 | ツールの守り | プロンプトの頼み |',
+      '|---|---|---|---|---|',
+      ...risky.map(({ g, r }) => `| ${cell(`${g.composition}${g.assumption ? ` / ${g.assumption}` : ''}`)} | ${cell(r.id)} | ${LAYER_LABELS[r.stoppedBy] ?? '-'} | ${cell(r.toolBlocks.join('、') || 'なし')} | ${cell(r.asked.join('、') || 'なし')} |`),
+      '',
+    );
+  }
+  return lines;
+}
+
 function renderReadme(h) {
   const lines = [];
   const push = (...items) => lines.push(...items);
@@ -551,12 +774,13 @@ function renderReadme(h) {
     push('## プロダクト内 AI', '', 'この試作品は、プロダクト内 AI を使っていません(`app/ai.json` がありません)。', '');
   }
 
-  push(...scenarioLines(h.scenarios), ...evidenceLines(h.evidence));
+  push(...simulationLines(h.simulation), ...scenarioLines(h.scenarios), ...evidenceLines(h.evidence));
   push(
     '## ソース',
     '',
     `- 入口: ${h.source.entry ? code(h.source.entry) : '(見つかりません)'}`,
     `- 使えるライブラリ: ${h.source.libraries.join('、')}(Studio が同梱するもの。ほかは import できない)`,
+    ...(h.source.studioParts.length > 0 ? [`- Studio の中の部品: ${h.source.studioParts.join('、')}(試作品が import している。部品のコードは書き出しに入らない)`] : []),
     `- 版: ${h.working.text}`,
     '',
     '| ファイル | バイト |',
@@ -594,6 +818,7 @@ function renderReadme(h) {
     ...(h.excluded.length > 0 ? [`- 秘密を入れるファイル: ${h.excluded.map((e) => code(e.path)).join('、')}`] : []),
     '- AI の実行の記録(AI に渡した本文の全文を含む)、作る AI の返事、ログインの情報、環境変数、PC のフォルダーの場所。',
     '- 作る run の記録の全体と、観察のスクリーンショット。要約だけを「最新の証拠」と handoff.json の `evidence` に入れた。',
+    '- 場面の回しの結果の全体と、その記録(.studio/evals/)。要約だけを「場面(確かめ方)と最新の回し」と handoff.json の `simulation.latestRun` に入れた。',
     '- 会話の中のメールアドレスと電話番号らしい文字列は伏せた(`[伏せた: …]`)。',
     '',
     '## 試作品を動かす',
@@ -719,7 +944,9 @@ export class ProjectHandoffs {
       const prototype = describePrototype(build.manifest);
       const scenarios = await describeScenarios(appCopy, prototype, definition);
       // 証拠が今の app/ と同じ中身で確かめたものかは、Studio のビルドと同じ指紋で比べる
-      const evidence = await latestEvidence(paths, digestSnapshot(await snapshotApp(paths.app)));
+      const appDigest = digestSnapshot(await snapshotApp(paths.app));
+      const evidence = await latestEvidence(paths, appDigest);
+      const simulation = describeSimulation(build.simulation, await latestEvalRun(paths, appDigest));
       const conversation = definition
         ? describeConversation(definition, this.aiSessions.snapshot(id, definition), this.aiSessions.connections)
         : null;
@@ -733,14 +960,16 @@ export class ProjectHandoffs {
         project: { id, title: redact(project?.title ?? id) },
         notes: redactDeep(notes),
         working: { ...working, text: workingText(working, versionList) },
-        capabilities: capabilities({ fileCount: scan.files.length, ai: definition, conversation, scan, prototype }),
+        capabilities: capabilities({ fileCount: scan.files.length, ai: definition, conversation, scan, prototype, simulation }),
         openQuestions: [
           ...(notes.undecided ? [{ from: 'person', text: redact(notes.undecided) }] : []),
-          ...studioQuestions({ ai: definition, conversation, working, scan, excluded, evidence }).map((text) => ({ from: 'studio', text })),
+          ...studioQuestions({ ai: definition, conversation, working, scan, excluded, evidence, simulation }).map((text) => ({ from: 'studio', text })),
         ],
         prototype,
         scenarios,
         evidence,
+        // 構成、ツール、前提、プロンプトの枠、場面、最新の場面の回しの要約(docs/design/agent-simulation.md の 4.5、S7)
+        simulation,
         ai: definition
           ? {
               name: definition.name,
@@ -756,8 +985,9 @@ export class ProjectHandoffs {
         conversation,
         source: {
           entry: prototype.entry ? `app/${prototype.entry}` : null,
-          // npm のパッケージだけ。Studio の中の会話の枠(studio-talk)は書き出しに入らない(書き出しの構成の扱いは sim-6)
+          // npm のパッケージだけ。Studio の中の会話の枠(studio-talk)は書き出しに入らない。試作品が import していれば studioParts に出す
           libraries: ALLOWED_PACKAGES.filter((p) => !p.includes('/') && !STUDIO_PACKAGES.includes(p)),
+          studioParts: scan.studioParts,
           files: scan.files,
           signs: scan.signs,
           // 目録の data があればその宣言、なければファイルの名前と中からの推定
