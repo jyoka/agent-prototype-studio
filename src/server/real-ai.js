@@ -109,6 +109,12 @@ function fixDetails({ agent, systemPrompt }) {
   };
 }
 
+// 「詳しく」の記録の扱い。直す AI の結果は build-requests.js の evidence、試作品の中の AI の記録は AiSessions の trace(ADR-0001 の #277)
+const RECORDS = [
+  '言葉で直したときの結果(変えたファイル、確かめた結果、かかった時間と費用)は、試作品のフォルダーの中の .studio/runs に残ります。',
+  '試作品の中の AI とのやりとりの記録は、Studio のメモリーにだけ置き、Studio を止めると消えます。記録では、メールアドレスや API キーらしい文字列を伏せます。',
+];
+
 // 同意のカード(画面は P25)に出す中身。product は試作品の中の AI の「詳しく」(AiSessions.realDetails)で、試作品を選んだときだけ
 // fixLaunches は、1 つの依頼で直す AI を起動する回数の上限(build-requests.js の MAX_FIX_ROUNDS + 1)
 export function consentView({ consent, env, agent, fixBudgetUsd, fixLaunches, systemPrompt, productAllowed, product = null }) {
@@ -128,6 +134,6 @@ export function consentView({ consent, env, agent, fixBudgetUsd, fixLaunches, sy
       cost,
       note: '架空のデータだけで試してください。実在の人や会社の情報は入れないでください。',
     },
-    details: { fix: fixDetails({ agent, systemPrompt }), product },
+    details: { fix: fixDetails({ agent, systemPrompt }), product, records: RECORDS },
   };
 }

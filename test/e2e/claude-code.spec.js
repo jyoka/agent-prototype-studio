@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, launchStudio, openAiMenu, openDevDetails, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, expect, launchStudio, openAiMenu, openDevDetails, switchToRealAi, test } from './studio.js';
 
 // 実モデルは呼ばない。Claude Code は偽の CLI(test/fixtures/fake-claude.js)に差し替える
 const FAKE = path.join(ROOT, 'test', 'fixtures', 'fake-claude.js');
@@ -64,21 +64,20 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     await expect(log.last()).toContainText(AFTER_JOB);
     await expect(log.last()).toContainText('お試しの AI');
 
-    // 切り替える前に、送り先、送るもの、費用を出し、確認を求める
+    // 切り替える前に、同意のカードで送るもの、送り先、料金を出す。前の確認の中身(送り先の詳しい文、費用、指示の全文)は「詳しく」の中にある
     await openAiMenu(page);
     await page.getByRole('radio', { name: 'Claude Code' }).check();
-    const confirm = page.getByRole('group', { name: 'Claude Code に切り替える前の確認' });
+    const confirm = page.getByRole('group', { name: '本物の AI を使う前に' });
+    await expect(confirm).toContainText('AI は、あなたの Claude Code で動きます。');
+    await confirm.getByText('詳しく(AI への指示の全文、1 回の上限、記録の扱い)').click();
     await expect(confirm).toContainText('発言のたびに実際の AI モデルを呼びます');
     await expect(confirm).toContainText('送り先: Anthropic(Claude Code が送ります)');
-    await expect(confirm.getByRole('list', { name: '送るもの' })).toContainText('会話の全体');
+    await expect(confirm.getByRole('list', { name: '話すときに送るもの' })).toContainText('会話の全体');
     await expect(confirm).toContainText('費用: Claude Code にログインしているアカウント');
     await expect(confirm).toContainText('ANTHROPIC_API_KEY がないので');
     // --max-budget-usd は 1 回の呼び出しごと。1 回の発言では多くて 4 回呼ぶ
     await expect(confirm).toContainText('1 回の呼び出しの上限は $0.1 です(--max-budget-usd)。1 回の発言で多くて 4 回呼ぶので、1 回の発言では多くて $0.4 です。');
-    await confirm.getByText('送る指示の全文を見る').click();
     await expect(confirm.locator('pre')).toContainText('しおかぜ求人相談');
-    const switchButton = confirm.getByRole('button', { name: 'Claude Code に切り替える' });
-    await expect(switchButton).toBeDisabled();
     // やめると、モックのまま。同意もしない
     await confirm.getByRole('button', { name: 'やめる' }).click();
     await expect(confirm).toBeHidden();
@@ -91,20 +90,21 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     expect(refused.status).toBe(403);
     expect(JSON.parse(refused.text).error.code).toBe('consent-required');
 
-    // 確認の印を付けて切り替えると、本物の AI を使う同意になる(同意のカードの画面 P25 までのつなぎ)
-    await openAiMenu(page);
+    // 「同意して使う」で、本物の AI を使う同意になり、切り替わる
     await page.getByRole('radio', { name: 'Claude Code' }).check();
-    await confirm.getByRole('checkbox').check();
-    await switchButton.click();
+    await confirm.getByRole('button', { name: '同意して使う' }).click();
     await expect(page.locator('#ai-badge')).toHaveText('AI: Claude Code');
     expect((await studio.api('/api/real-ai')).consent.agreed).toBe(true);
     await expect(page.locator('#events')).toContainText('接続を「Claude Code」にしました');
     await expect(app.locator('.note')).toContainText('案内役の AI は Claude Code(実際の AI モデル)です');
-    // 選んでいる間は、送り先と費用が、試す欄の上の「AI: Claude Code ▾」を開くと見える
-    await openAiMenu(page);
-    await expect(page.locator('#ai-menu')).toContainText('費用: Claude Code にログインしているアカウント');
-    await page.keyboard.press('Escape');
-    await expect(page.locator('#ai-menu')).toBeHidden();
+    // 選んでいる間は、試す欄の上に小さな印が出る。押すと、送り先と料金(「詳しく」に費用)を見られる
+    await page.locator('#real-ai-try').click();
+    const info = page.locator('#real-ai-try-info');
+    await expect(info).toContainText('Anthropic(Claude を作っている会社)');
+    await info.getByText('詳しく(AI への指示の全文、1 回の上限、記録の扱い)').click();
+    await expect(info).toContainText('費用: Claude Code にログインしているアカウント');
+    await info.getByRole('button', { name: '閉じる' }).click();
+    await expect(info).toBeHidden();
     await openDevDetails(page);
 
     // 自由な文に応答する。モックとの会話(3 件)を引き継ぐ
@@ -170,7 +170,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     await page.getByRole('radio', { name: 'モック' }).click();
     await expect(page.locator('#ai-menu')).toBeHidden();
     await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
-    await expect(page.locator('#ai-menu')).not.toContainText('費用:');
+    await expect(page.locator('#real-ai-try')).toBeHidden();
     await say('やっぱりアルバイトがいいです');
     await expect(log.last()).toContainText('雇用区分「アルバイト・パート」と理解しました。');
     await expect(log.last()).toContainText('お試しの AI');
@@ -206,10 +206,7 @@ test('応答を待つ間に開き直しても作り直しても、止められ�
     const log = app.getByRole('region', { name: '会話' }).getByRole('listitem');
     const message = app.getByLabel('メッセージ');
     await openDevDetails(page);
-    await openAiMenu(page);
-    await page.getByRole('radio', { name: 'Claude Code' }).check();
-    await page.getByRole('checkbox').check();
-    await page.getByRole('button', { name: 'Claude Code に切り替える' }).click();
+    await switchToRealAi(page);
     await expect(app.locator('.note')).toContainText('Claude Code');
 
     // 開き直しても、待っていた応答は新しく開いた試作品に出る
@@ -260,7 +257,11 @@ test('実モデルは STUDIO_ALLOW_CLAUDE_CODE=0 では選べず、理由を出�
     await chooseSample(page, SAMPLES.jobConsult);
     await openAiMenu(page);
     await page.getByRole('radio', { name: 'Claude Code' }).check();
-    const confirm = page.getByRole('group', { name: 'Claude Code に切り替える前の確認' });
+    const confirm = page.getByRole('group', { name: '本物の AI を使う前に' });
+    // 使った分だけかかるときは、料金の行に上限も出す
+    await expect(confirm).toContainText('API キーの設定があるので、使った分だけ料金がかかります。');
+    await expect(confirm).toContainText('試作品の中の AI と話すときは 1 回の呼び出しで 0.1 ドルまで');
+    await confirm.getByText('詳しく(AI への指示の全文、1 回の上限、記録の扱い)').click();
     await expect(confirm).toContainText('費用: API の従量課金');
     await expect(confirm).toContainText('1 回の呼び出しの上限は $0.1 です');
     await expect(confirm).not.toContainText('test-placeholder-not-a-key');
