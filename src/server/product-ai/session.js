@@ -1,6 +1,7 @@
 import { redact, redactDeep } from '../redact.js';
 import { ConnectionError } from './claude-code.js';
 import { formatValue, normalizeValue } from './definition.js';
+import { checkProgress, shownValue, startProgress, turn } from './harness.js';
 import { createMockConnection } from './mock.js';
 
 export const SESSION_LIMITS = {
@@ -29,6 +30,8 @@ function freshSession(definition, key) {
     busy: false,
     controller: null,
     state: { ...definition.initialState },
+    // harness の進み具合(今の段、ターンの数、終わったか)
+    progress: startProgress(definition),
     messages: definition.mock.greeting ? [{ role: 'assistant', text: definition.mock.greeting }] : [],
   };
 }
@@ -81,7 +84,11 @@ function checkSnapshot(definition, snapshot) {
     }
     messages.push({ role: 'correction', text: message.text, changes });
   }
-  return { state, messages };
+  // 進み具合のない版(#307 より前の保存)は、最初の段から、発言の数をターンとして始める
+  const turns = Math.min(messages.filter((m) => m.role === 'user').length, definition.flow.maxTurns);
+  const progress = snapshot.progress === undefined ? { ...startProgress(definition), turns } : checkProgress(definition, snapshot.progress);
+  if (!progress) return null;
+  return { state, messages, progress };
 }
 
 export class AiError extends Error {
@@ -126,8 +133,12 @@ const clip = (text) =>
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
-// 記録に出す、決まりに合わなかった値
-const shownValue = (value) => (typeof value === 'string' ? value : JSON.stringify(value) ?? String(value)).slice(0, 100);
+// 記録に残す段ごとの中身。接続が返した長い値は切る
+function clipStages(stages) {
+  const clipped = structuredClone(stages);
+  if (clipped.extract?.output) clipped.extract.output.updates = clip(JSON.stringify(clipped.extract.output.updates));
+  return clipped;
+}
 
 // 実行の記録に出す接続。実際の AI モデルかどうか(real)を必ず付ける
 const connectionOfRecord = (connection) => ({ kind: connection.kind, label: connection.label, real: Boolean(connection.billing) });
@@ -143,7 +154,8 @@ const CONNECTION_ERRORS = {
 };
 
 // プロダクト内 AI の会話と状態を、プロジェクトごとにサーバーで持つ(ADR-0001 の「試す」)。
-// 応答の中身は接続(モック、Claude Code)が決め、値の検査、状態の更新、記録、リセットはここで必ず行う。
+// 1 ターンは harness(harness.js の turn)が回す。接続(モック、Claude Code)は抽出と言い方だけを返し、
+// 値の検査、状態の更新、段の遷移、終わるかは harness が決める。記録、上限、リセットはここで必ず行う。
 // 接続はプロジェクトごとに選ぶ。既定はモック。切り替えても会話と状態はそのまま引き継ぐ。
 // 会話は「プロジェクトと会話の ID」で分ける。利用者の会話は USER_CONVERSATION。観察の会話は観察ごとに新しく作り、
 // 終わったら消す(S15)。観察の会話は、利用者の会話、選んだ接続、試し直しの前の会話に触れない。
@@ -370,9 +382,13 @@ export class AiSessions {
     const key = JSON.stringify(definition);
     const current = this.sessions.get(slotOf(projectId, USER_CONVERSATION));
     if (!current || current.key !== key) return null;
-    const snapshot = { state: { ...current.state }, messages: current.messages.map((message) => structuredClone(message)) };
+    const snapshot = {
+      state: { ...current.state },
+      messages: current.messages.map((message) => structuredClone(message)),
+      progress: { ...current.progress },
+    };
     const fresh = freshSession(definition, key);
-    if (JSON.stringify(snapshot) === JSON.stringify({ state: fresh.state, messages: fresh.messages })) return null;
+    if (JSON.stringify(snapshot) === JSON.stringify({ state: fresh.state, messages: fresh.messages, progress: fresh.progress })) return null;
     return snapshot;
   }
 
@@ -391,6 +407,7 @@ export class AiSessions {
     if (!checked) return false;
     session.state = checked.state;
     session.messages = checked.messages;
+    session.progress = checked.progress;
     return true;
   }
 
@@ -591,9 +608,11 @@ export class AiSessions {
     session.busy = true;
     session.controller = new AbortController();
     const started = Date.now();
+    // 段ごとの中身(抽出、決定、言い方)。失敗しても、そこまでを記録に残す
+    const stages = {};
     let result;
     try {
-      result = await connection.respond({ ...input, signal: session.controller.signal });
+      result = await turn({ connection, ...input, progress: { ...session.progress }, signal: session.controller.signal, trace: stages });
     } catch (error) {
       // 応答を待つ間にリセットや設定の切り替えがあったら、そちらを伝える
       if (this.sessions.get(slot) !== session) throw new AiError(409, 'reset', '応答を待つ間に会話が最初に戻りました');
@@ -605,33 +624,22 @@ export class AiSessions {
     } finally {
       session.busy = false;
       session.controller = null;
+      entry.harness = redactDeep(clipStages(stages));
     }
     // 応答を待つ間にリセットや設定の切り替えがあったら、古い会話に書き足さない
     if (this.sessions.get(slot) !== session) throw new AiError(409, 'reset', '応答を待つ間に会話が最初に戻りました');
-    const reply = typeof result?.reply === 'string' ? result.reply.slice(0, 4000) : '';
-    const applied = {};
-    const changes = [];
-    const rejected = [];
-    const updates = result?.updates !== null && typeof result?.updates === 'object' ? result.updates : {};
-    for (const [key, value] of Object.entries(updates)) {
-      const field = session.definition.fields.find((f) => f.key === key);
-      // 接続が決まりに合わない値を返しても、状態には入れない。入れなかったことは記録に残す
-      const normalized = field ? normalizeValue(field, value) : undefined;
-      if (normalized === undefined) {
-        rejected.push({ key, label: field?.label ?? null, value: shownValue(value), reason: field ? '項目の決まりに合わない値' : 'app/ai.json にない項目' });
-        continue;
-      }
-      applied[key] = normalized;
-      if (session.state[key] !== normalized) {
-        changes.push({ key, label: field.label, from: formatValue(field, session.state[key]), to: formatValue(field, normalized) });
-      }
-    }
-    Object.assign(session.state, applied);
+    const { reply } = result;
+    const changes = session.definition.fields
+      .filter((field) => session.state[field.key] !== result.state[field.key])
+      .map((field) => ({ key: field.key, label: field.label, from: formatValue(field, session.state[field.key]), to: formatValue(field, result.state[field.key]) }));
+    session.state = result.state;
+    session.progress = result.progress;
     // どの接続が応答したかを残す。切り替えた後も、前の応答がどちらのものか分かる
     // 応答の速さは、利用者が待った時間(CLI の起動を含む)で測る
     const assistant = { role: 'assistant', text: reply, via: connection.kind, elapsedMs: Date.now() - started };
-    if (Number.isFinite(result?.meta?.costUsd)) assistant.costUsd = result.meta.costUsd;
+    if (Number.isFinite(result.meta?.costUsd)) assistant.costUsd = result.meta.costUsd;
     session.messages.push({ role: 'user', text: text.trim() }, assistant);
+    const updates = isPlainObject(result.raw?.updates) ? result.raw.updates : {};
     Object.assign(
       entry,
       redactDeep({
@@ -639,12 +647,12 @@ export class AiSessions {
         output: {
           reply,
           updates: clip(JSON.stringify(updates)),
-          format: result?.meta?.format ?? null,
-          costUsd: Number.isFinite(result?.meta?.costUsd) ? result.meta.costUsd : null,
-          durationMs: Number.isFinite(result?.meta?.durationMs) ? result.meta.durationMs : null,
+          format: result.meta?.format ?? null,
+          costUsd: Number.isFinite(result.meta?.costUsd) ? result.meta.costUsd : null,
+          durationMs: Number.isFinite(result.meta?.durationMs) ? result.meta.durationMs : null,
         },
         changes,
-        rejected,
+        rejected: result.extraction.rejected,
       }),
     );
     return this.view(projectId, { conversation });
