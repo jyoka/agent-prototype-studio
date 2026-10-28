@@ -127,6 +127,11 @@ const els = {
   aiWaiting: $('ai-waiting'),
   retryBar: $('retry-bar'),
   aiTrace: $('ai-trace'),
+  checkAi: $('check-ai'),
+  checkAiNote: $('check-ai-note'),
+  checkConsent: $('check-consent'),
+  checkRun: $('check-run'),
+  checkMessage: $('check-message'),
   frameHost: $('frame-host'),
   frameLabel: $('frame-label'),
   previewBroken: $('preview-broken'),
@@ -310,6 +315,7 @@ async function refresh() {
       projects = data.projects;
       render();
       await syncConversation();
+      await syncChecks();
     }
     // 作業中のファイルは、Studio の外でも変わり得るので、毎回確かめる(保存の印と、証拠が古いかの印)
     await loadVersions();
@@ -334,7 +340,7 @@ function render() {
   els.title.textContent = project ? project.title : 'ありません';
   els.reopen.disabled = !project?.previewUrl;
   els.reset.disabled = !project?.previewUrl;
-  els.rebuild.disabled = !project || project.building || project.running || project.versioning;
+  els.rebuild.disabled = !project || project.building || project.running || project.versioning || project.checking;
   renderBuild(project);
   renderMake(project);
   renderPreviewBroken(project);
@@ -367,12 +373,14 @@ function renderList() {
     state.className = 'state';
     const failed = project.lastBuild && !project.lastBuild.ok;
     // AI と話せるかは名前に入っているので、ここには今の状態だけを短く出す
-    const unavailable = !project.running && !project.versioning && !project.building && (failed || !project.previewUrl);
+    const unavailable = !project.running && !project.versioning && !project.building && !project.checking && (failed || !project.previewUrl);
     state.dataset.state = unavailable ? 'error' : 'ok';
     state.textContent = project.running
       ? '作る AI が作業中'
       : project.versioning
         ? '版の保存・復元か書き出しをしています'
+        : project.checking
+        ? '自動で確かめています'
         : project.building
         ? 'ビルド中'
         : unavailable
@@ -388,7 +396,7 @@ function renderList() {
       versions.message = null;
       render();
       // 会話を読んでから、前の証拠が古いかを読む(一覧の次の読み込みを待たない)
-      syncConversation().then(() => loadEvidence());
+      syncConversation().then(() => syncChecks()).then(() => loadEvidence());
       loadVersions();
     });
     li.append(button);
@@ -643,7 +651,7 @@ function renderMake(project) {
   renderExamples();
   els.makeTarget.textContent = project ? `${shortTitle(project)}への依頼` : '';
   const running = Boolean(project?.running || sending?.projectId === project?.id || (project && runningRun(project.id)));
-  const ready = Boolean(project && agent?.ready && !running && !project.building && !project.versioning && !sending);
+  const ready = Boolean(project && agent?.ready && !running && !project.building && !project.versioning && !project.checking && !sending);
   els.requestText.disabled = !ready;
   els.requestText.placeholder = agent && !agent.ready ? '直す AI が使えないので、送れません' : '例: 見出しの色を落ち着いた青にして';
   els.send.disabled = !ready;
@@ -699,8 +707,8 @@ const ERROR_KINDS = { runtime: '実行時のエラー', 'console-error': '画面
 const STALE_TEXT = 'この後に変わりました';
 // 開いている「確かめた中身を見る」と、その中の開く操作(再描画で閉じないよう、実行の ID と場所で覚える)
 const openEvidence = new Set();
-// 証拠が古いか(/api/projects/:id/evidence)。runs は実行の ID ごとの stale
-const evidence = { projectId: null, runs: new Map(), seq: 0, snapshot: '' };
+// 証拠が古いか(/api/projects/:id/evidence)。runs は実行の ID ごと、checks は人の「確かめる」の ID ごとの stale
+const evidence = { projectId: null, runs: new Map(), checks: new Map(), seq: 0, snapshot: '' };
 // スクリーンショット。画像の API はトークンを要るので、fetch で読んで data: の URL にする(CSP の img-src は 'self' と data: だけ)
 // 読めなかった画像は、同じ描画のたびに読み直さない。覚えておく画像の数には上限を付ける
 const MAX_SHOTS = 60;
@@ -908,14 +916,16 @@ function evidenceDev(run) {
   return box;
 }
 
-function evidenceBand(projectId, run) {
+// check が true なら、人の「確かめる」の結果(checks.js。作る run と同じ形の gates を持つ)。
+// again が true なら「もう一度確かめる」を置く(会話のいちばん新しい帯だけ)
+function evidenceBand(projectId, run, { check = false, again = false } = {}) {
   const band = element('div', undefined, 'evidence');
   band.setAttribute('role', 'group');
   band.setAttribute('aria-label', '確かめた結果');
   band.dataset.status = run.status;
-  const stale = evidence.projectId === projectId && evidence.runs.get(run.id) === true;
+  const stale = evidence.projectId === projectId && (check ? evidence.checks : evidence.runs).get(run.id) === true;
   band.dataset.stale = String(stale);
-  band.append(element('p', RUN_STATUS[run.status](run), 'run-status'));
+  band.append(element('p', (check ? CHECK_STATUS : RUN_STATUS)[run.status](run), 'run-status'));
   if (stale) {
     const mark = element('p', undefined, 'evidence-stale');
     mark.append(element('strong', STALE_TEXT), document.createTextNode('。この結果は、今の試作品より前のものです。'));
@@ -935,38 +945,192 @@ function evidenceBand(projectId, run) {
     );
     band.append(list);
   }
-  const fixes = (run.round ?? 1) - 1;
+  const fixes = check ? 0 : (run.round ?? 1) - 1;
   if (fixes > 0) {
     const what = run.status === 'failed' ? '直そうとした回数' : '直した回数';
     band.append(element('p', `${FIX_AI} が${what}: ${fixes} 回(${run.maxFixRounds ?? fixes} 回まで)`, 'evidence-rounds muted'));
   }
-  // P27 の「もう一度確かめる」を置く場所
-  band.append(element('div', undefined, 'evidence-actions'));
+  // 人の「確かめる」(P27)の「もう一度確かめる」
+  const actions = element('div', undefined, 'evidence-actions');
+  if (again) actions.append(...checkAgain());
+  band.append(actions);
   const more = keepOpenAs(element('details', undefined, 'evidence-more'), `${run.id}:more`);
   more.append(element('summary', '確かめた中身を見る'), gateList(run.gates ?? [], '確かめたこと'));
   const steps = scenarioSteps(projectId, run.gates ?? []);
   if (steps.length > 0) more.append(element('p', '決めた手順', 'card-label'), ...steps);
-  const history = fixHistory(run);
+  const history = check ? [] : fixHistory(run);
   if (history.length > 0) more.append(element('p', '見つけた問題と直したこと', 'card-label'), ...history);
-  more.append(evidenceDev(run));
+  more.append(check ? checkDev(run) : evidenceDev(run));
   band.append(more);
   return band;
+}
+
+// 人の「確かめる」(harness.md の 3.1、P27)。その他の引き出しの「試作品を自動で確かめる」と、結果の帯の「もう一度確かめる」から始める。
+// サーバー(src/server/checks.js)が、作るループと同じ観察の入口を、表示中の試作品を見るモードで呼ぶ。
+// 結果は直す欄の会話に、作る run と時刻の順に並べ、同じ形の結果の帯で出す。試す欄の会話は変わらない
+const CHECK_AI = { mock: 'お試しの AI', 'claude-code': '本物の AI' };
+const CHECK_STATUS = {
+  running: () => '試作品を自動で確かめています…',
+  passed: () => '確かめました。問題は見つかりませんでした',
+  failed: (check) => {
+    const gate = failedGate(check);
+    const what = gate ? (RUN_STATUS[`failed:${gate.name}`] ?? (() => `${gateLabel(gate)}で問題が見つかりました`))(gate) : '問題が見つかりました';
+    return `確かめました。${what}`;
+  },
+  unverified: (check) => {
+    const gate = check.gates?.find((g) => g.status === 'unverified');
+    const reason = firstSentence(check.reason ?? gate?.reason);
+    return `自動の確かめができませんでした${reason ? `(${reason})` : ''}`;
+  },
+};
+// byProject はプロジェクトごとの { version, list }。connection は引き出しで選んだ試作品の中の AI(既定はお試し)
+const checks = { byProject: new Map(), connection: 'mock', starting: false, message: null, seq: 0 };
+
+function checksOf(projectId) {
+  return checks.byProject.get(projectId)?.list ?? [];
+}
+
+// 確かめを始められるか。作る run、ビルド、版の操作、確かめの間は押せない(サーバーも 409 で断る)
+function canCheck(project) {
+  if (!project) return false;
+  const busy = project.running || project.building || project.versioning || project.checking || runningRun(project.id) || sending?.projectId === project.id;
+  return !busy && !checks.starting && !versions.busy && !handoff.busy && !consent.agreeing;
+}
+
+// 結果の帯の「もう一度確かめる」と、そのときの試作品の中の AI
+function checkAgain() {
+  const project = selectedProject();
+  const button = element('button', 'もう一度確かめる');
+  button.type = 'button';
+  button.disabled = !project || !canCheck(project);
+  button.addEventListener('click', () => startCheck());
+  if (!(ai.projectId === selectedId && ai.session)) return [button];
+  return [button, element('span', `試作品の中の AI: ${CHECK_AI[checkConnection()]}`, 'muted')];
+}
+
+// 開発者向け: report の場所、観察の ID、確かめた app/ の指紋、接続
+function checkDev(check) {
+  const box = keepOpenAs(element('details', undefined, 'evidence-dev'), `${check.id}:dev`);
+  box.append(element('summary', '開発者向け: 記録の場所'));
+  const files = element('ul');
+  files.setAttribute('aria-label', '記録の場所');
+  if (check.report) files.append(element('li', check.report));
+  box.append(files);
+  const gates = element('ul');
+  gates.setAttribute('aria-label', '関門');
+  for (const gate of check.gates ?? []) gates.append(element('li', `${gate.id} ${gate.label}(${gate.name}): ${gate.status}`));
+  box.append(gates);
+  box.append(element('p', `試作品の中の AI の接続: ${check.connection}。AI のやり取り: ${check.aiEntries ?? 0} 件(report の ai)`, 'muted'));
+  if (check.appDigest) box.append(element('p', `確かめた app/ の指紋: ${check.appDigest.slice(0, 12)}`, 'muted'));
+  return box;
+}
+
+function checkItem(projectId, check, again) {
+  const li = element('li', undefined, 'run check');
+  li.dataset.status = check.status;
+  const head = element('div', undefined, 'bubble user');
+  const via = check.ai ? `(試作品の中の AI: ${CHECK_AI[check.connection] ?? check.connection})` : '';
+  head.append(element('span', 'あなた', 'who'), element('p', `試作品を自動で確かめる${via}`));
+  li.append(head);
+  if (check.status === 'running') li.append(element('p', CHECK_STATUS.running(), 'run-status'));
+  else li.append(evidenceBand(projectId, check, { check: true, again }));
+  return li;
+}
+
+// 引き出しで選んだ試作品の中の AI。AI のない試作品と、本物を選べないときはお試し
+function checkConnection() {
+  const real = ai.projectId === selectedId ? ai.choices?.options.find((o) => o.kind === 'claude-code') : null;
+  return checks.connection === 'claude-code' && real?.available !== false && ai.session ? 'claude-code' : 'mock';
+}
+
+// 引き出しの「試作品を自動で確かめる」
+function renderCheck(project) {
+  const real = ai.projectId === project?.id ? ai.choices?.options.find((o) => o.kind === 'claude-code') : null;
+  // 試作品の中の AI を選べるのは、AI と話せる試作品だけ
+  els.checkAi.hidden = !(project && ai.projectId === project.id && ai.session);
+  const radios = els.checkAi.querySelectorAll('input[name="check-ai"]');
+  for (const radio of radios) {
+    radio.checked = radio.value === checkConnection();
+    if (radio.value === 'claude-code') radio.disabled = !real || real.available === false;
+  }
+  els.checkAiNote.hidden = !(real && real.available === false);
+  els.checkAiNote.textContent = real && real.available === false ? `本物の AI は選べません: ${real.reason}` : '';
+  const card = consent.card?.use === 'check' && consent.card.projectId === project?.id ? consent.card : null;
+  els.checkConsent.hidden = !card;
+  els.checkConsent.replaceChildren(...(card ? [consentCard(card.view, { card })] : []));
+  els.checkRun.disabled = !project || !canCheck(project);
+  els.checkRun.textContent = project?.checking || checks.starting ? '確かめています…' : '試作品を自動で確かめる';
+  const message = checks.message?.projectId === project?.id ? checks.message.text : '';
+  els.checkMessage.hidden = !message;
+  els.checkMessage.textContent = message;
+}
+
+// 一覧の版の番号(checksVersion)が変わったら、確かめの一覧を読み直す
+async function syncChecks() {
+  const project = selectedProject();
+  if (!project) return;
+  const cached = checks.byProject.get(project.id);
+  if (cached && cached.version === project.checksVersion) return;
+  const seq = ++checks.seq;
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(project.id)}/checks`);
+    if (seq !== checks.seq) return;
+    checks.byProject.set(project.id, { version: project.checksVersion, list: data.checks });
+    if (project.id === selectedId) {
+      renderMake(selectedProject());
+      await loadEvidence();
+    }
+  } catch (error) {
+    handleError(error);
+  }
+}
+
+// 確かめを始める。本物の AI を選んでいて同意の前なら、引き出しに同意のカードを出し、同意したら始める
+async function startCheck() {
+  const project = selectedProject();
+  if (!project || !canCheck(project)) return;
+  const connection = checkConnection();
+  checks.starting = true;
+  checks.message = null;
+  if (consent.card?.use === 'check') consent.card = null;
+  renderMake(project);
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(project.id)}/checks`, { method: 'POST', json: { connection } });
+    const cached = checks.byProject.get(project.id) ?? { version: -1, list: [] };
+    checks.byProject.set(project.id, { version: -1, list: [...cached.list.filter((c) => c.id !== data.check.id), data.check] });
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'consent-required') {
+      setMorePanel(true);
+      await openConsent('check', { projectId: project.id });
+    } else if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) {
+      checks.message = { projectId: project.id, text: `確かめられませんでした: ${error.message}` };
+    } else {
+      handleError(error);
+    }
+  } finally {
+    checks.starting = false;
+    lastSnapshot = '';
+    await refresh();
+    render();
+  }
 }
 
 // 証拠が古いかを読む。古いかは、今の app/ の指紋と、run が確かめた指紋で決まる(次の依頼、版の復元、手で変えたとき)
 async function loadEvidence() {
   const project = selectedProject();
   const runs = project ? conversations.get(project.id)?.runs ?? [] : [];
-  if (!project || !runs.some((run) => run.appDigest && run.status !== 'running')) return;
+  const items = project ? [...runs, ...checksOf(project.id)] : [];
+  if (!project || !items.some((item) => item.appDigest && item.status !== 'running')) return;
   const seq = ++evidence.seq;
   try {
     const data = await api(`/api/projects/${encodeURIComponent(project.id)}/evidence`);
     if (seq !== evidence.seq || project.id !== selectedId) return;
-    const snapshot = JSON.stringify(data.runs);
+    const snapshot = JSON.stringify([data.runs, data.checks]);
     if (evidence.projectId === project.id && snapshot === evidence.snapshot) return;
     evidence.projectId = project.id;
     evidence.snapshot = snapshot;
     evidence.runs = new Map(data.runs.map((run) => [run.id, run.stale]));
+    evidence.checks = new Map((data.checks ?? []).map((check) => [check.id, check.stale]));
     renderConversation(selectedProject());
   } catch (error) {
     if (seq !== evidence.seq) return;
@@ -974,48 +1138,13 @@ async function loadEvidence() {
   }
 }
 
+// 作る run と人の「確かめる」を、始めた時刻の順に並べる。「もう一度確かめる」は、いちばん新しい結果の帯にだけ置く
 function renderConversation(project) {
   const runs = project ? conversations.get(project.id)?.runs ?? [] : [];
-  const nodes = runs.map((run) => {
-    const li = document.createElement('li');
-    li.className = 'run';
-    li.dataset.status = run.status;
-    const request = element('div', undefined, 'bubble user');
-    request.append(element('span', 'あなた', 'who'), element('p', run.request));
-    li.append(request);
-    const steps = element('ul', undefined, 'steps');
-    let lastSummary = null;
-    for (const item of run.items) {
-      // 操作は短い文にする(ux-redesign.md 7-3)。続けて同じ文になるときは 1 つにまとめる
-      if (item.kind === 'tool') {
-        const summary = item.summary ?? '作業を進めました';
-        if (summary === lastSummary) continue;
-        lastSummary = summary;
-        const step = element('li', undefined, 'step-short');
-        step.dataset.kind = item.kind;
-        step.append(element('span', summary, 'text'));
-        steps.append(step);
-        continue;
-      }
-      lastSummary = null;
-      const step = document.createElement('li');
-      step.dataset.kind = item.kind;
-      if (item.kind === 'assistant') {
-        step.className = 'bubble agent';
-        step.append(element('span', FIX_AI, 'who'), element('p', item.text));
-      } else {
-        step.append(element('span', ITEM_LABELS[item.kind] ?? item.kind, 'who'), element('span', item.text, 'text'));
-      }
-      steps.append(step);
-    }
-    li.append(steps);
-    const updated = updatedText(run);
-    if (updated) li.append(element('p', updated, 'run-updated'));
-    if (hasEvidence(run)) li.append(evidenceBand(project.id, run));
-    else li.append(element('p', (RUN_STATUS[run.status] ?? (() => run.status))(run), 'run-status'));
-    li.append(runDevDetails(run));
-    return li;
-  });
+  const entries = [...runs.map((run) => ({ run })), ...(project ? checksOf(project.id) : []).map((check) => ({ check }))];
+  entries.sort((a, b) => String((a.run ?? a.check).startedAt ?? '').localeCompare(String((b.run ?? b.check).startedAt ?? '')));
+  const newest = entries.findLast((entry) => (entry.check ? entry.check.status !== 'running' : hasEvidence(entry.run)));
+  const nodes = entries.map((entry) => (entry.check ? checkItem(project.id, entry.check, entry === newest) : runItem(project.id, entry.run, entry === newest)));
   if (makeError) nodes.push(element('li', makeError, 'make-error'));
   if (consent.declined && !consent.card) nodes.push(declinedBlock());
   if (consent.card?.use === 'fix' && consent.card.projectId === project?.id) nodes.push(consentCard(consent.card.view, { tag: 'li', card: consent.card }));
@@ -1023,6 +1152,48 @@ function renderConversation(project) {
   const atBottom = els.conversation.scrollHeight - els.conversation.scrollTop - els.conversation.clientHeight < 40;
   els.conversation.replaceChildren(...nodes);
   if (atBottom || sending) els.conversation.scrollTop = els.conversation.scrollHeight;
+  renderCheck(project);
+}
+
+function runItem(projectId, run, again) {
+  const li = document.createElement('li');
+  li.className = 'run';
+  li.dataset.status = run.status;
+  const request = element('div', undefined, 'bubble user');
+  request.append(element('span', 'あなた', 'who'), element('p', run.request));
+  li.append(request);
+  const steps = element('ul', undefined, 'steps');
+  let lastSummary = null;
+  for (const item of run.items) {
+    // 操作は短い文にする(ux-redesign.md 7-3)。続けて同じ文になるときは 1 つにまとめる
+    if (item.kind === 'tool') {
+      const summary = item.summary ?? '作業を進めました';
+      if (summary === lastSummary) continue;
+      lastSummary = summary;
+      const step = element('li', undefined, 'step-short');
+      step.dataset.kind = item.kind;
+      step.append(element('span', summary, 'text'));
+      steps.append(step);
+      continue;
+    }
+    lastSummary = null;
+    const step = document.createElement('li');
+    step.dataset.kind = item.kind;
+    if (item.kind === 'assistant') {
+      step.className = 'bubble agent';
+      step.append(element('span', FIX_AI, 'who'), element('p', item.text));
+    } else {
+      step.append(element('span', ITEM_LABELS[item.kind] ?? item.kind, 'who'), element('span', item.text, 'text'));
+    }
+    steps.append(step);
+  }
+  li.append(steps);
+  const updated = updatedText(run);
+  if (updated) li.append(element('p', updated, 'run-updated'));
+  if (hasEvidence(run)) li.append(evidenceBand(projectId, run, { again }));
+  else li.append(element('p', (RUN_STATUS[run.status] ?? (() => run.status))(run), 'run-status'));
+  li.append(runDevDetails(run));
+  return li;
 }
 
 function upsertRun(projectId, run) {
@@ -1211,7 +1382,8 @@ function setConsentState(state) {
   }
 }
 
-// 同意のカードを出す。同意の前に断られた直す欄の送信(send)と、試作品の中の AI を本物にするとき(kind)に呼ぶ。
+// 同意のカードを出す。同意の前に断られた直す欄の送信(send)と、試作品の中の AI を本物にするとき(kind)と、
+// 本物の AI で確かめるとき(use が check。カードは引き出しの「試作品を自動で確かめる」に出す)に呼ぶ。
 // カードは 1 枚だけにする。前のカードは閉じる(直す欄の依頼の文は欄に残る)
 async function openConsent(use, { projectId, kind = null, send = false }) {
   if (!projectId) return;
@@ -1228,6 +1400,7 @@ async function openConsent(use, { projectId, kind = null, send = false }) {
   // 別のタブで同意していたら、カードは出さない。直す欄の依頼は欄に残っているので、もう一度送れば送られる
   if (view.consent.agreed) {
     if (use === 'product') await selectConnection(kind);
+    else if (use === 'check') await startCheck();
     return;
   }
   openConsentDetails.delete('card');
@@ -1270,15 +1443,18 @@ async function agreeConsent() {
   }
   if (!agreed || !still || card.projectId !== selectedId) return;
   if (card.use === 'product') await selectConnection(card.kind);
+  else if (card.use === 'check') await startCheck();
   else if (card.send) await submitRequest();
 }
 
-// やめる。直す欄では、同意が要ることと「確かめる」を出す。試作品の中の AI は、お試しのまま
+// やめる。直す欄では、同意が要ることと「確かめる」を出す。試作品の中の AI は、お試しのまま。
+// 本物の AI で確かめるカードでは、確かめずに、同意が要ることを引き出しに出す
 function declineConsent() {
   const card = consent.card;
   if (consent.agreeing) return;
   consent.card = null;
   if (card?.use === 'fix') consent.declined = true;
+  if (card?.use === 'check') checks.message = { projectId: card.projectId, text: '本物の AI で確かめるには、同意が要ります。お試しの AI なら、同意なしで確かめられます。' };
   renderMake(selectedProject());
   renderAi();
 }
@@ -1507,6 +1683,7 @@ function renderAiWaiting() {
 // 接続の選び方は試す欄の上の「AI: … ▾」に、状態は開発者向けの詳細に出す(試作品の中と二重に出さない)
 function renderAi() {
   const { session } = ai;
+  renderCheck(selectedProject());
   renderRetry();
   renderExamples();
   renderAiWaiting();
@@ -1671,7 +1848,7 @@ function versionItem(project, version, working, locked) {
 
 function renderVersions(project) {
   const data = project && versions.projectId === project.id ? versions.data : null;
-  const locked = !project || project.running || project.building || project.versioning || versions.busy || handoff.busy;
+  const locked = !project || project.running || project.building || project.versioning || project.checking || versions.busy || handoff.busy;
   els.versionName.disabled = locked;
   els.saveVersion.disabled = locked;
   lockHandoff(project);
@@ -1750,7 +1927,8 @@ async function saveVersion() {
 
 // 版の保存や復元の間も押せないようにする。renderVersions からも呼ぶ
 function lockHandoff(project) {
-  const locked = !project || handoff.projectId !== project.id || project.running || project.building || project.versioning || versions.busy || handoff.busy;
+  const locked =
+    !project || handoff.projectId !== project.id || project.running || project.building || project.versioning || project.checking || versions.busy || handoff.busy;
   for (const field of Object.values(els.handoffNotes)) field.disabled = locked;
   els.handoffExport.disabled = locked;
   els.handoffExport.textContent = handoff.busy ? '書き出しています…' : '引き継ぎ用に書き出す';
@@ -2571,6 +2749,17 @@ els.rebuild.addEventListener('click', async () => {
   await refresh();
   // つながらないときも、ボタンと開発者向けの詳細を元に戻す
   render();
+});
+
+els.checkRun.addEventListener('click', () => startCheck());
+
+els.checkAi.addEventListener('change', (event) => {
+  if (event.target.name !== 'check-ai') return;
+  checks.connection = event.target.value;
+  checks.message = null;
+  // 前に出したカードは閉じる(本物を選び直して押したときに、もう一度出す)
+  if (consent.card?.use === 'check') consent.card = null;
+  renderMake(selectedProject());
 });
 
 els.shotDialogClose.addEventListener('click', () => els.shotDialog.close());

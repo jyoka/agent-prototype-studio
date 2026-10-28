@@ -210,7 +210,7 @@ export async function openAiMenu(page) {
 // 同意は直す AI と共通なので、同意の後はカードを出さずに切り替わる(ux-redesign.md 6 節)
 export async function switchToRealAi(page) {
   await openAiMenu(page);
-  await page.getByRole('radio', { name: 'Claude Code' }).click();
+  await page.getByRole('radio', { name: 'Claude Code', exact: true }).click();
   const card = page.getByRole('group', { name: '本物の AI を使う前に' });
   const badge = page.locator('#ai-badge');
   await expect(card.or(badge.filter({ hasText: 'AI: Claude Code' }))).toBeVisible();

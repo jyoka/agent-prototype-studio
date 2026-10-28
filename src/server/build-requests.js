@@ -80,8 +80,8 @@ function failureSignature(gate) {
   return JSON.stringify([gate.name, errors.length > 0 ? errors : [gate.summary ?? '']]);
 }
 
-// 関門 G5 の結果を、観察器の report から決める。report がなければ未確認
-function launchGate(report, reason) {
+// 関門 G5 の結果を、観察器の report から決める。report がなければ未確認。人の「確かめる」(checks.js)も使う
+export function launchGate(report, reason) {
   if (!report) return { status: 'unverified', reason };
   const errors = (report.errors ?? []).slice(0, MAX_GATE_ERRORS).map((e) => ({ kind: e.kind, message: clip(e.message) }));
   const base = { verdict: report.verdict, loadMs: report.load?.durationMs ?? null, errorCount: report.errors?.length ?? 0, errors };
@@ -96,9 +96,9 @@ function launchGate(report, reason) {
   return { ...base, status: 'passed' };
 }
 
-// 関門 G6 の結果を、観察器の report から決める。report がなければ未確認。
+// 関門 G6 の結果を、観察器の report から決める。report がなければ未確認。人の「確かめる」(checks.js)も使う。
 // 失敗したシナリオごとに、名前、失敗した手順、期待と実際、そのときの画面の文字を残す(直す依頼に入れる)
-function scenarioGate(report, reason) {
+export function scenarioGate(report, reason) {
   if (!report) return { status: 'unverified', reason };
   const scenarios = report.scenarios ?? [];
   const errors = (report.errors ?? []).slice(0, MAX_GATE_ERRORS).map((e) => ({ kind: e.kind, message: clip(e.message) }));

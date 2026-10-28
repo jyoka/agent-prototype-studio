@@ -8,6 +8,7 @@ const BUSY = {
   running: 'このプロジェクトでは今、作る AI が作業中です。終わるか中断するまで待ってください',
   building: 'このプロジェクトは今ビルド中です。終わるまで待ってください',
   versioning: 'このプロジェクトは今、版の保存か復元、または引き継ぎの書き出しをしているところです。終わるまで待ってください',
+  checking: 'このプロジェクトは今、試作品を自動で確かめているところです。終わるまで待ってください',
 };
 export class NotFoundError extends Error {}
 
@@ -21,7 +22,7 @@ export class ProjectStore {
 
   entry(id) {
     if (!this.state.has(id)) {
-      this.state.set(id, { building: false, running: false, versioning: false, lastBuild: null, previewBuildId: null, ai: null, manifest: null, dataNumbers: [] });
+      this.state.set(id, { building: false, running: false, versioning: false, checking: false, lastBuild: null, previewBuildId: null, ai: null, manifest: null, dataNumbers: [] });
     }
     return this.state.get(id);
   }
@@ -39,6 +40,7 @@ export class ProjectStore {
         building: entry.building,
         running: entry.running,
         versioning: entry.versioning,
+        checking: entry.checking,
         lastBuild: entry.lastBuild,
         previewBuildId: entry.previewBuildId,
       };
@@ -89,12 +91,18 @@ export class ProjectStore {
     return paths;
   }
 
-  // 作る AI の実行を始める印。ビルド中や実行中なら断る(1 プロジェクト 1 実行)
-  claimRun(id) {
-    const entry = this.entry(id);
+  // 作る AI の実行、ビルド、版の操作、人の「確かめる」のどれかが動いていたら断る(1 プロジェクト 1 実行)
+  checkIdle(entry) {
     if (entry.running) throw new BusyError(BUSY.running);
     if (entry.building) throw new BusyError(BUSY.building);
     if (entry.versioning) throw new BusyError(BUSY.versioning);
+    if (entry.checking) throw new BusyError(BUSY.checking);
+  }
+
+  // 作る AI の実行を始める印。ビルド中や実行中なら断る(1 プロジェクト 1 実行)
+  claimRun(id) {
+    const entry = this.entry(id);
+    this.checkIdle(entry);
     entry.running = true;
   }
 
@@ -105,9 +113,7 @@ export class ProjectStore {
   // 版の保存と復元、引き継ぎの書き出しを始める印。作る AI やビルドと同時には app/ を読み書きしない
   claimVersions(id) {
     const entry = this.entry(id);
-    if (entry.running) throw new BusyError(BUSY.running);
-    if (entry.building) throw new BusyError(BUSY.building);
-    if (entry.versioning) throw new BusyError(BUSY.versioning);
+    this.checkIdle(entry);
     entry.versioning = true;
   }
 
@@ -119,6 +125,17 @@ export class ProjectStore {
     return Boolean(this.state.get(id)?.versioning);
   }
 
+  // 人の「確かめる」(checks.js)を始める印。表示中のビルドを観察する間は、作る AI、ビルド、版の操作を始めない
+  claimCheck(id) {
+    const entry = this.entry(id);
+    this.checkIdle(entry);
+    entry.checking = true;
+  }
+
+  releaseCheck(id) {
+    this.entry(id).checking = false;
+  }
+
   // byRun: 作る AI の実行の後に、その実行の中から呼ぶとき。byVersions: 版の復元の中から呼ぶとき
   async build(id, { byRun = false, byVersions = false } = {}) {
     const paths = await this.requireProject(id);
@@ -127,6 +144,8 @@ export class ProjectStore {
     if (entry.building) throw new BusyError(BUSY.building);
     if (entry.running && !byRun) throw new BusyError(BUSY.running);
     if (entry.versioning && !byVersions) throw new BusyError(BUSY.versioning);
+    // 確かめている間は、表示中のビルドを変えない
+    if (entry.checking) throw new BusyError(BUSY.checking);
     entry.building = true;
     try {
       await fs.mkdir(paths.builds, { recursive: true });
