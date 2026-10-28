@@ -106,6 +106,7 @@ StripeのHarbor、Drydock、Minions、Kaiは単なる参考事例ではなく、
 | 2026-10-27 | 3 製品の実機検証のカード(jyoka/tasks#271)は取りやめた。実機で確かめることは「自然言語で試作品を変更する」と「実モデルでプロトタイプ内AIと会話する」のカードに移した | jyoka/tasks#271 |
 | 2026-10-27 | ローカル実行と隔離方式は ADR 0001 で仮に決めた | [docs/adr/0001-local-runtime-and-isolation.md](adr/0001-local-runtime-and-isolation.md) |
 | 2026-10-28 | 実モデルは、利用者の個人アカウント(Claude Code にログインしている本人のアカウント)で試してよい。会社の Commercial Terms は、正式に社内で使う段階になったら見直す。今はまず試す | jyoka/tasks#269 のコメント |
+| 2026-10-28 | harness の観察器のブラウザは Playwright の Chromium だけにする。作る AI が観察器を自分で使う形を今回入れる。直すラウンドは 2 回まで(作る AI の起動は 1 つの依頼で 3 回まで) | [docs/design/harness.md の「決めたこと」](design/harness.md#決めたこと)、jyoka/tasks#297 |
 
 ## 子タスク
 
