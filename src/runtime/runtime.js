@@ -84,7 +84,7 @@
       var id = nextId++;
       var timer = setTimeout(function () {
         delete pending[id];
-        var error = new Error('Studio から返事がありません。Studio の画面で「開き直す」を押してください');
+        var error = new Error('Studio から返事がありません。Studio の画面で「その他」の「画面を読み込み直す」を押してください');
         error.code = 'timeout';
         reject(error);
       }, AI_TIMEOUT_MS);

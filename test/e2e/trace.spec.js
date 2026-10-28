@@ -1,9 +1,10 @@
 import path from 'node:path';
 import { loadConfig } from '../../src/server/config.js';
 import { startStudio } from '../../src/server/index.js';
-import { ROOT, SAMPLES, chooseProject, chooseSample, expect, launchStudio, openAiMenu, test, writeProject } from './studio.js';
+import { ROOT, SAMPLES, chooseProject, chooseSample, expect, launchStudio, openAiMenu, openDevDetails, test, writeProject } from './studio.js';
 
 // 実モデルは呼ばない。Claude Code は偽の CLI(test/fixtures/fake-claude.js)に差し替える
+// AI の実行の記録は、その他 → 開発者向けの詳細にある。引き出しは右に重なるが、左の試作品は開いたまま使える
 const FAKE = path.join(ROOT, 'test', 'fixtures', 'fake-claude.js');
 
 function fakeEnv(home) {
@@ -22,6 +23,7 @@ function fakeEnv(home) {
 async function openJobConsult(page, studio) {
   await page.goto(studio.url);
   await chooseSample(page, SAMPLES.jobConsult);
+  await openDevDetails(page);
   const app = page.frameLocator('iframe[title="試作品"]');
   const message = app.getByLabel('メッセージ');
   const type = async (text) => {
@@ -180,7 +182,8 @@ test('Claude Code(偽)の実行の記録: 渡した指示と本文、受け取�
     const running = entries.first();
     await expect(running).toContainText('応答を待っています…');
     await expect(running).toContainText('発言: [遅い] よく考えて');
-    await page.locator('#ai-status').getByRole('button', { name: '応答を止める' }).click();
+    // 「応答を止める」は、開発者向けの詳細ではなく、試す欄の上に出る
+    await page.locator('#ai-waiting').getByRole('button', { name: '応答を止める' }).click();
     await expect(alert).toHaveText('応答を止めました');
     await expect(running).toContainText('止めました');
     await expect(running).toContainText('次にすること: Studio の画面で止めました。試作品の欄に書いた文は残っているので、もう一度送れます。');
@@ -219,6 +222,7 @@ test('試作品のコードが決まりに合わない要求を送ったら、�
   try {
     await page.goto(studio.url);
     await chooseProject(page, /要求を誤る試作品/);
+    await openDevDetails(page);
     const app = page.frameLocator('iframe[title="試作品"]');
     const entries = page.locator('#ai-trace').getByRole('list', { name: 'AI の実行の記録' }).locator(':scope > li');
 

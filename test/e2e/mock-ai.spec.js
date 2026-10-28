@@ -1,4 +1,4 @@
-import { SAMPLES, chooseProject, chooseSample, expect, launchStudio, test, writeProject } from './studio.js';
+import { SAMPLES, chooseProject, chooseSample, expect, launchStudio, openDevDetails, test, writeProject } from './studio.js';
 
 const GREETING =
   'こんにちは。しおかぜ求人相談の案内役です(架空のサービスです)。どんなお仕事を探していますか? 職種、雇用区分、勤務地、時給の希望を、話しやすいところから教えてください。';
@@ -13,7 +13,9 @@ test('モックの AI と話し、理解された希望条件を直すと、次�
     const details = page.locator('#ai-status');
     const studioState = page.getByRole('definition');
 
-    // 架空のデータとモックであることを、Studio と試作品の両方で示す
+    // 架空のデータとモックであることを、Studio と試作品の両方で示す。
+    // Studio の側の接続と AI が理解した状態は、その他 → 開発者向けの詳細にある(引き出しは左の試作品に重ならない)
+    await openDevDetails(page);
     await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
     await expect(details).toContainText('接続: モック');
     await expect(details).toContainText('実際の AI モデルは呼びません');
@@ -71,9 +73,9 @@ test('モックの AI と話し、理解された希望条件を直すと、次�
     await expect(log.last()).toHaveText('あなたの修正: 時給の下限を「1,200円」に直しました。');
     await expect(jobs).toContainText('合う求人がありません');
 
-    // 開き直しても、会話と条件はサーバーに残る
+    // 画面を読み込み直しても(開き直す)、会話と条件はサーバーに残る
     await expect(log).toHaveCount(9);
-    await page.getByRole('button', { name: '開き直す' }).click();
+    await page.getByRole('button', { name: '画面を読み込み直す' }).click();
     await expect(log).toHaveCount(9);
     await expect(conditions).toHaveText(['カフェのホール', 'アルバイト・パート', 'もみじ台', '1,200円以上']);
 
@@ -178,6 +180,7 @@ test('別の題材でも同じ仕組みで動き、AI のない試作品と連�
     const app = page.frameLocator('iframe[title="試作品"]');
 
     await chooseProject(page, /架空の旅の相談/);
+    await openDevDetails(page);
     await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
     await expect(app.locator('output')).toHaveText('旅の相談です。');
     await app.getByLabel('発言').fill('湖に行きたい');

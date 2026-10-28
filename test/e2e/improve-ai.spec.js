@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { SAMPLES, chooseSample, expect, launchStudio, test } from './studio.js';
+import { SAMPLES, chooseSample, closeMore, expect, launchStudio, openDevDetails, test } from './studio.js';
 
 // 自然言語でプロダクト内 AI の振る舞いを変え、前の発言を新しい設定で試し直す(#279)。
 // 作る AI は偽接続(src/agent/fake-claude.js)、プロダクト内 AI はモック。モデルも外部の API も呼ばない。
@@ -68,13 +68,15 @@ test('作る欄の依頼でプロダクト内 AI の設定が変わり、前の�
     await expect(log.nth(2)).toContainText(ASK_BY_EXAMPLE);
     await expect(log.nth(2).locator('.via')).toHaveText('お試しの AI');
     await expect(log.nth(4)).toContainText(AFTER_JOB);
+    // 前と今の応答の比べは、その他 → 開発者向けの詳細の「プロダクト内 AI」にある
+    await openDevDetails(page);
     await expect(comparison).toHaveCount(2);
     await expect(comparison.nth(0)).toContainText('あなた: よろしくお願いします');
     await expect(comparison.nth(0)).toContainText(`前(モック): ${NOT_UNDERSTOOD}`);
     await expect(comparison.nth(0)).toContainText(`今(モック): ${ASK_BY_EXAMPLE}`);
     await expect(comparison.nth(0)).toContainText('応答が変わりました');
     await expect(comparison.nth(1)).toContainText('同じ応答です');
-    await expect(bar).toContainText('前の会話(発言 2 件)を、今の設定で送り直しました。');
+    await expect(bar).toContainText('前の会話(発言 2 件)を、今の設定で送り直しました。前と今の応答は、「その他」の「開発者向けの詳細」の「試し直しの結果」で比べられます。');
     await expect(page.locator('#events')).toContainText('前の会話の発言 2 件を、今の設定で送り直しました。');
 
     // 作る AI とプロダクト内 AI を混同しない。試し直しで作る AI は動かず、作る会話に試作品の会話は入らない
@@ -84,7 +86,8 @@ test('作る欄の依頼でプロダクト内 AI の設定が変わり、前の�
     await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
     expect(studio.output().match(/作る AI に依頼しました/g)).toHaveLength(1);
 
-    // 5. もう一度変える。前の設定(1 回目の変更の後)の応答と比べる
+    // 5. もう一度変える。前の設定(1 回目の変更の後)の応答と比べる。引き出しは直す欄に重なるので閉じる
+    await closeMore(page);
     await sendRequest(page, '案内役が「時給の下限」を先に聞くようにして');
     run = makeRuns(page).last();
     await expect(run.locator('.run-status')).toContainText('終わりました');
@@ -95,6 +98,7 @@ test('作る欄の依頼でプロダクト内 AI の設定が変わり、前の�
     await bar.getByRole('button', { name: '前の発言で試し直す' }).click();
     await expect(log).toHaveCount(5);
     await expect(log.nth(4)).toContainText(AFTER_JOB_WAGE_FIRST);
+    await openDevDetails(page);
     await expect(comparison.nth(1)).toContainText(`前(モック): ${AFTER_JOB}`);
     await expect(comparison.nth(1)).toContainText(`今(モック): ${AFTER_JOB_WAGE_FIRST}`);
 

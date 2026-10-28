@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { SAMPLES, chooseProject, chooseSample, expect, launchStudio, test, writeProject } from './studio.js';
+import { SAMPLES, chooseProject, chooseSample, expect, launchStudio, openDevDetails, test, writeProject } from './studio.js';
 
 test('URL の鍵がない、または合わないときは、どうすればよいかを出す', async ({ page, home }) => {
   const studio = await launchStudio(home);
@@ -42,10 +42,12 @@ test('ビルドに失敗した試作品は、場所と直し方を出し、直�
     const broken = await chooseProject(page, /壊れた試作品/);
     await expect(broken).toContainText('表示できません');
 
+    // ビルドの結果は、その他 → 開発者向けの詳細にある
+    await openDevDetails(page);
     const status = page.locator('#build-status');
     await expect(status).toContainText('ビルドに失敗しました');
     await expect(status.getByRole('list', { name: 'ビルドの問題' })).toContainText('app/main.jsx(1 行');
-    await expect(status).toContainText('直し方: app/ の中のファイルを直してから「作り直す」を押してください。');
+    await expect(status).toContainText('直し方: app/ の中のファイルを直してから「ファイルから作り直す」を押してください。');
     await expect(status).toContainText(appDir);
     await expect(page.locator('#frame-host')).toContainText('表示できる版がありません');
 
@@ -58,7 +60,7 @@ test('ビルドに失敗した試作品は、場所と直し方を出し、直�
       path.join(appDir, 'main.jsx'),
       'const items = [1, 2];\ndocument.getElementById("root").textContent = "直りました " + items.join(",");\n',
     );
-    await page.getByRole('button', { name: '作り直す' }).click();
+    await page.getByRole('button', { name: 'ファイルから作り直す' }).click();
     await expect(status).toContainText('ビルドに成功しました');
     await expect(page.frameLocator('iframe[title="試作品"]').getByText('直りました 1,2')).toBeVisible();
   } finally {
@@ -66,7 +68,7 @@ test('ビルドに失敗した試作品は、場所と直し方を出し、直�
   }
 });
 
-test('試作品の実行時エラーを、中身つきで詳細の欄に出す', async ({ page, home }) => {
+test('試作品の実行時エラーを、中身つきで開発者向けの詳細に出す', async ({ page, home }) => {
   await writeProject(
     home,
     'runtime-error',
@@ -86,6 +88,7 @@ test('試作品の実行時エラーを、中身つきで詳細の欄に出す',
   try {
     await page.goto(studio.url);
     await chooseProject(page, /エラーを出す試作品/);
+    await openDevDetails(page);
     const events = page.locator('#events');
     // port を渡す前に起きた知らせも届く
     await expect(events).toContainText('console.error: 起動したときの知らせ');
