@@ -6,6 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { BuildRequests } from '../../src/server/build-requests.js';
 import { describeBilling } from '../../src/server/claude-args.js';
+import { readFixPrompt } from '../../src/server/fix-prompt.js';
 import { startStudio } from '../../src/server/index.js';
 import { ensureSampleProjects } from '../../src/server/projects.js';
 import { STUDIO_ROOT } from '../../src/server/config.js';
@@ -43,14 +44,17 @@ async function withStudio(t, env = {}) {
 
 const RUNS = '/api/projects/sample-library/build-requests';
 
-// app/ を変えた run は、関門 G5(観察器)まで回る。Playwright の Chromium がない環境では未確認になる(通ったとは扱わない)
+// app/ を変えた run は、関門 G5、G6(観察器)まで回る。Playwright の Chromium がない環境では未確認になる(通ったとは扱わない)
 function assertGatesPassed(run) {
   const launch = run.gates.find((gate) => gate.id === 'G5');
+  const scenarios = run.gates.find((gate) => gate.id === 'G6');
   if (run.status === 'unverified') {
     assert.match(launch.reason, /Chromium/, JSON.stringify(launch));
+    assert.equal(scenarios.status, 'unverified');
   } else {
     assert.equal(run.status, 'passed', JSON.stringify(run.gates));
     assert.equal(launch.status, 'passed');
+    assert.equal(scenarios.status, 'passed');
   }
   assert.deepEqual(run.gates.slice(0, 4).map((gate) => gate.status), ['passed', 'passed', 'passed', 'passed']);
 }
@@ -90,7 +94,8 @@ test('依頼を流しながら返し、変わったファイルをビルドし�
   assert.notEqual(studio.store.previewBuildId('sample-library'), before);
   // 通った節の列と関門の結果は .studio/runs/<run-id>/run.json に残る
   const record = JSON.parse(await fs.readFile(path.join(studio.store.home, 'projects', 'sample-library', last.evidence.run), 'utf8'));
-  assert.deepEqual(record.nodes.map((node) => node.name), ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', 'launch', 'evidence']);
+  const observed = last.status === 'unverified' ? ['launch'] : ['launch', 'scenarios'];
+  assert.deepEqual(record.nodes.map((node) => node.name), ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', ...observed, 'evidence']);
   assert.deepEqual(record.gates, last.gates);
 
   const list = JSON.parse((await request(sp, { pathname: RUNS, headers })).body);
@@ -193,6 +198,50 @@ test('依頼の文は stdin だけで渡し、引数には入れない。作業�
   assert.equal(record.argv[record.argv.indexOf('--max-budget-usd') + 1], '1');
   // 環境変数は利用者のものをそのまま渡す(足しも隠しもしない)
   assert.deepEqual(record.envNames.filter((name) => name !== '__CF_USER_TEXT_ENCODING').sort(), Object.keys(env).sort());
+});
+
+test('直すラウンドも同じ引数、同じ環境変数で起動し、作業ディレクトリは app/ のまま。直す依頼は stdin だけで渡す', async (t) => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-requests-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  await ensureSampleProjects(home, path.join(STUDIO_ROOT, 'samples'));
+  const recordFile = path.join(home, 'record.ndjson');
+  const recorder = path.join(home, 'recorder.mjs');
+  // 1 回目はビルドできない行を足し、直す依頼を受けたらその行を消す
+  await fs.writeFile(
+    recorder,
+    `import fs from 'node:fs';
+     const stdin = fs.readFileSync(0, 'utf8');
+     fs.appendFileSync(process.env.RECORD_FILE, JSON.stringify({ argv: process.argv.slice(2), stdin, cwd: process.cwd(), envNames: Object.keys(process.env).sort() }) + '\\n');
+     const bad = 'const recordedBroken = ;\\n';
+     const text = fs.readFileSync('App.jsx', 'utf8');
+     fs.writeFileSync('App.jsx', text.includes(bad) ? text.replace(bad, '') : text + bad);
+     console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'ok', permission_denials: [] }));`,
+  );
+  const store = new ProjectStore(home);
+  await store.build('sample-library');
+  const env = { PATH: process.env.PATH, RECORD_FILE: recordFile, ANTHROPIC_API_KEY: 'fictional-value' };
+  const requests = new BuildRequests({
+    store,
+    env,
+    // 関門 G5、G6 の観察。G6 には回したシナリオ(基本のシナリオ 1 本)が入る
+    observe: async () => ({ verdict: 'passed', errors: [], load: { done: true, durationMs: 1 }, page: { text: '架空', empty: false }, scenarios: [{ name: '架空の基本', base: true, verdict: 'passed' }] }),
+    connection: { kind: 'claude', label: '記録', command: process.execPath, prefixArgs: [recorder], billing: describeBilling(env), problem: null },
+  });
+  const text = '見出しを「記録の図書室」にして';
+  const started = await requests.start('sample-library', text);
+  const final = await new Promise((resolve) => started.subscribe(() => {}, resolve));
+  assert.equal(final.status, 'fixed', JSON.stringify(final.items));
+
+  const [first, second, ...rest] = (await fs.readFile(recordFile, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(rest.length, 0);
+  assert.deepEqual(second.argv, first.argv);
+  assert.deepEqual(second.envNames, first.envNames);
+  const appDir = await fs.realpath(path.join(home, 'projects', 'sample-library', 'app'));
+  assert.equal(first.cwd, appDir);
+  assert.equal(second.cwd, appDir);
+  assert.equal(first.stdin, text);
+  assert.deepEqual(readFixPrompt(second.stdin), { request: text, gate: 'G4 ビルド' });
+  assert.ok(second.argv.every((arg) => !arg.includes('前の依頼') && !arg.includes('記録の図書室')));
 });
 
 test('作る欄でプロダクト内 AI の設定を変えると、変化を作る会話に出し、前の会話を新しい設定で試し直せる', async (t) => {

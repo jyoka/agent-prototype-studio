@@ -71,7 +71,7 @@ Claude Code の起動のしかた(どれも Claude Code の CLI のフラグで�
 1. Claude Code 2.1.248 以上を入れ、ターミナルで `claude` を起動して、本人のアカウントでログインしておく。
 2. `STUDIO_AGENT=claude npm start`(Windows の PowerShell は `$env:STUDIO_AGENT='claude'; npm start`)で起動する。
 3. 「作る」欄の上の枠で、版と「認証と課金」を確かめてから送る。
-   - 環境に `ANTHROPIC_API_KEY` があると、サブスクの枠ではなく API の料金がかかる。枠にそう出る。そのときは 1 回の依頼に費用の上限(`STUDIO_MAX_BUDGET_USD`)を付ける。
+   - 環境に `ANTHROPIC_API_KEY` があると、サブスクの枠ではなく API の料金がかかる。枠にそう出る。そのときは作る AI の 1 回の起動に費用の上限(`STUDIO_MAX_BUDGET_USD`)を付ける。
    - 見込みは環境変数の有無だけから出す。Console(API)のアカウントで `claude` にログインしているときも API の料金がかかるが、送る前には見分けられない。
    - 実際にどれで動いたかは、会話の各依頼の終わりに「認証の報告」として出る(Claude Code が報告する `apiKeySource`)。
 
@@ -81,7 +81,7 @@ Studio が Claude Code をどう動かすか:
 - `claude -p --restricted --safe-mode --tools Read,Edit,Write,Glob,Grep --permission-mode dontAsk --permission-prompts none --strict-mcp-config --no-session-persistence --output-format stream-json` で起動する。作業ディレクトリは試作品の `app/`。依頼の文は stdin で渡す。
 - 読み書きを `app/` の中に限り、コマンドの実行と Web の取得をさせない設定で起動する。権限の確認は Claude Code が行い、確認が要る操作は断られる。断られた操作は会話に出す。この守りが実機で効くかは、まだ確かめていない([下の「実機で確かめる」](#実機で確かめる))。
 - 依頼ごとに新しい会話で動かす。前の依頼の内容は、`app/` のファイルを通じて引き継がれる。
-- 1 回の依頼は 10 分、やりとりは 30 回まで。中断や時間切れでは、SIGINT、SIGTERM、強制終了の順に止める。本体が終わった後に残った子のプロセスも止める。Studio を止めたとき(Ctrl+C、ターミナルを閉じたとき)も、動いている作る AI を止める。
+- 作る AI の 1 回の起動は 10 分、やりとりは 30 回まで。関門で失敗すると、Studio が直す依頼を返して起動し直す(直すラウンド)。起動は 1 つの依頼で 3 回まで。上限は起動ごとに効く。中断や時間切れでは、SIGINT、SIGTERM、強制終了の順に止める。本体が終わった後に残った子のプロセスも止める。Studio を止めたとき(Ctrl+C、ターミナルを閉じたとき)も、動いている作る AI を止める。
 
 Windows の npm 版(`claude.cmd`)は使えない。ネイティブ版の `claude.exe` を入れる。
 

@@ -60,7 +60,8 @@ async function listenOrExplain(server, port, host, envName) {
 
 // Studio を起動する。待ち受けは loopback だけ(0.0.0.0 にはしない)。
 // env は作る AI とプロダクト内 AI に渡す環境変数。既定は利用者のもの(ADR-0001: そのまま渡し、値は読まない)。
-export async function startStudio(config, { log = () => {}, env = process.env } = {}) {
+// scenarioLimits は関門 G6 の時間の上限(build-requests.js の SCENARIO_GATE_LIMITS)。テストで短くするときだけ渡す
+export async function startStudio(config, { log = () => {}, env = process.env, scenarioLimits } = {}) {
   try {
     await fs.mkdir(projectsDir(config.home), { recursive: true });
     for (const id of await ensureSampleProjects(config.home, path.join(STUDIO_ROOT, 'samples'))) {
@@ -112,23 +113,35 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
     });
   }
 
-  const requests = new BuildRequests({
-    store,
-    connection,
-    // 関門 G5 は基本のシナリオとアプリのシナリオなしで観察する(シナリオは関門 G6、jyoka/tasks#305)。
-    // プロダクト内 AI の要求は断る(ai を渡さない)
-    observe: (id, { viewports, outDir }) => observeProject(id, { scenarios: [], base: false, viewports, outDir }),
-    env,
-    log,
-    maxBudgetUsd: config.maxBudgetUsd,
-  });
-  const servers = [];
-
   // プロダクト内 AI の接続の既定はモック。Claude Code は、利用者が画面で送るものと費用を確かめてから切り替える
   const aiSessions = new AiSessions({
     definitionOf: (id) => store.aiDefinition(id),
     connections: [createMockConnection(), createClaudeCodeConnection({ env, allowed: config.allowClaudeCode === true })],
   });
+
+  // 作る run の関門の観察。G5 は基本のシナリオとアプリのシナリオなしで観察し、プロダクト内 AI の要求は断る(ai を渡さない)。
+  // G6 は app/ のシナリオと基本のシナリオを回す。プロダクト内 AI は、利用者が選んだ接続によらず、いつもモックの
+  // 観察用の会話で答え、終わったら会話を捨てる(同じ入力で同じ結果になり、費用がかからない。ADR-0001 の T6)
+  async function observeGate(id, { gate, viewports, outDir, limits }) {
+    if (gate !== 'scenarios') return observeProject(id, { scenarios: [], base: false, viewports, outDir });
+    const ai = createObservationAi(aiSessions, id, { connection: 'mock' });
+    try {
+      return await observeProject(id, { viewports: [], ai, limits, outDir });
+    } finally {
+      ai.close();
+    }
+  }
+
+  const requests = new BuildRequests({
+    store,
+    connection,
+    observe: observeGate,
+    env,
+    log,
+    maxBudgetUsd: config.maxBudgetUsd,
+    ...(scenarioLimits ? { scenarioLimits } : {}),
+  });
+  const servers = [];
   const versions = new ProjectVersions({ store, aiSessions, log });
   const handoffs = new ProjectHandoffs({ home: config.home, store, aiSessions, versions, requests, log });
   const studioServer = http.createServer(

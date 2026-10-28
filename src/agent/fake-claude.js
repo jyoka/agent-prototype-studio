@@ -5,11 +5,20 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { AGENT_TOOLS } from '../server/claude-args.js';
+import { readFixPrompt } from '../server/fix-prompt.js';
 
 const STEP_MS = 120;
 const SLOW_STEPS = 60;
 const SLOW_STEP_MS = 500;
 const BROKEN_LINE = 'const studioBroken = ; // 偽接続が「壊して」で入れた行\n';
+// 直す依頼を受けても直せなかったときに残す跡。app/ は変わるが、壊れたまま
+const tryMark = (n) => `// 偽接続が直そうとした跡(${n} 回目)\n`;
+const TRY_MARKS = /\/\/ 偽接続が直そうとした跡\(\d+ 回目\)\n/g;
+// 「見出しを崩して」で、見出しの文字の間に入れる印。消すと元の見出しに戻る
+const SCRAMBLE = '〓';
+// 「シナリオを足して」で書くシナリオ。題材の言葉は持たず、今の見出しの文字を確かめる
+const HEADING_SCENARIO = 'heading.json';
+const HEADING_PATTERN = /(<h1(?:\s[^>]*)?>)([^<{]*)(<\/h1>)/;
 const SESSION_ID = '00000000-0000-4000-8000-000000000000';
 const started = Date.now();
 let turns = 0;
@@ -112,10 +121,11 @@ async function findHeadingFile() {
   return null;
 }
 
-async function editFile(target, oldString, newString) {
+// next: 書き込む中身。Edit の表示(oldString → newString)と違うときだけ渡す
+async function editFile(target, oldString, newString, next = target.text.replace(oldString, () => newString)) {
   if (!insideCwd(target.file)) throw new Error('作業ディレクトリの外です');
   await useTool('Read', { file_path: target.file }, { result: `${target.text.split('\n').length} 行を読みました` });
-  await fs.writeFile(target.file, target.text.replace(oldString, newString));
+  await fs.writeFile(target.file, next);
   await useTool(
     'Edit',
     { file_path: target.file, old_string: oldString, new_string: newString },
@@ -171,14 +181,95 @@ async function breakApp() {
   return finish({ text });
 }
 
+// 目録(prototype.json)が指すシナリオの置き場所。読めなければ既定の scenarios
+async function scenarioFolder() {
+  const manifest = await fs.readFile(path.join(process.cwd(), 'prototype.json'), 'utf8').then(JSON.parse).catch(() => null);
+  const folder = typeof manifest?.scenarios === 'string' ? manifest.scenarios.replace(/\/$/, '') : 'scenarios';
+  return path.join(process.cwd(), ...folder.split('/'), HEADING_SCENARIO);
+}
+
+async function writeScenario(file, scenario) {
+  if (!insideCwd(file)) throw new Error('作業ディレクトリの外です');
+  const content = `${JSON.stringify(scenario, null, 2)}\n`;
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, content);
+  await useTool('Write', { file_path: file, content }, { result: `File created successfully at: ${file}` });
+}
+
+// 見出しを確かめるシナリオを足し、見出しの文字を崩す。関門 G6 のシナリオで失敗する
+async function addScenarioAndScramble() {
+  const target = await findHeadingFile();
+  const match = target && HEADING_PATTERN.exec(target.text);
+  const heading = match?.[2].trim();
+  if (!heading) {
+    await say('app/ の中に、文字のある見出し(<h1>)が見つかりませんでした。');
+    return finish({ text: '変えていません' });
+  }
+  if (heading.includes(SCRAMBLE)) {
+    await say('見出しはもう崩れています。');
+    return finish({ text: '変えていません' });
+  }
+  const file = await scenarioFolder();
+  await writeScenario(file, { name: '見出しが出る', viewport: 'desktop', steps: [{ expect: 'visible', target: { role: 'heading', name: heading } }] });
+  await editFile(target, match[0], `${match[1]}${[...heading].join(SCRAMBLE)}${match[3]}`);
+  const text = `見出しを確かめるシナリオ(${path.relative(process.cwd(), file)})を足し、見出しの文字を崩しました。`;
+  await say(text);
+  return finish({ text });
+}
+
+// シナリオの失敗を受けて直す。既定は、崩した見出しを元に戻す。
+// 元の依頼に「弱めて」があれば、見出しは戻さずに、シナリオの確かめを弱めて通す(Studio が「確かめ方が変わりました」と出す)
+async function fixScrambled(target, fix) {
+  const match = HEADING_PATTERN.exec(target.text);
+  if (/弱めて/.test(fix.request)) {
+    const file = await scenarioFolder();
+    await writeScenario(file, { name: '見出しが出る', viewport: 'desktop', steps: [{ expect: 'visible' }] });
+    const text = `シナリオ(${path.relative(process.cwd(), file)})の確かめを弱めました。見出しは崩れたままです。`;
+    await say(text);
+    return finish({ text });
+  }
+  await editFile(target, match[0], `${match[1]}${match[2].split(SCRAMBLE).join('')}${match[3]}`);
+  const text = `崩れていた見出しを元に戻しました(${path.relative(process.cwd(), target.file)})。`;
+  await say(text);
+  return finish({ text });
+}
+
 async function repairApp() {
   const target = await findHeadingFile();
   if (!target?.text.includes(BROKEN_LINE)) {
     await say('直すところはありませんでした。');
     return finish({ text: '変えていません' });
   }
-  await editFile(target, BROKEN_LINE, '');
+  await editFile(target, BROKEN_LINE, '', target.text.replace(BROKEN_LINE, '').replace(TRY_MARKS, ''));
   const text = '「壊して」で入れた行を消しました。';
+  await say(text);
+  return finish({ text });
+}
+
+// Studio の直す依頼(src/server/fix-prompt.js の型)を受けたとき。題材の言葉は持たない。
+// 見出しが崩れていれば(「シナリオを足して、見出しを崩して」の後)、fixScrambled で直す。
+// それ以外は、元の依頼の言葉で振る舞いを決める:
+//   既定: 失敗の原因(「壊して」で入れた行)を消して直す
+//   「直せない」: 直そうとした跡を残すが、壊れたまま(app/ は変わる)
+//   「2 回目で直」: 1 回目の直す依頼では直せず、2 回目で直す
+// 直すところが見つからなければ、何も変えない
+async function fixRequested(fix) {
+  await say(`Studio の直す依頼を読みました(失敗した関門: ${fix.gate})。`);
+  const target = await findHeadingFile();
+  if (target && HEADING_PATTERN.exec(target.text)?.[2].includes(SCRAMBLE)) return fixScrambled(target, fix);
+  if (!target?.text.includes(BROKEN_LINE)) {
+    await say('失敗の原因が見つからなかったので、何も変えていません。');
+    return finish({ text: '変えていません' });
+  }
+  const tries = target.text.match(TRY_MARKS)?.length ?? 0;
+  if (/直せない/.test(fix.request) || (/2 回目で直/.test(fix.request) && tries === 0)) {
+    await editFile(target, BROKEN_LINE, BROKEN_LINE + tryMark(tries + 1));
+    const text = `直そうとしましたが、直せませんでした(${tries + 1} 回目)。`;
+    await say(text);
+    return finish({ text });
+  }
+  await editFile(target, BROKEN_LINE, '', target.text.replace(BROKEN_LINE, '').replace(TRY_MARKS, ''));
+  const text = `失敗の原因だった行を消しました(${path.relative(process.cwd(), target.file)})。`;
   await say(text);
   return finish({ text });
 }
@@ -310,6 +401,9 @@ async function main() {
     return finish({ isError: true, text: `偽接続: 作業ディレクトリが app/ ではありません(${process.cwd()})` });
   }
 
+  // 直す依頼は元の依頼の文を含むので、ほかの言葉より先に見る
+  const fix = readFixPrompt(request);
+  if (fix) return fixRequested(fix);
   if (/ログイン/.test(request)) {
     return finish({ isError: true, text: 'Not logged in · Please run /login' });
   }
@@ -318,6 +412,7 @@ async function main() {
     return finish({ isError: true, text: '偽接続: 依頼どおりに失敗しました' });
   }
   if (/外/.test(request)) return writeOutside();
+  if (/シナリオ/.test(request)) return addScenarioAndScramble();
   if (/ゆっくり/.test(request)) return slow();
   if (/先に聞/.test(request)) return askFirst(request);
   if (/聞き返/.test(request)) return clarifyWithExamples();
@@ -325,7 +420,7 @@ async function main() {
   if (/直/.test(request)) return repairApp();
   if (/見出し/.test(request)) return changeHeading(request);
 
-  const text = '偽接続なので、決まった依頼だけを扱えます。例: 見出しを「ひだまり図書室」にして、「項目の名前」を先に聞くようにして、読み取れなかったときは例を出して聞き返すようにして、app/ の外にメモを書いて、壊して、直して、失敗して、ゆっくり進めて';
+  const text = '偽接続なので、決まった依頼だけを扱えます。例: 見出しを「ひだまり図書室」にして、シナリオを足して見出しを崩して、「項目の名前」を先に聞くようにして、読み取れなかったときは例を出して聞き返すようにして、app/ の外にメモを書いて、壊して、直して、失敗して、ゆっくり進めて。「壊して」には「2 回目で直して」「直せないふりをして」を添えられます';
   await say(text);
   return finish({ text });
 }

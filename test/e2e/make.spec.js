@@ -100,11 +100,14 @@ test('権限の確認で断られた操作と、作る AI の失敗を会話に�
     // ここまで、試す画面は同じ版のまま
     expect(await page.locator('iframe[title="試作品"]').getAttribute('src')).toBe(previewSrc);
 
-    // ビルドに失敗する変更は、場所を出し、前の版を表示したままにする
-    await sendRequest(page, '壊して');
+    // ビルドに失敗する変更は、場所を出し、前の版を表示したままにする。
+    // 作る AI が直すラウンドでも直せないときの形(直せたときは make-loop.spec.js)
+    await sendRequest(page, '壊して、直せないふりをして');
     run = lastRun(page);
+    await expect(run.locator('[data-kind="gave-up"]')).toContainText('直すラウンドを 2 回行いましたが、G4 ビルドで失敗したままです');
     await expect(run).toContainText('変わったファイル: app/App.jsx');
-    await expect(run.locator('[data-kind="build-failed"]')).toContainText('前にビルドできた版のままです');
+    await expect(run.locator('[data-kind="build-failed"]')).toHaveCount(3);
+    await expect(run.locator('[data-kind="build-failed"]').first()).toContainText('前にビルドできた版のままです');
     await expect(page.locator('#build-status')).toContainText('ビルドに失敗しました');
     await expect(page.locator('#build-status')).toContainText('app/App.jsx(2 行');
     await expect(page.locator('#build-status')).toContainText('中央には、前にビルドできた版を表示しています');
