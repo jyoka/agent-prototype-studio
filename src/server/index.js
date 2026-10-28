@@ -10,8 +10,9 @@ import { ProjectHandoffs } from './handoff.js';
 import { createPreviewHandler } from './preview-server.js';
 import { createClaudeCodeConnection } from './product-ai/claude-code.js';
 import { createMockConnection } from './product-ai/mock.js';
+import { createObservationAi } from './product-ai/observation.js';
 import { AiSessions } from './product-ai/session.js';
-import { ensureSampleProjects, projectPaths, projectsDir } from './projects.js';
+import { ensureSampleProjects, projectsDir } from './projects.js';
 import { createToken } from './security.js';
 import { createStudioHandler } from './studio-server.js';
 import { ProjectStore } from './store.js';
@@ -76,14 +77,38 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
   const connection = await resolveConnection(config, env);
   const token = createToken();
   const store = new ProjectStore(config.home, log);
+  const ports = { studio: config.studioPort, preview: config.previewPort };
+  // 観察器のブラウザは、Studio の中で 1 つだけ。最初の観察のときに起動する
+  const observer = new Observer();
+
+  // 表示中のビルドを観察し、スクリーンショットを outDir に置く。作る run の関門 G5 と、利用者の観察が使う
+  async function observeProject(id, { scenarios, viewports, ai, limits, outDir }) {
+    await store.requireProject(id);
+    const project = (await store.list()).find((p) => p.id === id);
+    const result = project.lastBuild ?? { ok: false, errors: [{ file: 'app/', text: 'まだビルドしていません' }] };
+    return observer.observe({
+      build: {
+        result,
+        previewUrl: result.ok ? `http://localhost:${ports.preview}/p/${id}/${project.previewBuildId}/` : null,
+        hostUrl: `http://127.0.0.1:${ports.studio}/observe.html`,
+      },
+      scenarios,
+      viewports,
+      ai,
+      limits,
+      outDir,
+    });
+  }
+
   const requests = new BuildRequests({
     store,
     connection,
+    // 関門 G5 は基本のシナリオなしで観察する。プロダクト内 AI の要求は断る(ai を渡さない)
+    observe: (id, { viewports, outDir }) => observeProject(id, { viewports, outDir }),
     env,
     log,
     maxBudgetUsd: config.maxBudgetUsd,
   });
-  const ports = { studio: config.studioPort, preview: config.previewPort };
   const servers = [];
 
   // プロダクト内 AI の接続の既定はモック。Claude Code は、利用者が画面で送るものと費用を確かめてから切り替える
@@ -122,9 +147,6 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
 
   await store.buildAll();
 
-  // 観察器のブラウザは、Studio の中で 1 つだけ。最初の観察のときに起動する
-  const observer = new Observer();
-
   const url = `http://127.0.0.1:${ports.studio}/#token=${token}`;
   return {
     url,
@@ -136,24 +158,25 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
     versions,
     handoffs,
     observer,
-    // 表示中のビルドを観察する。ai は呼ぶ側が渡す。report のスクリーンショットは .studio/observations/<観察の ID>/ に置く
-    async observe(id, { scenarios, viewports, ai, limits } = {}) {
-      await store.requireProject(id);
-      const project = (await store.list()).find((p) => p.id === id);
-      const result = project.lastBuild ?? { ok: false, errors: [{ file: 'app/', text: 'まだビルドしていません' }] };
+    // 表示中のビルドを観察する。report のスクリーンショットは .studio/observations/<観察の ID>/ に置く。
+    // プロダクト内 AI は、aiConnection(接続の種類。'mock' など)を渡すと、観察用の新しい会話で答え、
+    // 観察が終わったら会話を捨てる(S15)。自分で作った ai 関数を渡してもよい
+    async observe(id, { scenarios, viewports, ai, aiConnection, limits } = {}) {
+      if (ai !== undefined && aiConnection !== undefined) throw new TypeError('ai と aiConnection は、どちらか 1 つだけ渡してください');
+      const paths = await store.requireProject(id);
       const observationId = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-      return observer.observe({
-        build: {
-          result,
-          previewUrl: result.ok ? `http://localhost:${ports.preview}/p/${id}/${project.previewBuildId}/` : null,
-          hostUrl: `http://127.0.0.1:${ports.studio}/observe.html`,
-        },
-        scenarios,
-        viewports,
-        ai,
-        limits,
-        outDir: path.join(projectPaths(config.home, id).studio, 'observations', observationId),
-      });
+      const observationAi = aiConnection === undefined ? null : createObservationAi(aiSessions, id, { connection: aiConnection });
+      try {
+        return await observeProject(id, {
+          scenarios,
+          viewports,
+          ai: observationAi ?? ai,
+          limits,
+          outDir: path.join(paths.studio, 'observations', observationId),
+        });
+      } finally {
+        observationAi?.close();
+      }
     },
     async close() {
       // 作る AI と、応答を待っているプロダクト内 AI の Claude Code と、観察器のブラウザを止め、終わるまで待つ

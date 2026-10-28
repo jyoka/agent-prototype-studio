@@ -7,7 +7,7 @@ import { expect, ROOT, test } from './studio.js';
 
 // 観察器は Studio の画面を開かずに使う。このファイルのテストは page(Studio の画面)を開かない。
 const FIXTURES = path.join(ROOT, 'test', 'fixtures', 'observe');
-const NAMES = ['ok', 'build-error', 'render-error', 'console-error', 'infinite-loop', 'late-loop', 'navigate', 'unhandled-rejection', 'ai'];
+const NAMES = ['ok', 'empty', 'build-error', 'render-error', 'console-error', 'infinite-loop', 'late-loop', 'navigate', 'unhandled-rejection', 'ai', 'ai-fresh'];
 
 let home;
 let studio;
@@ -51,7 +51,10 @@ test('正常な見本は passed になり、読み込みの時間と、指定し
   expect(report.load.done).toBe(true);
   expect(report.load.durationMs).toBeGreaterThanOrEqual(0);
   expect(report.load.timeoutMs).toBe(15_000);
-  expect(report).toMatchObject({ ai: [], scenarios: [], page: null });
+  expect(report).toMatchObject({ ai: [], scenarios: [] });
+  expect(report.page.empty).toBe(false);
+  expect(report.page.text).toContain('架空の花屋 ひだまり');
+  expect(report.page.text).toContain('ひまわり 300 円');
 
   // 指定した 2 つだけ。tablet は撮らない
   expect(report.screenshots.map((s) => s.viewport)).toEqual(['mobile', 'desktop']);
@@ -62,6 +65,12 @@ test('正常な見本は passed になり、読み込みの時間と、指定し
   }
   expect(report.screenshots[0]).toMatchObject({ width: 390, height: 844 });
   expect(report.screenshots[1]).toMatchObject({ width: 1280, height: 800 });
+});
+
+test('何も描かない試作品は、エラーがなくても page.empty が true になる', async () => {
+  const report = await studio.observe('obs-empty', { viewports: [] });
+  expect(report.errors).toEqual([]);
+  expect(report.page).toEqual({ text: '', empty: true });
 });
 
 test('ビルドの失敗は、ブラウザを開かずに build のエラーと failed を返す', async () => {
@@ -176,4 +185,79 @@ test('ブラウザは 1 つを使い回し、同時に頼まれた観察もそ�
   ]);
   expect([first.verdict, a.verdict, b.verdict]).toEqual(['passed', 'passed', 'failed']);
   expect(studio.observer.browser.browser).toBe(browser);
+});
+
+test('見本の求人相談を観察すると、report の ai にあいさつのやり取りが入る。観察の会話は終わると消え、利用者の会話は変わらない', async () => {
+  const id = 'sample-job-consult';
+  // 利用者が試す画面で話している途中
+  await studio.aiSessions.send(id, 'しおかぜ町でカフェのアルバイトを探しています');
+  const before = studio.aiSessions.view(id);
+
+  const report = await studio.observe(id, { aiConnection: 'mock', viewports: [] });
+  expect(report.verdict).toBe('passed');
+  expect(report.errors).toEqual([]);
+  const [open, ...rest] = report.ai;
+  expect(rest).toEqual([]);
+  expect(open).toMatchObject({
+    type: 'open',
+    from: 'prototype',
+    status: 'ok',
+    observation: expect.stringMatching(/^observation-/),
+    connection: { kind: 'mock', label: 'モック', real: false },
+    greeting: expect.stringContaining('しおかぜ求人相談の案内役です'),
+  });
+  expect(open.state.map((s) => s.value)).toEqual(['未定', '未定', '未定', '未定']);
+
+  // 観察の会話は消え、記録には「観察から」の印で残る
+  expect(studio.aiSessions.conversations(id)).toEqual(['user']);
+  const recorded = studio.aiSessions.trace(id).entries.find((entry) => entry.observation === open.observation);
+  expect(recorded).toMatchObject({ type: 'open', greeting: open.greeting });
+  expect(studio.aiSessions.view(id)).toEqual(before);
+});
+
+test('続けて 2 回観察しても、前の観察の会話とブラウザの状態(Cookie、localStorage)が残らない', async () => {
+  const browser = studio.observer.browser;
+  const original = browser.withContext;
+  const seen = [];
+  // 観察の終わり(文脈を閉じる前)に、その文脈の Cookie と localStorage を調べてから、次の観察に残りそうなものを置く
+  browser.withContext = (options, work) =>
+    original.call(browser, options, async (context, launched) => {
+      const result = await work(context, launched);
+      const [page] = context.pages();
+      seen.push({ context, cookies: await context.cookies(), storage: await page.evaluate(() => localStorage.length) });
+      await context.addCookies([
+        { name: 'left', value: '1', url: `http://127.0.0.1:${studio.ports.studio}` },
+        { name: 'left', value: '1', url: `http://localhost:${studio.ports.preview}` },
+      ]);
+      await page.evaluate(() => localStorage.setItem('left', '1'));
+      expect(await context.cookies()).toHaveLength(2);
+      return result;
+    });
+  try {
+    const first = await studio.observe('obs-ai-fresh', { aiConnection: 'mock', viewports: [] });
+    const second = await studio.observe('obs-ai-fresh', { aiConnection: 'mock', viewports: [] });
+
+    // どちらの観察も、あいさつだけの新しい会話から始まった(残っていれば試作品が console.error を出す)
+    for (const report of [first, second]) {
+      expect(report.errors).toEqual([]);
+      expect(report.verdict).toBe('passed');
+      expect(report.ai.map((entry) => [entry.type, entry.text ?? null])).toEqual([
+        ['open', null],
+        ['reply', 'つるの植木を探しています'],
+      ]);
+      expect(report.ai[1].changes).toEqual([{ key: 'plant', label: '植木', from: '未定', to: '架空のつる草' }]);
+    }
+    expect(second.ai[0].observation).not.toBe(first.ai[0].observation);
+
+    // 2 回目は新しい文脈。1 回目に置いた Cookie と localStorage はない
+    expect(seen).toHaveLength(2);
+    expect(seen[1].context).not.toBe(seen[0].context);
+    expect(seen.map(({ cookies, storage }) => [cookies, storage])).toEqual([
+      [[], 0],
+      [[], 0],
+    ]);
+    expect(studio.aiSessions.conversations('obs-ai-fresh')).toEqual([]);
+  } finally {
+    browser.withContext = original;
+  }
 });

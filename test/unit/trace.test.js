@@ -277,3 +277,71 @@ test('版を戻しても、記録は消さない。戻した会話は記録の�
     ],
   );
 });
+
+test('観察の会話は「観察から」の印で記録に残る。利用者の会話の記録と同じ一覧に入り、観察ごとにも取り出せる', async () => {
+  const sessions = new AiSessions({ definitionOf: () => travel() });
+  await sessions.send('p', '湖に行きたい');
+
+  const conversation = sessions.openObservation('p');
+  await sessions.send('p', '山で2泊', { conversation });
+  sessions.correct('p', { nights: 3 }, { conversation });
+
+  const [correction, reply, open, user] = sessions.trace('p').entries;
+  // 利用者の発言には印がない
+  assert.equal(user.observation, undefined);
+  assert.equal(user.text, '湖に行きたい');
+  // 観察の会話の始まり: あいさつ、最初の状態、接続(モック)
+  assert.equal(open.type, 'open');
+  assert.equal(open.observation, conversation);
+  assert.equal(open.from, 'prototype');
+  assert.equal(open.greeting, 'ようこそ。');
+  assert.deepEqual(open.connection, { kind: 'mock', label: 'モック', real: false });
+  assert.deepEqual(open.state.map((s) => s.value), ['未定', '未定']);
+  // 発言、返事、状態の変化。形は利用者の会話の記録と同じ
+  assert.equal(reply.type, 'reply');
+  assert.equal(reply.observation, conversation);
+  assert.equal(reply.from, 'prototype');
+  assert.equal(reply.text, '山で2泊');
+  assert.match(reply.output.reply, /行き先「山の村」、泊数「2泊」と理解しました/);
+  assert.deepEqual(reply.changes, [
+    { key: 'place', label: '行き先', from: '未定', to: '山の村' },
+    { key: 'nights', label: '泊数', from: '未定', to: '2泊' },
+  ]);
+  assert.deepEqual(Object.keys(reply).sort(), Object.keys(user).concat('observation').sort());
+  assert.equal(correction.observation, conversation);
+  assert.deepEqual(correction.changes, [{ key: 'nights', label: '泊数', from: '2泊', to: '3泊' }]);
+
+  // 観察ごとの記録は古い方から
+  assert.deepEqual(
+    sessions.observationTrace('p', conversation).map((entry) => entry.type),
+    ['open', 'reply', 'correction'],
+  );
+
+  // 観察を閉じても、記録は残る
+  assert.equal(sessions.closeObservation('p', conversation), true);
+  assert.deepEqual(
+    sessions.trace('p').entries.map((entry) => entry.observation ?? null),
+    [conversation, conversation, conversation, null],
+  );
+});
+
+test('観察の会話の記録は、利用者の記録を押し出さない。終わった観察の会話には記録を足さない', async () => {
+  const sessions = new AiSessions({ definitionOf: () => travel() });
+  await sessions.send('p', '湖に行きたい');
+  const conversation = sessions.openObservation('p');
+  for (let i = 0; i < SESSION_LIMITS.maxTraceEntries + 5; i += 1) await sessions.send('p', `湖で${(i % 14) + 1}泊`, { conversation });
+  const { entries } = sessions.trace('p');
+  // 観察の記録は観察の記録だけで上限まで。利用者の発言は残る
+  assert.equal(entries.filter((entry) => entry.observation).length, SESSION_LIMITS.maxTraceEntries);
+  assert.deepEqual(
+    entries.filter((entry) => !entry.observation).map((entry) => entry.text),
+    ['湖に行きたい'],
+  );
+
+  sessions.closeObservation('p', conversation);
+  const before = sessions.trace('p').entries.length;
+  await assert.rejects(sessions.send('p', '山にします', { conversation }), { code: 'closed' });
+  assert.throws(() => sessions.correct('p', { nights: 2 }, { conversation }), { code: 'closed' });
+  assert.equal(sessions.trace('p').entries.length, before);
+  assert.deepEqual(sessions.view('p').state, { place: '湖の町', nights: null });
+});
