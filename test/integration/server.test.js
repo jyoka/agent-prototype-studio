@@ -189,7 +189,9 @@ test('壊れたプロジェクトがあっても、他の試作品は開ける',
   const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false });
   t.after(() => studio.close());
   const projects = await studio.store.list();
-  assert.deepEqual(projects.map((p) => p.id), ['locked', 'sample-job-consult', 'sample-library', 'sample-study-consult']);
+  assert.deepEqual(projects.map((p) => p.id), ['sample-job-consult', 'sample-study-consult', 'sample-library', 'locked']);
+  // 一覧の名前は、表示中の版の目録の title と AI があるかから作る。ビルドできないものは置き場の名前のまま
+  assert.deepEqual(projects.map((p) => p.title), ['求人相談(架空・AI と話せる)', '学習相談(架空・AI と話せる)', '図書室(架空・AI なし)', 'locked']);
   const locked_ = projects.find((p) => p.id === 'locked');
   assert.equal(locked_.lastBuild.ok, false);
   assert.match(locked_.lastBuild.errors[0].text, /ビルドの途中で問題が起きました/);

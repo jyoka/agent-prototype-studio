@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "title": "こもれび図書室(架空)",
+  "title": "図書室(架空)",
   "entry": "main.jsx",
   "intent": {
     "purpose": "小さな図書室の本を探し、貸し出しの状態を変え、新しい本を登録する流れを試す",

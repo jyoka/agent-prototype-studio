@@ -1,4 +1,4 @@
-import { expect, launchStudio, test, writeProject } from './studio.js';
+import { SAMPLES, chooseSample, expect, launchStudio, test, writeProject } from './studio.js';
 
 const GREETING =
   'こんにちは。しおかぜ求人相談の案内役です(架空のサービスです)。どんなお仕事を探していますか? 職種、雇用区分、勤務地、時給の希望を、話しやすいところから教えてください。';
@@ -8,7 +8,7 @@ test('モックの AI と話し、理解された希望条件を直すと、次�
   const studio = await launchStudio(home);
   try {
     await page.goto(studio.url);
-    await page.getByRole('button', { name: /サンプル: 架空の求人相談/ }).click();
+    await chooseSample(page, SAMPLES.jobConsult);
     const app = page.frameLocator('iframe[title="試作品"]');
     const details = page.locator('#ai-status');
     const studioState = page.getByRole('definition');
@@ -20,7 +20,7 @@ test('モックの AI と話し、理解された希望条件を直すと、次�
     await expect(details).toContainText('架空のデータで試してください');
     await expect(app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
     await expect(app.locator('.note')).toContainText('架空のサービスと架空の求人です');
-    await expect(app.locator('.note')).toContainText('案内役の AI はモックで、決まった応答を返します');
+    await expect(app.locator('.note')).toContainText('いまの案内役はお試しの AI です。決まった言葉だけ分かります');
 
     const log = app.getByRole('region', { name: '会話' }).getByRole('listitem');
     const conditions = app.getByRole('region', { name: '希望条件' }).locator('.value');
@@ -86,11 +86,38 @@ test('モックの AI と話し、理解された希望条件を直すと、次�
     await expect(studioState).toHaveText(['未定', '未定', '未定', '未定']);
     await expect(details).toContainText('利用者の発言: 0 件');
 
-    // 同じ入力には、同じ応答を返す(再現できるモック)
+    // 同じ入力には、同じ応答を返す(再現できるモック)。返事の印は「お試しの AI」
     await say('カフェで働きたいです');
     await expect(log.last()).toContainText(AFTER_JOB);
+    await expect(log.last().locator('.via')).toHaveText('お試しの AI');
+
+    // 決まった言葉で読み取れないときは、本物の AI で試せることを伝える
+    await say('なんとなく楽しい仕事');
+    await expect(log.last()).toContainText('すみません、希望の条件として読み取れませんでした。自由な言葉は、上の『AI: 本物』で試せます。');
+
+    // サンプルの画面(iframe の中)に、開発の言葉「モック」が出ない
+    await expect(app.locator('body')).not.toContainText('モック');
 
     await expect(page.locator('#events-empty')).toBeVisible();
+  } finally {
+    await studio.stop();
+  }
+});
+
+test('学習相談のサンプルも、返事の印と注意書きが「お試しの AI」で、画面に「モック」の言葉がない', async ({ page, home }) => {
+  const studio = await launchStudio(home);
+  try {
+    await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.studyConsult);
+    const app = page.frameLocator('iframe[title="試作品"]');
+    const log = app.getByRole('region', { name: '会話' }).getByRole('listitem');
+    await expect(app.locator('.note')).toContainText('いまの相談役はお試しの AI です。決まった言葉だけ分かります');
+
+    await app.getByLabel('メッセージ').fill('なんとなく何か学びたい');
+    await app.getByRole('button', { name: '送る' }).click();
+    await expect(log.last()).toContainText('すみません、学びたいことや進め方として読み取れませんでした。自由な言葉は、上の『AI: 本物』で試せます。');
+    await expect(log.last().locator('.via')).toHaveText('お試しの AI');
+    await expect(app.locator('body')).not.toContainText('モック');
   } finally {
     await studio.stop();
   }

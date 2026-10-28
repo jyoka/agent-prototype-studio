@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test as base } from '@playwright/test';
+import { expect, test as base } from '@playwright/test';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const URL_PATTERN = /http:\/\/127\.0\.0\.1:\d+\/#token=[a-f0-9]{64}/;
@@ -153,4 +153,21 @@ export const test = base.extend({
   },
 });
 
-export { expect } from '@playwright/test';
+export { expect };
+
+// サンプルの ID と、試作品の一覧の名前(Studio が目録の title と、試作品の中の AI があるかから作る)。
+// 一覧の順も、この順(求人相談、学習相談、図書室)
+export const SAMPLES = {
+  jobConsult: { id: 'sample-job-consult', name: '求人相談(架空・AI と話せる)' },
+  studyConsult: { id: 'sample-study-consult', name: '学習相談(架空・AI と話せる)' },
+  library: { id: 'sample-library', name: '図書室(架空・AI なし)' },
+};
+
+// 一覧からサンプルを選び、試作品の欄がそのサンプルに変わるまで待つ。
+// 初めて開いたときは求人相談が選ばれているので、ほかのサンプルを使うテストは、これで明示して選ぶ
+export async function chooseSample(page, sample) {
+  const button = page.getByRole('navigation', { name: '試作品の一覧' }).getByRole('button', { name: sample.name });
+  await button.click();
+  await expect(button).toHaveAttribute('aria-current', 'true');
+  await expect(page.locator('iframe[title="試作品"]')).toHaveAttribute('src', new RegExp(`/p/${sample.id}/`));
+}

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ROOT, expect, launchStudio, test, writeProject } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, expect, launchStudio, test, writeProject } from './studio.js';
 
 // 本番開発への引き継ぎを、画面の操作で書き出し、別の場所で確かめる。
 // 作る AI は偽接続、プロダクト内 AI はモックと偽の Claude Code で、実モデルは呼ばない。
@@ -52,7 +52,7 @@ async function exportAndCheck(page, home, other, otherHome) {
   const studio = await launchStudio(home, { env: fakeEnv(home) });
   try {
     await page.goto(studio.url);
-    await page.getByRole('button', { name: /サンプル: 架空の求人相談/ }).click();
+    await chooseSample(page, SAMPLES.jobConsult);
     const app = page.frameLocator('iframe[title="試作品"]');
     const log = app.getByRole('region', { name: '会話' }).getByRole('listitem');
     const message = app.getByLabel('メッセージ');
@@ -98,7 +98,7 @@ async function exportAndCheck(page, home, other, otherHome) {
 
     // 開き直すと、書いたメモと、前に書き出した場所が出る
     await page.reload();
-    await page.getByRole('button', { name: /サンプル: 架空の求人相談/ }).click();
+    await chooseSample(page, SAMPLES.jobConsult);
     await expect(handoff.getByLabel('決まったこと')).toHaveValue('条件は 職種、雇用区分、勤務地、時給の下限 の 4 つ');
     await expect(result).toContainText(`前に書き出したもの`);
     await expect(result).toContainText(dir);
@@ -138,7 +138,7 @@ async function exportAndCheck(page, home, other, otherHome) {
     ]);
     const readme = handedOver;
     await fs.writeFile(test.info().outputPath('handed-over-README.md'), readme);
-    expect(readme).toContain('# 引き継ぎ: サンプル: 架空の求人相談(プロダクト内 AI)');
+    expect(readme).toContain('# 引き継ぎ: 求人相談(架空・AI と話せる)');
     expect(readme).toContain('> 求職者が、AI の理解した条件を直しながら相談を続けられるか確かめる');
     expect(readme).toContain('> 求人の検索を本物の API にするか。問い合わせ先 [伏せた: メールアドレス]');
     expect(readme).toMatch(/\| 実機 \| 画面と操作 \|/);
@@ -180,7 +180,8 @@ async function exportAndCheck(page, home, other, otherHome) {
     const elsewhere = await launchStudio(otherHome);
     try {
       await page.goto(elsewhere.url);
-      await page.getByRole('button', { name: /handed-over/ }).click();
+      // 名前は目録の title から作るので、サンプルと同じ名前になる。ID で選ぶ
+      await page.locator('[data-project-id="handed-over"]').click();
       const app = page.frameLocator('iframe[title="試作品"]');
       await expect(app.getByRole('heading', { name: 'うみかぜ求人相談' })).toBeVisible();
       await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
