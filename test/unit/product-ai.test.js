@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { buildApp } from '../../src/server/build.js';
 import { STUDIO_ROOT } from '../../src/server/config.js';
-import { describeDefinitionChanges, parseAiDefinition } from '../../src/server/product-ai/definition.js';
+import { DEFAULT_RULES, describeDefinitionChanges, parseAiDefinition } from '../../src/server/product-ai/definition.js';
 import { createMockConnection, extractUpdates } from '../../src/server/product-ai/mock.js';
 import { AiSessions, SESSION_LIMITS } from '../../src/server/product-ai/session.js';
 
@@ -272,6 +272,217 @@ test('設定の前後を比べ、振る舞いの変わったところを利用�
     '聞く順と項目の並び: 行き先、泊数 → 予算、行き先、泊数',
   ]);
   assert.deepEqual(describeDefinitionChanges(before, parse({ ...TRAVEL, fields: [...TRAVEL.fields, budget] })), ['足した項目: 予算']);
+});
+
+// 版 2 の設定(架空の旅行の相談)。聞く段と確かめの段を持つ
+const TRAVEL_V2 = {
+  ...TRAVEL,
+  formatVersion: 2,
+  fields: [{ ...TRAVEL.fields[0], required: true }, { ...TRAVEL.fields[1], required: false }],
+  flow: {
+    steps: [
+      { id: 'hear', ask: ['place', 'nights'], next: [{ when: { filled: 'required' }, to: 'confirm' }] },
+      {
+        id: 'confirm',
+        say: 'summary',
+        next: [
+          { when: { intent: 'yes' }, to: 'done' },
+          { when: { intent: 'no' }, to: 'hear' },
+        ],
+      },
+    ],
+    maxTurns: 15,
+  },
+  end: { say: 'complete' },
+  rules: { noNewNumbers: true, noLeading: true, mustAsk: true, maxReplyChars: 300, forbidden: ['実在の宿の名前'] },
+  mock: { ...TRAVEL.mock, intents: { yes: ['はい', 'それで'], no: ['ちがう'] } },
+};
+
+test('版 2 の設定を読み、段、遷移、終わる条件、守ること、intent の言葉を返す', () => {
+  const definition = parse(TRAVEL_V2);
+  assert.equal(definition.formatVersion, 2);
+  assert.deepEqual(definition.fields.map((field) => field.required), [true, false]);
+  assert.deepEqual(definition.flow, {
+    steps: [
+      { id: 'hear', ask: ['place', 'nights'], say: null, next: [{ when: { filled: 'required' }, to: 'confirm' }] },
+      {
+        id: 'confirm',
+        ask: [],
+        say: 'summary',
+        next: [
+          { when: { intent: 'yes' }, to: 'done' },
+          { when: { intent: 'no' }, to: 'hear' },
+        ],
+      },
+    ],
+    maxTurns: 15,
+  });
+  assert.deepEqual(definition.end, { say: 'complete' });
+  assert.deepEqual(definition.rules, { noNewNumbers: true, noLeading: true, mustAsk: true, maxReplyChars: 300, forbidden: ['実在の宿の名前'] });
+  assert.deepEqual(definition.mock.intents, { yes: ['はい', 'それで'], no: ['ちがう'] });
+  // 条件の語は組み合わせられる(どれも満たすとき)
+  const combined = parse({
+    ...TRAVEL_V2,
+    flow: { steps: [{ id: 'hear', ask: ['place'], next: [{ when: { filled: ['place'], turnsAtLeast: 2 }, to: 'done' }] }] },
+  });
+  assert.deepEqual(combined.flow.steps[0].next[0].when, { filled: ['place'], turnsAtLeast: 2 });
+  assert.equal(combined.flow.maxTurns, 30);
+});
+
+test('版 2 の形の誤りは、ビルドの失敗として、どこが悪いかを返す(S16 の形の側)', async (t) => {
+  const steps = TRAVEL_V2.flow.steps;
+  const withSteps = (changed) => ({ ...TRAVEL_V2, flow: { ...TRAVEL_V2.flow, steps: changed } });
+  const cases = [
+    // 存在しない段への遷移
+    [withSteps([steps[0], { ...steps[1], next: [{ when: { intent: 'yes' }, to: 'finish' }] }]), /flow\.steps\[1\]\.next\[0\]\.to: 存在しない段「finish」への遷移です/],
+    // 存在しない項目を ask に書く
+    [withSteps([{ ...steps[0], ask: ['place', 'budget'] }, steps[1]]), /flow\.steps\[0\]\.ask\[1\]: 「budget」は fields にない項目です/],
+    // 知らない条件の語
+    [withSteps([{ ...steps[0], next: [{ when: { expr: 'place != null' }, to: 'confirm' }] }, steps[1]]), /flow\.steps\[0\]\.next\[0\]\.when: 「expr」は知らない条件の語です。使える語: filled, intent, turnsAtLeast/],
+    // 知らない intent(遷移の条件と、モックの言葉)
+    [withSteps([steps[0], { ...steps[1], next: [{ when: { intent: 'maybe' }, to: 'done' }] }]), /flow\.steps\[1\]\.next\[0\]\.when\.intent: 「maybe」は知らない intent です。使える intent: answer, yes, no, clarify, aside, restart/],
+    [{ ...TRAVEL_V2, mock: { intents: { maybe: ['たぶん'] } } }, /mock\.intents: 「maybe」は知らない intent です/],
+    // そのほかの形
+    [withSteps([steps[0], { ...steps[1], next: [{ when: { filled: ['budget'] }, to: 'done' }] }]), /when\.filled\[0\]: 「budget」は fields にない項目です/],
+    [withSteps([steps[0], { ...steps[1], id: 'hear' }]), /flow\.steps\[1\]\.id: 「hear」が重なっています/],
+    [withSteps([{ ...steps[0], id: 'done' }]), /「done」は終わりを表すので/],
+    [withSteps([{ ...steps[0], say: 'joke' }]), /flow\.steps\[0\]\.say: 「joke」は知らない種類です/],
+    [withSteps([]), /flow\.steps: 段を 1 個から/],
+    [{ ...TRAVEL_V2, flow: { maxTurns: 0 } }, /flow\.maxTurns: 1 以上の整数/],
+    [{ ...TRAVEL_V2, end: { say: 'bye' } }, /end\.say: 「bye」は知らない種類です/],
+    [{ ...TRAVEL_V2, rules: { noLeading: 'yes' } }, /rules\.noLeading: true か false/],
+    [{ ...TRAVEL_V2, rules: { maxReplyChars: 5000 } }, /rules\.maxReplyChars: 1 から 2000 までの整数/],
+    [{ ...TRAVEL_V2, rules: { strict: true } }, /rules: 「strict」は使えない項目です/],
+    [{ ...TRAVEL_V2, fields: [{ ...TRAVEL.fields[0], required: 'yes' }] }, /fields\[0\]\.required: true か false/],
+    [{ ...TRAVEL_V2, formatVersion: 3 }, /formatVersion: 1 か 2 にしてください/],
+    // 版を書かずに版 2 の項目を書いたら、黙って版 1 として読まない
+    [{ ...TRAVEL, flow: TRAVEL_V2.flow }, /flow: 版 2 の項目です。使うときは "formatVersion": 2 を書いてください/],
+    [{ ...TRAVEL, fields: TRAVEL_V2.fields }, /fields\[0\]\.required: 版 2 の項目です/],
+    [{ ...TRAVEL, mock: { confirm: 'よいですか?' } }, /mock\.confirm: 版 2 の項目です/],
+    // 型の違う値は、正しい値を知らないと言わずに、書き方を知らせる
+    [withSteps([steps[0], { ...steps[1], next: [{ when: { intent: ['yes'] }, to: 'done' }] }]), /when\.intent: answer, yes, no, clarify, aside, restart のどれかを文字列で/],
+    [withSteps([{ ...steps[0], say: ['summary'] }, steps[1]]), /flow\.steps\[0\]\.say: summary, complete のどれかを文字列で/],
+    [withSteps([{ ...steps[0], next: [{ when: { filled: 'required' } }] }, steps[1]]), /next\[0\]\.to: 移る段の id か "done"\(終わる\)を文字列で/],
+    // 満たされ方のおかしい条件
+    [{ ...TRAVEL_V2, flow: undefined, fields: TRAVEL_V2.fields.map((field) => ({ ...field, required: false })) }, /fields: 必須の項目\(required が true\)が 1 つもないので/],
+    [withSteps([{ ...steps[0], next: [{ when: { turnsAtLeast: 20 }, to: 'confirm' }] }, steps[1]]), /when\.turnsAtLeast: flow\.maxTurns\(15\)より大きいので/],
+  ];
+  for (const [raw, pattern] of cases) {
+    const source = JSON.stringify(raw);
+    const { definition, errors } = parseAiDefinition(source);
+    assert.equal(definition, null, source);
+    assert.ok(errors.every((e) => e.file === 'app/ai.json'));
+    assert.ok(errors.some((e) => pattern.test(e.text)), `${pattern}\n${JSON.stringify(errors)}`);
+  }
+
+  // ビルドの失敗として、右の「詳細」に出る誤りになる
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-ai-v2-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const appDir = path.join(dir, 'app');
+  await fs.mkdir(appDir);
+  await fs.writeFile(path.join(appDir, 'main.js'), 'console.log(1);\n');
+  await fs.writeFile(path.join(appDir, 'ai.json'), JSON.stringify(cases[0][0]));
+  const broken = await buildApp({ appDir, buildsDir: path.join(dir, 'builds') });
+  assert.equal(broken.ok, false);
+  assert.ok(broken.errors.some((e) => e.file === 'app/ai.json' && /存在しない段「finish」/.test(e.text)), JSON.stringify(broken.errors));
+});
+
+test('版 1 の設定は、段は 1 つ、全部の項目を並びの順に聞き、全部が埋まったら終わる版 2 として読む', async () => {
+  const definition = travel();
+  assert.equal(definition.formatVersion, 2);
+  assert.deepEqual(definition.flow, {
+    steps: [{ id: 'hear', ask: ['place', 'nights'], say: null, next: [{ when: { filled: 'required' }, to: 'done' }] }],
+    maxTurns: 30,
+  });
+  // 全部の項目が終わる条件に入る
+  assert.ok(definition.fields.every((field) => field.required));
+  assert.deepEqual(definition.end, { say: 'complete' });
+  assert.deepEqual(definition.rules, DEFAULT_RULES);
+  assert.deepEqual(definition.mock.intents, {});
+  // formatVersion: 1 と書いても同じ。同じ振る舞いの版 2 と比べても、変わったところはない
+  assert.deepEqual(parse({ ...TRAVEL, formatVersion: 1 }), definition);
+  assert.deepEqual(describeDefinitionChanges(definition, parse({ ...TRAVEL, formatVersion: 2 })), []);
+
+  // 見本の ai.json は、変えずに版 2 として読める
+  for (const sample of ['job-consult', 'study-consult']) {
+    const source = await fs.readFile(path.join(STUDIO_ROOT, 'samples', sample, 'app', 'ai.json'), 'utf8');
+    assert.equal(JSON.parse(source).formatVersion, undefined, sample);
+    const { definition: read, errors } = parseAiDefinition(source);
+    assert.deepEqual(errors, [], sample);
+    assert.equal(read.flow.steps.length, 1, sample);
+    assert.deepEqual(read.flow.steps[0].ask, read.fields.map((field) => field.key), sample);
+    assert.deepEqual(read.flow.steps[0].next, [{ when: { filled: 'required' }, to: 'done' }], sample);
+    assert.ok(read.fields.every((field) => field.required), sample);
+  }
+});
+
+test('flow.maxTurns が 30 を超えると 30 として読む', () => {
+  const turns = (maxTurns) => parse({ ...TRAVEL_V2, flow: { ...TRAVEL_V2.flow, maxTurns } }).flow.maxTurns;
+  assert.equal(turns(15), 15);
+  assert.equal(turns(30), 30);
+  assert.equal(turns(31), 30);
+  assert.equal(turns(1000), 30);
+  // steps を書かずに maxTurns だけ書くと、段は既定(全部を順に聞く)
+  const only = parse({ ...TRAVEL_V2, flow: { maxTurns: 99 } });
+  assert.equal(only.flow.maxTurns, 30);
+  assert.deepEqual(only.flow.steps.map((step) => step.id), ['hear']);
+});
+
+test('設定の変化の説明は、段、終わる条件、守ることの変化も出す', () => {
+  const v1 = travel();
+  const v2 = parse(TRAVEL_V2);
+  assert.deepEqual(describeDefinitionChanges(v1, v2), [
+    '足した段「confirm」: 聞く項目 なし、言うこと 条件のまとめ(mock.confirm)、進む先 利用者が「いいえ」と答えたとき段「hear」へ、利用者が「はい」と答えたとき終わる',
+    '段「hear」から進む先: なし → 必須の項目が埋まったとき段「confirm」へ',
+    '終わる条件: 段「hear」で必須の項目が埋まったとき → 段「confirm」で利用者が「はい」と答えたとき',
+    '終わる条件から外した項目(required): 泊数',
+    '会話を終えるターン数(flow.maxTurns): 30 → 15',
+    '守ること「返事の長さの上限(maxReplyChars)」: 1000 文字 → 300 文字',
+    '守ること「禁止の言葉(forbidden)」に足した: 「実在の宿の名前」',
+    'モックが yes と読む言葉: なし → 「はい」、「それで」',
+    'モックが no と読む言葉: なし → 「ちがう」',
+  ]);
+  assert.deepEqual(describeDefinitionChanges(v2, parse(TRAVEL_V2)), []);
+
+  const { steps } = TRAVEL_V2.flow;
+  const changed = parse({
+    ...TRAVEL_V2,
+    flow: {
+      steps: [
+        { id: 'hear', ask: ['nights'], say: 'summary', next: [{ when: { filled: ['place'], turnsAtLeast: 3 }, to: 'done' }] },
+        { id: 'check', next: [{ when: { intent: 'restart' }, to: 'hear' }] },
+      ],
+      maxTurns: 40,
+    },
+    end: { say: 'summary' },
+    rules: { noNewNumbers: false, mustAsk: true, noLeading: true, maxReplyChars: 300, forbidden: [] },
+  });
+  assert.deepEqual(describeDefinitionChanges(v2, changed), [
+    'なくした段: 「confirm」',
+    '足した段「check」: 聞く項目 なし、言うこと なし、進む先 利用者が最初からと言ったとき段「hear」へ',
+    '段「hear」で聞く項目: 行き先、泊数 → 泊数',
+    '段「hear」で言うこと: なし → 条件のまとめ(mock.confirm)',
+    '段「hear」から進む先: 必須の項目が埋まったとき段「confirm」へ → なし',
+    '終わる条件: 段「confirm」で利用者が「はい」と答えたとき → 段「hear」で行き先が埋まった かつ 3 ターン以上たったとき',
+    '会話を終えるターン数(flow.maxTurns): 15 → 30',
+    '終わったときに言うこと(end): 終わりの文(mock.complete) → 条件のまとめ(mock.confirm)',
+    '守ること「数字を作らない(noNewNumbers)」: する → しない',
+    '守ること「禁止の言葉(forbidden)」から外した: 「実在の宿の名前」',
+  ]);
+  // 最初の段を入れ替える
+  const swapped = parse({ ...TRAVEL_V2, flow: { ...TRAVEL_V2.flow, steps: [TRAVEL_V2.flow.steps[1], TRAVEL_V2.flow.steps[0]] } });
+  assert.deepEqual(describeDefinitionChanges(v2, swapped), ['最初の段: 「hear」 → 「confirm」']);
+  // 進む先と終わり方が同じでも、確かめる順が変わると、どれで移るかが変わり得る
+  const reordered = parse({ ...TRAVEL_V2, flow: { ...TRAVEL_V2.flow, steps: [steps[0], { ...steps[1], next: [...steps[1].next].reverse() }] } });
+  assert.deepEqual(describeDefinitionChanges(v2, reordered), [
+    '段「confirm」で遷移を確かめる順: 利用者が「はい」と答えたとき終わる、利用者が「いいえ」と答えたとき段「hear」へ → 利用者が「いいえ」と答えたとき段「hear」へ、利用者が「はい」と答えたとき終わる',
+  ]);
+  // filled: "required" を使わない流れでは、required を変えても終わり方は変わらないので出さない
+  const byList = { ...TRAVEL_V2, flow: { steps: [{ id: 'hear', ask: ['place'], next: [{ when: { filled: ['place'] }, to: 'done' }] }] } };
+  assert.deepEqual(describeDefinitionChanges(parse(byList), parse({ ...byList, fields: [TRAVEL_V2.fields[0], { ...TRAVEL.fields[1], required: true }] })), []);
+  assert.deepEqual(describeDefinitionChanges(v2, parse({ ...TRAVEL_V2, mock: { ...TRAVEL_V2.mock, confirm: '{summary}で進めますか?' } })), [
+    'モックの条件のまとめを確かめるときの返事: 「今の条件は{summary}です。これでよいですか?」 → 「{summary}で進めますか?」',
+  ]);
 });
 
 // 設定を差し替えられる AiSessions。作る AI が app/ai.json を書き換えてビルドした後と同じ状態を作る

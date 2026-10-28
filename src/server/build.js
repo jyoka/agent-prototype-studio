@@ -4,6 +4,7 @@ import * as esbuild from 'esbuild';
 import { digestSnapshot, snapshotApp } from './app-snapshot.js';
 import { STUDIO_ROOT } from './config.js';
 import { inspectApp } from './inspect.js';
+import { ENTRY_NAMES, readManifest } from './manifest.js';
 import { readAiDefinition } from './product-ai/definition.js';
 import { createBuildId } from './security.js';
 
@@ -16,7 +17,6 @@ export const ALLOWED_PACKAGES = [
   'react-dom/client',
 ];
 
-const ENTRY_NAMES = ['main.jsx', 'main.tsx', 'main.js', 'main.ts'];
 const RUNTIME_FILE = path.join(STUDIO_ROOT, 'src', 'runtime', 'runtime.js');
 const NODE_MODULES = path.join(STUDIO_ROOT, 'node_modules');
 
@@ -117,17 +117,9 @@ function indexHtml(hasCss) {
     .join('\n');
 }
 
-async function findEntry(appDir) {
-  for (const name of ENTRY_NAMES) {
-    const candidate = path.join(appDir, name);
-    const stat = await fs.lstat(candidate).catch(() => null);
-    if (stat?.isFile()) return candidate;
-  }
-  return null;
-}
-
 // app/ を 1 つの classic script(IIFE)に束ね、builds/<build-id>/ に置く。
-// 生成コードはここでは実行しない。成功したら、検査済みの AI の設定(なければ null)を ai で返す。
+// 生成コードはここでは実行しない。成功したら、検査済みの AI の設定(なければ null)を ai で、
+// 目録(app/prototype.json。なければ既定の値)を manifest で返す。
 export async function buildApp({ appDir, buildsDir }) {
   const started = Date.now();
   const appDigest = digestSnapshot(await snapshotApp(appDir));
@@ -137,16 +129,25 @@ export async function buildApp({ appDir, buildsDir }) {
   if (problems.length > 0) {
     return finish({ ok: false, errors: problems.map((p) => ({ ...p, line: null, column: null, lineText: null })) });
   }
-  // プロダクト内 AI の設定も、ビルドのたびに同じ決まりで検査する
-  const ai = await readAiDefinition(appDir);
+  // 目録とプロダクト内 AI の設定も、ビルドのたびに同じ決まりで検査する
+  const { manifest, errors: manifestErrors } = await readManifest(appDir);
+  if (manifestErrors.length > 0) {
+    return finish({ ok: false, errors: manifestErrors.map((p) => ({ ...p, line: null, column: null, lineText: null })) });
+  }
+  const ai = await readAiDefinition(appDir, manifest.ai ?? undefined);
   if (ai.errors.length > 0) {
     return finish({ ok: false, errors: ai.errors.map((p) => ({ ...p, line: null, column: null, lineText: null })) });
   }
-  const entry = await findEntry(appDir);
-  if (!entry) {
+  if (!manifest.entry) {
     return finish({
       ok: false,
-      errors: [{ file: 'app/', line: null, column: null, lineText: null, text: `入口のファイルがありません。${ENTRY_NAMES.map((n) => `app/${n}`).join('、')} のどれかを置いてください` }],
+      errors: [{
+        file: 'app/',
+        line: null,
+        column: null,
+        lineText: null,
+        text: `入口のファイルがありません。${ENTRY_NAMES.map((n) => `app/${n}`).join('、')} のどれかを置くか、app/prototype.json の entry で入口を指してください`,
+      }],
     });
   }
 
@@ -156,7 +157,7 @@ export async function buildApp({ appDir, buildsDir }) {
   let result;
   try {
     result = await esbuild.build({
-      entryPoints: { app: await fs.realpath(entry) },
+      entryPoints: { app: await fs.realpath(path.join(appDir, ...manifest.entry.split('/'))) },
       absWorkingDir: appReal,
       outdir: outDir,
       bundle: true,
@@ -200,6 +201,7 @@ export async function buildApp({ appDir, buildsDir }) {
     ok: true,
     buildId,
     ai: ai.definition,
+    manifest,
     errors: [],
     warnings: result.warnings.map((m) => toBuildError(appDir, m)),
   });

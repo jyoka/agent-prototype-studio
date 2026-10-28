@@ -45,3 +45,12 @@ test('認証の見込みは Claude Code の優先順位に合わせ、値を出�
     assert.ok(!JSON.stringify(describeBilling(env)).includes(secret));
   }
 });
+
+test('作る AI への決まりに、目録の置き場所と形が入る', () => {
+  const args = buildClaudeArgs({ billing: describeBilling({}) });
+  const prompt = valueOf(args, '--append-system-prompt');
+  assert.match(prompt, /目録 prototype\.json を app\/ の直下に置き/);
+  for (const key of ['formatVersion', 'entry', 'intent', 'constraints', 'unimplemented', 'data', 'ai', 'scenarios']) {
+    assert.ok(prompt.includes(`"${key}"`), key);
+  }
+});

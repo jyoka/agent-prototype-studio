@@ -112,7 +112,8 @@ export class ProjectStore {
           finishedAt: new Date().toISOString(),
         };
       }
-      const { ai = null, ...summary } = result;
+      // 目録は、画面に返すビルドの結果(lastBuild)には入れない
+      const { ai = null, manifest, ...summary } = result;
       entry.lastBuild = summary;
       if (result.ok) {
         entry.previewBuildId = result.buildId;
