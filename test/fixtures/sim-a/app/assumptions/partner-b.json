@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "id": "partner-b",
+  "name": "相手の仕様の推測 B(架空。文だけ、結果は短く)",
+  "note": "本物の仕様ではない。部品と結果の長さだけを A から変えた",
+  "model": { "name": "claude-haiku-5-5", "standIn": true },
+  "hostPrompt": "あなたは文だけで話す案内役です。(架空の推測)",
+  "slots": { "dip-guide": { "maxChars": 1500 } },
+  "messageTypes": ["text"],
+  "messageLimits": { "textMaxChars": 300, "buttonsMax": 2, "partsMax": 2 },
+  "toolCalling": { "maxPerReply": 2, "resultMaxChars": 60, "auth": "none", "delayMs": 0, "faults": [] },
+  "logging": { "partnerSees": ["messages"], "dipSees": ["toolCalls"] }
+}

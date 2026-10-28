@@ -111,7 +111,7 @@
 
   // 試作品から使う口。どれも、会話と状態の全体(session)を返す Promise を返す。
   //   session():         今の会話と状態
-  //   send(text):        利用者の発言を送り、AI の応答を受け取る
+  //   send(text, { action }): 利用者の発言を送り、AI の応答を受け取る。action はボタンの action(構成のある試作品で使う。なくてよい)
   //   correct(changes):  AI が理解した状態を本人が直す。例: correct({ area: 'もみじ台' })。null は「未定」
   //   onChange(listener): Studio の画面で接続が切り替わったとき、新しい session を受け取る。戻り値で受け取りをやめる
   window.studio = Object.freeze({
@@ -127,8 +127,11 @@
       session: function () {
         return requestAi('session', {});
       },
-      send: function (text) {
-        return requestAi('send', { text: text === undefined || text === null ? '' : String(text) });
+      send: function (text, options) {
+        var fields = { text: text === undefined || text === null ? '' : String(text) };
+        // ボタンの action(構成のある試作品の会話の枠で使う)。text は押したボタンの文
+        if (options && options.action !== undefined && options.action !== null) fields.action = String(options.action);
+        return requestAi('send', fields);
       },
       correct: function (changes) {
         return requestAi('correct', { changes: changes });

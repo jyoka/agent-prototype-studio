@@ -272,7 +272,7 @@ export function buildArgs(definition, kind = 'extract') {
 const LIMIT_PATTERN = /usage limit|rate.?limit|hit your limit|limit reached|too many requests|\b429\b/i;
 const AUTH_PATTERN = /not logged in|please run .*login|invalid api key|authentication|unauthorized|\b401\b/i;
 
-function failure(text, fallback) {
+export function failure(text, fallback) {
   // CLI の出力は画面と記録に出るので、秘密らしい文字列を伏せる
   // 先に伏せてから短くする。切った端に、鍵の一部が残らないように
   const detail = redact(String(text ?? '').trim().slice(0, 4000)).slice(0, 300);
@@ -357,8 +357,9 @@ export function shownArgs(args) {
 }
 
 // 1 回の呼び出しのために CLI を起動し、終わるか、止めるか、時間切れまで待つ
-// running には、動いている CLI を止める関数と、終わりを待つ Promise を入れる(Studio を止めるとき用)
-function run({ bin, args, input, cwd, env, signal, limits, running }) {
+// running には、動いている CLI を止める関数と、終わりを待つ Promise を入れる(Studio を止めるとき用)。
+// parse は標準出力を結果にする関数(既定は --output-format json の parseResult。模擬のエージェントは stream-json を読む)
+export function runCli({ bin, args, input, cwd, env, signal, limits, running, parse = parseResult }) {
   let entry;
   const promise = new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -437,14 +438,16 @@ function run({ bin, args, input, cwd, env, signal, limits, running }) {
       if (code !== 0) {
         // 失敗でも JSON の結果を出すことがある(上限、ログインなど)
         try {
-          parseResult(stdout);
+          // 終了コードが 0 でなくても、読めた結果を使ってよいと parse が言ったもの(模擬のエージェントの --max-turns で止まった返事)は返す
+          const parsed = parse(stdout);
+          if (parsed?.acceptNonZero) return finish(null, parsed);
         } catch (error) {
           if (error instanceof ConnectionError && error.code !== 'failed') return finish(error);
         }
         return finish(failure(stderr || stdout, `Claude Code が終了コード ${code ?? signalName} で止まりました`));
       }
       try {
-        finish(null, parseResult(stdout));
+        finish(null, parse(stdout));
       } catch (error) {
         finish(error);
       }
@@ -535,7 +538,7 @@ export function createClaudeCodeConnection({ env = process.env, allowed = false,
       if (!workDir || !fs.existsSync(workDir)) workDir = emptyWorkDir();
       const metered = meter?.start(kind);
       try {
-        const parsed = await run({ bin, args: buildArgs(definition, kind), input, cwd: workDir, env, signal, limits, running });
+        const parsed = await runCli({ bin, args: buildArgs(definition, kind), input, cwd: workDir, env, signal, limits, running });
         return { ...parsed, metered };
       } catch (error) {
         metered?.end({ error: error.code ?? 'failed' });

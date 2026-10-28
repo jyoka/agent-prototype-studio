@@ -5,6 +5,9 @@ import { checkProgress, shownValue, startProgress, turn } from './harness.js';
 import { CALL_LIMITS, ProjectCallWindow, TURN_LIMITS, createTurnMeter } from './limits.js';
 import { createMockConnection } from './mock.js';
 import { RealAiConsent } from '../real-ai.js';
+import { createMockAgent } from '../sim/agent-mock.js';
+import { ACTION_PATTERN } from '../sim/check.js';
+import { SimError, newSimConversationId, prepareSimulation, runTurn, startConversation } from '../sim/orchestrator.js';
 
 export const SESSION_LIMITS = {
   maxTextLength: 500,
@@ -29,6 +32,7 @@ const slotOf = (projectId, conversation) => JSON.stringify([projectId, conversat
 function freshSession(definition, key) {
   return {
     key,
+    name: definition.name,
     definition,
     busy: false,
     controller: null,
@@ -37,6 +41,29 @@ function freshSession(definition, key) {
     progress: startProgress(definition),
     messages: definition.mock.greeting ? [{ role: 'assistant', text: definition.mock.greeting }] : [],
   };
+}
+
+// 構成(app/composition.json)のある試作品の会話(docs/design/agent-simulation.md の 3.2)。1 ターンは会話の進め方(sim/orchestrator.js)が回す。
+// conversation は会話の進め方の会話(今話す参加者、引き継ぎの数、記録の店、harness ごとの状態、メッセージ)。messages はその写しへの参照
+function freshSimSession(prepared, key, conversationPrefix) {
+  const conversation = startConversation(prepared, { id: newSimConversationId(conversationPrefix) });
+  return {
+    key,
+    sim: prepared,
+    name: prepared.composition.name ?? '構成',
+    definition: null,
+    busy: false,
+    controller: null,
+    conversation,
+    messages: conversation.messages,
+  };
+}
+
+// 構成の会話で、記録に出す状態と、試作品に返す fields と state。harness の参加者が 1 人以上いれば、最初の harness のもの
+function simHarnessOf(session) {
+  const participant = session.sim.composition.participants.find((p) => p.kind === 'harness');
+  if (!participant) return null;
+  return { participant, definition: session.sim.ais.get(participant.id), own: session.conversation.harness[participant.id] };
 }
 
 const MESSAGE_ROLES = new Set(['user', 'assistant', 'correction']);
@@ -120,6 +147,8 @@ const NEXT_ACTIONS = {
   'turn-limit': 'もう一度送ってください。続くときは、「試す」の上の「AI」でモックに戻して試し、この記録を開発の担当者に見せてください。',
   'project-limit': '時間をおいてから送るか、「試す」の上の「AI」でモックに戻してください。会話はそのままです。',
   'too-long': '「会話を最初から」を押して、やり直してください。',
+  'no-mock': '模擬のエージェントのモックの決まり(app/mocks/ と構成の mock)を足すよう、「言葉で直す」欄で頼んでください。',
+  'not-supported': '構成(app/composition.json)のある試作品では、状態は試作品の会話の中で直してください。',
   busy: '前の応答が届くまで待ってください。急ぐときは、「試す」の上の「応答を止める」を押してください。',
   'reply:invalid': `空でない、${SESSION_LIMITS.maxTextLength} 文字までの文を送ってください。`,
   'correction:invalid':
@@ -149,6 +178,13 @@ function clipStages(stages) {
 
 // 実行の記録に出す接続。実際の AI モデルかどうか(real)を必ず付ける
 const connectionOfRecord = (connection) => ({ kind: connection.kind, label: connection.label, real: Boolean(connection.billing) });
+
+// harness の参加者の段ごとの中身も、記録に残す前に長い値を切る
+function clipSimSteps(record) {
+  const clipped = structuredClone(record);
+  for (const step of clipped.steps ?? []) if (step.harness) step.harness = clipStages(step.harness);
+  return clipped;
+}
 
 // 接続の失敗を、試作品と Studio 画面に返す形にする
 const CONNECTION_ERRORS = {
@@ -180,8 +216,19 @@ export class AiSessions {
     projectCalls = new ProjectCallWindow(),
     turnDeadlineMs = TURN_LIMITS.deadlineMs,
     consent = new RealAiConsent(),
+    simulationOf = () => null,
+    agents = [createMockAgent()],
+    projectDirOf = () => null,
   }) {
     this.definitionOf = definitionOf;
+    // 表示中の版の構成、ツール、前提、モック(build.js の simulation)と、harness の参加者の ai.json の定義を返す関数。
+    // 返す: { simulation, aiOf(file) }。構成のファイルのない試作品(構成 B)は、今までどおり definitionOf の harness で回す
+    this.simulationOf = simulationOf;
+    // 模擬のエージェントの接続。プロダクト内 AI の接続と同じ種類(mock、claude-code)で引く。本物かどうかと同意の確かめは、
+    // プロダクト内 AI の接続の選び方(select と useReal)をそのまま使う
+    this.agents = new Map(agents.map((agent) => [agent.kind, agent]));
+    // プロジェクトのフォルダー(模擬のエージェントの Claude Code の接続が .studio/sim/ に書く)
+    this.projectDirOf = projectDirOf;
     this.consent = consent;
     this.dataNumbersOf = dataNumbersOf;
     this.turnDeadlineMs = turnDeadlineMs;
@@ -281,12 +328,12 @@ export class AiSessions {
 
   // 観察用の新しい会話を作り、その ID を返す
   openObservation(projectId, { connection: kind = 'mock' } = {}) {
-    const definition = this.definition(projectId);
+    this.definition(projectId);
     const connection = this.observationConnection(kind);
     const conversation = `observation-${++this.observationSeq}`;
     const slot = slotOf(projectId, conversation);
+    const session = this.sessionSource(projectId, conversation).create();
     this.observations.set(slot, { connection: kind, entries: [] });
-    const session = freshSession(definition, JSON.stringify(definition));
     this.sessions.set(slot, session);
     // 会話の始まり(あいさつと最初の状態)を記録する
     this.record(
@@ -316,6 +363,7 @@ export class AiSessions {
     const slot = slotOf(projectId, conversation);
     if (!this.observations.has(slot)) return false;
     this.sessions.get(slot)?.controller?.abort();
+    this.forgetSim(projectId, this.sessions.get(slot));
     this.sessions.delete(slot);
     this.observations.delete(slot);
     return true;
@@ -329,6 +377,7 @@ export class AiSessions {
   // 実行の前に Studio 画面に出す。選べる接続、選べない理由、送るもの、費用
   connectionChoices(projectId) {
     const definition = this.definition(projectId);
+    const found = this.simulationFor(projectId);
     const selected = this.connectionOf(projectId).kind;
     return {
       selected,
@@ -339,7 +388,9 @@ export class AiSessions {
         tools: connection.tools ?? null,
         ...(connection.availability?.() ?? { available: true, reason: '' }),
         billing: connection.billing ?? null,
-        sends: connection.sends?.(definition) ?? null,
+        // 構成のある試作品では、模擬のエージェントに送るもの
+        sends: found ? (this.agents.get(connection.kind)?.sends?.(found.simulation) ?? null) : (connection.sends?.(definition) ?? null),
+        ...(found ? { tools: this.agents.get(connection.kind)?.tools ?? connection.tools ?? null } : {}),
       })),
     };
   }
@@ -383,7 +434,9 @@ export class AiSessions {
     const connection = this.connections.get(kind);
     if (!connection) throw new AiError(400, 'invalid', `「${String(kind)}」という接続はありません`);
     if (session.busy) throw new AiError(409, 'busy', 'AI が応答しています。止めるか、終わってから切り替えてください');
+    // 模擬のエージェントを本物に切り替えるときも、プロダクト内 AI と同じ口(useReal)で、選べるかと同意を確かめる
     this.useReal(connection, 'product');
+    if (session.sim && !this.agents.has(kind)) throw new AiError(400, 'invalid', `「${String(kind)}」では模擬のエージェントを動かせません`);
     const before = this.connectionOf(projectId);
     this.selected.set(projectId, kind);
     if (before.kind !== kind) {
@@ -410,12 +463,13 @@ export class AiSessions {
   // Studio を止めるとき。応答を待っている CLI を止め、終わるまで待つ(上限つき)
   async close() {
     for (const session of this.sessions.values()) session.controller?.abort();
-    await Promise.all([...this.connections.values()].map((connection) => connection.close?.()));
+    await Promise.all([...this.connections.values(), ...this.agents.values()].map((connection) => connection.close?.()));
   }
 
+  // AI の設定(app/ai.json)。構成(app/composition.json)のある試作品は、ai.json がなくても AI を使う(null を返す)
   definition(projectId) {
     const definition = this.definitionOf(projectId);
-    if (!definition) {
+    if (!definition && !this.simulationFor(projectId)) {
       throw new AiError(404, 'no-ai', 'この試作品はプロダクト内 AI を使っていません(app/ai.json がありません)');
     }
     return definition;
@@ -424,21 +478,64 @@ export class AiSessions {
   // 設定(app/ai.json)が変わったビルドに切り替わったら、その設定の初期状態から始める
   // 観察の会話は、終わった後には使えない。設定が変わっても、試し直しの前の会話には入れない
   session(projectId, conversation = USER_CONVERSATION) {
-    const definition = this.definition(projectId);
-    const key = JSON.stringify(definition);
+    const { key, create } = this.sessionSource(projectId, conversation);
     const slot = slotOf(projectId, conversation);
     const user = conversation === USER_CONVERSATION;
     this.checkConversation(projectId, conversation);
     const current = this.sessions.get(slot);
     if (current && current.key === key) return current;
     current?.controller?.abort();
+    this.forgetSim(projectId, current);
     // 試し直しの途中の会話は、送り直しきれていないので覚えない。元の前の会話を残す
     if (user && !current?.retrying && current?.messages.some((m) => m.role === 'user' || m.role === 'correction')) {
-      this.previous.set(projectId, { name: current.definition.name, messages: current.messages.map((m) => structuredClone(m)) });
+      this.previous.set(projectId, { name: current.name, messages: current.messages.map((m) => structuredClone(m)) });
     }
-    const session = freshSession(definition, key);
+    const session = create();
     this.sessions.set(slot, session);
     return session;
+  }
+
+  // 表示中の版の構成。構成のファイル(composition.json)があるときだけ返す。構成 B(ファイルのない読み替え)は null
+  simulationFor(projectId) {
+    const found = this.simulationOf(projectId);
+    return found?.simulation?.composition?.file ? found : null;
+  }
+
+  // 会話を作る元と、その鍵。鍵が変わったら(設定が変わったビルド)、会話を最初からにする
+  sessionSource(projectId, conversation) {
+    const found = this.simulationFor(projectId);
+    if (!found) {
+      const definition = this.definition(projectId);
+      const key = JSON.stringify(definition);
+      return { key, create: () => freshSession(definition, key) };
+    }
+    const { simulation, aiOf } = found;
+    // 鍵はビルドの読んだもの(データは大きくなりうるので、同じビルドの間は覚えておく)と、harness の設定
+    if (!this.simKeys) this.simKeys = new WeakMap();
+    if (!this.simKeys.has(simulation)) {
+      const { toolData, ...rest } = simulation;
+      this.simKeys.set(simulation, JSON.stringify(rest));
+    }
+    const harness = simulation.composition.participants.filter((p) => p.kind === 'harness').map((p) => aiOf(p.ai));
+    const key = `${this.simKeys.get(simulation)}\n${JSON.stringify(harness)}`;
+    const prefix = conversation === USER_CONVERSATION ? 'user' : conversation;
+    return {
+      key,
+      create: () => {
+        try {
+          return freshSimSession(prepareSimulation(simulation, { aiOf, dataNumbers: this.dataNumbersOf(projectId) ?? [] }), key, prefix);
+        } catch (error) {
+          if (error instanceof SimError) throw new AiError(500, 'invalid', error.message);
+          throw error;
+        }
+      },
+    };
+  }
+
+  // 構成の会話の作業の場所(.studio/sim/<会話の ID>/)を消す。会話を最初からにしたとき、版を戻したとき、観察が終わったとき
+  forgetSim(projectId, session) {
+    if (!session?.sim) return;
+    for (const agent of this.agents.values()) agent.forget?.(this.projectDirOf(projectId), session.conversation.id);
   }
 
   // 版の保存に入れる会話と状態。definition は保存するファイルの設定で、今の会話がその設定のものでなければ、
@@ -447,7 +544,8 @@ export class AiSessions {
     if (!definition) return null;
     const key = JSON.stringify(definition);
     const current = this.sessions.get(slotOf(projectId, USER_CONVERSATION));
-    if (!current || current.key !== key) return null;
+    // 構成の会話は、まだ版に入れない(記録の店を版に入れるのは後のカード)
+    if (!current || current.key !== key || current.sim) return null;
     const snapshot = {
       state: { ...current.state },
       messages: current.messages.map((message) => structuredClone(message)),
@@ -464,11 +562,13 @@ export class AiSessions {
     // 実モデルの応答を待っていたら、止めて費用を使い続けない
     const slot = slotOf(projectId, USER_CONVERSATION);
     this.sessions.get(slot)?.controller?.abort();
+    this.forgetSim(projectId, this.sessions.get(slot));
     this.sessions.delete(slot);
     const definition = this.definitionOf(projectId);
     if (!definition) return snapshot === null;
     const session = this.session(projectId);
     if (snapshot === null) return true;
+    if (session.sim) return false;
     const checked = checkSnapshot(definition, snapshot);
     if (!checked) return false;
     session.state = checked.state;
@@ -484,7 +584,9 @@ export class AiSessions {
   }
 
   view(projectId, { conversation = USER_CONVERSATION } = {}) {
-    const { definition, state, messages, busy } = this.session(projectId, conversation);
+    const session = this.session(projectId, conversation);
+    if (session.sim) return this.simView(projectId, session, conversation);
+    const { definition, state, messages, busy } = session;
     const connection = this.connectionOf(projectId, conversation);
     return {
       connection: {
@@ -504,12 +606,36 @@ export class AiSessions {
     };
   }
 
+  // 構成のある会話の形(3.9)。構成 B の形(connection、name、fields、state、messages、busy)に、参加者、今話す参加者、
+  // 記録の店を足す。メッセージには、話した参加者(from)と返事の部品(parts)が入る。ツールの呼び出しの中身は返さない
+  simView(projectId, session, conversation) {
+    const connection = this.connectionOf(projectId, conversation);
+    const harness = simHarnessOf(session);
+    const fields = harness?.definition.fields ?? [];
+    return {
+      connection: { kind: connection.kind, label: connection.label, description: connection.description },
+      name: session.name,
+      fields: fields.map((field) =>
+        field.type === 'number'
+          ? { key: field.key, label: field.label, type: field.type, unit: field.unit, min: field.min, max: field.max }
+          : { key: field.key, label: field.label, type: field.type, options: field.options.map((o) => o.value) },
+      ),
+      state: harness ? { ...harness.own.state } : {},
+      messages: session.messages.map((message) => structuredClone(message)),
+      busy: session.busy,
+      participants: session.sim.composition.participants.map((p) => ({ id: p.id, label: p.label, kind: p.kind })),
+      active: session.conversation.active,
+      records: structuredClone(session.conversation.store),
+    };
+  }
+
   // 応答を待っている途中でも、新しい会話に取り替える。届いた応答は捨てる
   reset(projectId) {
     this.definition(projectId);
     // 実モデルの応答を待っていたら、止めて費用を使い続けない
     const slot = slotOf(projectId, USER_CONVERSATION);
     this.sessions.get(slot)?.controller?.abort();
+    this.forgetSim(projectId, this.sessions.get(slot));
     this.sessions.delete(slot);
     const view = this.view(projectId);
     this.record(projectId, {
@@ -524,6 +650,10 @@ export class AiSessions {
 
   // 記録に出す状態。項目の名前と、画面と同じ書き方の値
   describeState(session) {
+    if (session.sim) {
+      const harness = simHarnessOf(session);
+      return harness ? harness.definition.fields.map((field) => ({ key: field.key, label: field.label, value: formatValue(field, harness.own.state[field.key]) })) : [];
+    }
     return session.definition.fields.map((field) => ({ key: field.key, label: field.label, value: formatValue(field, session.state[field.key]) }));
   }
 
@@ -567,6 +697,7 @@ export class AiSessions {
       );
     }
     const slot = slotOf(projectId, USER_CONVERSATION);
+    this.forgetSim(projectId, this.sessions.get(slot));
     this.sessions.delete(slot);
     const session = this.session(projectId);
     session.retrying = true;
@@ -581,10 +712,23 @@ export class AiSessions {
           break;
         }
         if (message.role === 'user') {
-          const before = previous.messages[index + 1]?.role === 'assistant' ? previous.messages[index + 1] : null;
-          await this.send(projectId, message.text, { replaying: true });
-          const after = session.messages.at(-1);
-          result.replies.push({ text: message.text, before: before?.text ?? null, beforeVia: before?.via ?? null, after: after.text, afterVia: after.via });
+          // 前と後の返事。構成の会話では、引き継いだ先の返事も続くので、続く返事を全部、文にしてつなぐ(部品は parts を文にした text)
+          const befores = [];
+          for (let next = index + 1; previous.messages[next]?.role === 'assistant'; next += 1) befores.push(previous.messages[next]);
+          const start = session.messages.length;
+          await this.send(projectId, message.text, { replaying: true, action: message.action });
+          const afters = session.messages.slice(start).filter((m) => m.role === 'assistant');
+          result.replies.push({
+            text: message.text,
+            ...(message.action ? { action: message.action } : {}),
+            before: befores.length > 0 ? befores.map((m) => m.text).join('\n') : null,
+            beforeVia: befores.at(-1)?.via ?? null,
+            after: afters.map((m) => m.text).join('\n'),
+            afterVia: afters.at(-1)?.via,
+          });
+        } else if (message.role === 'correction' && session.sim) {
+          // 構成のある会話には、状態を直す口がない
+          result.skipped.push(...(message.changes ?? []).map((change) => `${change.label}を「${change.to ?? '未定'}」に直す修正`));
         } else if (message.role === 'correction') {
           const changes = {};
           for (const change of message.changes ?? []) {
@@ -609,11 +753,13 @@ export class AiSessions {
 
   // 利用者の発言を接続に渡す。成功も失敗も、実行の記録に残す
   // 試し直し(replaying)の発言は、Studio 画面から送ったものとして記録する。conversation は会話の ID
-  async send(projectId, text, { replaying = false, conversation = USER_CONVERSATION } = {}) {
+  // action はボタンの action(構成のある会話だけで使う。3.9)。構成 B では受け取っても使わない
+  async send(projectId, text, { replaying = false, conversation = USER_CONVERSATION, action = null } = {}) {
     // AI のない試作品は、記録する AI がないので記録しない
     this.definition(projectId);
     this.checkConversation(projectId, conversation);
     const connection = this.connectionOf(projectId, conversation);
+    const simulated = Boolean(this.simulationFor(projectId));
     const entry = this.record(
       projectId,
       {
@@ -622,11 +768,16 @@ export class AiSessions {
         status: 'running',
         connection: connectionOfRecord(connection),
         text: typeof text === 'string' ? text.trim().slice(0, SESSION_LIMITS.maxTextLength) : '',
+        ...(simulated ? { kind: 'sim-turn', action: typeof action === 'string' ? action.slice(0, 40) : null } : {}),
       },
       conversation,
     );
     const started = Date.now();
     try {
+      if (action !== undefined && action !== null && (typeof action !== 'string' || !ACTION_PATTERN.test(action))) {
+        throw new AiError(400, 'invalid', 'ボタンの action は、英小文字で始め、英小文字、数字、_、- だけで 40 字までにしてください');
+      }
+      if (simulated) return await this.simReply(projectId, connection, text, action ?? null, entry, { replaying, conversation });
       return await this.reply(projectId, connection, text, entry, { replaying, conversation });
     } catch (error) {
       AiSessions.fail(entry, error, 'reply');
@@ -742,6 +893,106 @@ export class AiSessions {
     return this.view(projectId, { conversation });
   }
 
+  // 構成のある会話の 1 ターン(docs/design/agent-simulation.md の 3.2)。会話の進め方(runTurn)が、誰が話すか、引き継ぎ、上限、
+  // ツールの口、出口の確かめを決める。接続(モックか Claude Code)は、利用者が選んだもの(本物は同意の後だけ。select と useReal)。
+  // 記録は sim-turn(4.1)。伏せてから残す。実モデルの起動は、プロジェクトごとの 1 時間の上限に、観察の会話も含めて数える
+  async simReply(projectId, connection, text, action, entry, { replaying, conversation }) {
+    if (typeof text !== 'string' || text.trim() === '') throw new AiError(400, 'invalid', '話す内容を書いてください');
+    if (text.length > SESSION_LIMITS.maxTextLength) {
+      throw new AiError(400, 'invalid', `${SESSION_LIMITS.maxTextLength} 文字までにしてください`);
+    }
+    const slot = slotOf(projectId, conversation);
+    const session = this.session(projectId, conversation);
+    if (session.busy) throw new AiError(409, 'busy', 'AI が前の発言に応答しています。少し待ってください');
+    if (session.retrying && !replaying) throw new AiError(409, 'busy', '前の会話を試し直しています。終わるまで待ってください');
+    // 発言と、話す参加者と引き継いだ先の返事
+    this.checkRoom(session, 3);
+    const agent = this.agents.get(connection.kind);
+    if (!agent) throw new AiError(400, 'invalid', `「${connection.label}」では模擬のエージェントを動かせません`);
+    if (connection.billing) {
+      const paid = session.messages.filter((m) => m.role === 'user' && m.via === connection.kind).length;
+      if (paid >= SESSION_LIMITS.maxPaidReplies) {
+        throw new AiError(
+          429,
+          'paid-limit',
+          `${connection.label} への発言は、1 つの会話で ${SESSION_LIMITS.maxPaidReplies} 回までです。Studio の「会話を最初から」でやり直すか、接続をモックに戻してください`,
+        );
+      }
+    }
+    session.busy = true;
+    session.controller = new AbortController();
+    const started = Date.now();
+    const meter = connection.billing ? createTurnMeter({ perTurn: CALL_LIMITS.perTurn, take: () => this.projectCalls.take(projectId) }) : null;
+    const record = {};
+    // 模擬のエージェントの起動の数(記録の calls に足す。1 回でも起動したら「送っていない」にしない)
+    let launches = 0;
+    let result;
+    try {
+      result = await runTurn({
+        sim: session.sim,
+        conversation: session.conversation,
+        input: { text: text.trim(), action },
+        agent,
+        harnessConnection: connection,
+        signal: session.controller.signal,
+        meter,
+        deadlineMs: this.turnDeadlineMs,
+        record,
+        context: {
+          projectDir: this.projectDirOf(projectId),
+          // ツールの認証(bound-user)の、会話ごとの架空の利用者の ID。モデルには見せない
+          userId: `fictional-${session.conversation.id}`,
+          onLaunch: agent.real
+            ? () => {
+                this.projectCalls.take(projectId);
+                launches += 1;
+              }
+            : null,
+        },
+      });
+    } catch (error) {
+      if (this.sessions.get(slot) !== session) throw new AiError(409, 'reset', '応答を待つ間に会話が最初に戻りました');
+      if (error instanceof AiError) throw error;
+      if (error instanceof SimError) throw new AiError(error.code === 'too-long' ? 409 : 400, error.code, error.message);
+      if (error instanceof ConnectionError && Object.hasOwn(CONNECTION_ERRORS, error.code)) {
+        const [status, code] = CONNECTION_ERRORS[error.code];
+        throw new AiError(status, code, error.message);
+      }
+      throw new AiError(502, 'connection', `AI から応答を受け取れませんでした: ${error.message}`);
+    } finally {
+      session.busy = false;
+      session.controller = null;
+      // 指紋(sha256 の 16 進)は Studio が作った値なので、長い符号として伏せない
+      const kept = redactDeep(clipSimSteps(record));
+      if (record.composition) kept.composition = { ...kept.composition, digest: record.composition.digest };
+      if (record.assumptions) kept.assumptions = { ...kept.assumptions, digest: record.assumptions.digest };
+      Object.assign(entry, kept);
+      if (meter) {
+        const summary = meter.summary();
+        entry.calls = { ...summary, count: summary.count + launches, agent: launches };
+      }
+    }
+    if (this.sessions.get(slot) !== session) throw new AiError(409, 'reset', '応答を待つ間に会話が最初に戻りました');
+    const elapsedMs = Date.now() - started;
+    const costs = record.steps.map((step) => step.costUsd).filter(Number.isFinite);
+    const costUsd = costs.length > 0 ? costs.reduce((a, b) => a + b, 0) + (entry.calls?.costUsd ?? 0) : entry.calls?.costUsd;
+    for (const message of result.said) Object.assign(message, { via: connection.kind, elapsedMs });
+    if (Number.isFinite(costUsd)) result.said.at(-1).costUsd = costUsd;
+    // 利用者の発言にも、どの接続に送ったかを残す(有料の発言の数を数えるため)
+    const user = result.conversation.messages.at(-1 - result.said.length);
+    user.via = connection.kind;
+    session.conversation = result.conversation;
+    session.messages = result.conversation.messages;
+    Object.assign(
+      entry,
+      redactDeep({
+        status: 'ok',
+        output: { reply: result.said.map((m) => m.text).join('\n'), costUsd: Number.isFinite(costUsd) ? costUsd : null },
+      }),
+    );
+    return this.view(projectId, { conversation });
+  }
+
   // 本人が、AI の理解した状態を直す。次の応答はこの記録を踏まえる。成功も失敗も、実行の記録に残す
   correct(projectId, changes, { replaying = false, conversation = USER_CONVERSATION } = {}) {
     this.definition(projectId);
@@ -772,6 +1023,9 @@ export class AiSessions {
   }
 
   applyCorrection(projectId, changes, { replaying, conversation }) {
+    if (this.simulationFor(projectId)) {
+      throw new AiError(409, 'not-supported', 'この試作品は構成(app/composition.json)で会話を回すので、状態を直す口(correct)は使えません');
+    }
     if (!isPlainObject(changes) || Object.keys(changes).length === 0) {
       throw new AiError(400, 'invalid', '直す項目を { 項目の key: 値 } の形で渡してください');
     }

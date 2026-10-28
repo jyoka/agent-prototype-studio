@@ -5,6 +5,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { STUDIO_ROOT, loadConfig } from '../../src/server/config.js';
 import { HomeNotWritableError, startStudio } from '../../src/server/index.js';
 
 // fetch は Host を書き換えさせないので、http.request で送る。
@@ -388,4 +389,146 @@ test('AI の実行の記録の API: 発言と失敗を、次にすることと�
   assert.equal((await call(`${base}/trace`, undefined, { 'x-studio-token': 'x' })).status, 401);
   assert.equal((await call('/api/projects/sample-library/ai/trace')).body.error.code, 'no-ai');
   assert.deepEqual((await call(`${base}/clear-trace`, {})).body.entries, []);
+});
+
+// 構成(app/composition.json)のある試作品(test/fixtures/sim-a、sim-c。架空)を置いて起動する。作る AI は偽接続。
+// 試作品の中の AI の Claude Code は偽の claude(test/fixtures/fake-claude.js)。env は Studio と Claude Code に渡す環境変数
+async function withSimStudio(t, { extraEnv = {} } = {}) {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-sim-server-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  for (const name of ['sim-a', 'sim-c']) {
+    await fs.cp(path.join(STUDIO_ROOT, 'test', 'fixtures', name, 'app'), path.join(home, 'projects', name, 'app'), { recursive: true });
+  }
+  const bin = path.join(home, 'bin', 'claude');
+  await fs.mkdir(path.dirname(bin), { recursive: true });
+  await fs.writeFile(bin, `#!/bin/sh\nexec "${process.execPath}" "${path.join(STUDIO_ROOT, 'test', 'fixtures', 'fake-claude.js')}" "$@"\n`, { mode: 0o755 });
+  const env = { PATH: process.env.PATH, STUDIO_AGENT: 'fake', STUDIO_CLAUDE_BIN: bin, FAKE_CLAUDE_LOG: path.join(home, 'claude.jsonl'), ...extraEnv };
+  const studio = await startStudio(loadConfig({ ...env, STUDIO_HOME: home, STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0', STUDIO_NO_OPEN: '1' }), { env });
+  t.after(() => studio.close());
+  const token = new URL(studio.url).hash.slice('#token='.length);
+  const sp = studio.ports.studio;
+  const host = `127.0.0.1:${sp}`;
+  const headers = { host, 'x-studio-token': token, origin: `http://${host}`, 'content-type': 'application/json' };
+  const call = async (pathname, json) => {
+    const res = await request(sp, { method: json === undefined ? 'GET' : 'POST', pathname, headers, body: json === undefined ? undefined : JSON.stringify(json) });
+    return { status: res.status, body: JSON.parse(res.body) };
+  };
+  return { home, studio, call, env };
+}
+
+test('構成のある試作品: studio.ai.send(text, { action }) と、会話に参加者、今話す参加者、部品、記録の店が入る。構成 B は今の形のまま', async (t) => {
+  const { call } = await withSimStudio(t);
+  const base = '/api/projects/sim-a/ai';
+  const initial = (await call(base)).body.session;
+  assert.deepEqual(initial.participants, [{ id: 'partner', label: '相手のエージェント(模擬)', kind: 'agent' }]);
+  assert.equal(initial.active, 'partner');
+  assert.deepEqual(initial.records, {});
+  assert.deepEqual(initial.messages, []);
+  assert.equal(initial.connection.kind, 'mock');
+
+  const found = (await call(`${base}/messages`, { text: 'みなと町で探して' })).body.session;
+  const [user, reply] = found.messages;
+  assert.equal(user.role, 'user');
+  assert.equal(reply.from, 'partner');
+  assert.deepEqual(reply.parts.map((p) => p.kind), ['text', 'buttons']);
+  assert.deepEqual(reply.parts[1].items, [{ label: '詳しく見る' }, { label: '保存する', action: 'save' }]);
+  assert.equal(reply.text, '2件ありました。架空の品出し、架空の配膳\n1. 詳しく見る\n2. 保存する');
+
+  // ボタンの action を送る。同意の記録がないので、保存のツールは守り(requires)が断る
+  const refused = (await call(`${base}/messages`, { text: '保存する', action: 'save' })).body.session;
+  assert.deepEqual(refused.messages.at(-2), { role: 'user', text: '保存する', action: 'save', via: 'mock' });
+  assert.match(refused.messages.at(-1).text, /記録「consent」がありません/);
+  assert.deepEqual(refused.records, {});
+  await call(`${base}/messages`, { text: '保存してよいです' });
+  const saved = (await call(`${base}/messages`, { text: '保存する', action: 'save' })).body.session;
+  assert.deepEqual(saved.records, { consent: { agreed: true }, wishes: { area: 'みなと町' } });
+  assert.equal(saved.messages.at(-1).text, '保存しました。');
+  // ツールの呼び出しの中身は、試作品に返さない(記録にだけ出す)
+  assert.ok(!JSON.stringify(saved).includes('search_jobs'));
+  const trace = (await call(`${base}/trace`)).body.entries;
+  assert.equal(trace[0].kind, 'sim-turn');
+  assert.equal(trace[0].action, 'save');
+  assert.ok(trace.some((entry) => entry.steps?.some((step) => step.tool === 'search_jobs')));
+
+  // 形の合わない action は断る
+  assert.equal((await call(`${base}/messages`, { text: '保存する', action: 'Save Now' })).body.error.code, 'invalid');
+  assert.equal((await call(`${base}/messages`, { text: '保存する', action: 3 })).status, 400);
+  // 構成の会話では、状態を直す口は使えない
+  assert.equal((await call(`${base}/corrections`, { changes: { area: 'みなと町' } })).body.error.code, 'not-supported');
+  // リセットで最初に戻る
+  assert.deepEqual((await call(`${base}/reset`, {})).body.session.records, {});
+
+  // 構成 C: 引き継ぎで今話す参加者が替わり、相談役の項目と状態が入る
+  const c = (await call('/api/projects/sim-c/ai/messages', { text: '相談したい' })).body.session;
+  assert.deepEqual(c.participants.map((p) => [p.id, p.kind]), [['front', 'agent'], ['consult', 'harness'], ['staff', 'human']]);
+  assert.equal(c.active, 'consult');
+  assert.deepEqual(c.messages.filter((m) => m.role === 'assistant').map((m) => m.from), ['front', 'consult']);
+  assert.deepEqual(c.state, { area: 'みなと町', minWage: null });
+  assert.deepEqual(c.fields.map((f) => f.key), ['area', 'minWage']);
+
+  // 構成 B(composition.json のない見本)は、今の形のまま。text だけの send も今と同じ。action は使わない
+  const b = (await call('/api/projects/sample-job-consult/ai/messages', { text: 'カフェで働きたいです', action: 'save' })).body.session;
+  assert.deepEqual(Object.keys(b).sort(), ['busy', 'connection', 'fields', 'messages', 'name', 'state']);
+  assert.equal(b.state.jobType, 'カフェのホール');
+});
+
+test('模擬のエージェントを Claude Code に切り替えるときも、同じ同意の口を通る。同意の前は断り、同意の後は偽の CLI で話せる', { skip: process.platform === 'win32' }, async (t) => {
+  const { call, home } = await withSimStudio(t);
+  const base = '/api/projects/sim-a/ai';
+  const choices = (await call(`${base}/connections`)).body;
+  const claude = choices.options.find((o) => o.kind === 'claude-code');
+  assert.equal(claude.available, true);
+  assert.match(claude.sends.items[0], /相手のエージェント\(模擬\)/);
+  assert.match(claude.tools, /--allowedTools/);
+
+  const refused = await call(`${base}/connection`, { kind: 'claude-code' });
+  assert.equal(refused.status, 403);
+  assert.equal(refused.body.error.code, 'consent-required');
+  assert.equal((await call(base)).body.session.connection.kind, 'mock');
+  // 同意の前は、偽の CLI も起動していない
+  assert.equal(await fs.stat(path.join(home, 'claude.jsonl')).catch(() => null), null);
+
+  assert.equal((await call('/api/real-ai/consent', {})).body.consent.agreed, true);
+  assert.equal((await call(`${base}/connection`, { kind: 'claude-code' })).body.session.connection.kind, 'claude-code');
+  const sent = (await call(`${base}/messages`, { text: 'こんにちは' })).body.session;
+  assert.equal(sent.messages.at(-1).via, 'claude-code');
+  assert.match(sent.messages.at(-1).text, /^偽の Claude Code です。/);
+  const [launch] = (await fs.readFile(path.join(home, 'claude.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  assert.ok(launch.argv.includes('--strict-mcp-config'));
+  assert.ok(!launch.argv.includes('--safe-mode'));
+});
+
+test('試し直しは構成のある会話でも動く。ボタンの action も送り直し、前と後の返事は parts を文にしたもので返す', async (t) => {
+  const { call, home, studio } = await withSimStudio(t);
+  const base = '/api/projects/sim-a/ai';
+  await call(`${base}/messages`, { text: '保存してよいです' });
+  await call(`${base}/messages`, { text: '保存する', action: 'save' });
+  await call(`${base}/messages`, { text: 'みなと町で探して' });
+  // 設定を変えたビルドに切り替わると、前の会話を覚えて最初に戻る
+  const mock = path.join(home, 'projects', 'sim-a', 'app', 'mocks', 'partner.json');
+  const rules = JSON.parse(await fs.readFile(mock, 'utf8'));
+  rules.rules[3].reply = [{ kind: 'text', text: '希望を保存しました。' }];
+  await fs.writeFile(mock, JSON.stringify(rules));
+  await studio.store.build('sim-a');
+  const fresh = (await call(base)).body;
+  assert.deepEqual(fresh.session.messages, []);
+  assert.equal(fresh.retry.available, true);
+  assert.equal(fresh.retry.userMessages, 3);
+
+  const { session, retry } = (await call(`${base}/retry`, {})).body;
+  assert.deepEqual(session.records, { consent: { agreed: true }, wishes: { area: 'みなと町' } });
+  assert.deepEqual(
+    retry.result.replies.map(({ text, action, before, after }) => ({ text, action, before, after })),
+    [
+      { text: '保存してよいです', action: undefined, before: '保存してよいと記録しました。', after: '保存してよいと記録しました。' },
+      { text: '保存する', action: 'save', before: '保存しました。', after: '希望を保存しました。' },
+      {
+        text: 'みなと町で探して',
+        action: undefined,
+        before: '2件ありました。架空の品出し、架空の配膳\n1. 詳しく見る\n2. 保存する',
+        after: '2件ありました。架空の品出し、架空の配膳\n1. 詳しく見る\n2. 保存する',
+      },
+    ],
+  );
+  assert.equal(retry.result.stopped, null);
 });

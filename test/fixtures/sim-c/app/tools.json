@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "owner": "dip",
+  "tools": [
+    { "name": "handoff_to_consult", "description": "バイト探しの相談を相談役に引き継ぐ",
+      "inputSchema": { "type": "object", "properties": {
+        "area": { "type": "string", "maxLength": 20 }, "minWage": { "type": "number" } } },
+      "do": { "op": "handoff", "to": "consult" } },
+    { "name": "handoff_to_staff", "description": "危ない話を担当者に引き継ぐ",
+      "inputSchema": { "type": "object", "properties": {} },
+      "do": { "op": "handoff", "to": "staff" } }
+  ]
+}

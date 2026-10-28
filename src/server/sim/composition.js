@@ -28,6 +28,7 @@ import {
 } from './check.js';
 import { readEvals } from './evals.js';
 import { DEFAULT_MOCKS, readMocks } from './mocks.js';
+import { loadToolData } from './tool-gate.js';
 import { TOOLS_FILE, readTools } from './tools.js';
 
 // 構成(app/composition.json)。試作品の中で、誰が会話を回し(driver)、どの参加者がどのツールとプロンプトの枠を持ち、
@@ -338,7 +339,7 @@ async function crossCheck(problems, composition, ctx) {
           }
           continue;
         }
-        await checkSlot(problems, `${at}.prompt[${i}]`, piece, assumptions, appDir);
+        await checkSlot(problems, `${at}.prompt[${i}]`, piece, assumptions, appDir, ctx.prompts);
       }
     }
     if (participant.kind === 'harness') {
@@ -377,7 +378,8 @@ async function crossCheck(problems, composition, ctx) {
 }
 
 // プロンプトの枠の文。前提が決める長さを超えたら、切らずに誤りにする(長さの違いで結果が変わったことを隠さないため。3.4)
-async function checkSlot(problems, where, piece, assumptions, appDir) {
+// 検査を通った枠の文は prompts(ファイルの名前 → 文)に入れる。会話の進め方がプロンプトを組むときに使う
+async function checkSlot(problems, where, piece, assumptions, appDir, prompts) {
   let body = piece.text;
   if (piece.file !== undefined) {
     const file = await appFile(problems, `${where}.file`, piece.file, appDir, { extensions: PROMPT_EXTENSIONS });
@@ -402,8 +404,10 @@ async function checkSlot(problems, where, piece, assumptions, appDir) {
     const max = assumption.slots[piece.slot]?.maxChars;
     if (max !== undefined && body.length > max) {
       problems.add(where, `枠「${piece.slot}」の文が、前提「${assumption.id}」の上限を超えています(${body.length} 文字。上限 ${max} 文字)`);
+      return;
     }
   }
+  if (piece.file !== undefined) prompts?.set(piece.file, body);
 }
 
 // composition.json のない試作品の構成(構成 B)。ai.json の harness 1 つが会話を回す。ai.json もなければ null(AI のない試作品)
@@ -478,6 +482,13 @@ export async function readSimulation(appDir, manifest, ai) {
     if (read.toolset) toolsets.set(file, read.toolset);
   }
   const toolNames = new Set([...toolsets.values()].flatMap((toolset) => toolset.tools.map((tool) => tool.name)));
+  // ツールが読む架空のデータ。会話の進め方が、モックの模擬のエージェントのツールの呼び出し(同じプロセスの中のツールの口)に使う
+  const toolData = new Map();
+  for (const [file, toolset] of toolsets) {
+    const loaded = await loadToolData(appDir, toolset);
+    errors.push(...loaded.errors.map((error) => ({ ...error, file: `app/${file}` })));
+    toolData.set(file, loaded.data);
+  }
 
   const assumptionsByDir = new Map();
   const dirs = new Set(simulated ? [DEFAULT_ASSUMPTIONS] : []);
@@ -513,7 +524,8 @@ export async function readSimulation(appDir, manifest, ai) {
     return aiCache.get(file);
   };
 
-  const ctx = { appDir, toolsets, assumptionsByDir, mocks: mockRead.mocks, aiOf, defaultAi: manifest.ai };
+  const prompts = new Map();
+  const ctx = { appDir, toolsets, assumptionsByDir, mocks: mockRead.mocks, aiOf, defaultAi: manifest.ai, prompts };
   let composition = null;
   const compositions = [];
   for (const file of compositionFiles) {
@@ -533,6 +545,9 @@ export async function readSimulation(appDir, manifest, ai) {
       composition: defaultFile ? composition : compositionB(ai, manifest.ai ?? AI_FILE),
       compositions,
       tools: Object.fromEntries(toolsets),
+      toolData: Object.fromEntries(toolData),
+      // プロンプトの枠の文(ファイルの名前 → 文)。検査を通ったものだけ
+      prompts: Object.fromEntries(prompts),
       assumptions: [...assumptionsByDir.values()].flat(),
       mocks: [...mockRead.mocks.values()],
       evals: evalRead.evals,

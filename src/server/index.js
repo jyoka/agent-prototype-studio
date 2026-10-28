@@ -11,7 +11,10 @@ import { createClaudeCodeConnection } from './product-ai/claude-code.js';
 import { createMockConnection } from './product-ai/mock.js';
 import { AiSessions } from './product-ai/session.js';
 import { observeProject } from './observe-entry.js';
-import { ensureSampleProjects, projectsDir } from './projects.js';
+import { ensureSampleProjects, listProjects, projectPaths, projectsDir } from './projects.js';
+import { createClaudeCodeAgent } from './sim/agent-claude-code.js';
+import { createMockAgent } from './sim/agent-mock.js';
+import { removeAllSimDirs } from './sim/tools-mcp.js';
 import { consentView, RealAiConsent } from './real-ai.js';
 import { STUDIO_SYSTEM_PROMPT } from './claude-args.js';
 import { createToken } from './security.js';
@@ -69,6 +72,8 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       log(`サンプルの試作品を用意しました: ${id}`);
     }
     await recoverInterrupted(config.home, log);
+    // 前の起動の模擬の会話の作業の場所(.studio/sim/)は、会話がもうメモリーにないので消す
+    for (const project of await listProjects(config.home)) await removeAllSimDirs(project.paths.root);
   } catch (error) {
     // ENOTDIR と EEXIST は、置き場の途中にふつうのファイルがあるとき
     if (['EACCES', 'EPERM', 'EROFS', 'ENOTDIR', 'EEXIST'].includes(error.code)) {
@@ -112,11 +117,21 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
 
   // プロダクト内 AI の接続の既定はモック。Claude Code は、利用者が画面で同意してから切り替える。
   // STUDIO_ALLOW_CLAUDE_CODE=0 のときは選べない(config.allowClaudeCode。書かない設定は選べない側にする)
+  // 構成(app/composition.json)のある試作品は、会話の進め方が回す。模擬のエージェントの接続も、モックと Claude Code の 2 つで、
+  // プロダクト内 AI と同じ選び方(既定はモック、本物は同意の後だけ)に従う(docs/design/agent-simulation.md の 3.3)
   const aiSessions = new AiSessions({
     definitionOf: (id) => store.aiDefinition(id),
     dataNumbersOf: (id) => store.dataNumbers(id),
     connections: [createMockConnection(), createClaudeCodeConnection({ env, allowed: config.allowClaudeCode === true })],
     consent,
+    simulationOf: (id) => {
+      const simulation = store.simulation(id);
+      if (!simulation) return null;
+      const manifestAi = store.manifest(id)?.ai;
+      return { simulation, aiOf: (file) => simulation.harnessAis?.[file] ?? (file === manifestAi ? store.aiDefinition(id) : null) };
+    },
+    agents: [createMockAgent(), createClaudeCodeAgent({ env })],
+    projectDirOf: (id) => projectPaths(config.home, id).root,
   });
 
   // 作る run の関門の観察。G5 は基本のシナリオとアプリのシナリオなしで観察し、プロダクト内 AI の要求は断る(ai を渡さない)。

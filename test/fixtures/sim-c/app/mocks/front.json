@@ -1,0 +1,14 @@
+{
+  "formatVersion": 1,
+  "rules": [
+    { "when": { "contains": ["全部"] }, "call": { "tool": "handoff_to_consult", "args": { "area": "みなと町", "minWage": 1100 } },
+      "reply": [{ "kind": "text", "text": "相談役におつなぎします。" }] },
+    { "when": { "contains": ["範囲外"] }, "call": { "tool": "handoff_to_consult", "args": { "area": "月の裏側", "minWage": 99999 } },
+      "reply": [{ "kind": "text", "text": "相談役におつなぎします。" }] },
+    { "when": { "contains": ["相談"] }, "call": { "tool": "handoff_to_consult", "args": { "area": "みなと町" } },
+      "reply": [{ "kind": "text", "text": "相談役におつなぎします。" }] },
+    { "when": { "contains": ["体調"] }, "call": { "tool": "handoff_to_staff", "args": {} },
+      "reply": [{ "kind": "text", "text": "担当者におつなぎします。" }] }
+  ],
+  "otherwise": [{ "kind": "text", "text": "ご用件をどうぞ。" }]
+}

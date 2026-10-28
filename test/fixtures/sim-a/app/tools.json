@@ -1,0 +1,52 @@
+{
+  "formatVersion": 1,
+  "owner": "dip",
+  "tools": [
+    {
+      "name": "search_jobs",
+      "description": "架空の求人を、場所、時給、曜日で探す",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "area": { "type": "string", "enum": ["みなと町", "もり台", "かわべ市"] },
+          "minWage": { "type": "number", "minimum": 900, "maximum": 3000 },
+          "day": { "type": "string", "enum": ["月", "火", "水", "木", "金", "土", "日"] }
+        }
+      },
+      "do": { "op": "search", "data": "data/jobs.json",
+              "match": { "area": { "field": "area" }, "minWage": { "field": "wage", "atLeast": true }, "day": { "field": "days", "includes": true } },
+              "fields": ["id", "title", "area", "wage"], "limit": 5 },
+      "guards": { "maxCallsPerConversation": 10 }
+    },
+    {
+      "name": "get_job",
+      "description": "架空の求人を 1 つ、id で詳しく見る",
+      "inputSchema": { "type": "object", "properties": { "id": { "type": "string", "maxLength": 10 } }, "required": ["id"] },
+      "do": { "op": "get", "data": "data/jobs.json", "key": "id" },
+      "guards": { "hideFields": ["contact"] }
+    },
+    {
+      "name": "suggest_questions",
+      "description": "DIP が聞いてほしいことの一覧を返す",
+      "inputSchema": { "type": "object", "properties": {} },
+      "do": { "op": "fixed", "data": "data/questions.json" }
+    },
+    {
+      "name": "record_consent",
+      "description": "希望を保存してよいと本人が言ったことを記録する",
+      "inputSchema": { "type": "object", "properties": { "agreed": { "type": "boolean" } }, "required": ["agreed"] },
+      "do": { "op": "record", "into": "consent" }
+    },
+    {
+      "name": "save_wish",
+      "description": "本人の希望を保存する",
+      "inputSchema": { "type": "object", "properties": {
+        "area": { "type": "string", "maxLength": 20 }, "minWage": { "type": "number" }, "note": { "type": "string", "maxLength": 200 } } },
+      "do": { "op": "record", "into": "wishes" },
+      "guards": {
+        "requires": [{ "recorded": "consent", "equals": { "agreed": true } }],
+        "deny": [{ "arg": "note", "looksLike": ["phone", "email"], "message": "電話番号とメールアドレスは保存できません" }]
+      }
+    }
+  ]
+}
