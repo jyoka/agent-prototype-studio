@@ -230,7 +230,10 @@ test('U5: 準備の結果、AI のやりとりの記録、AI が覚えている�
     await expect(trace).toBeVisible();
     await expect(state).toBeVisible();
     await expect(state.getByRole('definition')).toHaveText(['カフェのホール', '未定', '未定', '未定']);
+    // 試験用の依頼は、偽接続(STUDIO_AGENT=fake)のときだけ出る
     await expect(page.locator('#dev-details').getByRole('heading', { level: 3 })).toHaveText([
+      '直す AI(作る AI)の接続',
+      '試験用の依頼',
       'ビルド',
       'プロダクト内 AI',
       'AI の実行の記録',

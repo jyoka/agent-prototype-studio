@@ -45,7 +45,16 @@ button { font: inherit; }
 }
 .topbar button:disabled, .toolbar button:disabled, .detail-button:disabled { opacity: 0.5; cursor: default; }
 .connection { font-size: 0.85rem; color: var(--error); }
-.connection[hidden], .save-mark[hidden] { display: none; }
+.connection[hidden], .save-mark[hidden], .dev-agent-mark[hidden] { display: none; }
+/* STUDIO_AGENT=fake のときだけ出す、開発用の印 */
+.dev-agent-mark {
+  padding: 0.15rem 0.5rem;
+  border: 1px dashed var(--muted);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
 .save-mark {
   padding: 0.15rem 0.5rem;
   border: 1px solid #c77700;
@@ -219,6 +228,20 @@ button { font: inherit; }
 }
 .make > * { flex-shrink: 0; }
 .make > .muted { font-size: 0.85rem; }
+.make-target { margin: -0.3rem 0 0; font-weight: 600; color: var(--accent); }
+.make-target:empty { display: none; }
+/* 直す AI が使えないときのカード(ux-redesign.md 7-5) */
+.agent-unavailable { padding: 0.6rem 0.8rem; border: 1px solid #c77700; border-radius: 6px; background: var(--warn-bg); }
+.agent-unavailable[hidden] { display: none; }
+.agent-unavailable h3 { margin: 0 0 0.3rem; font-size: 0.95rem; }
+.agent-unavailable p { margin: 0.2rem 0; }
+.agent-unavailable .card-label { margin-top: 0.5rem; font-weight: 600; }
+.agent-unavailable ul, .agent-unavailable ol { margin: 0.1rem 0 0; padding-left: 1.3rem; }
+.agent-unavailable .muted { margin-top: 0.4rem; font-size: 0.8rem; }
+.card-dev { margin-top: 0.4rem; font-size: 0.8rem; }
+.card-dev summary { cursor: pointer; color: var(--muted); }
+.card-dev p { margin: 0.2rem 0; word-break: break-all; }
+.card-dev code { word-break: break-all; }
 .agent-status { padding: 0.5rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
 .agent-status p { margin: 0.15rem 0; }
 .agent-status .agent-name { font-weight: 600; }
@@ -249,7 +272,15 @@ button { font: inherit; }
 .bubble .who { display: block; font-size: 0.75rem; color: var(--muted); }
 .bubble.user { padding: 0.4rem 0.6rem; background: #eef3fd; border-radius: 6px; }
 .run .steps li.bubble.agent { border-left-color: var(--accent); }
+.run .steps li.step-short { border-left-color: transparent; padding-top: 0; padding-bottom: 0; color: var(--muted); }
+.run .steps li.step-short::before { content: "・"; }
+.run-updated { margin: 0.3rem 0 0; padding: 0.3rem 0.5rem; border-left: 3px solid var(--ok); background: #eaf5ee; }
 .run-status { margin: 0.3rem 0 0; font-size: 0.8rem; color: var(--muted); }
+.run-dev { margin-top: 0.2rem; font-size: 0.75rem; color: var(--muted); }
+.run-dev summary { cursor: pointer; }
+.run-dev ul { margin: 0.2rem 0; padding-left: 1.1rem; }
+.run-dev li { word-break: break-all; }
+.run-dev p { margin: 0.1rem 0; }
 .run[data-status="failed"] .run-status, .run[data-status="timed-out"] .run-status { color: var(--error); }
 .run[data-status="done"] .run-status, .run[data-status="fixed"] .run-status { color: var(--ok); }
 .make-error { color: var(--error); padding: 0.4rem 0; }
@@ -267,10 +298,22 @@ button { font: inherit; }
 .request-actions button[type="submit"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 .request-actions button:disabled { opacity: 0.5; cursor: default; }
 .request-actions .muted { font-size: 0.75rem; }
-.examples ul { list-style: none; margin: 0.3rem 0 0; padding: 0; }
-.examples li { margin: 0.25rem 0; display: flex; flex-direction: column; gap: 0.1rem; }
-.examples button { text-align: left; padding: 0.2rem 0.5rem; font-size: 0.85rem; }
-.examples li .muted { font-size: 0.75rem; }
+.examples[hidden], #test-requests[hidden] { display: none; }
+.examples ul { list-style: none; margin: 0.2rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.examples button { text-align: left; padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.85rem; }
+.test-request-list { list-style: none; margin: 0.3rem 0 0; padding: 0; }
+.test-request-list li { margin: 0.25rem 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.test-request-list button {
+  align-self: flex-start;
+  text-align: left;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.test-request-list li .muted { font-size: 0.75rem; }
 
 .ai-status p { margin: 0 0 0.4rem; }
 .ai-connection { padding: 0.4rem 0.6rem; background: var(--warn-bg); border-radius: 4px; }

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { AI_FILE } from './product-ai/definition.js';
 
 // Claude Code の stream-json の 1 行を、作る会話に出す項目に直す。
 // 文はすべて画面で文字として出す(HTML にしない)。長さは切る。
@@ -70,6 +71,49 @@ export function describeTool(appDirs, name, input = {}) {
   return verb;
 }
 
+// 利用者の画面に出す、操作の短い文(ux-redesign.md 7-3)。ファイルの名前や道具の名前は入れない。
+// 名前の入った文(describeTool)は、開発者向けに残す
+const TOOL_SUMMARIES = {
+  Read: (what) => `${what}を読みました`,
+  Edit: (what) => `${what}を書き換えました`,
+  MultiEdit: (what) => `${what}を書き換えました`,
+  Write: (what) => `${what}を書きました`,
+  Glob: () => '試作品のファイルを探しました',
+  Grep: () => '試作品のファイルの中を探しました',
+  mcp__observe__open: () => '試作品の画面を開いて確かめました',
+  mcp__observe__read_page: () => '試作品の画面を読みました',
+  mcp__observe__inspect: () => '試作品の画面を調べました',
+  mcp__observe__click: () => '試作品の画面を操作しました',
+  mcp__observe__type: () => '試作品の画面を操作しました',
+  mcp__observe__scroll: () => '試作品の画面を操作しました',
+  mcp__observe__set_viewport: () => '画面の幅を変えて確かめました',
+  mcp__observe__screenshot: () => '試作品の画面を撮りました',
+  mcp__observe__run_scenarios: () => '決まった手順で試作品を確かめました',
+};
+
+// app/ の外は断られる(ADR 0001)。文は道具を呼んだときに作るので、外は「しようとした」とだけ言う
+const OUTSIDE_SUMMARIES = {
+  Read: '試作品のフォルダーの外のファイルを読もうとしました',
+  Edit: '試作品のフォルダーの外のファイルを書き換えようとしました',
+  MultiEdit: '試作品のフォルダーの外のファイルを書き換えようとしました',
+  Write: '試作品のフォルダーの外のファイルに書こうとしました',
+};
+
+// 操作の対象を、利用者の言葉で言う
+function toolTarget(shown) {
+  if (!shown) return '試作品のファイル';
+  return shown === `app/${AI_FILE}` ? 'AI の設定' : '試作品のファイル';
+}
+
+export function summarizeTool(appDirs, name, input = {}) {
+  const summary = typeof name === 'string' && Object.hasOwn(TOOL_SUMMARIES, name) ? TOOL_SUMMARIES[name] : null;
+  if (!summary) return '作業を進めました';
+  input = input && typeof input === 'object' ? input : {};
+  const shown = showPath(appDirs, input.file_path ?? input.path ?? input.notebook_path);
+  if (shown.endsWith('(app/ の外)')) return OUTSIDE_SUMMARIES[name] ?? '試作品のフォルダーの外を見ようとしました';
+  return summary(toolTarget(shown));
+}
+
 function toolResultText(content) {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
@@ -101,7 +145,7 @@ export function readMessage(message, appDirs) {
     for (const part of content) {
       if (part?.type === 'text' && part.text?.trim()) out.items.push({ kind: 'assistant', text: clip(part.text.trim()) });
       if (part?.type === 'tool_use') {
-        out.items.push({ kind: 'tool', text: describeTool(appDirs, part.name, part.input) });
+        out.items.push({ kind: 'tool', text: describeTool(appDirs, part.name, part.input), summary: summarizeTool(appDirs, part.name, part.input) });
         if (typeof part.name === 'string') out.toolUses.push(part.name.slice(0, MAX_TOOL_NAME));
       }
     }

@@ -1,12 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { SAMPLES, chooseSample, expect, launchStudio, test } from './studio.js';
+import { SAMPLES, chooseSample, chooseTestRequest, expect, launchStudio, test } from './studio.js';
 
 // 作るループを閉じる(docs/design/harness.md の 2.1〜2.4、S1、S12)。作る AI は決定的な偽接続
 // (src/agent/fake-claude.js)で、モデルも外部の API も呼ばない。関門 G5 と G6 は Studio の観察器(Playwright の Chromium)
 
+// 開発者向けの詳細の「試験用の依頼」から選んで送る
 async function sendRequest(page, text) {
-  await page.getByLabel('依頼').fill(text);
+  await chooseTestRequest(page, text);
   await page.getByRole('button', { name: '送る' }).click();
 }
 
@@ -22,8 +23,7 @@ test('壊れる依頼でも、Studio が失敗を直す依頼にして返し、�
     const app = page.frameLocator('iframe[title="試作品"]');
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
 
-    await page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '壊して', exact: true }).click();
-    await page.getByRole('button', { name: '送る' }).click();
+    await sendRequest(page, '壊して');
     const run = lastRun(page);
     await expect(run.locator('.run-status')).toContainText('作る AI が直すラウンドで直し、Studio が確かめた関門は、すべて通りました', { timeout: 20_000 });
 
@@ -95,8 +95,7 @@ test('シナリオの関門 G6 の失敗を直す依頼にして返し、作る 
     const app = page.frameLocator('iframe[title="試作品"]');
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
 
-    await page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: 'シナリオを足して、見出しを崩して', exact: true }).click();
-    await page.getByRole('button', { name: '送る' }).click();
+    await sendRequest(page, 'シナリオを足して、見出しを崩して');
     const run = lastRun(page);
     await expect(run.locator('.run-status')).toContainText('作る AI が直すラウンドで直し、Studio が確かめた関門は、すべて通りました', { timeout: 60_000 });
 
@@ -155,9 +154,13 @@ test('作る AI が観察の道具で画面を開いて読み、その項目が�
     await sendRequest(page, '見出しを「ひだまり図書室」にして、画面で確かめて');
     const run = lastRun(page);
     await expect(run.locator('.run-status')).toContainText('すべて通りました', { timeout: 60_000 });
+    // 作る会話には短い文で出し、道具の名前は実行ごとの「開発者向け」の中に出す
     const tools = run.locator('[data-kind="tool"]');
-    await expect(tools.filter({ hasText: '観察: 開く' })).toHaveCount(1);
-    await expect(tools.filter({ hasText: '観察: ページを読む' })).toHaveCount(1);
+    await expect(tools.filter({ hasText: '試作品の画面を開いて確かめました' })).toHaveCount(1);
+    await expect(tools.filter({ hasText: '試作品の画面を読みました' })).toHaveCount(1);
+    const dev = run.locator('.run-dev li');
+    await expect(dev.filter({ hasText: '観察: 開く' })).toHaveCount(1);
+    await expect(dev.filter({ hasText: '観察: ページを読む' })).toHaveCount(1);
     // 観察の道具が読んだ画面は、作る AI が書き換えた後の作業中の app/
     await expect(run.locator('.bubble.agent').filter({ hasText: '観察の道具で確かめると、画面の見出しは「ひだまり図書室」でした' })).toBeVisible();
     await expect(app.getByRole('heading', { name: 'ひだまり図書室' })).toBeVisible();

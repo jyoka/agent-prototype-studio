@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "id": "partner-a",
+  "name": "相手の仕様の推測 A(架空)",
+  "hostPrompt": "あなたはトークアプリの受付です。短く話してください。(架空の推測)",
+  "messageTypes": ["text", "buttons", "notice"],
+  "toolCalling": { "maxPerReply": 2 }
+}

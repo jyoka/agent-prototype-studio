@@ -9,6 +9,7 @@ import { createClaudeCodeConnection } from '../../src/server/product-ai/claude-c
 import { parseAiDefinition } from '../../src/server/product-ai/definition.js';
 import { createMockConnection } from '../../src/server/product-ai/mock.js';
 import { AiSessions, SESSION_LIMITS, nextAction } from '../../src/server/product-ai/session.js';
+import { buildSim } from '../fixtures/sim.js';
 
 // 実モデルは呼ばない。Claude Code は偽の CLI に差し替える
 const FAKE = path.join(STUDIO_ROOT, 'test', 'fixtures', 'fake-claude.js');
@@ -383,4 +384,54 @@ test('観察の会話の記録は、利用者の記録を押し出さない。�
   assert.throws(() => sessions.correct('p', { nights: 2 }, { conversation }), { code: 'closed' });
   assert.equal(sessions.trace('p').entries.length, before);
   assert.deepEqual(sessions.view('p').state, { place: '湖の町', nights: null });
+});
+
+test('構成のある会話の 1 ターンは sim-turn の記録(4.1 の形)で残り、発言、ツールの引数、守りの理由は伏せてある', async (t) => {
+  const fixture = await buildSim(t, 'sim-a');
+  const sessions = new AiSessions({
+    definitionOf: () => null,
+    simulationOf: () => ({ simulation: fixture.simulation, aiOf: fixture.aiOf }),
+    projectDirOf: () => fixture.root,
+  });
+  await sessions.send('p', 'みなと町で探して');
+  await sessions.send('p', '090-1234-5678 に電話して');
+  const [phone, search] = sessions.trace('p').entries;
+
+  assert.equal(search.type, 'reply');
+  assert.equal(search.kind, 'sim-turn');
+  assert.equal(search.status, 'ok');
+  assert.deepEqual(search.composition, { name: '外のエージェントと DIP 役のツール(架空)', file: 'composition.json', digest: search.composition.digest });
+  assert.match(search.composition.digest, /^sha256:[0-9a-f]{64}$/);
+  assert.deepEqual(search.assumptions, { id: 'partner-a', file: 'assumptions/partner-a.json', digest: search.assumptions.digest, standIn: true });
+  assert.equal(search.turn, 1);
+  assert.deepEqual(search.input, { text: 'みなと町で探して', action: null, history: 0 });
+  assert.deepEqual(search.nodes, ['accept', 'prompt:partner', 'agent:partner', 'surface:partner', 'output:partner', 'handoff', 'reply']);
+  const [agentStep, toolStep, outputStep] = search.steps;
+  assert.deepEqual(agentStep.prompt, {
+    pieces: [{ from: 'assumptions', key: 'hostPrompt', owner: 'partner', chars: agentStep.prompt.pieces[0].chars }, { slot: 'dip-guide', owner: 'dip', chars: agentStep.prompt.pieces[1].chars }],
+    asked: ['no-contact-ask'],
+  });
+  assert.equal(agentStep.connection, 'mock');
+  assert.equal(agentStep.real, false);
+  assert.equal(toolStep.tool, 'search_jobs');
+  assert.equal(toolStep.by, 'partner');
+  assert.deepEqual(toolStep.args, { area: 'みなと町' });
+  // ツールの結果は、長さと数と項目の名前だけ
+  assert.deepEqual(Object.keys(toolStep.result), ['ok', 'chars', 'count', 'keys']);
+  assert.ok(!JSON.stringify(search).includes('架空の窓口'));
+  assert.deepEqual(outputStep.output, { parts: [{ kind: 'text' }, { kind: 'buttons', items: 2 }] });
+  assert.deepEqual(outputStep.guards, [{ layer: 'output', guard: 'facts-from-tools', effect: 'passed', owner: 'partner' }]);
+  assert.equal(search.handoff, null);
+  assert.deepEqual(search.views, { partnerSees: ['messages', 'toolCalls'], dipSees: ['toolCalls'] });
+  assert.match(search.output.reply, /^2件ありました。/);
+
+  // 発言とツールの引数に入った電話番号は、記録に残す前に伏せる
+  const recorded = JSON.stringify(phone);
+  assert.ok(!recorded.includes('090-1234-5678'));
+  assert.ok(!recorded.includes('090-0000-0000'));
+  assert.match(phone.text, /\[伏せた: 電話番号\]/);
+  assert.match(phone.input.text, /\[伏せた: 電話番号\]/);
+  const save = phone.steps.find((step) => step.tool === 'save_wish');
+  assert.match(save.args.note, /\[伏せた: 電話番号\]/);
+  assert.deepEqual(save.guards.map((g) => [g.guard, g.effect]), [['schema', 'passed'], ['requires', 'blocked']]);
 });

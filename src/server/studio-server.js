@@ -289,7 +289,8 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
       if (!action) session = aiSessions.view(id);
       else if (action === 'connection') session = aiSessions.select(id, body?.kind);
       else if (action === 'cancel') session = aiSessions.cancel(id);
-      else if (action === 'messages') session = await aiSessions.send(id, body?.text);
+      // action はボタンの action(構成のある会話で使う。studio.ai.send(text, { action }))
+      else if (action === 'messages') session = await aiSessions.send(id, body?.text, { action: body?.action });
       else if (action === 'corrections') session = aiSessions.correct(id, body?.changes);
       else if (action === 'retry') session = await aiSessions.retry(id);
       else session = aiSessions.reset(id);

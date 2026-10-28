@@ -1,0 +1,12 @@
+{
+  "formatVersion": 2,
+  "name": "相談役(架空)",
+  "instructions": "架空のバイト探しの相談役です。",
+  "fields": [
+    { "key": "area", "label": "場所", "question": "どのあたりで働きたいですか?",
+      "options": [{ "value": "みなと町", "keywords": ["みなと"] }, { "value": "もり台", "keywords": ["もり"] }] },
+    { "key": "minWage", "label": "時給の下限", "type": "number", "unit": "円", "min": 900, "max": 3000,
+      "question": "時給はいくら以上がよいですか?" }
+  ],
+  "mock": { "greeting": "相談役です。(架空)" }
+}
