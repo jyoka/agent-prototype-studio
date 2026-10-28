@@ -56,6 +56,64 @@
 }
 ```
 
+## シナリオ(`app/scenarios/*.json`)
+
+シナリオは、観察器で試作品を動かして確かめる手順。1 ファイルに 1 本書く。置き場所は目録の `scenarios`(既定は `app/scenarios/`)で、ファイルの名前の順に回す。見本は `samples/study-consult/app/scenarios/talk-and-plan.json`。
+
+```json
+{
+  "name": "学びたいことを話すと、学習プランの項目に出る",
+  "viewport": "mobile",
+  "steps": [
+    { "do": "type", "target": { "label": "メッセージ" }, "text": "英会話を始めたいです" },
+    { "do": "click", "target": { "role": "button", "name": "送る" } },
+    { "expect": "aiState", "key": "subject", "equals": "英会話" },
+    { "expect": "text", "target": { "region": "学習プラン" }, "contains": "英会話" },
+    { "do": "screenshot", "name": "学習プランが出た" }
+  ]
+}
+```
+
+| 項目 | 中身 | 書かないとき |
+|---|---|---|
+| `name` | シナリオの名前(100 文字まで) | 書く(なければ誤り) |
+| `viewport` | 始めるときの画面幅。`mobile`(390x844)、`tablet`(820x1180)、`desktop`(1280x800) | `desktop` |
+| `steps` | 手順の配列(1〜50 個)。1 つの手順に `do`(操作)か `expect`(確かめ)のどちらか 1 つを書く | 書く(なければ誤り) |
+
+操作(`do`)は、観察器の 7 つの操作。
+
+| `do` | 書く項目 | すること |
+|---|---|---|
+| `read` | なし | 画面の文字と、アクセシビリティの木の要約を読む |
+| `inspect` | `target`(書かなくてよい) | 対象の要素の役割、名前、見えているか、押せるかを調べる。`target` がなければ、押せる要素と入力欄の一覧 |
+| `click` | `target` | 対象を押す |
+| `type` | `target`、`text` | 対象の入力欄の文字を `text` に入れ替える |
+| `scroll` | `target` か `to`(どちらも書かなくてよい) | 対象が見えるまでスクロールする。`to` は `top` か `bottom`(既定は `bottom`) |
+| `viewport` | `viewport` | 画面幅を `mobile`、`tablet`、`desktop` に切り替える |
+| `screenshot` | `name` | 画面を撮り、名前を付けて `.studio/observations/<観察の ID>/` に置く |
+
+確かめ(`expect`)は 4 つ。
+
+| `expect` | 書く項目 | 通る条件 |
+|---|---|---|
+| `text` | `contains`、`target`(書かなくてよい) | 対象(なければ画面全体)の文字に `contains` がある。空白の違いは見ない |
+| `visible` | `target`(書かなくてよい) | 対象が見えている。`target` がなければ、描画が空でない |
+| `noErrors` | なし | ここまでにエラー(実行時のエラー、`console.error` など)がない |
+| `aiState` | `key`、`equals` | プロダクト内 AI の状態の項目 `key` が `equals`(文字列、数、`null`)になる |
+
+- 対象(`target`)は、次のどれか 1 つで指す。CSS のセレクターは使えない。作る AI と人が読めるため。
+  - `{ "role": "button", "name": "送る" }`: 役割と名前。`name` は書かなくてよい
+  - `{ "label": "メッセージ" }`: 入力欄のラベル
+  - `{ "text": "合う講座" }`: 画面の文字
+  - `{ "region": "学習プラン" }`: 名前の付いた領域(`aria-label` の付いた `section` など)
+- 名前、ラベル、文字は、その文字を含めば合う。いくつも合うときは、最初の 1 つを使う。
+- 操作と確かめは、1 つ 5 秒まで待つ。AI の返事を待つ確かめ(`text`、`aiState`)も、5 秒のうちに通ればよい。シナリオ 1 本は 60 秒まで。
+- 失敗した手順で止める。残りの手順は回さない。report の `scenarios[]` に、失敗した手順、理由、そのときのスクリーンショットが入る。
+- 形の誤り(知らない `do`、対象がない、`viewport` の値が違う、など)は、どのファイルの何番目の手順がどう違うかを返す。誤りのあるシナリオは回さず、失敗として扱う。
+- 題材の言葉(相談の中身、項目の値)は、シナリオの中にだけ書く。
+- Studio の基本のシナリオは、`app/` のシナリオより先に、いつも回す。起動して描画が空でなく、エラーがないこと。AI のある試作品では、`ai.json` の `mock.greeting`(あいさつ)が画面に出ること。基本のシナリオは Studio のコード(`src/observer/scenario.js`)にあり、`app/` からは変えられない。
+- 観察の中のプロダクト内 AI は、観察用の新しい会話で答える。今はモックだけで回す。
+
 ## プロダクト内 AI の設定(`app/ai.json`)
 
 試作品の中で AI を使うときは、`app/ai.json` を置く。題材に依存しない形で、AI が覚える項目と、モックの応答の型を書く。見本は `samples/job-consult/app/ai.json`。
