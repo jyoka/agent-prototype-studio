@@ -6,7 +6,7 @@ import test from 'node:test';
 import { buildApp } from '../../src/server/build.js';
 import { STUDIO_ROOT } from '../../src/server/config.js';
 import { DEFAULT_RULES, describeDefinitionChanges, parseAiDefinition } from '../../src/server/product-ai/definition.js';
-import { createMockConnection, extractUpdates } from '../../src/server/product-ai/mock.js';
+import { createMockConnection, extractUpdates, mockExtract } from '../../src/server/product-ai/mock.js';
 import { AiSessions, SESSION_LIMITS } from '../../src/server/product-ai/session.js';
 
 // 求人ではない題材(架空の旅行の相談)。共通の部分が題材に依存しないことを確かめる
@@ -547,9 +547,9 @@ test('試し直しは、今の設定にない修正を飛ばして知らせ、�
   let release;
   const slow = {
     ...createMockConnection(),
-    respond: (input) =>
+    extract: (input) =>
       new Promise((resolve, reject) => {
-        release = () => resolve(createMockConnection().respond(input));
+        release = () => resolve(mockExtract(input));
         input.signal.addEventListener('abort', () => reject(Object.assign(new Error('止めました'), { name: 'AbortError' })));
       }),
   };
@@ -584,7 +584,7 @@ test('試し直しの途中でリセットされたら、新しい会話に書�
   let release;
   const slow = {
     ...createMockConnection(),
-    respond: (input) => new Promise((resolve) => (release = () => resolve(createMockConnection().respond(input)))),
+    extract: (input) => new Promise((resolve) => (release = () => resolve(mockExtract(input)))),
   };
   const { sessions, holder } = switchable([slow]);
   release = null;

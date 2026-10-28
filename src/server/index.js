@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { connectionView, resolveConnection } from './agent-connection.js';
 import { Observer } from '../observer/observe.js';
+import { readScenarios } from '../observer/scenario.js';
 import { BuildRequests } from './build-requests.js';
 import { STUDIO_ROOT } from './config.js';
 import { ProjectHandoffs } from './handoff.js';
@@ -81,11 +82,20 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
   // 観察器のブラウザは、Studio の中で 1 つだけ。最初の観察のときに起動する
   const observer = new Observer();
 
-  // 表示中のビルドを観察し、スクリーンショットを outDir に置く。作る run の関門 G5 と、利用者の観察が使う
-  async function observeProject(id, { scenarios, viewports, ai, limits, outDir }) {
-    await store.requireProject(id);
+  // 表示中のビルドを観察し、スクリーンショットを outDir に置く。作る run の関門 G5 と、利用者の観察が使う。
+  // scenarios を渡さなければ、app/ の目録の scenarios(既定は app/scenarios/)から読む
+  async function observeProject(id, { scenarios, viewports, ai, operate, base, limits, outDir }) {
+    const paths = await store.requireProject(id);
     const project = (await store.list()).find((p) => p.id === id);
-    const result = project.lastBuild ?? { ok: false, errors: [{ file: 'app/', text: 'まだビルドしていません' }] };
+    const last = project.lastBuild ?? { ok: false, errors: [{ file: 'app/', text: 'まだビルドしていません' }] };
+    // 基本のシナリオ(あいさつ)のために、表示中の版の AI の設定を添える
+    const result = last.ok ? { ...last, ai: store.aiDefinition(id) } : last;
+    if (scenarios === undefined && result.ok) {
+      const loaded = await readScenarios(paths.app, store.manifest(id)?.scenarios);
+      // 形の誤りがあるシナリオは、ファイルごとに 1 つの failed の結果にする
+      const broken = Map.groupBy(loaded.errors, (error) => error.file);
+      scenarios = [...loaded.scenarios, ...[...broken].map(([file, errors]) => ({ file, errors }))];
+    }
     return observer.observe({
       build: {
         result,
@@ -95,6 +105,8 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
       scenarios,
       viewports,
       ai,
+      operate,
+      base,
       limits,
       outDir,
     });
@@ -103,8 +115,9 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
   const requests = new BuildRequests({
     store,
     connection,
-    // 関門 G5 は基本のシナリオなしで観察する。プロダクト内 AI の要求は断る(ai を渡さない)
-    observe: (id, { viewports, outDir }) => observeProject(id, { viewports, outDir }),
+    // 関門 G5 は基本のシナリオとアプリのシナリオなしで観察する(シナリオは関門 G6、jyoka/tasks#305)。
+    // プロダクト内 AI の要求は断る(ai を渡さない)
+    observe: (id, { viewports, outDir }) => observeProject(id, { scenarios: [], base: false, viewports, outDir }),
     env,
     log,
     maxBudgetUsd: config.maxBudgetUsd,
@@ -159,9 +172,11 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
     handoffs,
     observer,
     // 表示中のビルドを観察する。report のスクリーンショットは .studio/observations/<観察の ID>/ に置く。
+    // シナリオは、渡さなければ app/ の目録の scenarios(既定は app/scenarios/)から読む。
+    // Studio の基本のシナリオは、観察器がいつも先に回す。
     // プロダクト内 AI は、aiConnection(接続の種類。'mock' など)を渡すと、観察用の新しい会話で答え、
     // 観察が終わったら会話を捨てる(S15)。自分で作った ai 関数を渡してもよい
-    async observe(id, { scenarios, viewports, ai, aiConnection, limits } = {}) {
+    async observe(id, { scenarios, viewports, ai, aiConnection, operate, limits } = {}) {
       if (ai !== undefined && aiConnection !== undefined) throw new TypeError('ai と aiConnection は、どちらか 1 つだけ渡してください');
       const paths = await store.requireProject(id);
       const observationId = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
@@ -171,6 +186,7 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
           scenarios,
           viewports,
           ai: observationAi ?? ai,
+          operate,
           limits,
           outDir: path.join(paths.studio, 'observations', observationId),
         });

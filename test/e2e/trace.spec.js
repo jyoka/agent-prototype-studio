@@ -63,6 +63,13 @@ test('モックの実行の記録: 発言、返事、状態の変化、修正、
     await expect(first).toContainText('受け取った updates: {"jobType":"カフェのホール"}');
     await expect(first).not.toContainText('費用');
     await expect(first).not.toContainText('起動の形');
+    // harness の 3 段。何を聞くかは、接続ではなく決定(コード)が決めたと分かる
+    await first.getByText('harness の段: 抽出 → 決定 → 言い方(開発向け)').click();
+    await expect(first).toContainText('どう読んだか: 接続の抽出(extract)を呼びました');
+    await expect(first).toContainText('検査で入れなかった値: なし');
+    await expect(first).toContainText('決定: 段「hear」、ターン 1、聞く項目 雇用区分、言うこと なし、続ける');
+    await expect(first).toContainText('理由: 段「hear」の遷移の条件をどれも満たしていないので、この段に留まる。段「hear」で未定の最初の項目「雇用区分」を聞く');
+    await expect(first).toContainText('どう作ったか: 接続の言い方(phrase)を呼びました');
 
     // 本人の修正
     await app.getByLabel('勤務地を直す').selectOption('もみじ台');
@@ -222,7 +229,8 @@ test('試す画面で話している途中に観察を回しても、利用者�
     const chat = app.getByRole('region', { name: '会話' });
     await expect(chat).toContainText('カフェで働きたいです');
 
-    const report = await studio.observe('sample-job-consult', { aiConnection: 'mock', viewports: [] });
+    // 見本のシナリオ(app/scenarios/)は回さず、基本のシナリオ(起動、あいさつ)だけを回す
+    const report = await studio.observe('sample-job-consult', { aiConnection: 'mock', viewports: [], scenarios: [] });
     expect(report.verdict).toBe('passed');
     expect(report.ai.map((entry) => entry.type)).toEqual(['open']);
 

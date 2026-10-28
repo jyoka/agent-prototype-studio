@@ -26,6 +26,8 @@ export function createObservationAi(aiSessions, projectId, { connection = 'mock'
   };
 
   ai.conversation = () => conversation;
+  // 観察の会話の今の状態(確かめ aiState に使う)。会話がまだ始まっていなければ null
+  ai.state = () => (conversation && !closed ? aiSessions.view(projectId, { conversation }).state : null);
   // 観察の中のやり取りを、古い方から。close() の後も、閉じたときの記録を返す
   ai.entries = () => (conversation && !closed ? aiSessions.observationTrace(projectId, conversation) : last.map((entry) => structuredClone(entry)));
   ai.close = () => {

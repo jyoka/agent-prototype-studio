@@ -176,7 +176,7 @@ report の形(`format: "prototype-studio-observation"`、`formatVersion: 1`):
 | `ai` | 観察の中のプロダクト内 AI とのやり取り(発言、返事、接続、状態の変化)。今の AI の実行の記録(#277)と同じ形 |
 | `scenarios[]` | シナリオごとの合否、手順ごとの結果、失敗した手順、そのときのスクリーンショット |
 | `screenshots[]` | 名前、画面幅、ファイル(`.studio/` の中) |
-| `page` | 最後の画面の文字と、アクセシビリティの木の要約(作る AI に文で渡せる形) |
+| `page` | 最後の画面の文字と、アクセシビリティの木の要約(作る AI に文で渡せる形)、画面が空かどうか(`empty`。関門 G5 が見る) |
 | `verdict` | `passed`、`failed`、`unverified` |
 
 ### 3.2 図
@@ -345,7 +345,7 @@ flowchart TD
 | `rules` | 作り手 | 守ること。下の 4.5 |
 | `intent` の種類 | Studio | `answer`、`yes`、`no`、`clarify`(質問を返された)、`aside`(関係のない話)、`restart`。増やすのは Studio のコードだけ |
 
-- 版 1 の `ai.json`(`formatVersion` も `flow` もない)は、次の版 2 として読む: 段は 1 つ、全部の項目を並びの順に聞く、全部が埋まったら終わる、`rules` は既定。これは今のモックの振る舞いと同じなので、モックの E2E(`test/e2e/mock-ai.spec.js`)は変えずに通る。
+- 版 1 の `ai.json`(`formatVersion` も `flow` もない)は、次の版 2 として読む: 段は 1 つ、全部の項目を並びの順に聞く、全部が埋まったら終わる、`rules` は既定。これは今のモックの振る舞いと同じなので、モックの E2E(`test/e2e/mock-ai.spec.js`)は変えずに通る。jyoka/tasks#307 で harness に移した後の細かな違い(30 ターンで終わる、終わった後は聞かない、数だけの答えを読む)は [configuration.md](../configuration.md) に書いた。
 - 条件の語を決まったものだけにするのは、遷移をコードで確かめるため。式や関数は書かせない。
 
 ### 4.4 接続の口(モックと実モデルで同じ)

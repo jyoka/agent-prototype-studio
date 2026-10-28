@@ -59,7 +59,7 @@ flowchart TB
         store["試作品とビルド<br/>store.js、projects.js、build.js、inspect.js、<br/>manifest.js"]
         requests["作る AI の依頼<br/>build-requests.js、fix-prompt.js"]
         agent["作る AI の起動<br/>agent-connection.js、agent-process.js、<br/>claude-args.js、stream-json.js、app-snapshot.js"]
-        ai["プロダクト内 AI<br/>product-ai/session.js"]
+        ai["プロダクト内 AI<br/>product-ai/session.js、harness.js"]
         conn["接続<br/>product-ai/mock.js、product-ai/claude-code.js"]
         def["AI の設定の検査<br/>product-ai/definition.js"]
         versions["版<br/>versions.js"]
@@ -67,7 +67,7 @@ flowchart TB
         redact["伏せる、秘密を探す<br/>redact.js"]
     end
 
-    observer["観察器<br/>src/observer/observe.js、browser.js"]
+    observer["観察器<br/>src/observer/observe.js、browser.js、<br/>operations.js、scenario.js"]
 
     subgraph local["データの置き場: ~/PrototypeStudio"]
         app[("projects/ID/app/<br/>作る AI が書ける唯一の場所")]
@@ -121,13 +121,14 @@ flowchart TB
 | 試作品の配信 | `src/server/preview-server.js` | ビルドしたものを別ポートから CSP つきで出す。API はない |
 | 試作品とビルド | `src/server/store.js`、`src/server/projects.js`、`src/server/build.js`、`src/server/inspect.js`、`src/server/manifest.js` | 試作品の一覧と置き場、`app/` と目録の検査、esbuild で 1 つの classic script に束ねる |
 | 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1〜G5 を安い順に回す。失敗したら直す依頼(`fix-prompt.js`)を作って作る AI に返し、2 回まで直させる。`run.json` に残す |
-| プロダクト内 AI | `src/server/product-ai/` | 試作品ごとの会話、状態、実行の記録を持つ。接続はモックか Claude Code。`app/ai.json` を検査する |
+| プロダクト内 AI | `src/server/product-ai/` | 試作品ごとの会話、状態、実行の記録を持つ。1 ターンは harness(`harness.js`)が抽出 → 決定 → 言い方で回し、何を聞くか、段の遷移、終わるかはコードが決める。接続はモックか Claude Code。`app/ai.json` を検査する |
 | 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する |
 | 引き継ぎ | `src/server/handoff.js` | 作業中の試作品を `handoffs/` に書き出す。形は [handoff.md](../handoff.md) |
 | 伏せる | `src/server/redact.js` | 記録と表示の前に、秘密らしい文字列と個人のデータを伏せる。書き出す前に秘密を探す |
 | 偽接続 | `src/agent/fake-claude.js` | `claude -p` と同じ形の出力を出す偽の CLI。モデルを呼ばない |
 | runtime | `src/runtime/runtime.js` | 試作品に配る。試作品のエラーを画面に知らせ、`window.studio.ai` を配る |
-| 観察器 | `src/observer/observe.js`、`src/observer/browser.js` | 表示中のビルドをヘッドレスの Playwright の Chromium で開き、読み込み、エラー、スクリーンショット、合否を report で返す。ブラウザは Studio の中で 1 つ。観察は 1 つずつ、毎回新しい文脈で回す。文脈は観察用の親ページと観察するビルドにだけ要求を出せ、名前の解決は loopback だけ([ADR 0002](../adr/0002-observer-and-harness.md))。作る AI、画面、版、会話の実装は import しない。設計は [harness.md の 3](../design/harness.md#3-観察) |
+| 観察器 | `src/observer/observe.js`、`src/observer/browser.js` | 表示中のビルドをヘッドレスの Playwright の Chromium で開き、読み込み、エラー、スクリーンショット、シナリオの結果、最後の画面、合否を report で返す。ブラウザは Studio の中で 1 つ。観察は 1 つずつ、毎回新しい文脈で回す。文脈は観察用の親ページと観察するビルドにだけ要求を出せ、名前の解決は loopback だけ([ADR 0002](../adr/0002-observer-and-harness.md))。作る AI、画面、版、会話の実装は import しない。設計は [harness.md の 3](../design/harness.md#3-観察) |
+| 観察器の操作とシナリオ | `src/observer/operations.js`、`src/observer/scenario.js` | 7 つの操作(読む、要素の一覧と検査、クリック、入力、スクロール、画面幅、スクリーンショット)と 4 つの確かめ。シナリオの手順と、1 つずつの呼び出し(`observe()` の `operate`)が同じ関数を使う。シナリオの形の検査、`app/scenarios/` の読み込み、Studio の基本のシナリオ([形](../configuration.md#シナリオappscenariosjson)) |
 | 観察用の親ページ | `src/ui/observe.html`、`src/ui/observe.js` | Studio の `/observe.html` に置く静的なページ。試作品を同じ sandbox の iframe に入れ、エラーと AI の要求を `exposeBinding` で観察器に渡す。Studio の API は呼ばない(CSP の `connect-src 'none'`) |
 
 ## 4. データの流れ
@@ -174,8 +175,13 @@ flowchart TB
 
 1. 試作品が `window.studio.ai.send(text)` を呼ぶ。runtime が `MessagePort` で親の画面に送る
 2. 画面が `POST /api/projects/<id>/ai/messages` を送る
-3. `AiSessions.send` が、選んでいる接続(モックか Claude Code)に、設定、状態、会話、発言を渡す
-4. 返事と状態の変化を会話に足し、実行の記録に伏せて残す。画面が `MessagePort` で試作品に返す
+3. `AiSessions.send` が、上限を確かめてから、harness の `turn()`(`product-ai/harness.js`)に、選んでいる接続(モックか Claude Code)、設定、進み具合(段、ターン、終わったか)、状態、会話、発言を渡す。`turn()` は 1 ターンを 3 段で回す
+   1. 抽出: 接続の `extract` が、項目の値(`updates`)と発言の種類(`intent`)を返す。選択肢の文字そのものや、今聞いている数の項目への数だけの答えは、抽出を呼ばずに読む。返った値は項目の決まりで検査し、合わない値は状態に入れない
+   2. 決定: harness のコードが、状態の更新、段の遷移(`next[].when`)、次に聞く項目、言うこと、終わるか(`flow.maxTurns` を含む)を決める。本人の修正は、モデルを呼ばずに状態に入っていて、ここで `corrected` として渡る
+   3. 言い方: 接続の `phrase` が、決定を返事の文にする。モックは `mock` の型に当てはめる
+4. 返事と状態の変化と進み具合を会話に足す。実行の記録には、段ごとの中身(抽出の入出力、入れなかった値、決定とその理由、言い方の入出力)を伏せて残す。画面が `MessagePort` で試作品に返す
+
+Claude Code の接続は、今は 1 回の呼び出し(`respond`)で返事と `updates` を返す。`updates` は抽出として同じ検査を通り、決定は harness が行う。返事はその呼び出しのものを使う(抽出と言い方の 2 つの呼び出しに分けるのは jyoka/tasks#308)。
 
 接続の切り替え(`ai/connection`)、応答を止める(`ai/cancel`)、試し直し(`ai/retry`)は、Studio の画面からだけ呼べます。試作品からは呼べません。
 
@@ -183,13 +189,13 @@ flowchart TB
 
 ### 観察する(ヘッドレスのブラウザで試作品を動かす)
 
-1. 呼ぶ側が `startStudio` の `observe(<id>, { viewports, aiConnection, limits })` を呼ぶ。`aiConnection: 'mock'` で観察用の会話の `ai` 関数(`createObservationAi`)を作り、やり取りを report の `ai` に入れる。作る run の関門 G5 も、同じ観察の入口を使う(`aiConnection` は渡さず、プロダクト内 AI の要求は断る。report とスクリーンショットは `.studio/runs/` に置く)
+1. 呼ぶ側が `startStudio` の `observe(<id>, { scenarios, viewports, aiConnection, operate, limits })` を呼ぶ。`scenarios` を渡さなければ、目録の `scenarios` のフォルダー(既定は `app/scenarios/`)から読む。`aiConnection: 'mock'` で観察用の会話の `ai` 関数(`createObservationAi`)を作り、やり取りを report の `ai` に入れる。作る run の関門 G5 も、同じ観察の入口を使う(シナリオは回さず、基本のシナリオも回さない。`aiConnection` は渡さず、プロダクト内 AI の要求は断る。report とスクリーンショットは `.studio/runs/` に置く)
 2. ビルドに失敗していれば、ブラウザを開かずに `failed` を返す
 3. `ObserverBrowser` が Playwright の Chromium を起動するか、起動したものを使い回す。見つからなければ `unverified` と入れ方を返す
 4. 新しい文脈で `/observe.html` を開き、試作品の URL を iframe で読む。runtime のエラー、`console.error`、処理されない reject は、`MessagePort` から親ページを通って観察器に届く。親ページと観察するビルドの外への要求は断ち、`blocked-request` のエラーにする
 5. 15 秒で読み込みが終わらなければ時間切れのエラーにする。終われば、指定した画面幅ごとにスクリーンショットを `.studio/observations/<観察の ID>/` に撮る
-6. 最後の画面の文字と、空でないかを `page` に入れる
-7. エラーがなければ `passed`、あれば `failed` の report を返す。観察の全体の上限(`limits.observeTimeoutMs`)を超えたら、文脈ごと閉じて `unverified` を返す。形は [harness.md の 3.1](../design/harness.md#31-観察器の契約studio-の-drydock-に当たる)
+6. Studio の基本のシナリオ(起動、AI のある試作品ではあいさつ)、渡されたシナリオの順に、手順どおりに回す。試作品の iframe の中を、役割と名前、ラベル、文字で指して操作する。失敗した手順で止め、そのときの画面を撮る。最後に画面の文字とアクセシビリティの木の要約、空でないかを report の `page` に入れる
+7. 読み込みが終わり、エラーがなく、シナリオがすべて通れば `passed`、そうでなければ `failed` の report を返す。観察の全体の上限(`limits.observeTimeoutMs`)を超えたら、文脈ごと閉じて `unverified` を返す。形は [harness.md の 3.1](../design/harness.md#31-観察器の契約studio-の-drydock-に当たる)
 
 ### 版と引き継ぎ
 
@@ -203,8 +209,9 @@ flowchart TB
 |---|---|---|
 | `projects/<id>/app/` | 試作品のソースと `ai.json` | 作る AI、版の復元 |
 | `projects/<id>/app/prototype.json` | 目録。入口、意図、制約、架空のデータ、AI の設定、シナリオの置き場所。ビルドのたびに検査する。なければ既定の値で読む([形](../configuration.md#試作品の目録appprototypejson)) | 作る AI、版の復元 |
+| `projects/<id>/app/scenarios/` | シナリオ(`*.json`)。観察器が手順どおりに回す([形](../configuration.md#シナリオappscenariosjson)) | 作る AI、版の復元 |
 | `projects/<id>/.studio/builds/` | ビルドの結果 | Studio |
-| `projects/<id>/.studio/observations/` | 観察のスクリーンショット | 観察器 |
+| `projects/<id>/.studio/observations/` | 観察のスクリーンショット(画面幅ごと、シナリオの手順、失敗したとき) | 観察器 |
 | `projects/<id>/.studio/runs/<run-id>/` | 作る run の記録(`run.json`)と、G5 の report とスクリーンショット。新しい 20 個だけ残す | Studio、観察器 |
 | `projects/<id>/.studio/versions/`、`working.json` | 保存した版と、どの版から作業しているか | Studio |
 | `projects/<id>/.studio/handoff-notes.json` | 引き継ぎのメモ | Studio |

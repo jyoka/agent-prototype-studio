@@ -1240,6 +1240,59 @@ function traceInternals(entry) {
   return box;
 }
 
+const STAGE_EXTRACT = {
+  shortcut: '抽出を呼ばずに読みました',
+  connection: '接続の抽出(extract)を呼びました',
+  respond: '接続の 1 回の呼び出し(返事と updates)の updates を使いました',
+};
+const STAGE_PHRASE = {
+  connection: '接続の言い方(phrase)を呼びました',
+  respond: '接続の 1 回の呼び出しの返事を使いました(決定の前に作られた返事です)',
+};
+const STAGE_SAY = { summary: '条件のまとめ', complete: '終わりの文' };
+
+// 開発の担当者向け。harness の 3 段(抽出 → 決定 → 言い方)の中身。モデルの判断と決まった手順の境目を見せる
+function traceStages(entry) {
+  const { extract, decision, phrase } = entry.harness;
+  const box = element('details', undefined, 'trace-internals');
+  keepOpen(box, `${entry.id}:stages`);
+  box.append(element('summary', 'harness の段: 抽出 → 決定 → 言い方(開発向け)'));
+  const stage = (text) => {
+    const p = element('p');
+    p.append(element('strong', text));
+    return p;
+  };
+  if (extract) {
+    box.append(stage('1. 抽出'));
+    box.append(labeled('どう読んだか', [STAGE_EXTRACT[extract.via] ?? extract.via, extract.reason].filter(Boolean).join('。')));
+    box.append(labeled('入力', `段「${extract.input.step}」、発言「${extract.input.text}」`));
+    if (extract.output) box.append(labeled('出力', `updates ${extract.output.updates}、intent ${extract.output.intent ?? 'なし'}`));
+    if (extract.rejected) {
+      const rejected = extract.rejected.map((r) => `${r.label ?? r.key}「${r.value}」(${r.reason})`).join('、');
+      box.append(labeled('検査で入れなかった値', rejected || 'なし', rejected ? 'notice' : undefined));
+    }
+  }
+  if (decision) {
+    box.append(stage('2. 決定(harness のコード)'));
+    const where = decision.from === decision.step ? `段「${decision.step}」` : `段「${decision.from}」→「${decision.step}」`;
+    box.append(
+      labeled(
+        '決定',
+        `${where}、ターン ${decision.turn}、聞く項目 ${decision.ask?.label ?? 'なし'}、言うこと ${STAGE_SAY[decision.say] ?? 'なし'}、${decision.done ? '終わる' : '続ける'}`,
+      ),
+    );
+    if (decision.corrected.length > 0) box.append(labeled('本人が直した項目', decision.corrected.map((c) => c.label).join('、')));
+    box.append(labeled('理由', decision.reason));
+  }
+  if (phrase) {
+    box.append(stage('3. 言い方'));
+    box.append(labeled('どう作ったか', [STAGE_PHRASE[phrase.via] ?? phrase.via, phrase.fallback].filter(Boolean).join('。')));
+    if (phrase.input.mustInclude.length > 0) box.append(labeled('入れる問いの原文', phrase.input.mustInclude.join(' / ')));
+    if (phrase.output) box.append(labeled('出力', phrase.output.reply));
+  }
+  return box;
+}
+
 function traceItem(entry) {
   const li = element('li', undefined, 'trace-entry');
   li.dataset.type = entry.type;
@@ -1280,6 +1333,7 @@ function traceItem(entry) {
     li.append(labeled('理由', entry.error.message, 'failed'), labeled('次にすること', entry.error.next, 'trace-next'));
   }
   if (entry.type === 'reply' && entry.input) li.append(traceInternals(entry));
+  if (entry.type === 'reply' && entry.harness) li.append(traceStages(entry));
   return li;
 }
 
