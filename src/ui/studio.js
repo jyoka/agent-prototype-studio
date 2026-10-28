@@ -12,6 +12,7 @@ const RUN_STATUS = {
   cancelled: () => '中断しました',
   'timed-out': () => '時間の上限を超えたので止めました',
   passed: () => '終わりました。Studio が確かめた関門は、すべて通りました',
+  fixed: () => '終わりました。作る AI が直すラウンドで直し、Studio が確かめた関門は、すべて通りました',
   unverified: () => '終わりました。起動の確認はしていません(未確認)',
   unchanged: () => '終わりました。app/ は変わっていません',
   'agent-failed': (run) => `${run.agent}が失敗しました`,
@@ -33,6 +34,10 @@ const ITEM_LABELS = {
   'launch-failed': '起動の確認',
   'launch-unverified': '起動の確認',
   gates: '関門',
+  preexisting: '確かめた結果',
+  round: '直すラウンド',
+  'fix-request': '直す依頼(Studio から作る AI へ)',
+  'gave-up': '人に返す',
 };
 // 試作品からプロダクト内 AI への要求。連打で実モデルを呼び続けないよう、数を絞る
 const AI_WINDOW_MS = 5000;

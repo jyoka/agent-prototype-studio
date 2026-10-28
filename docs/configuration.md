@@ -13,7 +13,7 @@
 | `STUDIO_AGENT` | `fake` | 作る AI。`fake` は偽接続、`claude` は Claude Code |
 | `STUDIO_ALLOW_CLAUDE_CODE` | なし | `1` でプロダクト内 AI に Claude Code(実モデル)を選べるようにする。社内の利用条件を確かめてから付ける |
 | `STUDIO_CLAUDE_BIN` | PATH の `claude` | 起動する Claude Code の場所。作る AI(`STUDIO_AGENT=claude`)とプロダクト内 AI の両方で使う。テストでは偽の CLI を指す |
-| `STUDIO_MAX_BUDGET_USD` | `1` | 作る AI で、API キーなど、サブスクの枠でないときに、1 回の依頼に付ける費用の上限(ドル)。プロダクト内 AI の上限(1 回の応答 0.1 ドル)は変えない |
+| `STUDIO_MAX_BUDGET_USD` | `1` | 作る AI で、API キーなど、サブスクの枠でないときに、作る AI の 1 回の起動に付ける費用の上限(ドル)。直すラウンドを合わせて、1 つの依頼で 3 回まで起動するので、1 つの依頼では最大でこの 3 倍になる。プロダクト内 AI の上限(1 回の応答 0.1 ドル)は変えない |
 
 指定のしかた(例: Studio の画面のポートを 4327 にする):
 

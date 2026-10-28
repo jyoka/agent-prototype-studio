@@ -57,7 +57,7 @@ flowchart TB
         api["Studio の API と画面<br/>studio-server.js(127.0.0.1:4317)"]
         preview["試作品の配信<br/>preview-server.js(4318)"]
         store["試作品とビルド<br/>store.js、projects.js、build.js、inspect.js、<br/>manifest.js"]
-        requests["作る AI の依頼<br/>build-requests.js"]
+        requests["作る AI の依頼<br/>build-requests.js、fix-prompt.js"]
         agent["作る AI の起動<br/>agent-connection.js、agent-process.js、<br/>claude-args.js、stream-json.js、app-snapshot.js"]
         ai["プロダクト内 AI<br/>product-ai/session.js"]
         conn["接続<br/>product-ai/mock.js、product-ai/claude-code.js"]
@@ -120,7 +120,7 @@ flowchart TB
 | Studio の API と画面 | `src/server/studio-server.js`、`src/server/security.js` | `/api/projects/...` の API と `src/ui/` の画面を出す。Host、Origin、トークンを確かめる |
 | 試作品の配信 | `src/server/preview-server.js` | ビルドしたものを別ポートから CSP つきで出す。API はない |
 | 試作品とビルド | `src/server/store.js`、`src/server/projects.js`、`src/server/build.js`、`src/server/inspect.js`、`src/server/manifest.js` | 試作品の一覧と置き場、`app/` と目録の検査、esbuild で 1 つの classic script に束ねる |
-| 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1〜G5 を安い順に回し、`run.json` に残す |
+| 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1〜G5 を安い順に回す。失敗したら直す依頼(`fix-prompt.js`)を作って作る AI に返し、2 回まで直させる。`run.json` に残す |
 | プロダクト内 AI | `src/server/product-ai/` | 試作品ごとの会話、状態、実行の記録を持つ。接続はモックか Claude Code。`app/ai.json` を検査する |
 | 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する |
 | 引き継ぎ | `src/server/handoff.js` | 作業中の試作品を `handoffs/` に書き出す。形は [handoff.md](../handoff.md) |
@@ -140,29 +140,35 @@ flowchart TB
 |---|---|---|
 | 受け付け(`accept`) | コード | `BuildRequests.start` が依頼の形と上限、接続の問題を確かめる。1 つの試作品で動く依頼は 1 つだけ(`ProjectStore.claimRun`) |
 | 前の指紋(`fingerprint`) | コード | `app/` の指紋(`snapshotApp`)と、表示中のプロダクト内 AI の設定を取る |
-| 作る AI(`agent`) | モデル | `startAgentProcess` が偽接続か Claude Code を `app/` で起動する。引数は `buildClaudeArgs`、依頼は標準入力。stream-json を `readMessage` で項目に直して画面に流す |
-| G1 変更の確認(`changes`) | コード | 指紋を取り直し、変わったファイルを出す。変わっていなければ、ここで終わる(`unchanged`) |
+| 作る AI(`agent`) | モデル | `startAgentProcess` が偽接続か Claude Code を `app/` で起動する。引数は `buildClaudeArgs`、依頼は標準入力。stream-json を `readMessage` で項目に直して画面に流す。直すラウンドでも、引数、cwd、時間の上限、止め方は同じで、標準入力が直す依頼になるだけ |
+| G1 変更の確認(`changes`) | コード | 指紋を取り直し、変わったファイルを出す。変わっていなければ、ここで終わる(`unchanged`)。直すラウンドで変わっていなければ、直せなかったとして `failed` で終わる |
 | G2 検査、G3 契約、G4 ビルド(`inspect`、`contract`、`compile`) | コード | `ProjectStore.build` の 1 回の呼び出し。`buildApp` が誤りに段の名前を付けるので、どの関門で止まったかが分かる。失敗したら、試す画面は前のビルドのまま |
 | G5 起動の確認(`launch`) | コード | 新しいビルドを観察器で開く。基本のシナリオなしで、3 つの画面幅を撮る。読み込みが 15 秒以内に終わり、エラーと `console.error` がなく、画面が空でなければ通る。ビルドが失敗したら行わない |
+| 直す依頼(`fix`) | コード | G2〜G5 のどれかが失敗したら入る。直すラウンドが `MAX_FIX_ROUNDS`(2 回)に満たなければ、`buildFixPrompt`(`fix-prompt.js`)で直す依頼を作り、作る AI の節に戻る。満たしたら、失敗と証拠を人に返す |
 | 証拠をまとめる(`evidence`) | コード | 結果の状態を決め、関門の結果を作る会話に出し、`.studio/runs/<run-id>/run.json` に残す |
 
 1. 利用者が「作る」欄に依頼を書く。画面が `POST /api/projects/<id>/build-requests` を送る
-2. `execute` が節を順に回す。どの節も次の節を返し、通った節を `run.nodes` に残す。関門は失敗した段で止まり、証拠をまとめる節へ進む
-3. `app/ai.json` が変わってビルドが通ったら、前の設定との違いを会話に出す
-4. ビルドが通ったら、画面が iframe を新しいビルドに切り替える。G5 で失敗しても切り替える(利用者が失敗を見られるように)。会話には「確かめで失敗あり」と出す
-5. 観察器が使えない(Playwright の Chromium がない)ときは、G5 を「未確認」にする。通ったとは扱わない
+2. `execute` が節を順に回す。どの節も次の節を返し、通った節を `run.nodes` に残す。関門は失敗した段で止まり、直す依頼の節へ進む
+3. 直すラウンド: 直す依頼の節が、失敗を決まった型の文にして作る AI に返す。入れるのは、元の依頼、直前のラウンドで失敗した関門の名前と結果(8,000 文字まで)、変わったファイルの名前だけ。前の会話や report の全部は入れない。作る AI が直したら、G1 から回し直す。作る AI の起動は 1 つの依頼で 3 回まで。依頼の前から同じ失敗が出ていたら、印(`preexisting`)を付ける
+4. `app/ai.json` が変わってビルドが通ったら、前の設定との違いを会話に出す
+5. ビルドが通ったら、画面が iframe を新しいビルドに切り替える。G5 で失敗しても切り替える(利用者が失敗を見られるように)。会話には「確かめで失敗あり」と出す
+6. 観察器が使えない(Playwright の Chromium がない)ときは、G5 を「未確認」にする。通ったとは扱わない。直すラウンドにも進まない
+7. 中断と時間切れは、直すラウンドの作る AI にも同じく効く。止めた run と、作る AI が失敗した run は、直させない。関門を回している間の中断は、今の関門を終えてから止め、次の直すラウンドに進まない
 
-結果の状態(`run.status`)は次のどれかです。直すラウンド(`fixed`)は jyoka/tasks#304 で足します。
+作る会話には、ラウンドの区切り(`round`)、直す依頼の要約(`fix-request`)、人に返したこと(`gave-up`)、前からの失敗の印(`preexisting`)が項目として出ます。
+
+結果の状態(`run.status`)は次のどれかです。
 
 | 状態 | 意味 |
 |---|---|
-| `passed` | 関門 G1〜G5 がすべて通った |
+| `passed` | 最初のラウンドで、関門 G1〜G5 がすべて通った |
+| `fixed` | 直すラウンドの後に、関門 G1〜G5 がすべて通った |
 | `unverified` | ビルドは通ったが、観察器が使えず、起動を確かめていない |
 | `unchanged` | `app/` が変わらなかった |
-| `failed` | 関門 G2〜G5 のどれかで失敗した |
+| `failed` | 2 回の直すラウンドの後も、関門 G2〜G5 のどれかで失敗した。直すラウンドで `app/` が変わらなかったときも含む |
 | `agent-failed`、`cancelled`、`timed-out` | 作る AI が失敗した、中断した、時間の上限を超えた。変わったファイルがあれば、G1〜G4 は回す |
 
-`run.json` には、通った節の列(`nodes`)、関門ごとの結果(`gates`)、作る AI の起動の回数と時間(`agentLaunches`)、変わったファイル、ビルドの結果、report の場所(`reports`)を書きます。依頼の文は書きません。G5 の report とスクリーンショットは `.studio/runs/<run-id>/rounds/1/` に置きます。
+`run.json` には、通った節の列(`nodes`。どの節にもラウンドの番号が付く)、最後のラウンドの関門の結果(`gates`)、ラウンドごとの節の列と関門の結果と直す依頼で返した失敗(`rounds`)、作る AI の起動の回数と時間(`agentLaunches`)、変わったファイル、ビルドの結果、report の場所(`reports`)を書きます。依頼の文と直す依頼の文は書きません。G5 の report とスクリーンショットは `.studio/runs/<run-id>/rounds/<ラウンド>/` に置きます。
 
 ### 試す(試作品の中の AI と話す)
 
@@ -213,7 +219,7 @@ flowchart TB
 |---|---|---|
 | 偽接続(`src/agent/fake-claude.js`) | 作る AI の既定(`STUDIO_AGENT=fake`) | なし。モデルを呼ばない |
 | モック(`product-ai/mock.js`) | プロダクト内 AI の既定 | なし。モデルを呼ばない |
-| Claude Code の CLI(作る AI) | `STUDIO_AGENT=claude` で起動したとき | 本人のアカウントの枠か API の従量課金。1 回の依頼は 10 分、30 回まで |
+| Claude Code の CLI(作る AI) | `STUDIO_AGENT=claude` で起動したとき | 本人のアカウントの枠か API の従量課金。1 回の起動は 10 分、30 回まで。直すラウンドを合わせて 1 つの依頼で 3 回まで起動する |
 | Playwright の Chromium(観察器) | 観察するとき。`npm run install:chromium` で入れたもの | なし。モデルを呼ばない。AI の要求は、呼ぶ側が渡す関数に渡す |
 | Claude Code の CLI(プロダクト内 AI) | `STUDIO_ALLOW_CLAUDE_CODE=1` で起動し、画面で切り替えたとき | 同上。1 回の応答は 90 秒、$0.1 まで。1 つの会話で 30 回まで |
 

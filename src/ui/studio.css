@@ -164,7 +164,10 @@ button { font: inherit; }
 .run .steps li[data-kind="hint"] { border-left-color: #c77700; background: var(--warn-bg); }
 .run .steps li[data-kind="failed"],
 .run .steps li[data-kind="tool-error"],
-.run .steps li[data-kind="build-failed"] { border-left-color: var(--error); background: var(--error-bg); }
+.run .steps li[data-kind="build-failed"],
+.run .steps li[data-kind="gave-up"] { border-left-color: var(--error); background: var(--error-bg); }
+.run .steps li[data-kind="round"] { margin-top: 0.6rem; border-left-color: var(--accent); border-top: 1px dashed var(--line); font-weight: 600; }
+.run .steps li[data-kind="fix-request"] { border-left-color: var(--accent); background: #eef3fd; }
 .run .steps li[data-kind="build-ok"] { border-left-color: var(--ok); }
 .run .steps li[data-kind="ai-settings"] { border-left-color: #7a3fb4; background: #f5effb; }
 .run .text { white-space: pre-wrap; word-break: break-word; }
@@ -174,7 +177,7 @@ button { font: inherit; }
 .run .steps li.bubble.agent { border-left-color: var(--accent); }
 .run-status { margin: 0.3rem 0 0; font-size: 0.8rem; color: var(--muted); }
 .run[data-status="failed"] .run-status, .run[data-status="timed-out"] .run-status { color: var(--error); }
-.run[data-status="done"] .run-status { color: var(--ok); }
+.run[data-status="done"] .run-status, .run[data-status="fixed"] .run-status { color: var(--ok); }
 .make-error { color: var(--error); padding: 0.4rem 0; }
 .request-form { display: flex; flex-direction: column; gap: 0.3rem; }
 .request-form label { font-weight: 600; }
