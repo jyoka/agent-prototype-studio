@@ -29,13 +29,15 @@ flowchart LR
     browser -- "API(起動ごとのトークン)" --> studio
     browser -- "試作品を読む(別ポート)" --> studio
     studio -- "読む、書く" --> home
-    studio -- "作る AI(既定)" --> fake
-    studio -- "作る AI、プロダクト内 AI<br/>(許したときだけ)" --> claude
+    studio -- "作る AI<br/>(STUDIO_AGENT=fake のときだけ)" --> fake
+    studio -- "作る AI(既定。使えるときだけ)<br/>プロダクト内 AI(許したときだけ)" --> claude
     claude -- "本人のログインで呼ぶ" --> anthropic
 ```
 
 - Studio が持つ AI は 2 つです。作る AI は試作品のファイルを変えます。プロダクト内 AI は、試作品の中で利用者と話します
-- 作る AI の既定は偽接続です。プロダクト内 AI の既定はモックです。どちらも、既定ではモデルを呼びません
+- 作る AI の既定は自動です。起動のときに Claude Code が見つかり、版が足り、ログインしていれば、Claude Code を使います。そうでなければ、作る AI は使えない状態になり、理由(ない、古い、ログインしていない)を画面に出します。偽接続には落としません
+- 偽接続は、`STUDIO_AGENT=fake` と書いたときだけ使います。プロダクト内 AI の既定はモックで、モデルを呼びません
+- ログインしているかは、Claude Code 自身に聞きます(`claude auth status --json`)。出力から使うのは、ログインしているか(`loggedIn`)と方式(`authMethod`)だけです。他の値(メールアドレスなど)は捨て、画面にも記録にも出しません
 - Studio は資格情報を読みません。Claude Code は、利用者が入れてログインした CLI を、改変せずに子プロセスとして起動します
 
 ## 3. 部品
@@ -134,6 +136,7 @@ flowchart TB
 | 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する |
 | 引き継ぎ | `src/server/handoff.js` | 作業中の試作品と、目録、シナリオ、最新の証拠の要約を `handoffs/` に書き出す。形は [handoff.md](../handoff.md) |
 | 伏せる | `src/server/redact.js` | 記録と表示の前に、秘密らしい文字列と個人のデータを伏せる。書き出す前に秘密を探す |
+| 作る AI の接続を選ぶ | `src/server/agent-connection.js` | 起動のときに 1 回、`STUDIO_AGENT`(自動、`claude`、`fake`)から接続を決める。自動と `claude` は、Claude Code を探し、版(`--version`)とログイン(`auth status --json`)を確かめ、結果(使える、ない、古い、ログインしていない)と理由を `/api/projects` の `agent` に出す |
 | 偽接続 | `src/agent/fake-claude.js` | `claude -p` と同じ形の出力を出す偽の CLI。モデルを呼ばない |
 | runtime | `src/runtime/runtime.js` | 試作品に配る。試作品のエラーを画面に知らせ、`window.studio.ai` を配る |
 | 観察器 | `src/observer/observe.js`、`src/observer/browser.js` | 表示中のビルドをヘッドレスの Playwright の Chromium で開き、読み込み、エラー、スクリーンショット、シナリオの結果、最後の画面、合否を report で返す。ブラウザは Studio の中で 1 つ。観察は 1 つずつ、毎回新しい文脈で回す。文脈は観察用の親ページと観察するビルドにだけ要求を出せ、名前の解決は loopback だけ([ADR 0002](../adr/0002-observer-and-harness.md))。作る AI、画面、版、会話の実装は import しない。設計は [harness.md の 3](../design/harness.md#3-観察) |
@@ -273,9 +276,10 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 
 | 呼び出し先 | いつ | 費用 |
 |---|---|---|
-| 偽接続(`src/agent/fake-claude.js`) | 作る AI の既定(`STUDIO_AGENT=fake`) | なし。モデルを呼ばない |
+| 偽接続(`src/agent/fake-claude.js`) | `STUDIO_AGENT=fake` で起動したときだけ | なし。モデルを呼ばない |
 | モック(`product-ai/mock.js`) | プロダクト内 AI の既定 | なし。モデルを呼ばない |
-| Claude Code の CLI(作る AI) | `STUDIO_AGENT=claude` で起動したとき | 本人のアカウントの枠か API の従量課金。1 回の起動は 10 分、30 回まで。直すラウンドを合わせて 1 つの依頼で 3 回まで起動する |
+| Claude Code の CLI(起動のときの確かめ) | 作る AI が自動か `claude` のとき、起動のときに 1 回ずつ。`claude --version` と `claude auth status --json` | なし。モデルを呼ばない |
+| Claude Code の CLI(作る AI) | 作る AI が自動(既定)か `STUDIO_AGENT=claude` で、Claude Code が使えるとき。作る欄で送るたび | 本人のアカウントの枠か API の従量課金。1 回の起動は 10 分、30 回まで。直すラウンドを合わせて 1 つの依頼で 3 回まで起動する |
 | Playwright の Chromium(観察器) | 観察するとき。`npm run install:chromium` で入れたもの | なし。モデルを呼ばない。AI の要求は、呼ぶ側が渡す関数に渡す |
 | Claude Code の CLI(プロダクト内 AI) | `STUDIO_ALLOW_CLAUDE_CODE=1` で起動し、画面で切り替えたとき | 同上。1 ターンは抽出と言い方の 2 種の呼び出し。1 回の呼び出しは 90 秒、$0.1 まで。上限は下の 3 つ |
 

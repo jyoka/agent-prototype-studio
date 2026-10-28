@@ -24,7 +24,7 @@ function request(port, { method = 'GET', pathname = '/', headers = {}, body } = 
 
 async function withStudio(t) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-server-'));
-  const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false });
+  const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false, agent: 'fake' });
   t.after(async () => {
     await studio.close();
     await fs.rm(home, { recursive: true, force: true });
@@ -145,7 +145,7 @@ test('ポートが使われていれば、どのポートかわかるエラー�
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-server-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const port = blocker.address().port;
-  await assert.rejects(startStudio({ home, studioPort: port, previewPort: 0, openBrowser: false }), {
+  await assert.rejects(startStudio({ home, studioPort: port, previewPort: 0, openBrowser: false, agent: 'fake' }), {
     name: 'Error',
     message: `ポート ${port} は使われています`,
     envName: 'STUDIO_PORT',
@@ -166,7 +166,7 @@ test('::1 の同じポートを他のプロセスが使っていれば、起動�
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-server-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const port = squatter.address().port;
-  await assert.rejects(startStudio({ home, studioPort: 0, previewPort: port, openBrowser: false }), {
+  await assert.rejects(startStudio({ home, studioPort: 0, previewPort: port, openBrowser: false, agent: 'fake' }), {
     envName: 'STUDIO_PREVIEW_PORT',
   });
 });
@@ -186,7 +186,7 @@ test('壊れたプロジェクトがあっても、他の試作品は開ける',
     await fs.rm(home, { recursive: true, force: true });
   });
 
-  const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false });
+  const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false, agent: 'fake' });
   t.after(() => studio.close());
   const projects = await studio.store.list();
   assert.deepEqual(projects.map((p) => p.id), ['locked', 'sample-job-consult', 'sample-library', 'sample-study-consult']);
@@ -201,7 +201,7 @@ test('データの置き場がふつうのファイルのときは、書き込�
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const home = path.join(dir, 'file');
   await fs.writeFile(home, '');
-  await assert.rejects(startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false }), HomeNotWritableError);
+  await assert.rejects(startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false, agent: 'fake' }), HomeNotWritableError);
 });
 
 test('プロダクト内 AI の API: 会話、修正、リセットと、その守り', async (t) => {

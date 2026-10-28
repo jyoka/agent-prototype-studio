@@ -57,7 +57,7 @@ test.before(async () => {
   await fs.mkdir(tmp);
   await ensureSampleProjects(home, path.join(STUDIO_ROOT, 'samples'));
   // 動いている Studio。CLI はこの表示中のビルドに触れない
-  studio = await startStudio(loadConfig({ STUDIO_HOME: home, STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0', STUDIO_NO_OPEN: '1' }), { env: {} });
+  studio = await startStudio(loadConfig({ STUDIO_HOME: home, STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0', STUDIO_NO_OPEN: '1', STUDIO_AGENT: 'fake' }), { env: {} });
 });
 
 test.after(async () => {

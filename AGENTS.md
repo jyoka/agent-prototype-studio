@@ -36,8 +36,11 @@ npx playwright test test/e2e/<名前>.spec.js  # E2E の一部だけ
 
 ## してはいけないこと
 
-- 実モデルを勝手に呼ばない。`STUDIO_AGENT=claude`、`STUDIO_ALLOW_CLAUDE_CODE=1`、`npm run check:claude -- --run` は、
-  人に頼まれたときだけ。テストは偽接続と偽の CLI(`test/fixtures/fake-claude.js`)を使う
+- 実モデルを勝手に呼ばない。作る AI の既定は自動で、手元の Claude Code が使えれば実モデルを呼ぶ。
+  `STUDIO_AGENT` を書かない起動、`STUDIO_AGENT=claude`、`STUDIO_ALLOW_CLAUDE_CODE=1`、`npm run check:claude -- --run` は、
+  人に頼まれたときだけ。自分で Studio を動かすときは `STUDIO_AGENT=fake` を付ける
+- テストは `STUDIO_AGENT=fake` か偽の `claude`(`STUDIO_CLAUDE_BIN`。偽の CLI は `test/fixtures/fake-claude.js`)を必ず明示する。
+  `STUDIO_AGENT` を消すテストは、`STUDIO_CLAUDE_BIN` を偽の `claude` か、ない場所に向ける
 - 実データ(本物の個人情報、社内のデータ)をサンプル、テスト、docs に入れない。架空のデータだけを使う
 - ADR 0001 の守り(loopback だけ、トークン、`sandbox` の iframe と CSP、`app/` の外に書かせない)を弱めない
 - 秘密の値(`.env`、API キー、Claude Code のログインの情報)を読まない、表示しない、コミットしない

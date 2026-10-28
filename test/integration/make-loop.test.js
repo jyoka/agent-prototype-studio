@@ -387,7 +387,7 @@ async function bootStudio(t, { config = {}, env = {}, scenarioLimits, projects =
     await fs.writeFile(path.join(root, '.studio', 'project.json'), JSON.stringify({ title: id }));
   }
   const studio = await startStudio(
-    { home, studioPort: 0, previewPort: 0, openBrowser: false, ...config },
+    { home, studioPort: 0, previewPort: 0, openBrowser: false, agent: 'fake', ...config },
     { env: { PATH: process.env.PATH, ...env }, scenarioLimits },
   );
   t.after(async () => {

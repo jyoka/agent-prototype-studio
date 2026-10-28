@@ -32,9 +32,12 @@ test('ポートの値が正しくなければ、わかる文で止める', () =>
   assert.throws(() => loadConfig({ STUDIO_PORT: '5000', STUDIO_PREVIEW_PORT: '5000' }), /別の番号/);
 });
 
-test('作る AI の既定は偽接続。Claude Code は STUDIO_AGENT=claude で明示したときだけ', () => {
+test('作る AI の既定は自動。偽接続は STUDIO_AGENT=fake、Claude Code の固定は STUDIO_AGENT=claude で明示したときだけ', () => {
   const config = loadConfig({});
-  assert.equal(config.agent, 'fake');
+  assert.equal(config.agent, 'auto');
+  assert.equal(loadConfig({ STUDIO_AGENT: '' }).agent, 'auto');
+  assert.equal(loadConfig({ STUDIO_AGENT: 'fake' }).agent, 'fake');
+  assert.equal(loadConfig({ STUDIO_AGENT: 'auto' }).agent, 'auto');
   assert.equal(config.claudeBin, null);
   assert.equal(config.maxBudgetUsd, 1);
   const claude = loadConfig({ STUDIO_AGENT: 'claude', STUDIO_CLAUDE_BIN: '/opt/claude', STUDIO_MAX_BUDGET_USD: '0.5' });
