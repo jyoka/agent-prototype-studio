@@ -30,7 +30,12 @@ function parseBudget(value) {
   return budget;
 }
 
-// 設定は環境変数だけから読む。データの置き場は ADR-0001 の既定(~/PrototypeStudio)。
+// データの置き場。ADR-0001 の既定は ~/PrototypeStudio
+export function studioHome(env = process.env) {
+  return path.resolve(env.STUDIO_HOME || path.join(os.homedir(), 'PrototypeStudio'));
+}
+
+// 設定は環境変数だけから読む。
 export function loadConfig(env = process.env) {
   const studioPort = parsePort(env.STUDIO_PORT, DEFAULT_STUDIO_PORT, 'STUDIO_PORT');
   const previewPort = parsePort(env.STUDIO_PREVIEW_PORT, DEFAULT_PREVIEW_PORT, 'STUDIO_PREVIEW_PORT');
@@ -42,7 +47,7 @@ export function loadConfig(env = process.env) {
     throw new ConfigError(`STUDIO_AGENT は ${AGENTS.join(' か ')} で指定してください(今の値: ${agent})`);
   }
   return {
-    home: path.resolve(env.STUDIO_HOME || path.join(os.homedir(), 'PrototypeStudio')),
+    home: studioHome(env),
     studioPort,
     previewPort,
     openBrowser: env.STUDIO_NO_OPEN !== '1',
