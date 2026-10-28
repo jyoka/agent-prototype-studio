@@ -172,11 +172,11 @@ report の形(`format: "prototype-studio-observation"`、`formatVersion: 1`):
 | `buildId`、`appDigest` | どのビルドと、どの `app/` の中身を観察したか。古くなったかの判定に使う(S6) |
 | `browser` | ブラウザの名前と版。どれで確かめたかを残す |
 | `load` | 読み込みが終わったか、かかった時間 |
-| `errors` | コンパイル、実行時、`console.error`、処理されない reject、時間切れ。メッセージ、スタック、時刻 |
+| `errors` | コンパイル、実行時、`console.error`、処理されない reject、時間切れ、断った要求(`blocked-request`。URL と、断ったもの)。メッセージ、スタック、時刻 |
 | `ai` | 観察の中のプロダクト内 AI とのやり取り(発言、返事、接続、状態の変化)。今の AI の実行の記録(#277)と同じ形 |
 | `scenarios[]` | シナリオごとの合否、手順ごとの結果、失敗した手順、そのときのスクリーンショット |
 | `screenshots[]` | 名前、画面幅、ファイル(`.studio/` の中) |
-| `page` | 最後の画面の文字と、アクセシビリティの木の要約(作る AI に文で渡せる形) |
+| `page` | 最後の画面の文字と、アクセシビリティの木の要約(作る AI に文で渡せる形)、画面が空かどうか(`empty`。関門 G5 が見る) |
 | `verdict` | `passed`、`failed`、`unverified` |
 
 ### 3.2 図
@@ -267,7 +267,7 @@ ADR-0001 の 3 つの層は変えない。観察器はその内側で動く。jy
 | sandbox の iframe と CSP | 同じプレビューの配信を使う。観察用の親ページは Studio の origin の決まったパスに置く静的なページで、試作品を同じ sandbox の iframe に入れる。プレビューの `frame-ancestors` は今も Studio の origin を許しているので、変えなくてよい。`page.setContent` で作ったページ(about:blank)は使わない(`frame-ancestors` に合わないため) |
 | 作る AI に Bash を渡さない(候補 A' を採らない) | 同じ。作る AI に足すのは、決まった名前の観察の道具だけ。ブラウザを動かすのは Studio のコード(観察器)で、作る AI はブラウザやシェルに直接触れない |
 | 起動ごとのトークン | 観察用の親ページは Studio の API を呼ばない。試作品からの AI の要求は、Playwright の `exposeBinding` で Node の `ai` 関数に直接渡す。ブラウザの中にトークンを置かない |
-| 外部への通信 | CSP に加えて、ブラウザの文脈で Studio とプレビューの origin 以外の要求を断つ(`context.route`)。`context.route` は DNS の先読みを止めないので、起動の引数で DNS の先読みを止め、名前の解決を loopback だけにする(`--host-resolver-rules` など)。WebRTC の IP の扱いをしぼる引数も付ける。残る危険(ADR-0001 の T3)が観察器で増えないことを、jyoka/tasks#300 で確かめる |
+| 外部への通信 | (作ったものは [ADR-0002](../adr/0002-observer-and-harness.md) が正)CSP に加えて、ブラウザの文脈で Studio とプレビューの origin 以外の要求を断つ(`context.route`)。`context.route` は DNS の先読みを止めないので、起動の引数で DNS の先読みを止め、名前の解決を loopback だけにする(`--host-resolver-rules` など)。WebRTC の IP の扱いをしぼる引数も付ける。残る危険(ADR-0001 の T3)が観察器で増えないことを、jyoka/tasks#300 で確かめる |
 | 管理された PC | Playwright の Chromium だけを使う(3.5)。利用者の Chrome や Edge に入った組織のポリシーと強制の拡張機能は、観察器に効かない。組織が Chromium にもポリシーを入れることはありうる(推測。確かめていない) |
 | 暴走(T8) | 観察の時間の上限で文脈ごと閉じる。ブラウザが応答しなければ、ブラウザのプロセスを止めて作り直す |
 

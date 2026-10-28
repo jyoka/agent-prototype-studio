@@ -225,7 +225,7 @@ async function runFlow(page, home, other, otherHome) {
   expect(readme).toMatch(/\| 実機 \| プロダクト内 AI\(実モデル\) \| Claude Code で 1 回応答した。/);
   expect(readme).toContain('| `minutes` | 1日に使える時間 | 数(単位: 分)、5 以上、300 以下 | 未定 |');
   expect(readme).toContain('| `subject` | 学びたいこと | プログラミング |');
-  expect(readme).toMatch(/\| 「1日に使える時間」を先に聞くようにして \| 終わった \| app\/ai\.json \|/);
+  expect(readme).toMatch(/\| 「1日に使える時間」を先に聞くようにして \| 通った \| app\/ai\.json \|/);
   for (const file of await allFiles(other)) {
     expect(await fs.readFile(file, 'utf8'), `${path.relative(other, file)} に求人の言葉`).not.toMatch(JOB_WORDS);
   }

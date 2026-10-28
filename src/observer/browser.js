@@ -1,7 +1,7 @@
 import { chromium } from 'playwright-core';
 
 // 観察器のブラウザ。Playwright の Chromium だけを使う(docs/design/harness.md の 3.5)。
-// 利用者の Chrome と Edge は探さない。だから launch に channel も executablePath も渡さない。
+// 利用者の Chrome と Edge は探さない。だから launch に channel も executablePath も渡さない(ADR-0002)。
 // launch はデバッグの口をパイプで開き、TCP のポートを開けない。プロフィールは毎回新しい一時のもの。
 
 export const INSTALL_COMMAND = 'npm run install:chromium';
@@ -22,8 +22,26 @@ export function unavailableReason(error) {
   return `${head}Studio のフォルダーで \`${INSTALL_COMMAND}\` を実行して入れてから、もう一度試してください(${detail})`;
 }
 
+// 起動の引数。観察の文脈の context.route(observe.js)は、ページの要求しか断てない。
+// DNS の先読みと WebRTC は route を通らないので、ブラウザ全体をここでしぼる(docs/adr/0002-observer-and-harness.md)。
+// Playwright が付ける --disable-features を上書きしないように、--disable-features は使わない。
+export const LAUNCH_ARGS = Object.freeze([
+  // 名前の解決を loopback だけにする。Studio は 127.0.0.1、プレビューは localhost で開く。
+  // ほかの名前と IP はすべて「見つからない」にするので、DNS に問い合わせず、接続もしない。
+  // DNS の先読みもこの規則で止める。--dns-prefetch-disable は、手元の Playwright の Chromium のバイナリになかったので付けない
+  '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1',
+  // WebRTC は UDP を使わず、プロキシを通す TCP だけにする(STUN と TURN の UDP が出ない)
+  '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+  // 行き止まりのプロキシ。上の WebRTC の決まりで、IP を直に書いた TURN の TCP もここへ向かって失敗する
+  // (この引数がないと、IP を直に書いた TURN の TCP は名前の解決を通らずに届く)。
+  // ページの要求は、プロキシで失敗した後も上の規則で解決しない(net log で確かめた)。
+  // .invalid は解決されない名前(RFC 2606)で、上の規則でも解決しない。
+  // loopback(Studio とプレビュー)へは、Chromium の既定でプロキシを通らずに届く
+  '--proxy-server=http://observer-blocked.invalid:9',
+]);
+
 export function launchOptions() {
-  return { headless: true, timeout: LAUNCH_TIMEOUT_MS };
+  return { headless: true, timeout: LAUNCH_TIMEOUT_MS, args: [...LAUNCH_ARGS] };
 }
 
 function withTimeout(promise, ms) {
@@ -95,6 +113,8 @@ export class ObserverBrowser {
     return run;
   }
 
+  // 応答しないブラウザは、閉じ終わるのを待たずに手放す。次の観察は新しいブラウザを起動する。
+  // 手放したブラウザは、Playwright が close の 30 秒後にプロセスグループごと強制終了する(ADR-0001 の T8)
   async restart() {
     const browser = this.browser;
     this.browser = null;

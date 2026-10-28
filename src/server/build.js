@@ -117,38 +117,35 @@ function indexHtml(hasCss) {
     .join('\n');
 }
 
+// ビルドの段。安い順に回し、失敗した段で止める(docs/design/harness.md の 2.2、関門 G2〜G4)
+export const BUILD_STAGES = ['inspect', 'contract', 'compile'];
+
 // app/ を 1 つの classic script(IIFE)に束ね、builds/<build-id>/ に置く。
 // 生成コードはここでは実行しない。成功したら、検査済みの AI の設定(なければ null)を ai で、
 // 目録(app/prototype.json。なければ既定の値)を manifest で返す。
+// 失敗したら、止まった段の名前を stage に、各誤りにも stage を付けて返す。
 export async function buildApp({ appDir, buildsDir }) {
   const started = Date.now();
   const appDigest = digestSnapshot(await snapshotApp(appDir));
   const finish = (fields) => ({ ...fields, appDigest, durationMs: Date.now() - started, finishedAt: new Date().toISOString() });
+  const fail = (stage, errors) => finish({ ok: false, stage, errors: errors.map((error) => ({ ...error, stage })) });
+  const withoutPlace = (problems) => problems.map((p) => ({ ...p, line: null, column: null, lineText: null }));
 
   const problems = await inspectApp(appDir);
-  if (problems.length > 0) {
-    return finish({ ok: false, errors: problems.map((p) => ({ ...p, line: null, column: null, lineText: null })) });
-  }
+  if (problems.length > 0) return fail('inspect', withoutPlace(problems));
   // 目録とプロダクト内 AI の設定も、ビルドのたびに同じ決まりで検査する
   const { manifest, errors: manifestErrors } = await readManifest(appDir);
-  if (manifestErrors.length > 0) {
-    return finish({ ok: false, errors: manifestErrors.map((p) => ({ ...p, line: null, column: null, lineText: null })) });
-  }
+  if (manifestErrors.length > 0) return fail('contract', withoutPlace(manifestErrors));
   const ai = await readAiDefinition(appDir, manifest.ai ?? undefined);
-  if (ai.errors.length > 0) {
-    return finish({ ok: false, errors: ai.errors.map((p) => ({ ...p, line: null, column: null, lineText: null })) });
-  }
+  if (ai.errors.length > 0) return fail('contract', withoutPlace(ai.errors));
   if (!manifest.entry) {
-    return finish({
-      ok: false,
-      errors: [{
-        file: 'app/',
-        line: null,
-        column: null,
-        lineText: null,
-        text: `入口のファイルがありません。${ENTRY_NAMES.map((n) => `app/${n}`).join('、')} のどれかを置くか、app/prototype.json の entry で入口を指してください`,
-      }],
-    });
+    return fail('contract', [{
+      file: 'app/',
+      line: null,
+      column: null,
+      lineText: null,
+      text: `入口のファイルがありません。${ENTRY_NAMES.map((n) => `app/${n}`).join('、')} のどれかを置くか、app/prototype.json の entry で入口を指してください`,
+    }]);
   }
 
   const appReal = await fs.realpath(appDir);
@@ -177,7 +174,7 @@ export async function buildApp({ appDir, buildsDir }) {
     });
   } catch (error) {
     if (Array.isArray(error.errors)) {
-      return finish({ ok: false, errors: error.errors.map((m) => toBuildError(appDir, m)) });
+      return fail('compile', error.errors.map((m) => toBuildError(appDir, m)));
     }
     throw error;
   }

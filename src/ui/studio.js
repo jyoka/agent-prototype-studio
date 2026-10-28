@@ -11,6 +11,10 @@ const RUN_STATUS = {
   failed: () => '失敗しました',
   cancelled: () => '中断しました',
   'timed-out': () => '時間の上限を超えたので止めました',
+  passed: () => '終わりました。Studio が確かめた関門は、すべて通りました',
+  unverified: () => '終わりました。起動の確認はしていません(未確認)',
+  unchanged: () => '終わりました。app/ は変わっていません',
+  'agent-failed': (run) => `${run.agent}が失敗しました`,
 };
 const ITEM_LABELS = {
   tool: '操作',
@@ -25,6 +29,10 @@ const ITEM_LABELS = {
   'build-ok': 'ビルド',
   'build-failed': 'ビルド',
   'ai-settings': 'プロダクト内 AI の設定(Studio が確かめた結果)',
+  'launch-ok': '起動の確認',
+  'launch-failed': '起動の確認',
+  'launch-unverified': '起動の確認',
+  gates: '関門',
 };
 // 試作品からプロダクト内 AI への要求。連打で実モデルを呼び続けないよう、数を絞る
 const AI_WINDOW_MS = 5000;
