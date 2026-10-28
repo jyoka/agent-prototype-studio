@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "id": "caller-sonnet",
+  "name": "呼び手の推測 1(架空。中くらいのモデル、短く話す土台)",
+  "note": "本物の仕様ではない。C2(ツールだけを出す形)で、呼び手のモデルと土台のプロンプトだけを替えるための推測",
+  "model": { "name": "claude-sonnet-5-5", "standIn": true },
+  "hostPrompt": "あなたはトークアプリの案内役です。短く、やさしく話してください。(架空の推測)",
+  "messageTypes": ["text", "buttons", "card", "carousel"],
+  "messageLimits": { "textMaxChars": 500, "buttonsMax": 4, "partsMax": 3 },
+  "toolCalling": { "maxPerReply": 4, "resultMaxChars": 4000, "auth": "bound-user", "delayMs": 0, "faults": [] },
+  "logging": { "partnerSees": ["messages", "toolCalls"], "dipSees": ["toolCalls"] }
+}

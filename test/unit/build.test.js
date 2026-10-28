@@ -239,7 +239,7 @@ test('目録が指すシナリオの形の誤りは、contract の段の失敗�
   assert.equal((await buildApp({ appDir: fine.appDir, buildsDir: fine.buildsDir })).ok, true);
 });
 
-test('見本のバイト探し(構成 A)は、ツール 5 つ、前提 2 つ、モックの決まり、場面 12 本、シナリオ 1 本を持ち、会話の枠を使ってビルドできる(R1)', async (t) => {
+test('見本のバイト探し(構成 A)は、ツール 5 つ、前提 2 つ、モックの決まり、構成 A の場面 12 本、シナリオ 1 本を持ち、会話の枠を使ってビルドできる(R1)', async (t) => {
   const { buildsDir } = await makeApp(t, {});
   const appDir = path.join(STUDIO_ROOT, 'samples', 'part-time', 'app');
   const result = await buildApp({ appDir, buildsDir });
@@ -258,12 +258,17 @@ test('見本のバイト探し(構成 A)は、ツール 5 つ、前提 2 つ、�
   assert.deepEqual(composition.surface, { kind: 'talk', theme: 'talk' });
   assert.deepEqual(tools['tools.json'].tools.map((tool) => tool.name), ['search_jobs', 'get_job', 'suggest_questions', 'record_consent', 'save_wish']);
   assert.deepEqual(composition.participants[0].tools, tools['tools.json'].tools.map((tool) => tool.name));
-  assert.deepEqual(assumptions.map((a) => a.assumption.id), ['partner-a', 'partner-b']);
+  // 構成 A の前提は assumptions/ の 2 つ(callers/ は構成 C2 の前提)
+  const own = assumptions.filter((a) => a.file.startsWith('assumptions/'));
+  assert.deepEqual(own.map((a) => a.assumption.id), ['partner-a', 'partner-b']);
   // 前提 B はカードを使えない(会話の枠の E2E で、カードが文に落ちるのを確かめる)
-  assert.ok(assumptions[0].assumption.messageTypes.includes('card'));
-  assert.ok(!assumptions[1].assumption.messageTypes.includes('card'));
-  assert.deepEqual(mocks.map((m) => m.file), ['mocks/partner.json']);
-  assert.equal(evals.length, 12);
+  assert.ok(own[0].assumption.messageTypes.includes('card'));
+  assert.ok(!own[1].assumption.messageTypes.includes('card'));
+  assert.ok(mocks.some((m) => m.file === 'mocks/partner.json'));
+  // 構成 A の場面は 12 本(entry が partner の会話の場面と、構成 A のツールだけの場面)。ほかは構成 C の場面
+  const names = new Set(tools['tools.json'].tools.map((tool) => tool.name));
+  const forA = evals.filter((e) => (e.scenario.kind === 'tool' ? names.has(e.scenario.call.tool) : e.scenario.entry === 'partner'));
+  assert.equal(forA.length, 12);
   // ツールだけの場面と、会話の場面の両方がある
   assert.ok(evals.some((e) => e.scenario.kind === 'tool'));
   assert.ok(evals.some((e) => e.scenario.kind === 'risky'));
@@ -272,4 +277,36 @@ test('見本のバイト探し(構成 A)は、ツール 5 つ、前提 2 つ、�
   assert.equal(scenarios.length, 1);
   // 画面は同梱の会話の枠を使う
   assert.match(await fs.readFile(path.join(buildsDir, result.buildId, 'app.css'), 'utf8'), /\.studio-talk--talk/);
+});
+
+test('見本のバイト探しは、構成 C(受付、相談役、担当者)と構成 C2(ツールだけを出し、呼び手を前提で替える)を app/ のデータだけで持つ(R1、R3)', async (t) => {
+  const { buildsDir } = await makeApp(t, {});
+  const result = await buildApp({ appDir: path.join(STUDIO_ROOT, 'samples', 'part-time', 'app'), buildsDir });
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  const { compositions, tools, assumptions, mocks, evals, harnessAis } = result.simulation;
+  assert.deepEqual(compositions.map((c) => c.file), ['compositions/c.json', 'compositions/c2.json']);
+
+  // 構成 C: 受付(agent)→ 相談役(harness)→ 担当者(human)。引き継ぎの辺と、受け渡す値
+  const c = compositions[0].composition;
+  assert.equal(c.driver, 'front');
+  assert.deepEqual(c.participants.map((p) => [p.id, p.kind]), [['front', 'agent'], ['consult', 'harness'], ['staff', 'human']]);
+  assert.equal(c.participants[1].ai, 'consult.json');
+  assert.equal(c.participants[1].returnTo, 'front');
+  assert.deepEqual(c.handoffs.map((e) => [e.from, e.to, e.carry]), [['front', 'consult', ['area', 'minWage']], ['front', 'staff', []], ['consult', 'front', []]]);
+  assert.deepEqual(tools['front-tools.json'].tools.map((tool) => [tool.name, tool.do.op, tool.do.to]), [['handoff_to_consult', 'handoff', 'consult'], ['handoff_to_staff', 'handoff', 'staff']]);
+  assert.deepEqual(harnessAis['consult.json'].fields.map((f) => f.key), ['area', 'minWage', 'days']);
+  assert.ok(mocks.some((m) => m.file === 'mocks/front.json'));
+  const forC = evals.filter((e) => e.scenario.entry === 'front' || (e.scenario.kind === 'tool' && e.scenario.call.tool.startsWith('handoff_')));
+  assert.deepEqual(forC.map((e) => e.scenario.id).sort(), [
+    'risky-health-to-consult', 'risky-to-staff', 'switch-carry-values', 'switch-handoff-consult', 'switch-no-ask-again', 'switch-return-front', 'tool-handoff-schema',
+  ]);
+
+  // 構成 C2: 構成 A から DIP の枠と頼みを外し、前提(callers/)を 3 つ。モデル 3 種、土台のプロンプト 2 種
+  const c2 = compositions[1].composition;
+  assert.deepEqual(c2.participants[0].prompt.map((piece) => piece.from ?? piece.slot), ['assumptions']);
+  assert.deepEqual(c2.guards, []);
+  const callers = assumptions.filter((a) => a.file.startsWith('callers/')).map((a) => a.assumption);
+  assert.equal(callers.length, 3);
+  assert.equal(new Set(callers.map((a) => a.model.name)).size, 3);
+  assert.equal(new Set(callers.map((a) => a.hostPrompt)).size, 2);
 });

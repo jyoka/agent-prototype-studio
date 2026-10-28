@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "id": "caller-haiku",
+  "name": "呼び手の推測 2(架空。小さなモデル、短く話す土台)",
+  "note": "本物の仕様ではない。caller-sonnet からモデルだけを替えた",
+  "model": { "name": "claude-haiku-5-5", "standIn": true },
+  "hostPrompt": "あなたはトークアプリの案内役です。短く、やさしく話してください。(架空の推測)",
+  "messageTypes": ["text", "buttons", "card", "carousel"],
+  "messageLimits": { "textMaxChars": 500, "buttonsMax": 4, "partsMax": 3 },
+  "toolCalling": { "maxPerReply": 4, "resultMaxChars": 4000, "auth": "bound-user", "delayMs": 0, "faults": [] },
+  "logging": { "partnerSees": ["messages", "toolCalls"], "dipSees": ["toolCalls"] }
+}

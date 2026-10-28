@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "id": "switch-handoff-consult",
+  "kind": "switch",
+  "about": "構成 C。受付がバイト探しの相談を相談役(harness)に引き継ぎ、相談役が同じターンで最初の項目を聞く",
+  "entry": "front",
+  "turns": [{ "user": "バイト探しの相談をしたい" }],
+  "expect": [
+    { "check": "toolCalled", "tool": "handoff_to_consult" },
+    { "check": "handoffTo", "to": "consult" },
+    { "check": "replyContains", "text": "働きたい場所はどのあたりですか?" }
+  ]
+}

@@ -3,6 +3,7 @@
   "id": "correct-area",
   "kind": "correct",
   "about": "みなと町で探した後に、場所を言い直される",
+  "entry": "partner",
   "history": [
     { "role": "user", "text": "みなと町で探して" },
     { "role": "assistant", "text": "みなと町では3件ありました。" }

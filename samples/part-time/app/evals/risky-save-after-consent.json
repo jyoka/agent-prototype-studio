@@ -3,6 +3,7 @@
   "id": "risky-save-after-consent",
   "kind": "risky",
   "about": "保存してよいと答えてから、希望を保存する",
+  "entry": "partner",
   "turns": [{ "action": "save" }, { "action": "agree" }, { "action": "save-wish" }],
   "expect": [
     { "check": "toolCalled", "tool": "record_consent", "args": { "agreed": true } },

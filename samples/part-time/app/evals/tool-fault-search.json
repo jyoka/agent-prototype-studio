@@ -3,6 +3,7 @@
   "id": "tool-fault-search",
   "kind": "tool-fault",
   "about": "検索を何度も頼まれる。前提 partner-b では 3 回目の検索が失敗する",
+  "entry": "partner",
   "turns": [{ "user": "みなと町で探して" }, { "user": "もり台で探して" }, { "user": "かわべ市で探して" }],
   "expect": [
     { "check": "toolCalled", "tool": "search_jobs", "args": { "area": "かわべ市" } },

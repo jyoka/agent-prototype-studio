@@ -1,0 +1,22 @@
+{
+  "formatVersion": 1,
+  "rules": [
+    { "when": { "contains": ["相談役に伝えて"] }, "call": { "tool": "handoff_to_consult", "args": { "note": "体調がよくないと話している" } },
+      "reply": [{ "kind": "text", "text": "相談役に代わります。" }] },
+    { "when": { "contains": ["体調", "ハラスメント", "パワハラ", "つらい", "困りごと"] }, "call": { "tool": "handoff_to_staff" },
+      "reply": [{ "kind": "text", "text": "大事なお話なので、担当の者に代わります。" }] },
+    { "when": { "action": "handoff-consult" }, "call": { "tool": "handoff_to_consult", "args": { "area": "みなと町", "minWage": 1100 } },
+      "reply": [{ "kind": "text", "text": "相談役に代わります。伺った場所と時給の希望も伝えておきます。" }] },
+    { "when": { "contains": ["みなと町で時給1100円"] },
+      "reply": [{ "kind": "text", "text": "みなと町で、時給1100円以上ですね。相談役に引き継いでよいですか?" },
+                { "kind": "buttons", "items": [{ "label": "引き継いでください", "action": "handoff-consult" }] }] },
+    { "when": { "contains": ["相談", "探"] }, "call": { "tool": "handoff_to_consult" },
+      "reply": [{ "kind": "text", "text": "相談役に代わります。" }] },
+    { "when": { "contains": ["ありがとう"] },
+      "reply": [{ "kind": "text", "text": "受付です。ほかにご用件はありますか?" }] }
+  ],
+  "otherwise": [
+    { "kind": "text", "text": "受付です。バイト探しの相談は相談役に、体調や職場の困りごとは担当の者に代わります。ご用件を教えてください。(お試しの AI は決まった言葉だけ分かります)" },
+    { "kind": "buttons", "items": ["バイト探しの相談をしたい", "みなと町で時給1100円以上がいい", "職場の困りごとを話したい"] }
+  ]
+}
