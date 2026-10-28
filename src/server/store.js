@@ -52,6 +52,11 @@ export class ProjectStore {
     return this.state.get(id)?.ai ?? null;
   }
 
+  // 表示中の版の構成、ツール、前提、モック、場面(src/server/sim/composition.js の readSimulation)。失敗したビルドのものは使わない
+  simulation(id) {
+    return this.state.get(id)?.simulation ?? null;
+  }
+
   // 表示中の版の架空のデータ(目録の data)に出てくる数。プロダクト内 AI の返事の確かめに使う
   dataNumbers(id) {
     return this.state.get(id)?.dataNumbers ?? [];
@@ -123,13 +128,14 @@ export class ProjectStore {
         };
       }
       // 目録は、画面に返すビルドの結果(lastBuild)には入れない
-      const { ai = null, manifest, dataNumbers = [], ...summary } = result;
+      const { ai = null, manifest, dataNumbers = [], simulation = null, ...summary } = result;
       entry.lastBuild = summary;
       if (result.ok) {
         entry.previewBuildId = result.buildId;
         entry.ai = ai;
         entry.manifest = manifest;
         entry.dataNumbers = dataNumbers;
+        entry.simulation = simulation;
         await removeBuildsExcept(paths.builds, [result.buildId]);
         this.log(`ビルド成功: ${id}(${result.durationMs}ms)`);
       } else {

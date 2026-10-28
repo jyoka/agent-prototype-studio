@@ -9,6 +9,7 @@ import { describeStep } from '../observer/scenario.js';
 import { buildFixPrompt, describeFailure, ERROR_KIND_TEXT } from './fix-prompt.js';
 import { AI_FILE, describeDefinitionChanges } from './product-ai/definition.js';
 import { readMessage } from './stream-json.js';
+import { describeSimulationChanges, referencedFiles, weakenedAiRules } from './sim/changes.js';
 
 export const MAX_REQUEST_CHARS = 4000;
 export const DEFAULT_AGENT_TIMEOUT_MS = 10 * 60_000;
@@ -151,6 +152,11 @@ export class AgentUnavailableError extends Error {}
 // scenarioLimits は G6 の時間の上限(SCENARIO_GATE_LIMITS)。onNode({ projectId, runId, node, kind }) は、節に入るたびに呼ぶ(確かめ用)。
 // onAgentEvent({ projectId, runId, round, type, ... }) は、作る AI に渡した文(type: 'input'、text)と、
 // 作る AI の stream-json の 1 行(type: 'message'、message)ごとに呼ぶ(実機の確かめの記録用。scripts/check-loop.js)
+// 構成、ツール、前提、モック、場面、プロンプトの枠のファイル(docs/design/agent-simulation.md の 2.1 の置き場所)
+const SIMULATION_FILES = ['app/composition.json', 'app/tools.json'];
+const SIMULATION_FOLDERS = ['app/compositions/', 'app/assumptions/', 'app/mocks/', 'app/evals/', 'app/prompts/'];
+const isSimulationFile = (file) => SIMULATION_FILES.includes(file) || SIMULATION_FOLDERS.some((folder) => file.startsWith(folder));
+
 export class BuildRequests {
   constructor({
     store,
@@ -324,6 +330,7 @@ export class BuildRequests {
     state.before = await snapshotApp(state.paths.app);
     state.roundBefore = state.before;
     state.aiBefore = this.store.aiDefinition(state.id);
+    state.simulationBefore = this.store.simulation(state.id);
     // シナリオの置き場所(表示中の版の目録)。直すラウンドでシナリオが変わったかを見るのに使う
     state.scenarioFolder = this.store.manifest(state.id)?.scenarios ?? null;
     state.appDirs = [state.paths.app, await fs.realpath(state.paths.app)];
@@ -565,7 +572,7 @@ export class BuildRequests {
       this.addItem(id, run, 'build-failed', 'ビルドに失敗しました。試す画面は、前にビルドできた版のままです。詳細の欄で場所を確かめられます。');
       this.markPreexisting(state, run.gates.find((gate) => gate.name === failedAt));
     }
-    this.reportAiChanges(id, run, state.aiBefore, build.ok);
+    this.reportAiChanges(id, run, { ai: state.aiBefore, simulation: state.simulationBefore }, build.ok);
     return this.buildStep(state, 'inspect');
   }
 
@@ -847,28 +854,45 @@ export class BuildRequests {
     }
   }
 
-  // 決まった手順: プロダクト内 AI の設定が変わったかを、Studio がビルドした設定どうしで確かめて出す。
-  // 作る AI が書いたのは設定(app/ai.json)で、試す画面で応答するのはプロダクト内 AI。2 つを混ぜないよう、作る会話には設定の変化だけを出す
-  reportAiChanges(id, run, aiBefore, buildOk) {
+  // 決まった手順: プロダクト内 AI の設定と構成(構成、ツール、ガードレール)が変わったかを、Studio がビルドしたものどうしで確かめて出す。
+  // 作る AI が書いたのは設定(app/ai.json、app/composition.json など)で、試す画面で応答するのはプロダクト内 AI。
+  // 2 つを混ぜないよう、作る会話には設定の変化だけを出す。ガードレールが減ったときは、先頭に目立つ印を付ける
+  reportAiChanges(id, run, before, buildOk) {
     const touched = run.changedFiles.some((change) => change.file === `app/${AI_FILE}`);
+    // 置き場所の決まったファイルと、前の構成が指していたファイル(ツールのデータ、プロンプトの枠など)。目録の ai は上の文で出す
+    const referenced = referencedFiles(before.simulation).filter((file) => file !== `app/${AI_FILE}`);
+    const touchedSimulation = run.changedFiles
+      .filter((change) => isSimulationFile(change.file) || referenced.includes(change.file))
+      .map((change) => change.file);
     if (!buildOk) {
       if (touched) this.addItem(id, run, 'ai-settings', `app/${AI_FILE} が変わりましたが、ビルドに失敗したので、プロダクト内 AI は前の設定のままです。`);
+      if (touchedSimulation.length > 0) {
+        this.addItem(id, run, 'ai-settings', `${touchedSimulation.slice(0, 5).join('、')} が変わりましたが、ビルドに失敗したので、構成は前のままです。`);
+      }
       return;
     }
-    const lines = describeDefinitionChanges(aiBefore, this.store.aiDefinition(id));
-    if (lines.length === 0) {
+    const aiAfter = this.store.aiDefinition(id);
+    const lines = describeDefinitionChanges(before.ai, aiAfter);
+    const simulation = describeSimulationChanges(before.simulation, this.store.simulation(id));
+    const weakened = [...weakenedAiRules(before.ai, aiAfter), ...simulation.weakened];
+    if (lines.length === 0 && simulation.lines.length === 0 && weakened.length === 0) {
       if (touched) this.addItem(id, run, 'ai-settings', `app/${AI_FILE} は変わりましたが、プロダクト内 AI の振る舞いに関わるところは変わっていません。`);
       return;
     }
-    const after = this.store.aiDefinition(id)
+    const after = lines.length > 0 && aiAfter
       ? '試す画面の会話は、新しい設定で最初から始まります。設定を変える前に試す画面で話していたときは、試す画面の上の「前の発言で試し直す」で、同じ発言を新しい設定に送り直せます。'
       : '';
-    this.addItem(
-      id,
-      run,
-      'ai-settings',
-      [`プロダクト内 AI の設定(app/${AI_FILE})が変わりました。Studio が前の設定と比べた結果:`, ...lines.map((line) => `- ${line}`), after].filter(Boolean).join('\n'),
-    );
+    const text = [
+      ...(weakened.length > 0
+        ? ['【ガードレールが減りました】意図した変更かを確かめてください。場面やガードレールを弱めて通すための変更なら、元に戻す依頼を送ってください:', ...weakened.map((line) => `- ${line}`)]
+        : []),
+      ...(lines.length > 0 ? [`プロダクト内 AI の設定(app/${AI_FILE})が変わりました。Studio が前の設定と比べた結果:`, ...lines.map((line) => `- ${line}`)] : []),
+      ...(simulation.lines.length > 0
+        ? ['構成、ツール、ガードレールが変わりました。Studio が前と比べた結果:', ...simulation.lines.map((line) => `- ${line}`)]
+        : []),
+      after,
+    ];
+    this.addItem(id, run, 'ai-settings', text.filter(Boolean).join('\n'));
   }
 
   failureText(result, exit) {

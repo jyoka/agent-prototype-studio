@@ -9,6 +9,7 @@ import { ENTRY_NAMES, readManifest } from './manifest.js';
 import { readAiDefinition } from './product-ai/definition.js';
 import { numbersIn } from './product-ai/guards.js';
 import { createBuildId } from './security.js';
+import { readSimulation } from './sim/composition.js';
 
 // 試作品が import できる、Studio が同梱するライブラリ。
 export const ALLOWED_PACKAGES = [
@@ -145,7 +146,8 @@ export const BUILD_STAGES = ['inspect', 'contract', 'compile'];
 
 // app/ を 1 つの classic script(IIFE)に束ね、builds/<build-id>/ に置く。
 // 生成コードはここでは実行しない。成功したら、検査済みの AI の設定(なければ null)を ai で、
-// 目録(app/prototype.json。なければ既定の値)を manifest で、架空のデータに出てくる数を dataNumbers で返す。
+// 目録(app/prototype.json。なければ既定の値)を manifest で、架空のデータに出てくる数を dataNumbers で、
+// 構成、ツール、前提、モック、場面を simulation で返す(simulation.composition は既定の構成。AI がなければ null)。
 // 失敗したら、止まった段の名前を stage に、各誤りにも stage を付けて返す。
 export async function buildApp({ appDir, buildsDir }) {
   const started = Date.now();
@@ -165,6 +167,9 @@ export async function buildApp({ appDir, buildsDir }) {
   // シナリオの誤りには、どのシナリオのどの手順かが入る(scenario、step)
   const scenarios = await readScenarios(appDir, manifest.scenarios);
   if (scenarios.errors.length > 0) return fail('contract', withoutPlace(scenarios.errors));
+  // 構成、ツール、前提、モック、場面(docs/design/agent-simulation.md の 2.7)。composition.json がなければ構成 B として読む
+  const { simulation, errors: simulationErrors } = await readSimulation(appDir, manifest, ai.definition);
+  if (simulationErrors.length > 0) return fail('contract', withoutPlace(simulationErrors));
   if (!manifest.entry) {
     return fail('contract', [{
       file: 'app/',
@@ -227,6 +232,7 @@ export async function buildApp({ appDir, buildsDir }) {
     ai: ai.definition,
     manifest,
     dataNumbers,
+    simulation,
     errors: [],
     warnings: result.warnings.map((m) => toBuildError(appDir, m)),
   });
