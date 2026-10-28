@@ -1164,8 +1164,9 @@ const TRACE_STATUS = {
 const TRACE_FORMATS = {
   structured: '構造化出力(--json-schema)を読みました',
   'text-json': '構造化出力がなかったので、本文の JSON を読みました(代わりの方法)',
-  text: 'JSON でなかったので、本文を返事にしました。状態は変えていません',
+  broken: '形の合わない出力がありました(やり直しと代わりの値は、harness の段に出ます)',
 };
+const CALL_KINDS = { extract: '抽出', phrase: '言い方' };
 
 function connectionNote(connection) {
   return connection.real ? `${connection.label}(実際の AI モデル)` : `${connection.label}(AI モデルは呼んでいません)`;
@@ -1224,8 +1225,39 @@ function traceInternals(entry) {
     command.append(element('code', input.command.join(' ')));
     box.append(command);
   }
-  if (input.systemPrompt) box.append(preBlock(entry, '指示(--system-prompt)の全文', input.systemPrompt));
-  if (input.stdin) box.append(preBlock(entry, '本文(標準入力)の全文', input.stdin));
+  // 抽出を呼ばずに読んだターンでは、抽出の本文は送っていない
+  const extractSkipped = entry.harness?.extract?.via === 'shortcut';
+  if (input.systemPrompt) box.append(preBlock(entry, extractSkipped ? '指示(--system-prompt)の全文(抽出を呼ばなかったので、送っていません)' : '指示(--system-prompt)の全文', input.systemPrompt));
+  if (input.stdin) box.append(preBlock(entry, extractSkipped ? '本文(標準入力)の全文(抽出を呼ばなかったので、送っていません)' : '本文(標準入力)の全文', input.stdin));
+  if (input.phrase) {
+    const command = labeled('言い方の起動の形', '');
+    command.append(element('code', input.phrase.command.join(' ')));
+    box.append(command);
+    box.append(preBlock(entry, '言い方の指示の全文', input.phrase.systemPrompt));
+  }
+  if (entry.harness?.phrase?.stdin) box.append(preBlock(entry, '言い方の本文の全文', entry.harness.phrase.stdin));
+  if (entry.calls) {
+    const kinds = Object.keys(CALL_KINDS).map((kind) => `${CALL_KINDS[kind]} ${entry.calls[kind]} 回`).join('、');
+    box.append(labeled('実際の AI モデルの呼び出し', `${entry.calls.count} 回(${kinds})、待った時間の合計 ${formatSeconds(entry.calls.waitMs)}`));
+    const list = element('ol', undefined, 'trace-calls');
+    list.setAttribute('aria-label', '呼び出しの 1 回ずつ');
+    list.append(
+      ...entry.calls.calls.map((call) =>
+        element(
+          'li',
+          [
+            `${CALL_KINDS[call.kind] ?? call.kind}(${call.attempt} 回目)`,
+            Number.isFinite(call.waitMs) ? `待った時間 ${formatSeconds(call.waitMs)}` : null,
+            call.problem ? `出力が壊れていた: ${call.problem}` : null,
+            call.error ? `失敗: ${call.error}` : null,
+          ]
+            .filter(Boolean)
+            .join('、'),
+        ),
+      ),
+    );
+    box.append(list);
+  }
   if (output) {
     if (output.format) box.append(labeled('応答の形', TRACE_FORMATS[output.format] ?? output.format));
     box.append(labeled('受け取った updates', output.updates));
@@ -1259,7 +1291,8 @@ function traceStages(entry) {
   };
   if (extract) {
     box.append(stage('1. 抽出'));
-    box.append(labeled('どう読んだか', [STAGE_EXTRACT[extract.via] ?? extract.via, extract.reason].filter(Boolean).join('。')));
+    box.append(labeled('どう読んだか', [STAGE_EXTRACT[extract.via] ?? extract.via, extract.reason, extract.retry].filter(Boolean).join('。')));
+    if (extract.fallback) box.append(labeled('代わりの値', extract.fallback, 'notice'));
     box.append(labeled('入力', `段「${extract.input.step}」、発言「${extract.input.text}」`));
     if (extract.output) box.append(labeled('出力', `updates ${extract.output.updates}、intent ${extract.output.intent ?? 'なし'}`));
     if (extract.rejected) {
@@ -1281,7 +1314,7 @@ function traceStages(entry) {
   }
   if (phrase) {
     box.append(stage('3. 言い方'));
-    box.append(labeled('どう作ったか', [STAGE_PHRASE[phrase.via] ?? phrase.via, phrase.fallback].filter(Boolean).join('。')));
+    box.append(labeled('どう作ったか', [STAGE_PHRASE[phrase.via] ?? phrase.via, phrase.retry, phrase.fallback].filter(Boolean).join('。')));
     if (phrase.input.mustInclude.length > 0) box.append(labeled('入れる問いの原文', phrase.input.mustInclude.join(' / ')));
     if (phrase.output) box.append(labeled('出力', phrase.output.reply));
   }

@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { STUDIO_ROOT } from '../../src/server/config.js';
+import { createClaudeCodeConnection } from '../../src/server/product-ai/claude-code.js';
 import { parseAiDefinition } from '../../src/server/product-ai/definition.js';
 import { quickExtract, startProgress, turn } from '../../src/server/product-ai/harness.js';
 import { createMockConnection, mockExtract } from '../../src/server/product-ai/mock.js';
@@ -147,6 +149,32 @@ test('抽出の結果が同じなら、接続によらず決定が同じ(S19)', 
     ['confirm', null, 'complete', true],
   ]);
   assert.deepEqual(mock.state, { subject: 'プログラミング', level: 'はじめて', style: '本で学ぶ', minutes: 30 });
+});
+
+test('偽の CLI の実モデルの接続が、モックと同じ抽出を返すとき、決定の列が同じ(S19)', async (t) => {
+  const definition = await studyWithConfirm();
+  const texts = ['プログラミングを学びたい', '初めてです', 'こんにちは', '動画で学ぶ', '30分です', 'いいえ', '本で学びたい', 'はい', 'はい'];
+  // 偽の CLI に、モックと同じ抽出を返させる(発言ごとの { updates, intent })
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-harness-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const extractions = path.join(dir, 'extractions.json');
+  await fs.writeFile(extractions, JSON.stringify(Object.fromEntries(texts.map((text) => [text, mockExtract({ definition, text })]))));
+  const log = path.join(dir, 'calls.jsonl');
+  const env = { PATH: process.env.PATH, STUDIO_CLAUDE_BIN: path.join(STUDIO_ROOT, 'test', 'fixtures', 'fake-claude.js'), FAKE_CLAUDE_LOG: log, FAKE_CLAUDE_EXTRACTIONS: extractions };
+  const real = createClaudeCodeConnection({ env, allowed: true });
+  t.after(() => real.close());
+
+  const mock = await talk(createMockConnection(), definition, texts);
+  const viaCli = await talk(real, definition, texts);
+  assert.deepEqual(viaCli.decisions, mock.decisions);
+  assert.deepEqual(viaCli.state, mock.state);
+  // 違うのは言い方の中身だけ
+  assert.ok(viaCli.replies.every((reply) => reply.startsWith('偽の Claude Code です。')));
+  // 偽の CLI は、抽出(選択肢の文字そのものでない発言だけ)と言い方の 2 種で呼ばれた
+  const calls = (await fs.readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  const kinds = calls.map((call) => (JSON.parse(call.argv.find((a) => a.startsWith('--json-schema=')).slice(14)).properties.reply ? 'phrase' : 'extract'));
+  assert.equal(kinds.filter((k) => k === 'phrase').length, texts.length);
+  assert.equal(kinds.filter((k) => k === 'extract').length, texts.length - 1);
 });
 
 test('版 2 の confirm の段: intent が yes なら done、no なら hear に戻る', async () => {
@@ -315,7 +343,7 @@ test('記録の 1 件に、抽出、決定、言い方の段ごとの中身が�
   assert.match(quick.harness.extract.reason, /選択肢の文字そのもの/);
 });
 
-test('1 回の呼び出しで返す接続(今の Claude Code)も、updates は同じ検査を通り、決定は harness が行う', async () => {
+test('1 回の呼び出しで返す接続(respond。テスト用)も、updates は同じ検査を通り、決定は harness が行う', async () => {
   const definition = await studyWithConfirm();
   const connection = {
     kind: 'one-call',

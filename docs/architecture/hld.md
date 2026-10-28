@@ -59,7 +59,7 @@ flowchart TB
         store["試作品とビルド<br/>store.js、projects.js、build.js、inspect.js、<br/>manifest.js"]
         requests["作る AI の依頼<br/>build-requests.js"]
         agent["作る AI の起動<br/>agent-connection.js、agent-process.js、<br/>claude-args.js、stream-json.js、app-snapshot.js"]
-        ai["プロダクト内 AI<br/>product-ai/session.js、harness.js"]
+        ai["プロダクト内 AI<br/>product-ai/session.js、harness.js、limits.js"]
         conn["接続<br/>product-ai/mock.js、product-ai/claude-code.js"]
         def["AI の設定の検査<br/>product-ai/definition.js"]
         versions["版<br/>versions.js"]
@@ -121,7 +121,7 @@ flowchart TB
 | 試作品の配信 | `src/server/preview-server.js` | ビルドしたものを別ポートから CSP つきで出す。API はない |
 | 試作品とビルド | `src/server/store.js`、`src/server/projects.js`、`src/server/build.js`、`src/server/inspect.js`、`src/server/manifest.js` | 試作品の一覧と置き場、`app/` と目録の検査、esbuild で 1 つの classic script に束ねる |
 | 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1〜G5 を安い順に回し、`run.json` に残す |
-| プロダクト内 AI | `src/server/product-ai/` | 試作品ごとの会話、状態、実行の記録を持つ。1 ターンは harness(`harness.js`)が抽出 → 決定 → 言い方で回し、何を聞くか、段の遷移、終わるかはコードが決める。接続はモックか Claude Code。`app/ai.json` を検査する |
+| プロダクト内 AI | `src/server/product-ai/` | 試作品ごとの会話、状態、実行の記録を持つ。1 ターンは harness(`harness.js`)が抽出 → 決定 → 言い方で回し、何を聞くか、段の遷移、終わるかはコードが決める。接続はモックか Claude Code(抽出と言い方の 2 種の呼び出し)。実モデルの呼び出しの上限を数える(`limits.js`)。`app/ai.json` を検査する |
 | 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する |
 | 引き継ぎ | `src/server/handoff.js` | 作業中の試作品を `handoffs/` に書き出す。形は [handoff.md](../handoff.md) |
 | 伏せる | `src/server/redact.js` | 記録と表示の前に、秘密らしい文字列と個人のデータを伏せる。書き出す前に秘密を探す |
@@ -175,7 +175,7 @@ flowchart TB
    3. 言い方: 接続の `phrase` が、決定を返事の文にする。モックは `mock` の型に当てはめる
 4. 返事と状態の変化と進み具合を会話に足す。実行の記録には、段ごとの中身(抽出の入出力、入れなかった値、決定とその理由、言い方の入出力)を伏せて残す。画面が `MessagePort` で試作品に返す
 
-Claude Code の接続は、今は 1 回の呼び出し(`respond`)で返事と `updates` を返す。`updates` は抽出として同じ検査を通り、決定は harness が行う。返事はその呼び出しのものを使う(抽出と言い方の 2 つの呼び出しに分けるのは jyoka/tasks#308)。
+Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p` を 1 回ずつ)で、この口を持つ。モデルが返すのは抽出の JSON と `{reply}` だけ。出力の形が壊れていたら 1 回やり直し、だめなら抽出は「変更なし」、言い方はモックの型の文にする。呼び出しの前に、`AiSessions` が渡す数え役(`product-ai/limits.js`)で上限を確かめる。上限に当たったら、モデルを呼ばずに失敗を返す。呼び出しの回数と待ち時間は、記録の 1 件(`calls`)に残す。
 
 接続の切り替え(`ai/connection`)、応答を止める(`ai/cancel`)、試し直し(`ai/retry`)は、Studio の画面からだけ呼べます。試作品からは呼べません。
 
@@ -222,7 +222,17 @@ Claude Code の接続は、今は 1 回の呼び出し(`respond`)で返事と `u
 | モック(`product-ai/mock.js`) | プロダクト内 AI の既定 | なし。モデルを呼ばない |
 | Claude Code の CLI(作る AI) | `STUDIO_AGENT=claude` で起動したとき | 本人のアカウントの枠か API の従量課金。1 回の依頼は 10 分、30 回まで |
 | Playwright の Chromium(観察器) | 観察するとき。`npm run install:chromium` で入れたもの | なし。モデルを呼ばない。AI の要求は、呼ぶ側が渡す関数に渡す |
-| Claude Code の CLI(プロダクト内 AI) | `STUDIO_ALLOW_CLAUDE_CODE=1` で起動し、画面で切り替えたとき | 同上。1 回の応答は 90 秒、$0.1 まで。1 つの会話で 30 回まで |
+| Claude Code の CLI(プロダクト内 AI) | `STUDIO_ALLOW_CLAUDE_CODE=1` で起動し、画面で切り替えたとき | 同上。1 ターンは抽出と言い方の 2 種の呼び出し。1 回の呼び出しは 90 秒、$0.1 まで。上限は下の 3 つ |
+
+プロダクト内 AI の実モデルの呼び出しの上限(利用者が 2026-10-28 に決めた値):
+
+| 上限 | 値 | 数える場所 |
+|---|---|---|
+| 1 つの会話の有料のターン | 30 まで。リセットで数え直す | `SESSION_LIMITS.maxPaidReplies`(`product-ai/session.js`) |
+| 1 ターンの呼び出し | 4 回まで(抽出 2 回、言い方 2 回。壊れた出力のやり直しを含む) | `CALL_LIMITS.perTurn`(`product-ai/limits.js`) |
+| プロジェクトごとの呼び出し | 1 時間に 120 回まで。観察の会話も含める。リセットや観察の終わりでは数え直さない。メモリーにだけ置く | `CALL_LIMITS.perProject`、`ProjectCallWindow` |
+
+観察ごとに新しい会話を作ると会話ごとの上限が毎回戻るので、プロジェクトごとの上限で抑えます(ADR-0001 の T6)。上限に当たったら、モデルを呼ばずに理由を返します。プロジェクトの残りが 2 回(抽出と言い方)に足りないときは、ターンを始める前に止めます。
 
 詳しい決まりは [claude-code.md](../claude-code.md) にあります。テストは偽の CLI(`test/fixtures/fake-claude.js`)を使い、実モデルを呼びません。
 

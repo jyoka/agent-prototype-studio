@@ -124,9 +124,12 @@ test('ソース、意図、AI の設定、会話と状態、未接続と未決�
   assert.match(manifest.capabilities.find((c) => c.item === '外部の API と通信').prototype, /app\/main\.js:4/);
 
   // AI の設定と、実モデルに渡す指示
-  assert.match(await fs.readFile(path.join(other, 'ai', 'system-prompt.md'), 'utf8'), /あなたは架空の旅の相談役です。[\s\S]*nights\(泊数\)/);
+  // 実モデルは抽出と言い方の 2 種の呼び出しで動くので、指示と応答の形も 2 つずつ
+  const prompts = await fs.readFile(path.join(other, 'ai', 'system-prompt.md'), 'utf8');
+  assert.match(prompts, /^# 抽出の指示\n[\s\S]*nights\(泊数\)[\s\S]*\n# 言い方の指示\n\nあなたは架空の旅の相談役です。/);
   const schema = JSON.parse(await fs.readFile(path.join(other, 'ai', 'response-schema.json'), 'utf8'));
-  assert.deepEqual(schema.properties.updates.properties.place.enum, ['湖の町', '山の村', null]);
+  assert.deepEqual(schema.extract.properties.updates.properties.place.enum, ['湖の町', '山の村', null]);
+  assert.deepEqual(schema.phrase.required, ['reply']);
 
   // 人が読む資料
   const readme = await fs.readFile(path.join(other, 'README.md'), 'utf8');
