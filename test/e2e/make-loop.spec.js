@@ -137,3 +137,39 @@ test('直すラウンドでシナリオを弱めて通すと、「確かめ方�
     await studio.stop();
   }
 });
+
+test('作る AI が観察の道具で画面を開いて読み、その項目が作る会話に出て、run.json に回数が残る', async ({ page, home }) => {
+  test.setTimeout(90_000);
+  const studio = await launchStudio(home);
+  try {
+    await page.goto(studio.url);
+    const app = page.frameLocator('iframe[title="試作品"]');
+    await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
+
+    // 偽接続は、--mcp-config で渡された観察の道具のサーバーを起動し、open と read_page を 1 回ずつ呼ぶ
+    await sendRequest(page, '見出しを「ひだまり図書室」にして、画面で確かめて');
+    const run = lastRun(page);
+    await expect(run.locator('.run-status')).toContainText('すべて通りました', { timeout: 60_000 });
+    const tools = run.locator('[data-kind="tool"]');
+    await expect(tools.filter({ hasText: '観察: 開く' })).toHaveCount(1);
+    await expect(tools.filter({ hasText: '観察: ページを読む' })).toHaveCount(1);
+    // 観察の道具が読んだ画面は、作る AI が書き換えた後の作業中の app/
+    await expect(run.locator('.bubble.agent').filter({ hasText: '観察の道具で確かめると、画面の見出しは「ひだまり図書室」でした' })).toBeVisible();
+    await expect(app.getByRole('heading', { name: 'ひだまり図書室' })).toBeVisible();
+
+    const { runs } = await studio.api('/api/projects/sample-library/build-requests');
+    const last = runs.at(-1);
+    expect(last.status).toBe('passed');
+    const record = JSON.parse(await fs.readFile(path.join(home, 'projects', 'sample-library', last.evidence.run), 'utf8'));
+    expect(record.toolCalls).toEqual({
+      count: 4,
+      observe: 2,
+      byTool: { Read: 1, Edit: 1, mcp__observe__open: 1, mcp__observe__read_page: 1 },
+    });
+    // MCP の設定は run のフォルダーにあり、観察の道具は app/ に何も残さない
+    await fs.access(path.join(home, 'projects', 'sample-library', '.studio', 'runs', last.id, 'mcp.json'));
+    expect(record.changedFiles).toEqual([{ file: 'app/App.jsx', change: 'modified' }]);
+  } finally {
+    await studio.stop();
+  }
+});

@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { startAgentProcess, STOP_STEPS_MS } from './agent-process.js';
 import { diffSnapshots, MAX_SNAPSHOT_ENTRIES, snapshotApp } from './app-snapshot.js';
-import { buildClaudeArgs, DEFAULT_MAX_BUDGET_USD, MAX_TURNS } from './claude-args.js';
+import { buildClaudeArgs, DEFAULT_MAX_BUDGET_USD, MAX_TURNS, OBSERVE_TOOLS, writeObserveMcpConfig } from './claude-args.js';
 import { describeStep } from '../observer/scenario.js';
 import { buildFixPrompt, describeFailure, ERROR_KIND_TEXT } from './fix-prompt.js';
 import { AI_FILE, describeDefinitionChanges } from './product-ai/definition.js';
@@ -253,6 +253,8 @@ export class BuildRequests {
       round: 1,
       rounds: [{ round: 1, input: 'request', changedFiles: [], gates: null }],
       launches: [],
+      // 作る AI の道具の呼び出しの回数(すべてのラウンドの合計)。observe は観察の道具の分
+      toolCalls: { count: 0, observe: 0, byTool: {} },
       // 直すラウンドで app/ のシナリオが変わったら、ラウンドとファイルを残す(確かめ方が変わった印)
       scenariosChanged: [],
       evidence: null,
@@ -347,7 +349,9 @@ export class BuildRequests {
   }
 
   // 節 agent(model): 作る AI を起動し、終わるまで待つ。ここだけが作る AI の接続に触れる。
-  // 直すラウンドでも、引数、cwd、環境変数、時間の上限、止め方は最初のラウンドと同じ。違うのは stdin の文(直す依頼)だけ
+  // 直すラウンドでも、引数、cwd、環境変数、時間の上限、止め方は最初のラウンドと同じ。違うのは stdin の文(直す依頼)だけ。
+  // 観察の道具の MCP の設定は、run ごとに 1 つ、app/ の外(.studio/runs/<run-id>/mcp.json)に置き、どのラウンドでも同じファイルを渡す。
+  // 起動のたびに同じ中身で書き直す(前のラウンドの間に書き換えられていても、Studio の決めた中身で起動する)
   async node_agent(state) {
     const { id, paths, active, run } = state;
     const connection = this.connection;
@@ -365,9 +369,10 @@ export class BuildRequests {
     const launchedAt = Date.now();
     let handle;
     try {
+      state.mcpConfig = await writeObserveMcpConfig({ dir: this.runDir(paths, run), projectDir: paths.root, maxSeconds: this.timeoutMs / 1000 });
       handle = startAgentProcess({
         command: connection.command,
-        args: [...connection.prefixArgs, ...buildClaudeArgs({ billing: connection.billing, maxBudgetUsd: this.maxBudgetUsd })],
+        args: [...connection.prefixArgs, ...buildClaudeArgs({ billing: connection.billing, mcpConfig: state.mcpConfig, maxBudgetUsd: this.maxBudgetUsd })],
         cwd: paths.app,
         // 利用者の環境変数をそのまま渡す。値は読まない、残さない
         env: this.env,
@@ -380,6 +385,7 @@ export class BuildRequests {
             this.touch(id, run);
           }
           if (read.result) result = read.result;
+          for (const name of read.toolUses) this.countToolCall(run, name);
           for (const item of read.items) this.addItem(id, run, item.kind, item.text);
         },
       });
@@ -440,6 +446,16 @@ export class BuildRequests {
     }
     // 止めた run も、途中まで書かれたファイルを確かめてビルドする(試す画面で見られるように)
     return { next: 'changes', outcome };
+  }
+
+  countToolCall(run, name) {
+    const calls = run.toolCalls;
+    calls.count += 1;
+    if (OBSERVE_TOOLS.includes(name)) calls.observe += 1;
+    // 名前の数は、決まった道具の数より多くならない見込み。知らない名前が多く来ても増やしすぎない
+    if (name === '__proto__') return;
+    if (Object.hasOwn(calls.byTool, name)) calls.byTool[name] += 1;
+    else if (Object.keys(calls.byTool).length < 50) calls.byTool[name] = 1;
   }
 
   // 直すラウンドが関門の前に終わったとき(起動の前の中断、起動できない)。app/ は前のラウンドのままなので、
@@ -789,6 +805,8 @@ export class BuildRequests {
         durationMs: run.launches.reduce((sum, launch) => sum + launch.durationMs, 0),
         launches: run.launches,
       },
+      // 作る AI の道具の呼び出しの回数。observe は観察の道具(mcp__observe__)の分
+      toolCalls: run.toolCalls,
       changedFiles: run.changedFiles,
       // 直すラウンドで app/ のシナリオが変わったら、確かめ方が変わった印(ラウンドとファイル)
       scenariosChanged: run.scenariosChanged,

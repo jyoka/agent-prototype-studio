@@ -203,6 +203,50 @@ test('依頼の文は stdin だけで渡し、引数には入れない。作業�
   assert.deepEqual(record.envNames.filter((name) => name !== '__CF_USER_TEXT_ENCODING').sort(), Object.keys(env).sort());
 });
 
+test('観察の道具の MCP の設定は、作る run のフォルダー(app/ の外)に書いて渡す。作業ディレクトリは app/ のまま(S13)', async (t) => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-requests-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  await ensureSampleProjects(home, path.join(STUDIO_ROOT, 'samples'));
+  const recordFile = path.join(home, 'record.json');
+  const recorder = path.join(home, 'recorder.mjs');
+  await fs.writeFile(
+    recorder,
+    `import fs from 'node:fs';
+     fs.readFileSync(0, 'utf8');
+     fs.writeFileSync(process.env.RECORD_FILE, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }));
+     console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'ok', permission_denials: [] }));`,
+  );
+  const store = new ProjectStore(home);
+  const env = { PATH: process.env.PATH, RECORD_FILE: recordFile };
+  const requests = new BuildRequests({
+    store,
+    env,
+    connection: { kind: 'claude', label: '記録', command: process.execPath, prefixArgs: [recorder], billing: describeBilling(env), problem: null },
+  });
+  const started = await requests.start('sample-library', '見出しを「記録の図書室」にして');
+  const final = await new Promise((resolve) => started.subscribe(() => {}, resolve));
+
+  const record = JSON.parse(await fs.readFile(recordFile, 'utf8'));
+  const projectDir = await fs.realpath(path.join(home, 'projects', 'sample-library'));
+  const appDir = path.join(projectDir, 'app');
+  assert.equal(record.cwd, appDir);
+  assert.ok(!record.argv.includes('--safe-mode'));
+  assert.ok(record.argv.includes('--strict-mcp-config'));
+  const configFile = record.argv[record.argv.indexOf('--mcp-config') + 1];
+  // 作る run のフォルダー .studio/runs/<run-id>/ にあり、app/ の外
+  assert.equal(path.relative(await fs.realpath(path.join(home, 'projects', 'sample-library', '.studio', 'runs', final.id)), await fs.realpath(configFile)), 'mcp.json');
+  assert.ok(path.relative(appDir, await fs.realpath(configFile)).startsWith('..'));
+  // サーバーは観察の道具の 1 つだけ。プロジェクトの場所(app/ の親)を起動の引数で渡す
+  const config = JSON.parse(await fs.readFile(configFile, 'utf8'));
+  assert.deepEqual(Object.keys(config.mcpServers), ['observe']);
+  const server = config.mcpServers.observe;
+  assert.equal(server.args[0], path.join(STUDIO_ROOT, 'bin', 'observe-mcp.js'));
+  assert.equal(await fs.realpath(server.args[1]), projectDir);
+  // app/ には MCP の設定を置かない
+  await assert.rejects(fs.access(path.join(appDir, '.mcp.json')));
+  await assert.rejects(fs.access(path.join(appDir, 'mcp.json')));
+});
+
 test('直すラウンドも同じ引数、同じ環境変数で起動し、作業ディレクトリは app/ のまま。直す依頼は stdin だけで渡す', async (t) => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-requests-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
@@ -239,6 +283,10 @@ test('直すラウンドも同じ引数、同じ環境変数で起動し、作�
   assert.equal(rest.length, 0);
   assert.deepEqual(second.argv, first.argv);
   assert.deepEqual(second.envNames, first.envNames);
+  // 観察の道具の MCP の設定も、同じ run のフォルダーの同じファイル(S10)
+  const configFile = first.argv[first.argv.indexOf('--mcp-config') + 1];
+  assert.equal(second.argv[second.argv.indexOf('--mcp-config') + 1], configFile);
+  assert.equal(path.basename(path.dirname(configFile)), final.id);
   const appDir = await fs.realpath(path.join(home, 'projects', 'sample-library', 'app'));
   assert.equal(first.cwd, appDir);
   assert.equal(second.cwd, appDir);

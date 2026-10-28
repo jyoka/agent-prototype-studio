@@ -480,7 +480,7 @@ flowchart LR
 | 決める | 利用者 | 人 | 証拠、試す画面 | 依頼、版の保存 | Studio の画面 |
 
 - 作る AI が観察器を自分で使う形は、今回入れる(2026-10-28 の決定)。観察の道具を持つ Studio の MCP サーバーを jyoka/tasks#311 で作り、`--mcp-config` で 1 つだけ作る AI に渡すのを jyoka/tasks#312 で作る。道具は決まった名前だけで、`app/` を書き換えない(S10、S13)。
-- `--mcp-config` が `--restricted`、`--safe-mode`、`--strict-mcp-config` と一緒に動くかは、実機で確かめていない。jyoka/tasks#312 の実機の確認で確かめる。
+- `--mcp-config` が `--restricted`、`--safe-mode`、`--strict-mcp-config` と一緒に動くかを、jyoka/tasks#312 の実機の確認で確かめた(2026-10-28、Claude Code 2.1.312)。`--safe-mode` は `--mcp-config` のサーバーも外すので、作る AI の起動から外し、公開の引数の組み合わせ(`--restricted`、`--setting-sources ""`、`--disable-slash-commands`、`--strict-mcp-config`)で利用者の設定を持ち込まないようにした(案 5)。観察の道具は一覧に出て、`open` と `read_page` を呼べた。CLAUDE.md、hooks、skills、ほかの MCP、custom の agents が読まれないことも確かめた。結果は [ADR-0002 の「作る AI が観察の道具を使う」](../adr/0002-observer-and-harness.md#作る-ai-が観察の道具を使う)。
 - 「調べる」(Harbor の記事の research の AI)と「本番で作る」は、この設計の範囲外。本番で作る AI には、引き継ぎのフォルダーを渡す。
 
 ## 7. 今のコードからの移り方
