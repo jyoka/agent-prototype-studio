@@ -413,3 +413,50 @@ test('見本の求人相談と学習相談のシナリオ(app/scenarios/)が、�
     expect(report.ai.find((entry) => entry.type === 'reply')).toMatchObject({ connection: { kind: 'mock' } });
   }
 });
+
+test('見本のバイト探し(構成 A)を観察すると、トークのボタンをシナリオで押せ、report の ai に模擬の会話の記録(ツールの呼び出しとガードレール)が入る(S3、S4)', async () => {
+  const id = 'sample-part-time';
+  const report = await studio.observe(id, { aiConnection: 'mock', viewports: [] });
+  expect(report.errors).toEqual([]);
+  // 構成 A は ai.json を持たないので、あいさつの基本のシナリオはない。見本のシナリオはボタン(役割と名前)を click で押す
+  expect(report.scenarios.map((s) => [s.name, s.base, s.verdict])).toEqual([
+    ['起動して描画が空でなく、エラーがない', true, 'passed'],
+    ['トークで求人を探し、保存してよいと答えてから希望を保存する', false, 'passed'],
+  ]);
+  expect(report.verdict).toBe('passed');
+
+  const [open, ...turns] = report.ai;
+  expect(open).toMatchObject({ type: 'open', connection: { kind: 'mock' }, observation: expect.stringMatching(/^observation-/) });
+  // 1 ターンが 1 件の sim-turn。押したボタンの action も記録に入る
+  expect(turns.map((entry) => [entry.kind, entry.observation, entry.input.text, entry.input.action])).toEqual([
+    ['sim-turn', open.observation, 'そのまま保存して', null],
+    ['sim-turn', open.observation, 'みなと町でバイトを探しています', null],
+    ['sim-turn', open.observation, '品出しの詳細', 'detail-m1'],
+    ['sim-turn', open.observation, 'この求人で希望を保存', 'save'],
+    ['sim-turn', open.observation, '保存してよい', 'agree'],
+    ['sim-turn', open.observation, '希望を保存する', 'save-wish'],
+  ]);
+  for (const entry of turns) {
+    expect(entry.composition).toMatchObject({ file: 'composition.json', digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/) });
+    expect(entry.assumptions).toMatchObject({ id: 'partner-a', standIn: true });
+    // プロンプトの頼みと、出口の確かめ(相手の持ち物なので記録だけ)
+    expect(entry.steps[0]).toMatchObject({ participant: 'partner', connection: 'mock', real: false, prompt: { asked: ['no-contact-ask'] } });
+    expect(entry.steps.at(-1).guards).toEqual([{ layer: 'output', guard: 'facts-from-tools', effect: 'passed', owner: 'partner' }]);
+  }
+  // ツールの呼び出しと、ツールの守りの判定
+  const tools = turns.map((entry) =>
+    entry.steps.filter((step) => step.tool).map((step) => [step.tool, step.by, step.result.ok, step.guards.map((g) => `${g.guard}:${g.effect}`)]),
+  );
+  expect(tools).toEqual([
+    [['save_wish', 'partner', false, ['schema:passed', 'requires:blocked']]],
+    [['search_jobs', 'partner', true, ['schema:passed', 'maxCallsPerConversation:passed', 'maxResultChars:passed']]],
+    [['get_job', 'partner', true, ['schema:passed', 'hideFields:blocked', 'maxResultChars:passed']]],
+    [],
+    [['record_consent', 'partner', true, ['schema:passed', 'maxResultChars:passed']]],
+    [['save_wish', 'partner', true, ['schema:passed', 'requires:passed', 'deny:passed', 'maxResultChars:passed']]],
+  ]);
+  // ツールの結果は、長さと数と項目の名前だけ。窓口の項目(hideFields)は記録にも出ない
+  expect(JSON.stringify(report.ai)).not.toContain('架空の窓口');
+  // 観察の会話は終わると消える
+  expect(studio.aiSessions.conversations(id)).toEqual([]);
+});

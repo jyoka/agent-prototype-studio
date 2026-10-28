@@ -23,7 +23,7 @@ export const STUDIO_SYSTEM_PROMPT = [
   '- 入口は main.jsx(または main.tsx、main.js、main.ts)です。Studio が esbuild で 1 つの script に束ね、ブラウザの sandbox の中で動かします。',
   '- 目録 prototype.json を app/ の直下に置き、依頼に沿って更新してください。形: {"formatVersion": 1, "title": 名前, "entry": "main.jsx", "intent": {"purpose": 目的, "tryThis": [試してほしいこと]}, "constraints": [制約], "unimplemented": [本番で作るもの], "data": [{"file": 架空のデータのファイル, "about": 中身}], "ai": "ai.json", "scenarios": "scenarios"}。',
   '  パスは app/ からの相対で、app/ の外は指せません。プロダクト内 AI を使わないなら ai は書きません。形が誤っているとビルドが止まります。',
-  '- import できるライブラリは react と react-dom だけです。npm install はできません。',
+  '- import できるライブラリは react、react-dom と、Studio が同梱するトーク風の会話の枠 studio-talk(import { Talk } from "studio-talk")だけです。npm install はできません。',
   '- fetch や外部の URL は使えません。データは架空のものを app/ の中に書いてください。実在の人物や会社のデータは使わないでください。',
   '- CLAUDE.md、.claude/、.mcp.json、.git、node_modules、シンボリックリンクは作らないでください。Studio のビルドが止まります。',
   '- コマンドは実行できません。ビルドと最後の確認は Studio が行い、結果を利用者に見せます。',

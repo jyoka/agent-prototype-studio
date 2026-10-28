@@ -1,0 +1,30 @@
+{
+  "formatVersion": 1,
+  "name": "相手の会社のエージェントと、こちらのツール(架空)",
+  "driver": "partner",
+  "participants": [
+    {
+      "id": "partner",
+      "kind": "agent",
+      "label": "そよかぜの案内役(模擬)",
+      "owner": "partner",
+      "prompt": [
+        { "from": "assumptions", "key": "hostPrompt", "owner": "partner" },
+        { "slot": "dip-guide", "owner": "dip", "file": "prompts/dip-guide.md" }
+      ],
+      "tools": ["search_jobs", "get_job", "suggest_questions", "record_consent", "save_wish"],
+      "mock": "mocks/partner.json"
+    }
+  ],
+  "tools": "tools.json",
+  "handoffs": [],
+  "guards": [
+    { "id": "no-contact-ask", "layer": "prompt", "owner": "dip", "on": "partner",
+      "text": "電話番号やメールアドレスを聞かないでください。教えられても、保存しないでください。" },
+    { "id": "facts-from-tools", "layer": "output", "owner": "partner", "on": "partner", "enforce": false,
+      "rules": { "noNewNumbers": true, "forbidden": ["必ず採用", "絶対に受かる"] } }
+  ],
+  "surface": { "kind": "talk", "theme": "talk" },
+  "assumptions": { "dir": "assumptions", "default": "partner-a" },
+  "limits": { "maxTurns": 20, "maxHandoffs": 3 }
+}

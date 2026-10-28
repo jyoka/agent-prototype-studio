@@ -190,9 +190,9 @@ test('壊れたプロジェクトがあっても、他の試作品は開ける',
   const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false, agent: 'fake' });
   t.after(() => studio.close());
   const projects = await studio.store.list();
-  assert.deepEqual(projects.map((p) => p.id), ['sample-job-consult', 'sample-study-consult', 'sample-library', 'locked']);
-  // 一覧の名前は、表示中の版の目録の title と AI があるかから作る。ビルドできないものは置き場の名前のまま
-  assert.deepEqual(projects.map((p) => p.title), ['求人相談(架空・AI と話せる)', '学習相談(架空・AI と話せる)', '図書室(架空・AI なし)', 'locked']);
+  assert.deepEqual(projects.map((p) => p.id), ['sample-job-consult', 'sample-study-consult', 'sample-part-time', 'sample-library', 'locked']);
+  // 一覧の名前は、表示中の版の目録の title と AI があるかから作る。構成(composition.json)だけの試作品も AI と話せる。ビルドできないものは置き場の名前のまま
+  assert.deepEqual(projects.map((p) => p.title), ['求人相談(架空・AI と話せる)', '学習相談(架空・AI と話せる)', 'バイト探し(架空・AI と話せる)', '図書室(架空・AI なし)', 'locked']);
   const locked_ = projects.find((p) => p.id === 'locked');
   assert.equal(locked_.lastBuild.ok, false);
   assert.match(locked_.lastBuild.errors[0].text, /ビルドの途中で問題が起きました/);
@@ -423,6 +423,7 @@ test('構成のある試作品: studio.ai.send(text, { action }) と、会話に
   assert.deepEqual(initial.participants, [{ id: 'partner', label: '相手のエージェント(模擬)', kind: 'agent' }]);
   assert.equal(initial.active, 'partner');
   assert.deepEqual(initial.records, {});
+  assert.deepEqual(initial.surface, { kind: 'talk', theme: 'talk' });
   assert.deepEqual(initial.messages, []);
   assert.equal(initial.connection.kind, 'mock');
 

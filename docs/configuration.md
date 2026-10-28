@@ -234,7 +234,7 @@
 
 ## 構成(`app/composition.json`)
 
-構成は、試作品の中で誰が会話を回し、誰が何を持つかを書いたデータ。設計は [agent-simulation.md の 2 節](design/agent-simulation.md#2-構成の書き方)、決定は [ADR-0003](adr/0003-agent-simulation.md)(案)。今は、形の検査と構成 B の読み替えと、ツールの口(ツールを宣言どおりに動かすコード)と、ツールの MCP サーバー(`npm run tools:mcp`。[usage.md](usage.md#ツールの-mcp-サーバーnpm-run-toolsmcp))と、会話の進め方と模擬のエージェントを作った。`composition.json` のある試作品は、試す画面で構成どおりに会話が回る(下の「構成のある会話」)。会話の枠の部品(`studio-talk`)と場面の回しは、まだない。
+構成は、試作品の中で誰が会話を回し、誰が何を持つかを書いたデータ。設計は [agent-simulation.md の 2 節](design/agent-simulation.md#2-構成の書き方)、決定は [ADR-0003](adr/0003-agent-simulation.md)(案)。今は、形の検査と構成 B の読み替えと、ツールの口(ツールを宣言どおりに動かすコード)と、ツールの MCP サーバー(`npm run tools:mcp`。[usage.md](usage.md#ツールの-mcp-サーバーnpm-run-toolsmcp))と、会話の進め方と模擬のエージェントと、会話の枠の部品(`studio-talk`)を作った。`composition.json` のある試作品は、試す画面で構成どおりに会話が回る(下の「構成のある会話」)。場面の回しは、まだない。見本は `samples/part-time/app/`(バイト探し。構成 A)。
 
 - `composition.json` のない試作品は、`ai.json` の harness 1 つの構成(構成 B)として読む。今の試作品と見本は、何も書き足さずに今までどおり動く。`ai.json` もなければ、AI のない試作品
 - 置き場所と形は次のとおり。形の例は設計の 2.2〜2.5、3.3、3.4、4.2 にある
@@ -269,6 +269,7 @@
 | キー | 中身 |
 |---|---|
 | `participants` | 参加者(`id`、`label`、`kind`) |
+| `surface` | 会話の枠(構成の `surface`。書いていなければ `null`)。`studio-talk` が見た目の既定に使う |
 | `active` | 今話す参加者(次の発言を受ける参加者)の `id` |
 | `records` | 記録の店(`record` のツールが入れたもの) |
 | `messages[].from`、`messages[].parts` | AI の発言の、話した参加者と返事の部品。`text` は部品を文にしたもの。1 ターンで引き継いだときは、2 人分の発言が続く |
@@ -276,13 +277,39 @@
 
 - `studio.ai.correct` は、構成のある会話では使えない(`not-supported` で断る)
 - 構成のある会話は、まだ版に入れない。版を戻すと、会話は最初から始まる
+- 試作品の一覧では、`composition.json` のある試作品も「AI と話せる」と出る(`ai.json` がなくても)
+
+### 会話の枠(`studio-talk`)
+
+Studio が同梱するトーク風の部品。試作品は React と同じく import して使う。試作品の iframe の中で動き、`window.studio.ai` だけを呼ぶ。設計は [agent-simulation.md の 3.8](design/agent-simulation.md#38-会話の枠)。
+
+```jsx
+import { Talk } from 'studio-talk';
+
+export default function App() {
+  return <Talk theme="talk" title="そよかぜバイト探し(架空)" />;
+}
+```
+
+| 書き出すもの | 中身 |
+|---|---|
+| `Talk` | 会話の枠の全体。発言の一覧、返事の部品、入力欄(ラベル「メッセージ」)と「送る」。属性は `theme`(`talk`、`web`、`plain`。書かなければ構成の `surface.theme`、それもなければ `talk`)、`title`、`note`(注意書き)、`starters`(会話がまだないときに出す、押すと送れる発言の例)、`placeholder`、`talk`(下の `useStudioTalk()` の戻り値) |
+| `useStudioTalk()` | 会話の状態と送り方(`session`、`busy`、`error`、`send(text, { action })`)。試作品の画面で記録の店(`session.records`)も出すときは、これを `Talk` の `talk` に渡し、同じ会話を使う |
+| `TalkPart` | 返事の部品を 1 つ描く |
+| `TALK_PART_KINDS`、`TALK_THEMES` | 部品の種類と見た目の名前 |
+
+- 部品は `text`(文)、`buttons`(ボタン)、`card`(見出し、本文、ボタン)、`carousel`(横に並ぶカード)、`notice`(知らせ)。どれを返すかは前提の `messageTypes` で決まり、使えない部品はサーバーで文に落ちて届く
+- ボタンを押すと、ボタンの文を発言として、`action` があれば一緒に送る。ボタンは役割 `button` と名前(ボタンの文)で指せるので、観察器のシナリオの `click` で押せる。前のターンの選択肢は押せない印になる(シナリオの `click` が前のターンのボタンを押さないため)。1 つのターンの返事の中(カルーセルのカード、引き継いだ 2 人分の返事)では、ボタンの名前を重ねないようにする
+- カードは役割 `article` と見出しの名前、カルーセルは「カードの一覧」、例の発言は「話しかける例」のまとまり(`group`)で指せる
+- 話す参加者が替わったら(引き継ぎ)、「〜に代わりました」の知らせを挟む。返事には接続の印(「お試しの AI」か「本物の AI」)を付ける
+- 使わなくてもよい。試作品は自分で描いてもよい(`messages[].parts` を読む)
 
 ## データの置き場
 
 - 試作品は `~/PrototypeStudio/projects/<試作品の ID>/app/` に置かれる(Windows は `%USERPROFILE%\PrototypeStudio`)。環境変数 `STUDIO_HOME` で変えられる。
-- サンプルは、まだ置き場にないものだけが、起動のときに `sample-library`、`sample-job-consult`、`sample-study-consult` として写される。前の版で起動したことのある置き場にも、新しいサンプルだけが足される。手を入れた後は上書きしない。最初の状態に戻したいときは、`~/PrototypeStudio/projects/<サンプルの ID>` を消して起動し直す。
+- サンプルは、まだ置き場にないものだけが、起動のときに `sample-library`、`sample-job-consult`、`sample-study-consult`、`sample-part-time` として写される。前の版で起動したことのある置き場にも、新しいサンプルだけが足される。手を入れた後は上書きしない。最初の状態に戻したいときは、`~/PrototypeStudio/projects/<サンプルの ID>` を消して起動し直す。
 - 作業中のプロダクト内 AI との会話と条件は、Studio のメモリーにだけ置く。Studio を止めると消える。保存した版に入れた会話と条件は、ディスクに残る。
 - 保存した版は `~/PrototypeStudio/projects/<試作品の ID>/.studio/versions/<版の ID>/` に置く。`app/` はファイルの写し、`version.json` はファイルの指紋(SHA-256)と、会話と状態。どの版から作業しているかは `.studio/working.json` に置く。`.studio/` は Studio だけが書く場所で、作る AI は読み書きしない。復元が途中で止まったときは、次の起動で `app/` を戻し、前の `app/` は `.studio/set-aside/` に置く。
-- `app/` の入口は、目録の `entry`。目録がなければ `main.jsx`(または `main.tsx`、`main.js`、`main.ts`)。使えるライブラリは React(`react`、`react-dom`)だけ。
+- `app/` の入口は、目録の `entry`。目録がなければ `main.jsx`(または `main.tsx`、`main.js`、`main.ts`)。使えるライブラリは React(`react`、`react-dom`)と、会話の枠(`studio-talk`。上の「会話の枠」)だけ。
 - 引き継ぎの書き出しは `~/PrototypeStudio/handoffs/` に置く。書き出すたびに新しいフォルダーを作る。要らなくなったら消してよい。書いたメモは `projects/<試作品の ID>/.studio/handoff-notes.json`。
 - 自分で試作品を足すときは、`~/PrototypeStudio/projects/<英小文字・数字・ハイフンの名前>/app/main.jsx` を置き、画面で選んで、「その他」の「開発者向けの詳細」の「ファイルから作り直す」を押す。
