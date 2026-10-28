@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { connectionView, resolveConnection } from './agent-connection.js';
 import { Observer } from '../observer/observe.js';
-import { BuildRequests } from './build-requests.js';
+import { BuildRequests, MAX_FIX_ROUNDS } from './build-requests.js';
 import { STUDIO_ROOT } from './config.js';
 import { ProjectHandoffs } from './handoff.js';
 import { createPreviewHandler } from './preview-server.js';
@@ -12,6 +12,8 @@ import { createMockConnection } from './product-ai/mock.js';
 import { AiSessions } from './product-ai/session.js';
 import { observeProject } from './observe-entry.js';
 import { ensureSampleProjects, projectsDir } from './projects.js';
+import { consentView, RealAiConsent } from './real-ai.js';
+import { STUDIO_SYSTEM_PROMPT } from './claude-args.js';
 import { createToken } from './security.js';
 import { createStudioHandler } from './studio-server.js';
 import { ProjectStore } from './store.js';
@@ -76,6 +78,8 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   }
 
   const connection = await resolveConnection(config, env);
+  // 本物の AI を使う前の同意。1 つを直す AI と試作品の中の AI で共有する。メモリーにだけ持ち、起動し直すと消える
+  const consent = new RealAiConsent();
   const token = createToken();
   const store = new ProjectStore(config.home, log);
   const ports = { studio: config.studioPort, preview: config.previewPort };
@@ -106,11 +110,13 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     });
   }
 
-  // プロダクト内 AI の接続の既定はモック。Claude Code は、利用者が画面で送るものと費用を確かめてから切り替える
+  // プロダクト内 AI の接続の既定はモック。Claude Code は、利用者が画面で同意してから切り替える。
+  // STUDIO_ALLOW_CLAUDE_CODE=0 のときは選べない(config.allowClaudeCode。書かない設定は選べない側にする)
   const aiSessions = new AiSessions({
     definitionOf: (id) => store.aiDefinition(id),
     dataNumbersOf: (id) => store.dataNumbers(id),
     connections: [createMockConnection(), createClaudeCodeConnection({ env, allowed: config.allowClaudeCode === true })],
+    consent,
   });
 
   // 作る run の関門の観察。G5 は基本のシナリオとアプリのシナリオなしで観察し、プロダクト内 AI の要求は断る(ai を渡さない)。
@@ -128,6 +134,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     env,
     log,
     maxBudgetUsd: config.maxBudgetUsd,
+    consent,
     ...(scenarioLimits ? { scenarioLimits } : {}),
     ...(onAgentEvent ? { onAgentEvent } : {}),
   });
@@ -135,7 +142,29 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   const versions = new ProjectVersions({ store, aiSessions, log });
   const handoffs = new ProjectHandoffs({ home: config.home, store, aiSessions, versions, requests, log });
   const studioServer = http.createServer(
-    createStudioHandler({ store, requests, agent: connectionView(connection), aiSessions, versions, handoffs, token, ports }),
+    createStudioHandler({
+      store,
+      requests,
+      agent: connectionView(connection),
+      aiSessions,
+      versions,
+      handoffs,
+      token,
+      ports,
+      // 同意のカードの中身(real-ai.js の consentView)。試作品を渡すと、その試作品の中の AI の「詳しく」も入れる
+      realAi: (projectId) =>
+        consentView({
+          consent,
+          env,
+          agent: connection,
+          fixBudgetUsd: config.maxBudgetUsd,
+          fixLaunches: MAX_FIX_ROUNDS + 1,
+          systemPrompt: STUDIO_SYSTEM_PROMPT,
+          productAllowed: config.allowClaudeCode === true,
+          product: projectId ? aiSessions.realDetails(projectId) : null,
+        }),
+      consent,
+    }),
   );
   servers.push(studioServer);
   const previewHandler = createPreviewHandler({ home: config.home, store, ports });
@@ -170,6 +199,8 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     store,
     requests,
     connection,
+    // 本物の AI を使う前の同意。画面を通らない呼び出し(scripts/check-loop.js)は、ここで同意する
+    consent,
     aiSessions,
     versions,
     handoffs,

@@ -108,6 +108,32 @@ test('見本 3 つは目録を持ち、目録どおりにビルドできる', as
   }
 });
 
+test('見本 3 つは変えずにビルドでき、構成 B として読まれる(R2)', async (t) => {
+  const { buildsDir } = await makeApp(t, {});
+  for (const sample of ['job-consult', 'library', 'study-consult']) {
+    const appDir = path.join(STUDIO_ROOT, 'samples', sample, 'app');
+    const result = await buildApp({ appDir, buildsDir });
+    assert.equal(result.ok, true, `${sample}: ${JSON.stringify(result.errors)}`);
+    // 見本は composition.json を持たない。目録は版 1 のまま
+    assert.equal(result.manifest.formatVersion, 1, sample);
+    assert.deepEqual(result.simulation.compositions, [], sample);
+    assert.deepEqual(result.simulation.evals, [], sample);
+    if (result.ai === null) {
+      // AI のない見本(図書室)は、今と同じく構成もない
+      assert.equal(result.simulation.composition, null, sample);
+      continue;
+    }
+    const { composition } = result.simulation;
+    assert.equal(composition.file, null, sample);
+    assert.equal(composition.driver, 'main', sample);
+    assert.deepEqual(composition.participants, [
+      { id: 'main', kind: 'harness', label: result.ai.name, owner: 'studio', ai: 'ai.json', returnTo: null },
+    ], sample);
+    assert.equal(composition.tools, null, sample);
+    assert.deepEqual(composition.guards, [], sample);
+  }
+});
+
 test('ビルドの誤りには、止まった段の名前(inspect、contract、compile)が付く', async (t) => {
   const MAIN = 'console.log(1);\n';
   const cases = [

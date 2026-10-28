@@ -156,8 +156,8 @@ Studio の使い方の全部です。README の「使い方」は最初の 1 分
 
 試してみる(偽の Claude Code を使う。実モデルは呼ばない):
 
-1. macOS のターミナルで、`STUDIO_ALLOW_CLAUDE_CODE=1 STUDIO_CLAUDE_BIN=test/fixtures/fake-claude.js npm start` で起動する。偽の CLI は Node のスクリプトなので、Windows では起動できない。Windows では、モックの記録だけを試せる。
-2. 「求人相談(架空・AI と話せる)」を選び、「接続を選ぶ」で「Claude Code」に切り替える。
+1. macOS のターミナルで、`STUDIO_AGENT=fake STUDIO_CLAUDE_BIN=test/fixtures/fake-claude.js npm start` で起動する。偽の CLI は Node のスクリプトなので、Windows では起動できない。Windows では、モックの記録だけを試せる。
+2. 「求人相談(架空・AI と話せる)」を選び、「接続を選ぶ」で「Claude Code」に切り替える。確認に印を付けて切り替えると、本物の AI を使う同意になる(偽の CLI でも同じ手順)。
 3. 試作品の欄に、次の文を送る。偽の CLI は文の中の合図で失敗を再現する。
 
 | 送る文 | 記録に出るもの |

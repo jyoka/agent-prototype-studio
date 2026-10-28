@@ -101,9 +101,9 @@ if (connection.kind === 'fake') {
   console.log(`  ${connection.billing.text}`);
 }
 if (config.allowClaudeCode) {
-  console.log('プロダクト内 AI に Claude Code(実モデル)を選べます。切り替える前に、送るものと費用が画面に出ます。');
+  console.log('本物の AI(Claude Code)は、画面で送るものと料金を確かめて同意してから使います。同意は Studio を止めるまで有効です。');
 } else {
-  console.log('プロダクト内 AI はモックだけで動きます(Claude Code を選ぶには STUDIO_ALLOW_CLAUDE_CODE=1)。');
+  console.log('試作品の中の AI は、お試しの AI(モック)だけで動きます(STUDIO_ALLOW_CLAUDE_CODE=0)。');
 }
 console.log('止めるときは、このターミナルで Ctrl+C を押してください。');
 console.log('');

@@ -65,7 +65,8 @@ async function fakeSessions(t, definition, options = {}) {
   const { env, calls } = await fakeEnv(t);
   const sessions = new AiSessions({ definitionOf: () => definition, connections: [createMockConnection(), createClaudeCodeConnection({ env, allowed: true })], ...options });
   t.after(() => sessions.close());
-  sessions.select('p', 'claude-code', { confirmed: true });
+  sessions.consent.agree();
+  sessions.select('p', 'claude-code');
   return { sessions, calls };
 }
 

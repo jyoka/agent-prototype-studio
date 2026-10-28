@@ -4,6 +4,7 @@ import { formatValue, normalizeValue } from './definition.js';
 import { checkProgress, shownValue, startProgress, turn } from './harness.js';
 import { CALL_LIMITS, ProjectCallWindow, TURN_LIMITS, createTurnMeter } from './limits.js';
 import { createMockConnection } from './mock.js';
+import { RealAiConsent } from '../real-ai.js';
 
 export const SESSION_LIMITS = {
   maxTextLength: 500,
@@ -170,9 +171,18 @@ const CONNECTION_ERRORS = {
 // 作業中の会話はメモリーにだけ置く。Studio を止めると消える。残すときは版として保存する(versions.js)。
 // 設定が変わって会話が最初に戻ったら、前の会話を 1 つ覚えておき、同じ発言と修正を新しい設定で送り直せる(試し直す、#279)。
 export class AiSessions {
-  // dataNumbersOf は、表示中の版の架空のデータに出てくる数(返事の noNewNumbers の確かめに使う)。turnDeadlineMs は 1 ターンの期限
-  constructor({ definitionOf, dataNumbersOf = () => [], connections = [createMockConnection()], projectCalls = new ProjectCallWindow(), turnDeadlineMs = TURN_LIMITS.deadlineMs }) {
+  // dataNumbersOf は、表示中の版の架空のデータに出てくる数(返事の noNewNumbers の確かめに使う)。turnDeadlineMs は 1 ターンの期限。
+  // consent は本物の AI を使う前の同意(real-ai.js)。Studio では直す AI と同じものを渡す。渡さなければ、同意していない状態から始まる
+  constructor({
+    definitionOf,
+    dataNumbersOf = () => [],
+    connections = [createMockConnection()],
+    projectCalls = new ProjectCallWindow(),
+    turnDeadlineMs = TURN_LIMITS.deadlineMs,
+    consent = new RealAiConsent(),
+  }) {
     this.definitionOf = definitionOf;
+    this.consent = consent;
     this.dataNumbersOf = dataNumbersOf;
     this.turnDeadlineMs = turnDeadlineMs;
     this.connections = new Map(connections.map((connection) => [connection.kind, connection]));
@@ -247,11 +257,25 @@ export class AiSessions {
     return this.connections.get(this.selected.get(projectId) ?? this.defaultKind);
   }
 
-  // 観察に使う接続。既定はモック。実モデルでの観察(費用と同意が要る)は、まだ作っていないので断る
+  // 試作品の中の AI を本物の接続(費用のかかる接続)で使う前の、ただ 1 つの口。利用者の切り替え(select)と、
+  // 人の「確かめる」の観察(observationConnection)が通る。選べるか(STUDIO_ALLOW_CLAUDE_CODE=0 でないか、Claude Code があるか)と、
+  // 同意(real-ai.js)を確かめ、だめなら理由のコードつきで断る。モックは何も確かめない。use は同意の断りの文に使う
+  useReal(connection, use = 'product') {
+    if (!connection.billing) return;
+    const { available, code, reason } = connection.availability?.() ?? { available: true };
+    if (!available) throw new AiError(403, code ?? 'unavailable', reason);
+    try {
+      this.consent.require(use);
+    } catch (error) {
+      throw Object.assign(new AiError(403, error.code, error.message), { nextText: error.next });
+    }
+  }
+
+  // 観察に使う接続。既定はモック。本物の接続は、切り替えと同じ口(useReal)で、選べるかと同意を確かめる
   observationConnection(kind = 'mock') {
     const connection = this.connections.get(kind);
     if (!connection) throw new AiError(400, 'invalid', `「${String(kind)}」という接続はありません`);
-    if (connection.billing) throw new AiError(403, 'unavailable', '実際の AI モデルでの観察は、まだ使えません。モックで観察してください');
+    this.useReal(connection, 'check');
     return connection;
   }
 
@@ -320,17 +344,46 @@ export class AiSessions {
     };
   }
 
-  // 接続を切り替える。実モデルへは、送るものと費用を見たうえでの確認(confirmed)を要る
-  select(projectId, kind, { confirmed = false } = {}) {
+  // 同意のカードの「詳しく」に出す、試作品の中の AI を本物にしたときの中身(切り替える前の確認の中身を移したもの)。
+  // 送る指示の全文、項目と選択肢、会話の件数、上限、回数の制限、道具を渡さないこと。ai.json のない試作品と、本物の接続がないときは null
+  realDetails(projectId) {
+    const definition = this.definitionOf(projectId);
+    const connection = [...this.connections.values()].find((c) => c.billing);
+    if (!definition || !connection) return null;
+    const current = this.sessions.get(slotOf(projectId, USER_CONVERSATION));
+    const messages = current && current.key === JSON.stringify(definition) ? current.messages : freshSession(definition, '').messages;
+    const perTurn = Object.values(CALL_LIMITS.perTurn).reduce((sum, n) => sum + n, 0);
+    return {
+      kind: connection.kind,
+      label: connection.label,
+      description: connection.description,
+      tools: connection.tools ?? null,
+      ...(connection.availability?.() ?? { available: true, reason: '' }),
+      billing: { kind: connection.billing.kind, label: connection.billing.label, text: connection.billing.text },
+      sends: connection.sends(definition),
+      fields: definition.fields.map((field) => ({
+        label: field.label,
+        ...(field.type === 'number' ? { unit: field.unit ?? null, min: field.min, max: field.max } : { options: field.options.map((o) => o.value) }),
+      })),
+      conversation: { messages: messages.length },
+      limits: {
+        perTurn,
+        perProject: CALL_LIMITS.perProject,
+        windowMinutes: CALL_LIMITS.windowMs / 60_000,
+        perConversation: SESSION_LIMITS.maxPaidReplies,
+        text: `1 ターンで ${perTurn} 回まで呼びます。試作品ごとに、観察も含めて ${CALL_LIMITS.windowMs / 60_000} 分に ${CALL_LIMITS.perProject} 回まで、1 つの会話で ${SESSION_LIMITS.maxPaidReplies} 回の返事までです。`,
+      },
+    };
+  }
+
+  // 接続を切り替える。本物の接続へは、選べるかと同意を useReal で確かめる。
+  // 同意は Studio を止めるまで有効なので、切り替えのたびの確認(前の confirmed)は求めない
+  select(projectId, kind) {
     const session = this.session(projectId);
     const connection = this.connections.get(kind);
     if (!connection) throw new AiError(400, 'invalid', `「${String(kind)}」という接続はありません`);
     if (session.busy) throw new AiError(409, 'busy', 'AI が応答しています。止めるか、終わってから切り替えてください');
-    const { available, reason } = connection.availability?.() ?? { available: true };
-    if (!available) throw new AiError(403, 'unavailable', reason);
-    if (connection.billing && !confirmed) {
-      throw new AiError(400, 'not-confirmed', '送るものと費用を確かめてから切り替えてください');
-    }
+    this.useReal(connection, 'product');
     const before = this.connectionOf(projectId);
     this.selected.set(projectId, kind);
     if (before.kind !== kind) {

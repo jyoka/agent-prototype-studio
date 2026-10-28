@@ -4,6 +4,7 @@ import { STUDIO_ROOT } from './config.js';
 import { isAllowedHost, tokensEqual } from './security.js';
 import { AgentUnavailableError, RequestError } from './build-requests.js';
 import { AiError } from './product-ai/session.js';
+import { ConsentRequiredError } from './real-ai.js';
 import { BusyError, NotFoundError } from './store.js';
 import { HandoffError } from './handoff.js';
 import { VersionError } from './versions.js';
@@ -99,7 +100,8 @@ function projectView(project, previewPort, runs) {
 }
 
 // Studio 画面と API。API はすべてトークンを要求する(ADR-0001 の層 3)。
-export function createStudioHandler({ store, requests, agent, aiSessions, versions, handoffs, token, ports }) {
+// realAi(projectId) は本物の AI を使う前の同意のカードの中身(real-ai.js の consentView)、consent は同意の状態
+export function createStudioHandler({ store, requests, agent, aiSessions, versions, handoffs, token, ports, realAi, consent }) {
   const view = (project) => projectView(project, ports.preview, requests.summary(project.id));
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
@@ -114,6 +116,7 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
       if (error instanceof BusyError) return sendError(res, 409, 'busy', error.message);
       if (error instanceof RequestError || error instanceof BodyError) return sendError(res, 400, 'request', error.message);
       if (error instanceof AgentUnavailableError) return sendError(res, 503, 'agent', error.message);
+      if (error instanceof ConsentRequiredError) return sendError(res, 403, error.code, error.message, error.next);
       throw error;
     }
     res.writeHead(200, {
@@ -143,6 +146,13 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
     if (req.method === 'GET' && url.pathname === '/api/projects') {
       const projects = await store.list();
       return sendJson(res, 200, { projects: projects.map(view), agent });
+    }
+    // 本物の AI を使う前の同意。GET はカードの中身(?project= で、その試作品の中の AI の「詳しく」も入れる)、
+    // POST の consent は同意する。ほかの API と同じく、トークンと Origin(Studio の画面から)を確かめた後にだけ届く
+    if (url.pathname === '/api/real-ai' || url.pathname === '/api/real-ai/consent') {
+      const consenting = url.pathname === '/api/real-ai/consent';
+      if (req.method !== (consenting ? 'POST' : 'GET')) return sendError(res, 404, 'not-found', 'その API はありません');
+      return handleRealAi(req, res, url, consenting);
     }
     const requestsMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/build-requests$/.exec(url.pathname);
     if (requestsMatch && req.method === 'GET') {
@@ -195,6 +205,23 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
     return sendError(res, 404, 'not-found', 'その API はありません');
   }
 
+  async function handleRealAi(req, res, url, consenting) {
+    const projectId = url.searchParams.get('project');
+    if (projectId !== null && !(await store.list()).some((p) => p.id === projectId)) {
+      return sendError(res, 404, 'not-found', `プロジェクトがありません: ${projectId}`);
+    }
+    if (consenting) {
+      try {
+        await readJson(req);
+      } catch (error) {
+        if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
+        throw error;
+      }
+      consent.agree();
+    }
+    return sendJson(res, 200, realAi(projectId));
+  }
+
   // 版。versionId が null なら一覧、undefined なら保存、文字列ならその版の復元
   async function handleVersions(req, res, id, versionId) {
     try {
@@ -228,6 +255,7 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
 
   // プロダクト内 AI。試作品からの要求は、Studio 画面が形を確かめてから、ここへ送る。
   // 接続の切り替えと中断と試し直し(connections、connection、cancel、retry)と実行の記録(trace、clear-trace)は、Studio 画面だけが送る。試作品からは届かない。
+  // 本物の接続への切り替えは、同意の前は断る(AiSessions.useReal。理由のコードは consent-required)。
   // retry は試し直せる会話と結果で、Studio 画面だけが使う(画面は試作品に session だけを渡す)
   async function handleAi(req, res, rawId, action) {
     let id;
@@ -259,7 +287,7 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
       }
       let session;
       if (!action) session = aiSessions.view(id);
-      else if (action === 'connection') session = aiSessions.select(id, body?.kind, { confirmed: body?.confirmed === true });
+      else if (action === 'connection') session = aiSessions.select(id, body?.kind);
       else if (action === 'cancel') session = aiSessions.cancel(id);
       else if (action === 'messages') session = await aiSessions.send(id, body?.text);
       else if (action === 'corrections') session = aiSessions.correct(id, body?.changes);
