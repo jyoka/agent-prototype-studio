@@ -12,6 +12,9 @@ import { ensureSampleProjects } from '../../src/server/projects.js';
 import { STUDIO_ROOT } from '../../src/server/config.js';
 import { ProjectStore } from '../../src/server/store.js';
 
+// 偽の claude(Node のスクリプト)を直接起動するため
+const posixOnly = { skip: process.platform === 'win32' ? '偽の claude を直接起動できないため' : false };
+
 function request(port, { method = 'GET', pathname = '/', headers = {}, body } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port, method, path: pathname, headers }, (res) => {
@@ -28,7 +31,7 @@ function request(port, { method = 'GET', pathname = '/', headers = {}, body } = 
 
 async function withStudio(t, env = {}) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-requests-'));
-  const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false }, { env: { PATH: process.env.PATH, ...env } });
+  const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false, agent: 'fake' }, { env: { PATH: process.env.PATH, ...env } });
   t.after(async () => {
     await studio.close();
     await fs.rm(home, { recursive: true, force: true });
@@ -135,7 +138,7 @@ test('作業中は同じプロジェクトの依頼と作り直しを断り、�
 test('始めた直後に Studio を止めても、作る AI を起動せずに終わり、新しい依頼は受けない', async (t) => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-requests-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
-  const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false }, { env: { PATH: process.env.PATH } });
+  const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false, agent: 'fake' }, { env: { PATH: process.env.PATH } });
   const started = await studio.requests.start('sample-library', 'ゆっくり進めて');
   const ended = new Promise((resolve) => started.subscribe(() => {}, resolve));
   const begin = Date.now();
@@ -146,7 +149,7 @@ test('始めた直後に Studio を止めても、作る AI を起動せずに�
   await assert.rejects(studio.requests.start('sample-library', 'x'), /止めているところ/);
 });
 
-test('Claude Code が使えないときは 503 で理由を返す', async (t) => {
+test('Claude Code が見つからないときは 503 で理由を返す', async (t) => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-requests-'));
   const studio = await startStudio(
     { home, studioPort: 0, previewPort: 0, openBrowser: false, agent: 'claude', claudeBin: path.join(home, 'no-claude') },
@@ -165,7 +168,31 @@ test('Claude Code が使えないときは 503 で理由を返す', async (t) =>
     body: JSON.stringify({ request: 'x' }),
   });
   assert.equal(response.status, 503);
-  assert.match(JSON.parse(response.body).error.message, /版を確かめられません/);
+  assert.match(JSON.parse(response.body).error.message, /claude が見つかりません/);
+});
+
+test('自動(STUDIO_AGENT を書かない)で Claude Code にログインしていないときは、503 で理由を返す', posixOnly, async (t) => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-requests-'));
+  // 偽の claude(test/fixtures/fake-claude.js)に、ログインしていない形を返させる。判定は Studio に渡した env で聞く
+  const studio = await startStudio(
+    { home, studioPort: 0, previewPort: 0, openBrowser: false, agent: 'auto', claudeBin: path.join(STUDIO_ROOT, 'test', 'fixtures', 'fake-claude.js') },
+    { env: { PATH: process.env.PATH, FAKE_CLAUDE_AUTH: 'logged-out' } },
+  );
+  t.after(async () => {
+    await studio.close();
+    await fs.rm(home, { recursive: true, force: true });
+  });
+  assert.equal(studio.connection.status, 'not-logged-in');
+  const token = new URL(studio.url).hash.slice('#token='.length);
+  const host = `127.0.0.1:${studio.ports.studio}`;
+  const response = await request(studio.ports.studio, {
+    method: 'POST',
+    pathname: RUNS,
+    headers: { host, 'x-studio-token': token, origin: `http://${host}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ request: 'x' }),
+  });
+  assert.equal(response.status, 503);
+  assert.match(JSON.parse(response.body).error.message, /ログインしていません/);
 });
 
 test('依頼の文は stdin だけで渡し、引数には入れない。作業ディレクトリは app/', async (t) => {

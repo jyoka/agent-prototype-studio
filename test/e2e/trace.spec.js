@@ -236,7 +236,7 @@ test('試作品のコードが決まりに合わない要求を送ったら、�
 
 test('試す画面で話している途中に観察を回しても、利用者の会話は残る。観察の会話は記録に「観察から」の印で出る', async ({ page, home }) => {
   // 観察はまだ画面から回せない(CLI もない)ので、同じプロセスで起動した Studio から回す
-  const config = loadConfig({ STUDIO_HOME: home, STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0', STUDIO_NO_OPEN: '1' });
+  const config = loadConfig({ STUDIO_HOME: home, STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0', STUDIO_NO_OPEN: '1', STUDIO_AGENT: 'fake' });
   const studio = await startStudio(config, { env: {} });
   try {
     const { app, say, entries } = await openJobConsult(page, studio);

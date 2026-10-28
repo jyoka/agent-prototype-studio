@@ -81,14 +81,21 @@ const AGENT_ENV = [
 ];
 
 // 利用者と同じ手順(npm start、または node bin/studio.js)で起動し、表示された URL を返す。
-// env で環境変数を足す。値が undefined の名前は消す
-export async function launchStudio(home, { useNpm = false, env: extraEnv = {} } = {}) {
+// env で環境変数を足す。値が undefined の名前は消す。
+// 作る AI は、env で選ばなければ偽接続(STUDIO_AGENT=fake)にする。STUDIO_AGENT を消すか claude にするテストは、
+// STUDIO_CLAUDE_BIN で偽の claude か、ない場所を指す。指さなければ起動しない(手元の本物の Claude Code を呼ばないため)。
+// 本物を呼ぶのは real: true を渡したときだけ(test/e2e/real-loop.spec.js。STUDIO_REAL=1 のときだけ動く)
+export async function launchStudio(home, { useNpm = false, env: extraEnv = {}, real = false } = {}) {
   const command = useNpm ? (process.platform === 'win32' ? 'npm.cmd' : 'npm') : process.execPath;
   const args = useNpm ? ['start'] : ['bin/studio.js'];
   const env = { ...process.env, STUDIO_HOME: home, STUDIO_NO_OPEN: '1', STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0' };
   for (const name of AGENT_ENV) delete env[name];
+  env.STUDIO_AGENT = 'fake';
   Object.assign(env, extraEnv);
   for (const [name, value] of Object.entries(env)) if (value === undefined) delete env[name];
+  if (env.STUDIO_AGENT !== 'fake' && !env.STUDIO_CLAUDE_BIN && !real) {
+    throw new Error(`STUDIO_AGENT=${env.STUDIO_AGENT ?? '(なし)'} で起動するテストは、STUDIO_CLAUDE_BIN で偽の claude か、ない場所を指してください`);
+  }
   const child = spawn(command, args, {
     cwd: ROOT,
     env,

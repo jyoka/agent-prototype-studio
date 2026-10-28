@@ -1,4 +1,9 @@
-import { expect, launchStudio, test } from './studio.js';
+import path from 'node:path';
+import { ROOT, expect, launchStudio, test } from './studio.js';
+
+// 偽の claude。--version と auth status に答え、auth status には架空のメールアドレスと組織を含む
+const FAKE = path.join(ROOT, 'test', 'fixtures', 'fake-claude.js');
+const FAKE_SECRETS = ['fictional-user@example.com', '架空の組織', 'fictional-org-0000'];
 
 test('npm start で起動し、ブラウザでサンプルの試作品を操作できる', async ({ page, home }) => {
   const studio = await launchStudio(home, { useNpm: true });
@@ -58,6 +63,73 @@ test('npm start で起動し、ブラウザでサンプルの試作品を操作�
     await page.reload();
     await expect(page.locator('#connection')).toHaveText('つながっています');
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
+  } finally {
+    await studio.stop();
+  }
+});
+
+test('STUDIO_AGENT を書かずに起動すると自動で、Claude Code がなければ直す AI は使えないと出す', async ({ page, home }) => {
+  const studio = await launchStudio(home, { env: { STUDIO_AGENT: undefined, STUDIO_CLAUDE_BIN: path.join(home, 'no-such-claude') } });
+  try {
+    expect(studio.output()).toContain('作る AI: Claude Code を使えません。claude が見つかりません');
+    const { agent } = await studio.api('/api/projects');
+    expect(agent).toMatchObject({ mode: 'auto', kind: 'claude', status: 'missing', ready: false, auth: null });
+
+    await page.goto(studio.url);
+    await expect(page.locator('#agent-status')).toContainText('claude が見つかりません');
+    await expect(page.getByRole('button', { name: '送る' })).toBeDisabled();
+    // 偽接続には落とさない。試験用の依頼の例は出ない
+    await expect(page.locator('#examples')).toBeHidden();
+    // 試す画面は使える
+    await expect(page.frameLocator('iframe[title="試作品"]').getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
+  } finally {
+    await studio.stop();
+  }
+});
+
+test('自動で偽の claude を指すと、ログインしていれば Claude Code を使い、ログインの値は出さない', async ({ page, home }) => {
+  test.skip(process.platform === 'win32', '偽の claude(Node のスクリプト)を直接起動できないため');
+  const studio = await launchStudio(home, { env: { STUDIO_AGENT: undefined, STUDIO_CLAUDE_BIN: FAKE } });
+  try {
+    const data = await studio.api('/api/projects');
+    expect(data.agent).toMatchObject({ mode: 'auto', kind: 'claude', status: 'ready', ready: true, version: '2.1.311' });
+    expect(data.agent.auth).toEqual({ loggedIn: true, method: 'claude.ai' });
+    await page.goto(studio.url);
+    await expect(page.locator('#agent-status')).toContainText('接続: Claude Code 2.1.311');
+    for (const secret of FAKE_SECRETS) {
+      expect(JSON.stringify(data)).not.toContain(secret);
+      expect(studio.output()).not.toContain(secret);
+      await expect(page.locator('body')).not.toContainText(secret);
+    }
+  } finally {
+    await studio.stop();
+  }
+});
+
+test('自動で Claude Code にログインしていなければ、直す AI は使えないと出す', async ({ page, home }) => {
+  test.skip(process.platform === 'win32', '偽の claude(Node のスクリプト)を直接起動できないため');
+  const studio = await launchStudio(home, { env: { STUDIO_AGENT: undefined, STUDIO_CLAUDE_BIN: FAKE, FAKE_CLAUDE_AUTH: 'logged-out' } });
+  try {
+    const { agent } = await studio.api('/api/projects');
+    expect(agent).toMatchObject({ mode: 'auto', status: 'not-logged-in', ready: false, auth: { loggedIn: false, method: 'none' } });
+    await page.goto(studio.url);
+    await expect(page.locator('#agent-status')).toContainText('Claude Code にログインしていません');
+    await expect(page.getByRole('button', { name: '送る' })).toBeDisabled();
+  } finally {
+    await studio.stop();
+  }
+});
+
+test('STUDIO_AGENT を消すか claude にするテストが、偽の claude もない場所も指さなければ、起動しない', async ({ home }) => {
+  await expect(launchStudio(home, { env: { STUDIO_AGENT: undefined } })).rejects.toThrow(/STUDIO_CLAUDE_BIN/);
+  await expect(launchStudio(home, { env: { STUDIO_AGENT: 'claude' } })).rejects.toThrow(/STUDIO_CLAUDE_BIN/);
+});
+
+test('launchStudio の既定は偽接続', async ({ home }) => {
+  const studio = await launchStudio(home);
+  try {
+    const { agent } = await studio.api('/api/projects');
+    expect(agent).toMatchObject({ mode: 'fake', kind: 'fake', status: 'ready' });
   } finally {
     await studio.stop();
   }

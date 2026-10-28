@@ -1,6 +1,6 @@
 # 実モデル(Claude Code)を使う
 
-Studio の 2 つの AI は、既定では実モデルを呼びません。作る AI は偽接続、プロダクト内 AI はモックで動きます。このページは、どちらかを Claude Code(実際の AI モデル)に切り替えるときの手順と決まりです。
+作る AI の既定は自動です。Claude Code が見つかり、版が足り、ログインしていれば、Claude Code(実際の AI モデル)を使います。プロダクト内 AI の既定はモックで、実モデルを呼びません。このページは、2 つの AI が Claude Code を使うときの手順と決まりです。
 
 ## 実モデル(Claude Code)と話す(許可したときだけ)
 
@@ -65,12 +65,36 @@ Claude Code の起動のしかた(どれも Claude Code の CLI のフラグで�
 
 2 種の呼び出しで違うのは `--json-schema` と `--system-prompt` だけ。発言、会話、決定の中身は argv に入れず、標準入力で渡す。作業フォルダーは、空の一時フォルダーにする。
 
-## 作る AI を Claude Code に切り替える
+## 作る AI と Claude Code
 
-実モデルを呼ぶので、次の 2 つが決まるまでは切り替えないでください。会社として Anthropic の Commercial Terms に同意するか。社内の利用条件とデータの扱い。試作には架空のデータだけを使ってください。
+作る AI は、`STUDIO_AGENT` で選ぶ。既定は `auto`(自動)。
+
+| `STUDIO_AGENT` | 作る AI |
+|---|---|
+| 書かない、`auto` | 起動のときに Claude Code を確かめる。使えれば Claude Code。使えなければ作る欄を使えない状態にし、理由を出す。偽接続には落とさない |
+| `claude` | Claude Code に固定する。確かめ方と、使えないときの出方は自動と同じ |
+| `fake` | 偽接続。決まった依頼だけに反応する。Claude Code もモデルも呼ばない |
+
+起動のときの確かめ(モデルは呼ばない):
+
+| 結果 | 確かめ方 | 作る欄 |
+|---|---|---|
+| 使える | 下の 3 つが全部通る | 送れる |
+| ない | PATH に `claude` がない。`STUDIO_CLAUDE_BIN` がない場所を指す | 「claude が見つかりません」と手順。送れない |
+| 古い | `claude --version` が 2.1.248 より前 | 「古すぎます」と `claude update`。送れない |
+| ログインしていない | `claude auth status --json` の `loggedIn` が `false` | 「ログインしていません」と `/login` の手順。送れない |
+
+- ログインしているかは、Claude Code 自身に聞く。Studio はログインの情報のファイルを読まない。出力から使うのは `loggedIn` と `authMethod`(方式)だけで、メールアドレスや組織など他の値は捨てる。画面にも記録にも出さない。
+- `auth status` の出力の形が分からない版では、使えるとする。ログインしていなければ、最初の送信の失敗で見分け、ログインの手順を出す。
+- 結果は `/api/projects` の `agent` の `mode`(`auto`、`claude`、`fake`)、`status`(`ready`、`missing`、`old`、`not-logged-in`、`unusable`)、`auth`(`loggedIn` と `method`)に出る。`unusable` は、Windows の npm 版の `claude.cmd` と、版を読めないとき。
+- 使えない状態から直したら(入れた、更新した、ログインした)、Studio を起動し直す。
+
+実モデルを呼ぶので、次の 2 つが決まるまでは `STUDIO_AGENT=fake` で起動してください。会社として Anthropic の Commercial Terms に同意するか。社内の利用条件とデータの扱い。試作には架空のデータだけを使ってください。本物の AI を初めて使う前の確かめの画面は、まだありません。
+
+Claude Code で作るときの手順:
 
 1. Claude Code 2.1.248 以上を入れ、ターミナルで `claude` を起動して、本人のアカウントでログインしておく。
-2. `STUDIO_AGENT=claude npm start`(Windows の PowerShell は `$env:STUDIO_AGENT='claude'; npm start`)で起動する。
+2. `npm start` で起動する。Claude Code に固定するときは `STUDIO_AGENT=claude npm start`(Windows の PowerShell は `$env:STUDIO_AGENT='claude'; npm start`)。
 3. 「作る」欄の上の枠で、版と「認証と課金」を確かめてから送る。
    - 環境に `ANTHROPIC_API_KEY` があると、サブスクの枠ではなく API の料金がかかる。枠にそう出る。そのときは作る AI の 1 回の起動に費用の上限(`STUDIO_MAX_BUDGET_USD`)を付ける。
    - 見込みは環境変数の有無だけから出す。Console(API)のアカウントで `claude` にログインしているときも API の料金がかかるが、送る前には見分けられない。

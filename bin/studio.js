@@ -92,9 +92,10 @@ console.log(`  ${studio.url}`);
 console.log(`データの置き場: ${config.home}`);
 const { connection } = studio;
 if (connection.kind === 'fake') {
-  console.log('作る AI: 偽接続(決まった応答だけ。Claude Code とモデルは呼びません)');
+  console.log('作る AI: 偽接続(STUDIO_AGENT=fake。決まった応答だけ。Claude Code とモデルは呼びません)');
 } else if (connection.problem) {
   console.log(`作る AI: Claude Code を使えません。${connection.problem}`);
+  if (connection.mode === 'auto') console.log('  試す、保存、本番開発への引き継ぎは使えます。');
 } else {
   console.log(`作る AI: Claude Code ${connection.version}(${connection.command})`);
   console.log(`  ${connection.billing.text}`);
