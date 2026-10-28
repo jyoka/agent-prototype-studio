@@ -6,6 +6,9 @@
 |---|---|
 | ターミナルに「Node.js 22 以上が要ります」 | Node.js を入れ直す |
 | ターミナルに「必要な部品が入っていません」 | `npm install` を実行してから `npm start` |
+| 観察の結果が「未確認」(`unverified`)で、理由に「Playwright の Chromium が見つかりません」 | Studio のフォルダーで `npm run install:chromium` を実行する(約 200 MB をダウンロードする)。観察器は Playwright の Chromium だけを使い、利用者の Chrome や Edge は使わない。`npm install` で Playwright の版が変わったときも、入れ直す |
+| 観察の結果が「未確認」で、理由に「Chromium を起動できませんでした」 | `npm run install:chromium` で入れ直す。続くときは、理由の括弧の中の文を確かめる |
+| 観察の結果が「未確認」で、理由に「試作品のビルドを開けませんでした」 | 観察の間に作り直された。もう一度観察する |
 | ターミナルに「ポート 4317 は使われています」 | 別のターミナルで Studio が動いていないか確かめる。他のアプリが使っているなら、番号を変えて起動する([configuration.md の「環境変数」](configuration.md#環境変数))。プレビュー用の 4318 は `STUDIO_PREVIEW_PORT` |
 | 画面に「鍵がありません」「鍵が合いません」 | ターミナルに出た最新の URL(`#token=` を含む)を開き直す。起動し直すたびに鍵は変わる |
 | 画面に「Studio のサーバーにつながりません」 | `npm start` のターミナルが開いたままか確かめる。止めたなら、もう一度 `npm start` |

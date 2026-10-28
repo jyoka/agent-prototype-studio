@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import * as esbuild from 'esbuild';
+import { digestSnapshot, snapshotApp } from './app-snapshot.js';
 import { STUDIO_ROOT } from './config.js';
 import { inspectApp } from './inspect.js';
 import { ENTRY_NAMES, readManifest } from './manifest.js';
@@ -121,7 +122,8 @@ function indexHtml(hasCss) {
 // 目録(app/prototype.json。なければ既定の値)を manifest で返す。
 export async function buildApp({ appDir, buildsDir }) {
   const started = Date.now();
-  const finish = (fields) => ({ ...fields, durationMs: Date.now() - started, finishedAt: new Date().toISOString() });
+  const appDigest = digestSnapshot(await snapshotApp(appDir));
+  const finish = (fields) => ({ ...fields, appDigest, durationMs: Date.now() - started, finishedAt: new Date().toISOString() });
 
   const problems = await inspectApp(appDir);
   if (problems.length > 0) {

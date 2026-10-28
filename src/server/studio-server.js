@@ -15,6 +15,9 @@ const UI_FILES = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/studio.js': ['studio.js', 'text/javascript; charset=utf-8'],
   '/studio.css': ['studio.css', 'text/css; charset=utf-8'],
+  // 観察用の親ページ(src/observer/ が開く)
+  '/observe.html': ['observe.html', 'text/html; charset=utf-8', 'observe'],
+  '/observe.js': ['observe.js', 'text/javascript; charset=utf-8', 'observe'],
 };
 
 function sendJson(res, status, body) {
@@ -37,6 +40,19 @@ export function studioCsp(previewPort) {
     "style-src 'self'",
     "img-src 'self' data:",
     "connect-src 'self'",
+    `frame-src http://localhost:${previewPort}`,
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join('; ');
+}
+
+// 観察用の親ページは Studio の API を呼ばない。だから connect-src も 'none' にする
+export function observeCsp(previewPort) {
+  return [
+    "default-src 'none'",
+    "script-src 'self'",
+    "connect-src 'none'",
     `frame-src http://localhost:${previewPort}`,
     "frame-ancestors 'none'",
     "base-uri 'none'",
@@ -276,7 +292,7 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
       const body = await fs.readFile(path.join(UI_DIR, uiFile[0]));
       res.writeHead(200, {
         'Content-Type': uiFile[1],
-        'Content-Security-Policy': studioCsp(ports.preview),
+        'Content-Security-Policy': uiFile[2] === 'observe' ? observeCsp(ports.preview) : studioCsp(ports.preview),
         'X-Frame-Options': 'DENY',
         'X-Content-Type-Options': 'nosniff',
         'Referrer-Policy': 'no-referrer',

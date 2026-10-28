@@ -44,6 +44,8 @@
         // 送れない値は捨て、残りは送る
       }
     });
+    // runtime が動いてつながったことを知らせる。観察器は、これを読み込みの終わりとして数える
+    port.postMessage({ type: 'studio:ready' });
   });
 
   var listeners = [];
@@ -143,8 +145,10 @@
 
   window.addEventListener('unhandledrejection', function (event) {
     var reason = event.reason;
+    // Studio の画面は実行時エラーとして出す。観察器は source で、処理されない reject と分ける
     send({
       type: 'runtime-error',
+      source: 'unhandledrejection',
       message: text(reason && reason.message ? reason.message : reason),
       stack: reason && reason.stack ? text(reason.stack) : '',
     });
