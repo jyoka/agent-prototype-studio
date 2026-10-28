@@ -11,7 +11,18 @@ const TOOL_VERBS = {
   Write: '書く',
   Glob: 'ファイルを探す',
   Grep: '中身を探す',
+  // 観察の道具(src/server/observe-mcp.js)。app/ は書き換えない
+  mcp__observe__open: '観察: 開く',
+  mcp__observe__read_page: '観察: ページを読む',
+  mcp__observe__inspect: '観察: 要素を調べる',
+  mcp__observe__click: '観察: 押す',
+  mcp__observe__type: '観察: 入力する',
+  mcp__observe__scroll: '観察: スクロールする',
+  mcp__observe__set_viewport: '観察: 画面幅を変える',
+  mcp__observe__screenshot: '観察: スクリーンショットを撮る',
+  mcp__observe__run_scenarios: '観察: シナリオを回す',
 };
+const MAX_TOOL_NAME = 200;
 
 function clip(text) {
   const value = String(text ?? '');
@@ -32,8 +43,27 @@ export function showPath(appDirs, file) {
   return `${absolute}(app/ の外)`;
 }
 
+// 観察の道具の対象(役割と名前、ラベル、文字、領域)と、画面幅を短く見せる
+function observeDetail(input) {
+  const target = input.target && typeof input.target === 'object' ? input.target : null;
+  const parts = [];
+  if (target) {
+    for (const key of ['role', 'name', 'label', 'text', 'region']) {
+      if (typeof target[key] === 'string') parts.push(`${key}=${target[key].slice(0, 80)}`);
+    }
+  }
+  if (typeof input.viewport === 'string') parts.push(input.viewport.slice(0, 20));
+  if (typeof input.to === 'string') parts.push(input.to.slice(0, 20));
+  return parts.join(' ');
+}
+
 export function describeTool(appDirs, name, input = {}) {
-  const verb = TOOL_VERBS[name] ?? name;
+  const verb = (Object.hasOwn(TOOL_VERBS, name) ? TOOL_VERBS[name] : null) ?? String(name ?? '').slice(0, MAX_TOOL_NAME);
+  input = input && typeof input === 'object' ? input : {};
+  if (typeof name === 'string' && name.startsWith('mcp__observe__')) {
+    const detail = observeDetail(input);
+    return detail ? `${verb}(${detail})` : verb;
+  }
   const target = input.file_path ?? input.path ?? input.notebook_path;
   if (target) return `${verb}: ${showPath(appDirs, target)}`;
   if (input.pattern) return `${verb}: ${clip(input.pattern).slice(0, 200)}`;
@@ -51,9 +81,9 @@ function toolResultText(content) {
   return '';
 }
 
-// 返すのは { items, init, result }。init と result は、実行の要約に使う。
+// 返すのは { items, init, result, toolUses }。init と result は実行の要約に、toolUses(呼んだ道具の名前)は回数の記録に使う。
 export function readMessage(message, appDirs) {
-  const out = { items: [], init: null, result: null };
+  const out = { items: [], init: null, result: null, toolUses: [] };
   if (!message || typeof message !== 'object') return out;
 
   if (message.type === 'system' && message.subtype === 'init') {
@@ -70,7 +100,10 @@ export function readMessage(message, appDirs) {
   if (message.type === 'assistant' && Array.isArray(content)) {
     for (const part of content) {
       if (part?.type === 'text' && part.text?.trim()) out.items.push({ kind: 'assistant', text: clip(part.text.trim()) });
-      if (part?.type === 'tool_use') out.items.push({ kind: 'tool', text: describeTool(appDirs, part.name, part.input) });
+      if (part?.type === 'tool_use') {
+        out.items.push({ kind: 'tool', text: describeTool(appDirs, part.name, part.input) });
+        if (typeof part.name === 'string') out.toolUses.push(part.name.slice(0, MAX_TOOL_NAME));
+      }
     }
     return out;
   }

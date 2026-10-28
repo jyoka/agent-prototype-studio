@@ -28,7 +28,7 @@ test('作る欄の依頼で試作品のファイルが変わり、試す画面�
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
 
     // 例を押すと依頼の欄に入る
-    await make.getByRole('button', { name: '見出しを「ひだまり図書室」にして' }).click();
+    await make.getByRole('button', { name: '見出しを「ひだまり図書室」にして', exact: true }).click();
     await expect(page.getByLabel('依頼')).toHaveValue('見出しを「ひだまり図書室」にして');
     await page.getByRole('button', { name: '送る' }).click();
 

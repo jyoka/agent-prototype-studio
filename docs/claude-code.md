@@ -79,8 +79,11 @@ Claude Code の起動のしかた(どれも Claude Code の CLI のフラグで�
 Studio が Claude Code をどう動かすか:
 
 - 利用者が入れた `claude` を、改変せずに子プロセスとして起動する。ログインは Claude Code 自身のものを使う。Studio は資格情報やトークンを読まない、保存しない、仲介しない。環境変数は利用者のものをそのまま渡す。
-- `claude -p --restricted --safe-mode --tools Read,Edit,Write,Glob,Grep --permission-mode dontAsk --permission-prompts none --strict-mcp-config --no-session-persistence --output-format stream-json` で起動する。作業ディレクトリは試作品の `app/`。依頼の文は stdin で渡す。
-- 読み書きを `app/` の中に限り、コマンドの実行と Web の取得をさせない設定で起動する。権限の確認は Claude Code が行い、確認が要る操作は断られる。断られた操作は会話に出す。この守りが実機で効くかは、まだ確かめていない([下の「実機で確かめる」](#実機で確かめる))。
+- `claude -p --restricted --setting-sources "" --disable-slash-commands --tools Read,Edit,Write,Glob,Grep --allowedTools <読み書きと観察の道具の名前> --permission-mode dontAsk --permission-prompts none --strict-mcp-config --mcp-config <MCP の設定> --no-session-persistence --output-format stream-json` で起動する。作業ディレクトリは試作品の `app/`。依頼の文は stdin で渡す。
+- 読み書きを `app/` の中に限り、コマンドの実行と Web の取得をさせない設定で起動する。権限の確認は Claude Code が行い、確認が要る操作は断られる。断られた操作は会話に出す。
+- 利用者の設定(CLAUDE.md、skills、plugins、hooks、ほかの MCP、custom の agents と commands)は読ませない。`--safe-mode` は観察の道具も外すので使わず、上の引数の組み合わせで止める。2026-10-28 に Claude Code 2.1.312 で確かめた([ADR-0002](adr/0002-observer-and-harness.md#作る-ai-が観察の道具を使う))。
+- 作る AI には、観察の道具(`open`、`read_page`、`inspect`、`click`、`type`、`scroll`、`set_viewport`、`screenshot`、`run_scenarios`)を渡す。作業中の `app/` を開いて画面を読み、操作し、シナリオを回せる。道具は `app/` を書き換えない。Studio は依頼ごとに MCP の設定を `.studio/runs/<run-id>/mcp.json`(`app/` の外)に書き、観察の道具のサーバーだけを渡す。直すラウンドも同じ設定で起動する。
+- 観察の道具を使うと、作る会話に「観察: 開く」のような項目が出る。道具の呼び出しの回数は `.studio/runs/<run-id>/run.json` の `toolCalls` に残る。観察の道具の時間とブラウザの分だけ、1 回の依頼が長くなることがある。
 - 依頼ごとに新しい会話で動かす。前の依頼の内容は、`app/` のファイルを通じて引き継がれる。
 - 作る AI の 1 回の起動は 10 分、やりとりは 30 回まで。関門で失敗すると、Studio が直す依頼を返して起動し直す(直すラウンド)。起動は 1 つの依頼で 3 回まで。上限は起動ごとに効く。中断や時間切れでは、SIGINT、SIGTERM、強制終了の順に止める。本体が終わった後に残った子のプロセスも止める。Studio を止めたとき(Ctrl+C、ターミナルを閉じたとき)も、動いている作る AI を止める。
 
@@ -88,11 +91,23 @@ Windows の npm 版(`claude.cmd`)は使えない。ネイティブ版の `claude
 
 ### 実機で確かめる
 
-`--restricted` などの守りが実機で効くかを、架空のデータだけで確かめるスクリプトがある。実モデルを呼ぶので、上の 2 つが決まってから実行する。
+`--restricted` などの守りが実機で効くかを、架空のデータだけで確かめるスクリプトがある。実モデルを呼ぶので、上の 2 つが決まってから実行する。Claude Code を 4 回起動し、1 回ごとに費用の上限(`--max-budget-usd 0.5`)を付ける。
 
 ```sh
 npm run check:claude            # 何を確かめるかを出すだけ
 npm run check:claude -- --run   # 実機で確かめる
 ```
 
-確かめること: 本人のログインのまま非対話で動くか、`app/CLAUDE.md` と `app/.claude/settings.json` の hooks が効かないか、`app/` の外への書き込みと読み出しが止まるか、断られたことが出るか、中断で止まるか。API の料金がかかる見込みのときは、`--allow-api-billing` を付けない限り止まる。
+確かめること:
+
+- 本人のログインのまま、非対話で守りの引数が一緒に動くか
+- init の出来事で、MCP は観察の道具だけ、plugins は組み込みだけ、skills と commands は空、agents は組み込みだけ、自動の記憶はなしか。`app/.mcp.json` のサーバーが起動しないか
+- `app/`、その親、作業の場所の CLAUDE.md、AGENTS.md などと、利用者の `~/.claude/CLAUDE.md` が読まれないか。作る AI に、文脈にある指示ファイルを挙げさせて見る(Claude Code の debug のログには、読んだ指示ファイルが出ないため)
+- `app/.claude/settings.json` の hooks が効かないか
+- 観察の道具が決まった名前だけで出て、`open` と `read_page` を呼べるか
+- `app/` の外への書き込みと読み出しが止まるか、断られたことが出るか
+- 中断で止まるか
+
+結果と費用の合計は、作業の場所の `report.json` に出る。起動ごとの stream-json は `runs/` に残る。API の料金がかかる見込みのときは、`--allow-api-billing` を付けない限り止まる。
+
+2026-10-28 の結果(Claude Code 2.1.312): 9 つのうち 8 つが期待どおりだった。`app/` の外への書き込みは止まったが、断られたことが `permission_denials` に出なかった。詳しくは [ADR-0002](adr/0002-observer-and-harness.md#実機の確認2026-10-28)。

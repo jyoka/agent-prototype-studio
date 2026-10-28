@@ -1,8 +1,20 @@
-// 作る AI(Claude Code)の起動引数。偽接続でも実接続でも同じものを使う(ADR-0001 の「作る AI の起動」)。
+// 作る AI(Claude Code)の起動引数。偽接続でも実接続でも同じものを使う(ADR-0001 の「作る AI の起動」、ADR-0002)。
 // 依頼の文は argv に入れず、stdin で渡す。
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // コマンド実行と Web は名前で入れない。読み書きと検索だけ
 export const AGENT_TOOLS = 'Read,Edit,Write,Glob,Grep';
+// 観察の道具の MCP サーバー(jyoka/tasks#311)の名前と、その道具の決まった名前(src/server/observe-mcp.js の TOOL_NAMES)。
+// 許可はワイルドカードを使わず、名前を並べる(S10)。道具が増えたら、ここも直さないと渡らない
+export const OBSERVE_SERVER = 'observe';
+export const OBSERVE_TOOL_NAMES = Object.freeze(['open', 'read_page', 'inspect', 'click', 'type', 'scroll', 'set_viewport', 'screenshot', 'run_scenarios']);
+export const OBSERVE_TOOLS = Object.freeze(OBSERVE_TOOL_NAMES.map((name) => `mcp__${OBSERVE_SERVER}__${name}`));
+export const ALLOWED_TOOLS = [AGENT_TOOLS, ...OBSERVE_TOOLS].join(',');
+// 作る run ごとの MCP の設定のファイルの名前。.studio/runs/<run-id>/ に置く(app/ の外)
+export const MCP_CONFIG_FILE = 'mcp.json';
+const OBSERVE_MCP_BIN = fileURLToPath(new URL('../../bin/observe-mcp.js', import.meta.url));
 export const MAX_TURNS = 30;
 export const DEFAULT_MAX_BUDGET_USD = 1;
 
@@ -14,7 +26,9 @@ export const STUDIO_SYSTEM_PROMPT = [
   '- import できるライブラリは react と react-dom だけです。npm install はできません。',
   '- fetch や外部の URL は使えません。データは架空のものを app/ の中に書いてください。実在の人物や会社のデータは使わないでください。',
   '- CLAUDE.md、.claude/、.mcp.json、.git、node_modules、シンボリックリンクは作らないでください。Studio のビルドが止まります。',
-  '- コマンドは実行できません。ビルドと確認は Studio が行い、結果を利用者に見せます。',
+  '- コマンドは実行できません。ビルドと最後の確認は Studio が行い、結果を利用者に見せます。',
+  '- 観察の道具(mcp__observe__ で始まる道具)で、作業中の app/ を開いて画面を確かめられます。直した後は open で開き、read_page や screenshot で画面を見て、run_scenarios でシナリオを回してください。',
+  '  観察の道具は app/ を書き換えません。通ったかを決めるのは Studio の確かめです。',
 ].join('\n');
 
 function present(env, name) {
@@ -56,20 +70,54 @@ export function needsBudget(billing) {
   return billing.mode !== 'login' && billing.mode !== 'oauth-token';
 }
 
-export function buildClaudeArgs({ billing, maxBudgetUsd = DEFAULT_MAX_BUDGET_USD }) {
+// 観察の道具の MCP サーバーを 1 つだけ持つ設定。プロジェクトの場所は起動の引数でだけ渡す(bin/observe-mcp.js)。
+// サーバーは作る AI の子として動き、作る AI が終われば入力が閉じて終わる。maxSeconds は、その前に止まる上限
+export function observeMcpConfig({ projectDir, maxSeconds }) {
+  return {
+    mcpServers: {
+      [OBSERVE_SERVER]: {
+        type: 'stdio',
+        command: process.execPath,
+        args: [OBSERVE_MCP_BIN, projectDir, '--max-seconds', String(Math.max(1, Math.ceil(maxSeconds)))],
+      },
+    },
+  };
+}
+
+// MCP の設定のファイルを dir(app/ の外。作る run のフォルダー)に書き、そのパスを返す
+export async function writeObserveMcpConfig({ dir, projectDir, maxSeconds }) {
+  const file = path.join(dir, MCP_CONFIG_FILE);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(file, `${JSON.stringify(observeMcpConfig({ projectDir, maxSeconds }), null, 2)}\n`);
+  return file;
+}
+
+// 守り(ADR-0002 の「--safe-mode の代わり」): --safe-mode は --mcp-config のサーバーも外すので使わない。
+// 利用者の設定を持ち込まないことは、公開の引数の組み合わせで保つ。
+//   --restricted: 利用者、プロジェクト、手元の設定のファイルを読まない(hooks、設定で有効にした plugins、CLAUDE.md)。
+//                 コマンドと Web の道具を外し、ファイルの道具を作業ディレクトリ(app/)に閉じ込める
+//   --setting-sources "": 設定の読み込み元を 1 つも使わない(CLAUDE.md の読み込みもこれに従う)
+//   --disable-slash-commands: skills と commands を外す
+//   --strict-mcp-config --mcp-config <file>: MCP は観察の道具のサーバーだけ
+export function buildClaudeArgs({ billing, mcpConfig, maxBudgetUsd = DEFAULT_MAX_BUDGET_USD }) {
+  if (typeof mcpConfig !== 'string' || mcpConfig === '') throw new TypeError('mcpConfig(MCP の設定のファイル)を渡してください');
   const args = [
     '-p',
     '--restricted',
-    '--safe-mode',
+    '--setting-sources',
+    '',
+    '--disable-slash-commands',
     '--tools',
     AGENT_TOOLS,
     '--allowedTools',
-    AGENT_TOOLS,
+    ALLOWED_TOOLS,
     '--permission-mode',
     'dontAsk',
     '--permission-prompts',
     'none',
     '--strict-mcp-config',
+    '--mcp-config',
+    mcpConfig,
     '--no-session-persistence',
     '--output-format',
     'stream-json',
