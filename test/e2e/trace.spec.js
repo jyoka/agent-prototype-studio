@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { loadConfig } from '../../src/server/config.js';
 import { startStudio } from '../../src/server/index.js';
-import { ROOT, expect, launchStudio, test, writeProject } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, expect, launchStudio, test, writeProject } from './studio.js';
 
 // 実モデルは呼ばない。Claude Code は偽の CLI(test/fixtures/fake-claude.js)に差し替える
 const FAKE = path.join(ROOT, 'test', 'fixtures', 'fake-claude.js');
@@ -21,7 +21,7 @@ function fakeEnv(home) {
 
 async function openJobConsult(page, studio) {
   await page.goto(studio.url);
-  await page.getByRole('button', { name: /サンプル: 架空の求人相談/ }).click();
+  await chooseSample(page, SAMPLES.jobConsult);
   const app = page.frameLocator('iframe[title="試作品"]');
   const message = app.getByLabel('メッセージ');
   const type = async (text) => {
@@ -274,7 +274,7 @@ test('試す画面で話している途中に観察を回しても、利用者�
 
     // 開き直しても、利用者の会話はサーバーに残っている
     await page.reload();
-    await page.getByRole('button', { name: /サンプル: 架空の求人相談/ }).click();
+    await chooseSample(page, SAMPLES.jobConsult);
     await expect(page.frameLocator('iframe[title="試作品"]').getByRole('region', { name: '会話' })).toContainText('しおかぜ町でお願いします');
   } finally {
     await studio.close();

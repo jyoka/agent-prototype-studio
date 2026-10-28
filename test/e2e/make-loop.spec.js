@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { expect, launchStudio, test } from './studio.js';
+import { SAMPLES, chooseSample, expect, launchStudio, test } from './studio.js';
 
 // 作るループを閉じる(docs/design/harness.md の 2.1〜2.4、S1、S12)。作る AI は決定的な偽接続
 // (src/agent/fake-claude.js)で、モデルも外部の API も呼ばない。関門 G5 と G6 は Studio の観察器(Playwright の Chromium)
@@ -18,6 +18,7 @@ test('壊れる依頼でも、Studio が失敗を直す依頼にして返し、�
   const studio = await launchStudio(home);
   try {
     await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.library);
     const app = page.frameLocator('iframe[title="試作品"]');
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
 
@@ -62,6 +63,7 @@ test('直せない作る AI は、起動 3 回で止まり、失敗と証拠を�
   const studio = await launchStudio(home);
   try {
     await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.library);
     const app = page.frameLocator('iframe[title="試作品"]');
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
 
@@ -89,6 +91,7 @@ test('シナリオの関門 G6 の失敗を直す依頼にして返し、作る 
   const studio = await launchStudio(home);
   try {
     await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.library);
     const app = page.frameLocator('iframe[title="試作品"]');
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
 
@@ -122,6 +125,7 @@ test('直すラウンドでシナリオを弱めて通すと、「確かめ方�
   const studio = await launchStudio(home);
   try {
     await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.library);
     await expect(page.frameLocator('iframe[title="試作品"]').getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
     await sendRequest(page, 'シナリオを足して、見出しを崩して、シナリオを弱めて直して');
     const run = lastRun(page);
@@ -143,6 +147,7 @@ test('作る AI が観察の道具で画面を開いて読み、その項目が�
   const studio = await launchStudio(home);
   try {
     await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.library);
     const app = page.frameLocator('iframe[title="試作品"]');
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
 

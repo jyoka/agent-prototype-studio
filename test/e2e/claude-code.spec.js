@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, expect, launchStudio, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, expect, launchStudio, test } from './studio.js';
 
 // 実モデルは呼ばない。Claude Code は偽の CLI(test/fixtures/fake-claude.js)に差し替える
 const FAKE = path.join(ROOT, 'test', 'fixtures', 'fake-claude.js');
@@ -40,7 +40,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
   const studio = await launchStudio(home, { env });
   try {
     await page.goto(studio.url);
-    await page.getByRole('button', { name: /サンプル: 架空の求人相談/ }).click();
+    await chooseSample(page, SAMPLES.jobConsult);
     const app = page.frameLocator('iframe[title="試作品"]');
     const details = page.locator('#ai-status');
     const log = app.getByRole('region', { name: '会話' }).getByRole('listitem');
@@ -60,7 +60,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
     await say('カフェで働きたいです');
     await expect(log.last()).toContainText(AFTER_JOB);
-    await expect(log.last()).toContainText('モック');
+    await expect(log.last()).toContainText('お試しの AI');
 
     // 切り替える前に、送り先、送るもの、費用を出し、確認を求める
     await page.getByRole('radio', { name: 'Claude Code' }).check();
@@ -105,7 +105,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     const historyOf = (call) => /<これまでの会話>\n([\s\S]*?)\n<\/これまでの会話>/.exec(call.stdin)[1].split('\n');
     expect(historyOf((await readCalls(env.FAKE_CLAUDE_LOG)).at(-1))).toHaveLength(3);
     await expect(log.last()).toContainText('Claude Code');
-    await expect(log.nth(2)).toContainText('モック');
+    await expect(log.nth(2)).toContainText('お試しの AI');
     await expect(conditions).toHaveText(['カフェのホール', '正社員', 'もみじ台', '未定']);
     await expect(details.getByRole('definition')).toHaveText(['カフェのホール', '正社員', 'もみじ台', '未定']);
     // 費用の目安は、抽出と言い方の 2 回の呼び出しの合計
@@ -160,7 +160,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     await expect(details).not.toContainText('費用:');
     await say('やっぱりアルバイトがいいです');
     await expect(log.last()).toContainText('雇用区分「アルバイト・パート」と理解しました。');
-    await expect(log.last()).toContainText('モック');
+    await expect(log.last()).toContainText('お試しの AI');
     await expect(log).toHaveCount(10);
 
     // 偽の CLI が受け取ったもの: 閉じ込めのフラグ、道具なし、空の作業フォルダー、資格情報を足していないこと。
@@ -186,7 +186,7 @@ test('応答を待つ間に開き直しても作り直しても、止められ�
   const studio = await launchStudio(home, { env });
   try {
     await page.goto(studio.url);
-    await page.getByRole('button', { name: /サンプル: 架空の求人相談/ }).click();
+    await chooseSample(page, SAMPLES.jobConsult);
     const app = page.frameLocator('iframe[title="試作品"]');
     const details = page.locator('#ai-status');
     const log = app.getByRole('region', { name: '会話' }).getByRole('listitem');
@@ -228,7 +228,7 @@ test('実モデルは STUDIO_ALLOW_CLAUDE_CODE=0 では選べず、理由を出�
   try {
     await expect.poll(() => blocked.output()).toContain('STUDIO_ALLOW_CLAUDE_CODE=0');
     await page.goto(blocked.url);
-    await page.getByRole('button', { name: /サンプル: 架空の求人相談/ }).click();
+    await chooseSample(page, SAMPLES.jobConsult);
     await expect(page.getByRole('radio', { name: 'Claude Code' })).toBeDisabled();
     await expect(page.locator('#ai-status')).toContainText('本物の AI は、使わない設定で起動されています');
     await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
@@ -239,7 +239,7 @@ test('実モデルは STUDIO_ALLOW_CLAUDE_CODE=0 では選べず、理由を出�
   const paid = await launchStudio(home, { env: fakeEnv(home, { ANTHROPIC_API_KEY: 'test-placeholder-not-a-key' }) });
   try {
     await page.goto(paid.url);
-    await page.getByRole('button', { name: /サンプル: 架空の求人相談/ }).click();
+    await chooseSample(page, SAMPLES.jobConsult);
     await page.getByRole('radio', { name: 'Claude Code' }).check();
     const confirm = page.getByRole('group', { name: 'Claude Code に切り替える前の確認' });
     await expect(confirm).toContainText('費用: API の従量課金');

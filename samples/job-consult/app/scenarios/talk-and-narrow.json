@@ -2,6 +2,7 @@
   "name": "希望を話すと、希望条件が埋まり、合う求人が絞られる",
   "viewport": "desktop",
   "steps": [
+    { "expect": "visible", "target": { "text": "いまの案内役はお試しの AI です" } },
     { "do": "type", "target": { "label": "メッセージ" }, "text": "しおかぜ町でカフェのアルバイトを探しています" },
     { "do": "click", "target": { "role": "button", "name": "送る" } },
     { "expect": "aiState", "key": "jobType", "equals": "カフェのホール" },

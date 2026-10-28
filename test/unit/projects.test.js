@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { STUDIO_ROOT } from '../../src/server/config.js';
-import { ensureSampleProjects, isValidProjectId, listProjects, projectPaths } from '../../src/server/projects.js';
+import { ensureSampleProjects, isValidProjectId, listProjects, projectName, projectPaths } from '../../src/server/projects.js';
 
 test('プロジェクト ID は英小文字、数字、ハイフンだけ', () => {
   assert.equal(isValidProjectId('sample-library'), true);
@@ -19,7 +19,7 @@ test('サンプルは初回だけ写し、利用者の変更を上書きしな�
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const samples = path.join(STUDIO_ROOT, 'samples');
 
-  assert.deepEqual(await ensureSampleProjects(home, samples), ['sample-library', 'sample-job-consult', 'sample-study-consult']);
+  assert.deepEqual(await ensureSampleProjects(home, samples), ['sample-job-consult', 'sample-study-consult', 'sample-library']);
   const main = path.join(home, 'projects', 'sample-library', 'app', 'main.jsx');
   await fs.writeFile(main, '// changed');
   assert.deepEqual(await ensureSampleProjects(home, samples), []);
@@ -30,14 +30,36 @@ test('サンプルは初回だけ写し、利用者の変更を上書きしな�
   assert.deepEqual(await ensureSampleProjects(home, samples), ['sample-job-consult']);
   assert.equal(await fs.readFile(main, 'utf8'), '// changed');
 
+  // ビルドの前の名前は、サンプルの目録の title。一覧の順は求人相談、学習相談、図書室
   const projects = await listProjects(home);
   assert.deepEqual(
     projects.map((p) => [p.id, p.title]),
     [
-      ['sample-job-consult', 'サンプル: 架空の求人相談(プロダクト内 AI)'],
-      ['sample-library', 'サンプル: 架空の図書室'],
-      ['sample-study-consult', 'サンプル: 架空の学習相談(プロダクト内 AI)'],
+      ['sample-job-consult', '求人相談(架空)'],
+      ['sample-study-consult', '学習相談(架空)'],
+      ['sample-library', '図書室(架空)'],
     ],
+  );
+});
+
+test('一覧の名前は、目録の title に AI と話せるかを添える', () => {
+  assert.equal(projectName('求人相談(架空)', true), '求人相談(架空・AI と話せる)');
+  assert.equal(projectName('図書室(架空)', false), '図書室(架空・AI なし)');
+  assert.equal(projectName('図書室 (架空)', false), '図書室(架空・AI なし)');
+  // 括弧で終わらない名前は、後ろに括弧で足す
+  assert.equal(projectName('my-app', true), 'my-app(AI と話せる)');
+  assert.equal(projectName('(架空)', false), '(架空)(AI なし)');
+});
+
+test('サンプルを決まった順で先に、ほかの試作品を ID の順で後に並べる', async (t) => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-projects-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  for (const id of ['zz-mine', 'sample-library', 'aa-mine', 'sample-job-consult']) {
+    await fs.mkdir(path.join(home, 'projects', id, 'app'), { recursive: true });
+  }
+  assert.deepEqual(
+    (await listProjects(home)).map((p) => p.id),
+    ['sample-job-consult', 'sample-library', 'aa-mine', 'zz-mine'],
   );
 });
 

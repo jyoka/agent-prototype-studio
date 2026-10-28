@@ -1,4 +1,4 @@
-import { expect, launchStudio, test, writeProject } from './studio.js';
+import { SAMPLES, expect, launchStudio, test, writeProject } from './studio.js';
 
 // 悪意のある試作品の見本。それぞれの試みの結果を、自分の画面に書き出す。
 function probeSource({ studioOrigin, otherBuildUrl }) {
@@ -67,7 +67,7 @@ test('試作品は Studio の API、親画面、ストレージ、外部、他�
   const studio = await launchStudio(home);
   try {
     const { projects } = await studio.api('/api/projects');
-    const sample = projects.find((p) => p.id === 'sample-library');
+    const sample = projects.find((p) => p.id === SAMPLES.library.id);
     await writeProject(
       home,
       'probe',
@@ -104,7 +104,7 @@ test('プレビューの URL を直接開いても sandbox が効き、他の版
   const studio = await launchStudio(home);
   try {
     const { projects } = await studio.api('/api/projects');
-    const previewUrl = projects[0].previewUrl;
+    const previewUrl = projects.find((p) => p.id === SAMPLES.library.id).previewUrl;
 
     const response = await request.get(previewUrl);
     expect(response.headers()['content-security-policy']).toContain('sandbox allow-scripts allow-forms');

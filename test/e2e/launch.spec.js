@@ -1,9 +1,39 @@
 import path from 'node:path';
-import { ROOT, expect, launchStudio, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, expect, launchStudio, test } from './studio.js';
+
+// 「分かるか」の確かめ(ux-redesign.md 9 節)のスクリーンショットの置き場。test-results/ は git が無視する
+const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
 
 // 偽の claude。--version と auth status に答え、auth status には架空のメールアドレスと組織を含む
 const FAKE = path.join(ROOT, 'test', 'fixtures', 'fake-claude.js');
 const FAKE_SECRETS = ['fictional-user@example.com', '架空の組織', 'fictional-org-0000'];
+
+test('U1: 新しい置き場で開くと、AI と話せる求人相談が選ばれ、一覧は利用者の言葉の名前で並ぶ', async ({ page, home }) => {
+  const studio = await launchStudio(home);
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(studio.url);
+
+    // 一覧の順と名前。名前は目録の title と、試作品の中の AI があるかから作る
+    const list = page.getByRole('navigation', { name: '試作品の一覧' }).getByRole('button');
+    const names = [SAMPLES.jobConsult, SAMPLES.studyConsult, SAMPLES.library].map((sample) => sample.name);
+    await expect(list).toHaveText(names.map((name) => new RegExp(`^${name.replace(/[()]/g, '\\$&')}`)));
+
+    // 最初に選ばれているのは求人相談
+    await expect(list.first()).toHaveAttribute('aria-current', 'true');
+    await expect(page.locator('#project-title')).toHaveText(SAMPLES.jobConsult.name);
+    const iframe = page.locator('iframe[title="試作品"]');
+    expect(await iframe.getAttribute('src')).toMatch(/\/p\/sample-job-consult\/[a-f0-9]{32}\/$/);
+    const app = page.frameLocator('iframe[title="試作品"]');
+    await expect(app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
+    await expect(app.getByRole('region', { name: '会話' }).getByRole('listitem').first()).toContainText('しおかぜ求人相談の案内役です');
+
+    // 最初の画面を 1440x900 で撮る(人の 5 秒の確かめと、新しい文脈のエージェントに見せるため)
+    await page.screenshot({ path: path.join(UX_SHOTS, 'P20-first.png') });
+  } finally {
+    await studio.stop();
+  }
+});
 
 test('npm start で起動し、ブラウザでサンプルの試作品を操作できる', async ({ page, home }) => {
   const studio = await launchStudio(home, { useNpm: true });
@@ -15,7 +45,8 @@ test('npm start で起動し、ブラウザでサンプルの試作品を操作�
     await expect(page.locator('#connection')).toHaveText('つながっています');
     // 鍵は URL から消え、履歴に残らない
     expect(new URL(page.url()).hash).toBe('');
-    await expect(page.getByRole('button', { name: /サンプル: 架空の図書室/ })).toHaveAttribute('aria-current', 'true');
+    // 図書室(AI のない試作品)を明示して選ぶ
+    await chooseSample(page, SAMPLES.library);
     await expect(page.locator('#build-status')).toContainText('ビルドに成功しました');
 
     const iframe = page.locator('iframe[title="試作品"]');
@@ -62,6 +93,7 @@ test('npm start で起動し、ブラウザでサンプルの試作品を操作�
     // 再読み込みしても、同じタブなら使い続けられる
     await page.reload();
     await expect(page.locator('#connection')).toHaveText('つながっています');
+    await chooseSample(page, SAMPLES.library);
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
   } finally {
     await studio.stop();
@@ -77,6 +109,7 @@ test('STUDIO_AGENT を書かずに起動すると自動で、Claude Code がな�
     expect(agent).toMatchObject({ mode: 'auto', kind: 'claude', status: 'missing', ready: false, auth: null });
 
     await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.library);
     await expect(page.locator('#agent-status')).toContainText('claude が見つかりません');
     await expect(page.getByRole('button', { name: '送る' })).toBeDisabled();
     // 偽接続には落とさない。試験用の依頼の例は出ない

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { expect, launchStudio, test } from './studio.js';
+import { SAMPLES, chooseSample, expect, launchStudio, test } from './studio.js';
 
 // 作る欄の縦切り。作る AI は決定的な偽接続(src/agent/fake-claude.js)で、モデルも外部の API も呼ばない。
 
@@ -17,6 +17,7 @@ test('作る欄の依頼で試作品のファイルが変わり、試す画面�
   const studio = await launchStudio(home);
   try {
     await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.library);
     const make = page.getByRole('region', { name: '作る' });
     // 送る前に、どの接続で、どの認証で動くかを見せる
     await expect(make.locator('#agent-status')).toContainText('接続: 偽接続');
@@ -55,6 +56,7 @@ test('作る欄の依頼で試作品のファイルが変わり、試す画面�
 
     // 再読み込みしても、作る会話は残る
     await page.reload();
+    await chooseSample(page, SAMPLES.library);
     await expect(lastRun(page)).toContainText('ビルドに成功しました。試す画面に反映しました。');
 
     // ターミナルには依頼の文を出さない
@@ -69,6 +71,7 @@ test('権限の確認で断られた操作と、作る AI の失敗を会話に�
   const studio = await launchStudio(home);
   try {
     await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.library);
     const app = page.frameLocator('iframe[title="試作品"]');
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
     const previewSrc = await page.locator('iframe[title="試作品"]').getAttribute('src');
@@ -126,6 +129,7 @@ test('作業中は中断でき、その間はほかの依頼と作り直しを�
   const studio = await launchStudio(home);
   try {
     await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.library);
     await expect(page.locator('#connection')).toHaveText('つながっています');
     await sendRequest(page, 'ゆっくり進めて');
     const run = lastRun(page);
@@ -142,7 +146,8 @@ test('作業中は中断でき、その間はほかの依頼と作り直しを�
 
     // 再読み込みしても、作業中の様子と中断のボタンが戻る
     await page.reload();
-    await expect(page.getByRole('button', { name: /サンプル: 架空の図書室/ })).toContainText('作る AI が作業中');
+    await chooseSample(page, SAMPLES.library);
+    await expect(page.getByRole('button', { name: SAMPLES.library.name })).toContainText('作る AI が作業中');
     await expect(lastRun(page).locator('.run-status')).toContainText('偽接続が作業しています');
     await page.getByRole('button', { name: '中断' }).click();
     await expect(lastRun(page).locator('[data-kind="cancelled"]')).toContainText('中断しました');
@@ -177,6 +182,7 @@ test('Claude Code に切り替えると、版と認証の見込みを送る前�
   try {
     expect(studio.output()).not.toContain('fictional-value-for-test');
     await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.library);
     const status = page.locator('#agent-status');
     await expect(status).toContainText('接続: Claude Code 2.1.311');
     await expect(status).toContainText('API キー(ANTHROPIC_API_KEY)で動きます。API の料金がかかります');
@@ -215,6 +221,7 @@ test('Claude Code が見つからないときは、送る前に理由と次の�
   const studio = await launchStudio(home, { env: { STUDIO_AGENT: 'claude', STUDIO_CLAUDE_BIN: path.join(home, 'no-such-claude') } });
   try {
     await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.library);
     await expect(page.locator('#agent-status')).toContainText('claude が見つかりません');
     await expect(page.getByRole('button', { name: '送る' })).toBeDisabled();
     // 試す画面は使える

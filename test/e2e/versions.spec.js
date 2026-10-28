@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { expect, launchStudio, test } from './studio.js';
+import { SAMPLES, chooseSample, expect, launchStudio, test } from './studio.js';
 
 // 版の保存と復元を、画面の操作だけで確かめる。作る AI は偽接続、プロダクト内 AI はモックで、実モデルは呼ばない。
 
@@ -32,7 +32,7 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
   const appFile = path.join(home, 'projects', 'sample-job-consult', 'app', 'App.jsx');
   try {
     await page.goto(studio.url);
-    await page.getByRole('button', { name: /サンプル: 架空の求人相談/ }).click();
+    await chooseSample(page, SAMPLES.jobConsult);
     const ui = parts(page);
     await expect(ui.app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
     await expect(ui.badge).toHaveText('作業中(まだ保存していません)');
@@ -93,7 +93,7 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
   studio = await launchStudio(home);
   try {
     await page.goto(studio.url);
-    await page.getByRole('button', { name: /サンプル: 架空の求人相談/ }).click();
+    await chooseSample(page, SAMPLES.jobConsult);
     const ui = parts(page);
     await expect(ui.app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
     await expect(ui.log).toHaveCount(1);
@@ -127,6 +127,7 @@ test('ビルドできない状態は保存せず、理由を出す。作る AI �
   const studio = await launchStudio(home);
   try {
     await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.library);
     const ui = parts(page);
     await expect(ui.app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
     await page.getByRole('button', { name: '今の作業中を保存' }).click();
