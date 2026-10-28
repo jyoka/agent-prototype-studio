@@ -147,3 +147,29 @@ test('観察の道具の MCP サーバーは同じ入口を使う: どの道具�
   const bin = await fs.readFile(path.join(ROOT, 'bin', 'observe-mcp.js'), 'utf8');
   assert.match(bin, /import\('\.\.\/src\/server\/observe-mcp\.js'\)/);
 });
+
+// 人の「確かめる」(P27)も、作るループと同じ入口を、表示中のビルドを見るモードで使う(S5)。
+// 画面の API(studio-server.js)→ checks.js → index.js の observeShown → observeProject の順に呼ぶ
+const CHECKS = path.join(ROOT, 'src', 'server', 'checks.js');
+
+test('4 か所が同じ入口を使う: 人の「確かめる」は observeShown を通して observeProject を呼び、作る run の関門と同じ形の結果にする', async () => {
+  const source = await fs.readFile(CHECKS, 'utf8');
+  const code = source.replace(/^\s*\/\/.*$/gm, '');
+  // 観察器も入口も直接は使わない。観察は渡された observe(index.js の observeShown)だけで行う
+  for (const spec of importsOf(source)) {
+    const target = path.resolve(path.dirname(CHECKS), spec);
+    assert.ok(path.relative(OBSERVER_DIR, target).startsWith('..'), `checks.js が観察器の ${spec} を import しています`);
+    assert.notEqual(target, ENTRY, 'checks.js は入口を直接 import せず、Studio の observeShown を使う');
+  }
+  assert.doesNotMatch(code, /new Observer\(|observeProject\(/);
+  assert.match(code, /await this\.observe\(id, \{ viewports: CHECK_VIEWPORTS, aiConnection: check\.connection \}\)/);
+  // 結果は、作る run の関門 G5、G6 と同じ関数で決める(結果の帯に同じ形で出す)
+  assert.match(source, /import \{ launchGate, scenarioGate \} from '\.\/build-requests\.js';/);
+
+  const index = await fs.readFile(CALLERS[0], 'utf8');
+  assert.match(index, /new ProjectChecks\(\{ store, aiSessions, observe: observeShown, log \}\)/);
+  // 画面の API は、確かめを checks.start に渡す
+  const server = await fs.readFile(path.join(ROOT, 'src', 'server', 'studio-server.js'), 'utf8');
+  assert.match(server, /\/checks\$\//);
+  assert.match(server, /await checks\.start\(id, \{ connection: body\?\.connection \?\? 'mock' \}\)/);
+});

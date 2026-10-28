@@ -341,6 +341,7 @@ button { font: inherit; }
 .shot img { display: block; width: auto; height: 64px; max-width: 120px; object-fit: cover; object-position: top; }
 .evidence-rounds { margin: 0.3rem 0 0; font-size: 0.8rem; }
 .evidence-actions:empty { display: none; }
+.evidence-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.4rem; font-size: 0.8rem; }
 .evidence-more { margin-top: 0.3rem; font-size: 0.85rem; }
 .evidence-more > summary { cursor: pointer; color: var(--accent); }
 .evidence-more .card-label { margin: 0.5rem 0 0.1rem; font-weight: 600; }
@@ -488,3 +489,12 @@ button { font: inherit; }
   .make > .conversation { max-height: 50vh; }
   .topbar h1 { display: none; }
 }
+
+/* 人の「確かめる」(P27)。引き出しの「試作品を自動で確かめる」 */
+.check-ai { margin: 0.4rem 0; padding: 0.4rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; font-size: 0.85rem; }
+.check-ai[hidden], .check-consent[hidden], .check-message[hidden] { display: none; }
+.check-ai legend { padding: 0 0.2rem; }
+.check-ai label { display: block; margin: 0.15rem 0; }
+.check-ai p { margin: 0.2rem 0 0; }
+.check-consent { margin: 0.4rem 0; font-size: 0.9rem; }
+.check-message { margin: 0.4rem 0 0; font-size: 0.85rem; }

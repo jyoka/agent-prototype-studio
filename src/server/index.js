@@ -4,6 +4,7 @@ import path from 'node:path';
 import { connectionView, resolveConnection } from './agent-connection.js';
 import { Observer } from '../observer/observe.js';
 import { BuildRequests, MAX_FIX_ROUNDS } from './build-requests.js';
+import { ProjectChecks } from './checks.js';
 import { STUDIO_ROOT } from './config.js';
 import { ProjectHandoffs } from './handoff.js';
 import { createPreviewHandler } from './preview-server.js';
@@ -91,7 +92,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   // 観察器のブラウザは、Studio の中で 1 つだけ。最初の観察のときに起動する
   const observer = new Observer();
 
-  // 表示中のビルドを観察する。呼ぶ所(作る run の関門 G5、G6 と、下の observe())は、どれも観察の入口
+  // 表示中のビルドを観察する。呼ぶ所(作る run の関門 G5、G6、人の「確かめる」と、下の observe())は、どれも観察の入口
   // (observe-entry.js の observeProject)を通す。返すのは { report, dir, reportFile }
   async function observeShown(id, options) {
     const paths = await store.requireProject(id);
@@ -148,6 +149,8 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     ...(scenarioLimits ? { scenarioLimits } : {}),
     ...(onAgentEvent ? { onAgentEvent } : {}),
   });
+  // 人の「確かめる」(P27)。作るループと同じ入口を、表示中のビルドを見るモードで呼ぶ(observeShown)
+  const checks = new ProjectChecks({ store, aiSessions, observe: observeShown, log });
   const servers = [];
   const versions = new ProjectVersions({ store, aiSessions, log });
   const handoffs = new ProjectHandoffs({ home: config.home, store, aiSessions, versions, requests, log });
@@ -155,6 +158,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     createStudioHandler({
       store,
       requests,
+      checks,
       agent: connectionView(connection),
       aiSessions,
       versions,
@@ -214,6 +218,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     aiSessions,
     versions,
     handoffs,
+    checks,
     observer,
     // 表示中のビルドを観察する。report とスクリーンショットは .studio/observations/<観察の ID>/ に置く。
     // シナリオは、渡さなければ app/ の目録の scenarios(既定は app/scenarios/)から読む。
@@ -224,8 +229,8 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       return (await observeShown(id, { scenarios, viewports, ai, aiConnection, operate, limits })).report;
     },
     async close() {
-      // 作る AI と、応答を待っているプロダクト内 AI の Claude Code と、観察器のブラウザを止め、終わるまで待つ
-      await Promise.all([requests.closeAll(), aiSessions.close(), observer.close()]);
+      // 作る AI と、人の「確かめる」と、応答を待っているプロダクト内 AI の Claude Code と、観察器のブラウザを止め、終わるまで待つ
+      await Promise.all([requests.closeAll(), checks.closeAll(), aiSessions.close(), observer.close()]);
       await Promise.all(
         servers.map(
           (server) =>

@@ -24,17 +24,16 @@ export async function currentAppDigest(paths) {
   return digestSnapshot(await snapshotApp(paths.app));
 }
 
-// 終わった run ごとの、確かめた指紋と古いか。動いている run と、指紋のない run(関門まで進まなかった)の stale は null
-export async function evidenceState(paths, runs) {
+// 終わった run と人の「確かめる」(checks.js)ごとの、確かめた指紋と古いか。
+// 動いているものと、指紋のないもの(関門まで進まなかった run)の stale は null
+export async function evidenceState(paths, runs, checks = []) {
   const appDigest = await currentAppDigest(paths);
-  return {
-    appDigest,
-    runs: runs.map((run) => {
-      const digest = typeof run.appDigest === 'string' ? run.appDigest : null;
-      const stale = run.status === 'running' || digest === null ? null : digest !== appDigest;
-      return { id: run.id, appDigest: digest, stale };
-    }),
+  const stateOf = (item) => {
+    const digest = typeof item.appDigest === 'string' ? item.appDigest : null;
+    const stale = item.status === 'running' || digest === null ? null : digest !== appDigest;
+    return { id: item.id, appDigest: digest, stale };
   };
+  return { appDigest, runs: runs.map(stateOf), checks: checks.map(stateOf) };
 }
 
 // 証拠の画像を読む。file はプロジェクトのフォルダーからの場所(run の gates にある形)。
