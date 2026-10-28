@@ -3,6 +3,7 @@ import path from 'node:path';
 import { STUDIO_ROOT } from './config.js';
 import { isAllowedHost, tokensEqual } from './security.js';
 import { AgentUnavailableError, RequestError } from './build-requests.js';
+import { CheckError } from './checks.js';
 import { AiError } from './product-ai/session.js';
 import { EvidenceError, evidenceState, readEvidenceImage } from './evidence.js';
 import { ConsentRequiredError } from './real-ai.js';
@@ -84,7 +85,7 @@ async function readJson(req) {
   }
 }
 
-function projectView(project, previewPort, runs) {
+function projectView(project, previewPort, runs, checks) {
   return {
     id: project.id,
     title: project.title,
@@ -93,6 +94,9 @@ function projectView(project, previewPort, runs) {
     versioning: project.versioning,
     running: runs.running,
     runsVersion: runs.version,
+    // 人の「確かめる」をしている最中か。checksVersion が変わったら、画面は確かめの一覧を読み直す
+    checking: checks.checking,
+    checksVersion: checks.version,
     lastBuild: project.lastBuild,
     previewUrl: project.previewBuildId
       ? `http://localhost:${previewPort}/p/${project.id}/${project.previewBuildId}/`
@@ -102,8 +106,8 @@ function projectView(project, previewPort, runs) {
 
 // Studio 画面と API。API はすべてトークンを要求する(ADR-0001 の層 3)。
 // realAi(projectId) は本物の AI を使う前の同意のカードの中身(real-ai.js の consentView)、consent は同意の状態
-export function createStudioHandler({ store, requests, agent, aiSessions, versions, handoffs, token, ports, realAi, consent }) {
-  const view = (project) => projectView(project, ports.preview, requests.summary(project.id));
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, token, ports, realAi, consent }) {
+  const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id));
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
   // EventSource はヘッダーにトークンを付けられないので、画面は fetch の応答をストリームで読む(ADR-0001)。
@@ -171,6 +175,9 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
     // evidence/screenshot は、結果の帯に出すスクリーンショット(.studio/runs/ と .studio/observations/ の中の画像だけ)
     const evidenceMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/evidence(\/screenshot)?$/.exec(url.pathname);
     if (evidenceMatch && req.method === 'GET') return handleEvidence(res, evidenceMatch[1], evidenceMatch[2] ? url.searchParams.get('file') : undefined);
+    // 人の「確かめる」(P27)。GET は確かめの一覧、POST は確かめを始める({ connection: 'mock' | 'claude-code' })
+    const checksMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/checks$/.exec(url.pathname);
+    if (checksMatch && (req.method === 'GET' || req.method === 'POST')) return handleChecks(req, res, checksMatch[1]);
     const cancelMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/build-requests\/([a-f0-9]{16})\/cancel$/.exec(url.pathname);
     if (cancelMatch && req.method === 'POST') {
       const run = requests.cancel(cancelMatch[1], cancelMatch[2]);
@@ -220,7 +227,7 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
       if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', error.message);
       throw error;
     }
-    if (file === undefined) return sendJson(res, 200, await evidenceState(paths, requests.list(id)));
+    if (file === undefined) return sendJson(res, 200, await evidenceState(paths, requests.list(id), checks.list(id)));
     let body;
     try {
       body = await readEvidenceImage(paths, file);
@@ -236,6 +243,25 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
       'Content-Security-Policy': "default-src 'none'",
     });
     res.end(body);
+  }
+
+  // 確かめは、作る run、ビルド、版の操作の間は 409 で断る。本物の AI は、同意の前は 403(consent-required)で断る
+  async function handleChecks(req, res, id) {
+    try {
+      if (req.method === 'GET') {
+        await store.requireProject(id);
+        return sendJson(res, 200, { checks: checks.list(id) });
+      }
+      const body = await readJson(req);
+      return sendJson(res, 200, { check: await checks.start(id, { connection: body?.connection ?? 'mock' }) });
+    } catch (error) {
+      if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', error.message);
+      if (error instanceof BusyError) return sendError(res, 409, 'busy', error.message);
+      if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
+      if (error instanceof CheckError) return sendError(res, error.status, error.code, error.message);
+      if (error instanceof AiError) return sendError(res, error.status, error.code, error.message, error.next);
+      throw error;
+    }
   }
 
   async function handleRealAi(req, res, url, consenting) {

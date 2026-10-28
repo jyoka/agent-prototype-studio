@@ -125,6 +125,22 @@
       <ol id="version-list" class="version-list" aria-label="保存した版"></ol>
       <p class="muted">保存すると、app/ のファイルと、プロダクト内 AI の会話と状態を残します。作業中の会話は Studio を止めると消えますが、保存した版は残ります。</p>
     </section>
+    <!-- 人の「確かめる」(harness.md の 3.1、P27)。試す欄の上には置かない(ux-redesign.md の U9)。
+         結果は「言葉で直す」の会話に、作る run と同じ結果の帯で出す -->
+    <section aria-labelledby="check-heading">
+      <h3 id="check-heading">試作品を自動で確かめる</h3>
+      <p class="muted">いま表示している試作品を、決めた手順で自動で動かして確かめます。結果は「言葉で直す」の欄に出ます。試す欄の会話は変わりません。</p>
+      <fieldset id="check-ai" class="check-ai" hidden>
+        <legend>確かめるときの試作品の中の AI</legend>
+        <label><input type="radio" name="check-ai" value="mock" checked> お試しの AI(決まった言葉だけ分かります。無料です)</label>
+        <label><input type="radio" name="check-ai" value="claude-code"> 本物の AI(あなたの Claude Code。1 回の確かめで使います)</label>
+        <p id="check-ai-note" class="muted" hidden></p>
+      </fieldset>
+      <!-- 本物の AI で確かめるときの、同意のカード(P25 と同じ中身) -->
+      <div id="check-consent" class="check-consent" hidden></div>
+      <button type="button" id="check-run" disabled>試作品を自動で確かめる</button>
+      <p id="check-message" class="check-message" role="status" hidden></p>
+    </section>
     <section aria-labelledby="handoff-heading">
       <h3 id="handoff-heading">本番開発へ渡す</h3>
       <p class="muted">作業中の試作品を、本番開発の担当者に渡すフォルダーに書き出します。ソース、AI の設定、会話と状態、実機・モック・未接続の区別、未決事項が入ります。秘密情報らしい文字列があると書き出しません。</p>

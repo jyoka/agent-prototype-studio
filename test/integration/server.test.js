@@ -533,3 +533,96 @@ test('試し直しは構成のある会話でも動く。ボタンの action も
   );
   assert.equal(retry.result.stopped, null);
 });
+
+// 人の「確かめる」(docs/design/harness.md の 3.1、P27)。表示中の試作品を、作るループと同じ観察の入口で観察する。
+// 作る run、ビルド、版の操作、ほかの確かめの間は 409 で断る(1 プロジェクト 1 実行)
+test('人の「確かめる」の API: 作る run、ビルド、版の操作の間は 409 で断り、終わると report を .studio/observations/ に書く', async (t) => {
+  const { studio, token, sp, host, home } = await withStudio(t);
+  const id = 'sample-library';
+  const headers = { host, 'x-studio-token': token, origin: `http://${host}`, 'content-type': 'application/json' };
+  const call = async (pathname, json) => {
+    const res = await request(sp, { method: json === undefined ? 'GET' : 'POST', pathname, headers, body: json === undefined ? undefined : JSON.stringify(json) });
+    return { status: res.status, body: JSON.parse(res.body) };
+  };
+  const base = `/api/projects/${id}/checks`;
+
+  // 作る run の間は断る。確かめは始まらない
+  const started = await studio.requests.start(id, 'ゆっくり進めて');
+  const during = await call(base, {});
+  assert.equal(during.status, 409);
+  assert.equal(during.body.error.code, 'busy');
+  assert.match(during.body.error.message, /作る AI が作業中/);
+  assert.deepEqual((await call(base)).body.checks, []);
+  const finished = new Promise((resolve) => started.subscribe(() => {}, resolve));
+  studio.requests.cancel(id, started.run.id);
+  await finished;
+
+  // ビルドの間と、版の操作の間も断る
+  studio.store.entry(id).building = true;
+  assert.equal((await call(base, {})).status, 409);
+  studio.store.entry(id).building = false;
+  studio.store.claimVersions(id);
+  assert.equal((await call(base, {})).status, 409);
+  studio.store.releaseVersions(id);
+
+  // 形の誤りと、ないプロジェクト
+  assert.equal((await call(base, { connection: 'nothing' })).body.error.code, 'invalid');
+  assert.equal((await call('/api/projects/nothing/checks', {})).status, 404);
+  assert.equal((await call('/api/projects/nothing/checks')).status, 404);
+
+  // 確かめる。既定の試作品の中の AI はお試し。確かめている間は、作る run、ビルド、版の操作、ほかの確かめを断る
+  const check = await call(base, {});
+  assert.equal(check.status, 200);
+  assert.equal(check.body.check.status, 'running');
+  assert.equal(check.body.check.connection, 'mock');
+  assert.equal((await call(base, {})).status, 409);
+  assert.equal((await call(`/api/projects/${id}/builds`, {})).status, 409);
+  assert.equal((await call(`/api/projects/${id}/versions`, { name: '確かめの間' })).status, 409);
+  await assert.rejects(studio.requests.start(id, '見出しを「ひだまり図書室」にして'), /試作品を自動で確かめている/);
+  const project = (await call('/api/projects')).body.projects.find((p) => p.id === id);
+  assert.equal(project.checking, true);
+
+  const deadline = Date.now() + 90_000;
+  let done;
+  while (Date.now() < deadline) {
+    done = (await call(base)).body.checks.at(-1);
+    if (done.status !== 'running') break;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  assert.notEqual(done.status, 'running', '確かめが 90 秒で終わりません');
+  assert.equal((await call('/api/projects')).body.projects.find((p) => p.id === id).checking, false);
+  if (done.status === 'unverified' && /Chromium/.test(done.gates[0]?.reason ?? '')) {
+    t.skip('Playwright の Chromium がない');
+    return;
+  }
+  // 作る run の関門 G5、G6 と同じ形の結果。report は観察の入口が書く
+  assert.equal(done.status, 'passed');
+  assert.deepEqual(done.gates.map((gate) => [gate.id, gate.name, gate.status]), [
+    ['G5', 'launch', 'passed'],
+    ['G6', 'scenarios', 'passed'],
+  ]);
+  assert.match(done.report, /^\.studio\/observations\/[0-9]+-[a-f0-9]{8}\/report\.json$/);
+  const report = JSON.parse(await fs.readFile(path.join(home, 'projects', id, done.report), 'utf8'));
+  assert.equal(report.format, 'prototype-studio-observation');
+  assert.equal(report.verdict, 'passed');
+  assert.equal(report.buildId, project.previewUrl.split('/').at(-2));
+  assert.deepEqual(
+    done.gates[0].screenshots.map((shot) => shot.name),
+    ['mobile', 'tablet', 'desktop'],
+  );
+  // 終わったら、ほかの操作はまた通る
+  assert.equal((await call(`/api/projects/${id}/builds`, {})).status, 200);
+  // 証拠が古いかの API にも、確かめの印が入る(ビルドし直しても app/ は同じなので古くない)
+  const evidence = (await call(`/api/projects/${id}/evidence`)).body;
+  assert.deepEqual(evidence.checks, [{ id: done.id, appDigest: done.appDigest, stale: false }]);
+});
+
+test('本物の AI で確かめるときは、同意の前は断り(consent-required)、確かめは始まらない', { skip: process.platform === 'win32' }, async (t) => {
+  const { call, home } = await withSimStudio(t);
+  const refused = await call('/api/projects/sim-a/checks', { connection: 'claude-code' });
+  assert.equal(refused.status, 403);
+  assert.equal(refused.body.error.code, 'consent-required');
+  assert.match(refused.body.error.message, /本物の AI で確かめる/);
+  assert.deepEqual((await call('/api/projects/sim-a/checks')).body.checks, []);
+  assert.equal(await fs.stat(path.join(home, 'claude.jsonl')).catch(() => null), null);
+});

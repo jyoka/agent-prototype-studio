@@ -143,7 +143,8 @@ flowchart TB
 |---|---|---|
 | 起動 | `bin/studio.js`、`src/server/index.js`、`src/server/config.js` | 環境変数を読み、サンプルを写し、途中で止まった復元を戻し、2 つのサーバーを loopback で待ち受ける。起動ごとのトークンを作る |
 | Studio の API と画面 | `src/server/studio-server.js`、`src/server/security.js` | `/api/projects/...` と `/api/real-ai` の API と、`src/ui/` の画面を出す。Host、Origin、トークンを確かめる |
-| 作るループの証拠 | `src/server/evidence.js` | `/api/projects/<id>/evidence` で、終わった run ごとに証拠が古いか(`stale`)を返す。run が確かめた `app/` の指紋(`run.appDigest`)と、今の `app/` の指紋を比べて決める。`/api/projects/<id>/evidence/screenshot?file=` で、結果の帯のスクリーンショットを返す。読むのは `.studio/runs/` と `.studio/observations/` の中の PNG だけで、シンボリックリンクで外を指していても読まない。ほかの API と同じくトークンを要る |
+| 人の「確かめる」 | `src/server/checks.js` | `/api/projects/<id>/checks` で、表示中の試作品を自動で確かめる(P27)。`index.js` の `observeShown` を通して観察の入口を `shown` で呼び、結果を作る run の関門 G5、G6 と同じ形(`launchGate`、`scenarioGate`)にまとめる。作る run、ビルド、版の操作の間は 409(`ProjectStore.claimCheck`)。試作品の中の AI の既定はお試しで、本物は同意の後だけ(`AiSessions.observationConnection`)。確かめの一覧はメモリーにだけ置く |
+| 作るループの証拠 | `src/server/evidence.js` | `/api/projects/<id>/evidence` で、終わった run と人の「確かめる」ごとに証拠が古いか(`stale`)を返す。run が確かめた `app/` の指紋(`run.appDigest`)と、今の `app/` の指紋を比べて決める。`/api/projects/<id>/evidence/screenshot?file=` で、結果の帯のスクリーンショットを返す。読むのは `.studio/runs/` と `.studio/observations/` の中の PNG だけで、シンボリックリンクで外を指していても読まない。ほかの API と同じくトークンを要る |
 | 試作品の配信 | `src/server/preview-server.js` | ビルドしたものを別ポートから CSP つきで出す。API はない |
 | 試作品とビルド | `src/server/store.js`、`src/server/projects.js`、`src/server/build.js`、`src/server/inspect.js`、`src/server/manifest.js` | 試作品の一覧と置き場、`app/` と目録の検査、esbuild で 1 つの classic script に束ねる。一覧の名前は、表示中の版の目録の `title` と AI の有無から作る。一覧の順はサンプル(`SAMPLES` の順)が先 |
 | 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1〜G6 を安い順に回す。失敗したら直す依頼(`fix-prompt.js`)を作って作る AI に返し、2 回まで直させる。`run.json` に残す |
@@ -233,16 +234,17 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 
 ### 観察する(ヘッドレスのブラウザで試作品を動かす)
 
-観察を呼ぶ所は、今は 4 つです。どれも観察の入口 `observeProject`(`src/server/observe-entry.js`)を通り、同じ形の report を返します(harness.md の S5)。
+観察を呼ぶ所は、今は 5 つです(Studio の `observe()` はスクリプトとテストから呼ぶもの)。どれも観察の入口 `observeProject`(`src/server/observe-entry.js`)を通り、同じ形の report を返します(harness.md の S5)。
 
 | 呼ぶ所 | 入口のモード | 見るもの | プロダクト内 AI | report とスクリーンショット |
 |---|---|---|---|---|
 | 作る run の関門 G5、G6(`build-requests.js` → `index.js` の `observeGate`) | `shown` | Studio の表示中のビルド | G5 は断る。G6 はいつもモックの観察用の会話 | `.studio/runs/<run-id>/rounds/<n>/` |
+| 画面の「確かめる」(`studio-server.js` → `checks.js` → `index.js` の `observeShown`) | `shown` | Studio の表示中のビルド | 利用者が選んだ観察用の会話。既定はお試し(モック)、本物は同意の後だけ | `.studio/observations/<観察の ID>/` |
 | Studio の `observe(<id>, { scenarios, viewports, ai, aiConnection, operate, limits })`(`index.js`) | `shown` | Studio の表示中のビルド | 渡した `ai` 関数か、`aiConnection` の観察用の会話 | `.studio/observations/<観察の ID>/` |
 | CLI `npm run observe -- <プロジェクト>`(`bin/observe.js`) | `working` | 作業中の `app/` を一時フォルダーにビルドしたもの | いつもモック。実モデルは選べない | `.studio/observations/<観察の ID>/` |
 | 観察の道具の MCP サーバー `npm run observe:mcp -- <プロジェクト>`(`src/server/observe-mcp.js`) | `working` | 作業中の `app/` を一時フォルダーにビルドしたもの | いつもモック。実モデルは選べない | `.studio/observations/<観察の ID>/` |
 
-画面の「確かめる」(P27)は `shown` で、同じ入口を呼ぶ。MCP サーバーは、作る AI の起動に `--mcp-config` で 1 つだけ渡す(下の「観察の道具の MCP サーバー」)。
+画面の「確かめる」(P27)は、その他の引き出しの「試作品を自動で確かめる」と、結果の帯の「もう一度確かめる」から始まり、結果を直す欄の会話に、作る run と同じ形の結果の帯で出す。MCP サーバーは、作る AI の起動に `--mcp-config` で 1 つだけ渡す(下の「観察の道具の MCP サーバー」)。
 
 #### 観察の道具の MCP サーバー
 

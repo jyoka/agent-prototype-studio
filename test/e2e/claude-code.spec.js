@@ -66,7 +66,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
 
     // 切り替える前に、同意のカードで送るもの、送り先、料金を出す。前の確認の中身(送り先の詳しい文、費用、指示の全文)は「詳しく」の中にある
     await openAiMenu(page);
-    await page.getByRole('radio', { name: 'Claude Code' }).check();
+    await page.getByRole('radio', { name: 'Claude Code', exact: true }).check();
     const confirm = page.getByRole('group', { name: '本物の AI を使う前に' });
     await expect(confirm).toContainText('AI は、あなたの Claude Code で動きます。');
     await confirm.getByText('詳しく(AI への指示の全文、1 回の上限、記録の扱い)').click();
@@ -91,7 +91,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     expect(JSON.parse(refused.text).error.code).toBe('consent-required');
 
     // 「同意して使う」で、本物の AI を使う同意になり、切り替わる
-    await page.getByRole('radio', { name: 'Claude Code' }).check();
+    await page.getByRole('radio', { name: 'Claude Code', exact: true }).check();
     await confirm.getByRole('button', { name: '同意して使う' }).click();
     await expect(page.locator('#ai-badge')).toHaveText('AI: Claude Code');
     expect((await studio.api('/api/real-ai')).consent.agreed).toBe(true);
@@ -244,7 +244,7 @@ test('実モデルは STUDIO_ALLOW_CLAUDE_CODE=0 では選べず、理由を出�
     await page.goto(blocked.url);
     await chooseSample(page, SAMPLES.jobConsult);
     await openAiMenu(page);
-    await expect(page.getByRole('radio', { name: 'Claude Code' })).toBeDisabled();
+    await expect(page.getByRole('radio', { name: 'Claude Code', exact: true })).toBeDisabled();
     await expect(page.locator('#ai-menu')).toContainText('本物の AI は、使わない設定で起動されています');
     await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
   } finally {
@@ -256,7 +256,7 @@ test('実モデルは STUDIO_ALLOW_CLAUDE_CODE=0 では選べず、理由を出�
     await page.goto(paid.url);
     await chooseSample(page, SAMPLES.jobConsult);
     await openAiMenu(page);
-    await page.getByRole('radio', { name: 'Claude Code' }).check();
+    await page.getByRole('radio', { name: 'Claude Code', exact: true }).check();
     const confirm = page.getByRole('group', { name: '本物の AI を使う前に' });
     // 使った分だけかかるときは、料金の行に上限も出す
     await expect(confirm).toContainText('API キーの設定があるので、使った分だけ料金がかかります。');
