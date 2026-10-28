@@ -173,9 +173,11 @@ flowchart TB
 
 接続の切り替え(`ai/connection`)、応答を止める(`ai/cancel`)、試し直し(`ai/retry`)は、Studio の画面からだけ呼べます。試作品からは呼べません。
 
+観察の中の AI のやり取りは、この会話とは別の会話に入ります。`AiSessions` は会話を「プロジェクトと会話の ID」で分け、観察ごとに新しい会話(接続の既定はモック)を作り、観察が終わると捨てます。記録には「観察から」の印が付きます。
+
 ### 観察する(ヘッドレスのブラウザで試作品を動かす)
 
-1. 呼ぶ側が `startStudio` の `observe(<id>, { viewports, ai, limits })` を呼ぶ。作る run の関門 G5 も、同じ観察の入口を使う(report とスクリーンショットは `.studio/runs/` に置く)
+1. 呼ぶ側が `startStudio` の `observe(<id>, { viewports, aiConnection, limits })` を呼ぶ。`aiConnection: 'mock'` で観察用の会話の `ai` 関数(`createObservationAi`)を作り、やり取りを report の `ai` に入れる。作る run の関門 G5 も、同じ観察の入口を使う(`aiConnection` は渡さず、プロダクト内 AI の要求は断る。report とスクリーンショットは `.studio/runs/` に置く)
 2. ビルドに失敗していれば、ブラウザを開かずに `failed` を返す
 3. `ObserverBrowser` が Playwright の Chromium を起動するか、起動したものを使い回す。見つからなければ `unverified` と入れ方を返す
 4. 新しい文脈で `/observe.html` を開き、試作品の URL を iframe で読む。runtime のエラー、`console.error`、処理されない reject は、`MessagePort` から親ページを通って観察器に届く

@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { loadConfig } from '../../src/server/config.js';
+import { startStudio } from '../../src/server/index.js';
 import { ROOT, expect, launchStudio, test, writeProject } from './studio.js';
 
 // 実モデルは呼ばない。Claude Code は偽の CLI(test/fixtures/fake-claude.js)に差し替える
@@ -207,5 +209,46 @@ test('試作品のコードが決まりに合わない要求を送ったら、�
     await expect(entries.first()).not.toContainText('AI に渡したもの');
   } finally {
     await studio.stop();
+  }
+});
+
+test('試す画面で話している途中に観察を回しても、利用者の会話は残る。観察の会話は記録に「観察から」の印で出る', async ({ page, home }) => {
+  // 観察はまだ画面から回せない(CLI もない)ので、同じプロセスで起動した Studio から回す
+  const config = loadConfig({ STUDIO_HOME: home, STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0', STUDIO_NO_OPEN: '1' });
+  const studio = await startStudio(config, { env: {} });
+  try {
+    const { app, say, entries } = await openJobConsult(page, studio);
+    await say('カフェで働きたいです');
+    const chat = app.getByRole('region', { name: '会話' });
+    await expect(chat).toContainText('カフェで働きたいです');
+
+    const report = await studio.observe('sample-job-consult', { aiConnection: 'mock', viewports: [] });
+    expect(report.verdict).toBe('passed');
+    expect(report.ai.map((entry) => entry.type)).toEqual(['open']);
+
+    // 試す画面の会話は続けられる。観察のあいさつや発言は入らない
+    await say('しおかぜ町でお願いします');
+    await expect(chat).toContainText('カフェで働きたいです');
+    await expect(app.getByRole('region', { name: '希望条件' })).toContainText('カフェのホール');
+    const view = studio.aiSessions.view('sample-job-consult');
+    expect(view.messages.map((m) => m.role)).toEqual(['assistant', 'user', 'assistant', 'user', 'assistant']);
+    expect(view.state).toMatchObject({ jobType: 'カフェのホール', area: 'しおかぜ町' });
+
+    // 記録の並びはそのまま(新しい方から)。観察の会話の始まりにだけ印が付く
+    await expect(entries).toHaveCount(3);
+    await expect(entries.nth(0)).toContainText('発言: しおかぜ町でお願いします');
+    await expect(entries.nth(0)).not.toContainText('観察から');
+    await expect(entries.nth(1)).toContainText('観察の会話を始めました → モック(AI モデルは呼んでいません)');
+    await expect(entries.nth(1)).toContainText('観察から');
+    await expect(entries.nth(1)).toContainText('あいさつ: こんにちは。しおかぜ求人相談の案内役です');
+    await expect(entries.nth(2)).toContainText('発言: カフェで働きたいです');
+    await expect(entries.nth(2)).not.toContainText('観察から');
+
+    // 開き直しても、利用者の会話はサーバーに残っている
+    await page.reload();
+    await page.getByRole('button', { name: /サンプル: 架空の求人相談/ }).click();
+    await expect(page.frameLocator('iframe[title="試作品"]').getByRole('region', { name: '会話' })).toContainText('しおかぜ町でお願いします');
+  } finally {
+    await studio.close();
   }
 });

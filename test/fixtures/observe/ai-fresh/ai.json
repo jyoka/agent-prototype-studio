@@ -1,0 +1,15 @@
+{
+  "name": "架空の植木の相談",
+  "instructions": "架空の園芸店の案内役です。",
+  "fields": [
+    {
+      "key": "plant",
+      "label": "植木",
+      "options": [
+        { "value": "架空のつる草", "keywords": ["つる"] },
+        { "value": "架空の小さな木", "keywords": ["小さな"] }
+      ]
+    }
+  ],
+  "mock": { "greeting": "架空の園芸店です。どんな植木を探していますか?" }
+}

@@ -1175,6 +1175,7 @@ function traceTitle(entry) {
   if (entry.type === 'reply') return `発言 → ${connectionNote(entry.connection)}`;
   if (entry.type === 'correction') return '状態の修正(試作品から)';
   if (entry.type === 'connection') return `接続の切り替え: ${entry.previous.label} → ${entry.connection.label}(Studio の画面から)`;
+  if (entry.type === 'open') return `観察の会話を始めました → ${connectionNote(entry.connection)}`;
   return '会話と状態を最初に戻しました(Studio の画面から)';
 }
 
@@ -1239,8 +1240,11 @@ function traceItem(entry) {
   li.dataset.type = entry.type;
   li.dataset.status = entry.status;
   li.dataset.real = String(Boolean(entry.connection?.real));
+  // 観察の会話の記録には印を付ける。利用者の試す画面の会話とは別の会話
+  if (entry.observation) li.dataset.observation = entry.observation;
   const head = element('p', undefined, 'trace-head');
   head.append(element('time', formatTime(entry.at)), element('strong', traceTitle(entry)));
+  if (entry.observation) head.append(element('span', '観察から', 'trace-origin'));
   const status = [TRACE_STATUS[entry.status] ?? entry.status];
   if (Number.isFinite(entry.elapsedMs) && entry.status !== 'running') status.push(formatSeconds(entry.elapsedMs));
   head.append(element('span', status.join('、'), 'trace-status'));
@@ -1252,7 +1256,8 @@ function traceItem(entry) {
   if (entry.type === 'correction' && entry.requested.length > 0) {
     li.append(labeled('直そうとした値', entry.requested.map((r) => `${r.key}「${r.value}」`).join('、')));
   }
-  if (entry.type === 'reset') li.append(labeled('最初の状態', entry.state.map((s) => `${s.label}「${s.value}」`).join('、')));
+  if (entry.type === 'open' && entry.greeting) li.append(labeled('あいさつ', entry.greeting));
+  if (entry.type === 'reset' || entry.type === 'open') li.append(labeled('最初の状態', entry.state.map((s) => `${s.label}「${s.value}」`).join('、')));
   if (entry.status === 'ok' && entry.changes) {
     if (entry.changes.length > 0) li.append(element('p', '状態の変化:'), changeList('状態の変化', entry.changes));
     else li.append(element('p', '状態の変化: なし', 'muted'));

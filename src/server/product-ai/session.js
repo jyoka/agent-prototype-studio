@@ -8,10 +8,19 @@ export const SESSION_LIMITS = {
   maxMessages: 200,
   // 費用のかかる接続(Claude Code)の応答は、1 つの会話でこの回数まで。試作品のコードが勝手に送り続けても止まる
   maxPaidReplies: 30,
-  // 実行の記録は、試作品ごとに新しい方からこの件数まで。AI に渡した本文は、この文字数まで残す
+  // 実行の記録は、試作品ごとに新しい方からこの件数まで。AI に渡した本文は、この文字数まで残す。
+  // 観察の会話の記録は、利用者の会話の記録とは別に数える(観察で利用者の記録を押し出さない)
   maxTraceEntries: 50,
   maxTraceText: 20_000,
+  // 1 つの観察の会話の記録は、古い方からこの件数まで(観察の report の ai に入れる)
+  maxObservationEntries: 100,
 };
+
+// 利用者の試す画面の会話の ID。観察の会話は、観察ごとに別の ID を持つ(docs/design/harness.md の 3.4)
+export const USER_CONVERSATION = 'user';
+
+// 会話は「プロジェクトと会話の ID」で分ける
+const slotOf = (projectId, conversation) => JSON.stringify([projectId, conversation]);
 
 function freshSession(definition, key) {
   return {
@@ -136,6 +145,8 @@ const CONNECTION_ERRORS = {
 // プロダクト内 AI の会話と状態を、プロジェクトごとにサーバーで持つ(ADR-0001 の「試す」)。
 // 応答の中身は接続(モック、Claude Code)が決め、値の検査、状態の更新、記録、リセットはここで必ず行う。
 // 接続はプロジェクトごとに選ぶ。既定はモック。切り替えても会話と状態はそのまま引き継ぐ。
+// 会話は「プロジェクトと会話の ID」で分ける。利用者の会話は USER_CONVERSATION。観察の会話は観察ごとに新しく作り、
+// 終わったら消す(S15)。観察の会話は、利用者の会話、選んだ接続、試し直しの前の会話に触れない。
 // 作業中の会話はメモリーにだけ置く。Studio を止めると消える。残すときは版として保存する(versions.js)。
 // 設定が変わって会話が最初に戻ったら、前の会話を 1 つ覚えておき、同じ発言と修正を新しい設定で送り直せる(試し直す、#279)。
 export class AiSessions {
@@ -143,7 +154,11 @@ export class AiSessions {
     this.definitionOf = definitionOf;
     this.connections = new Map(connections.map((connection) => [connection.kind, connection]));
     this.defaultKind = connections[0].kind;
+    // 会話。slotOf(プロジェクト, 会話の ID) で引く
     this.sessions = new Map();
+    // 開いている観察の会話。接続は観察を始めたときに決め、利用者の選んだ接続とは別にする
+    this.observations = new Map();
+    this.observationSeq = 0;
     // 選んだ接続は、リセットしても変えない
     this.selected = new Map();
     // 設定が変わる前の、最後の会話。リセットしても消さない
@@ -154,12 +169,17 @@ export class AiSessions {
   }
 
   // 記録に足す。秘密らしい文字列と、要らない個人のデータは、ここで伏せてから残す
-  record(projectId, entry) {
+  // 観察の会話の記録には「観察から」の印(observation に観察の会話の ID)を付け、その観察の記録にも足す
+  record(projectId, entry, conversation = USER_CONVERSATION) {
     const list = this.traces.get(projectId) ?? [];
+    const observation = this.observations.get(slotOf(projectId, conversation));
     const recorded = { id: ++this.traceSeq, at: new Date().toISOString(), ...redactDeep(entry) };
+    if (observation) recorded.observation = conversation;
     list.push(recorded);
-    if (list.length > SESSION_LIMITS.maxTraceEntries) list.splice(0, list.length - SESSION_LIMITS.maxTraceEntries);
+    const sameKind = (item) => Boolean(item.observation) === Boolean(observation);
+    if (list.filter(sameKind).length > SESSION_LIMITS.maxTraceEntries) list.splice(list.findIndex(sameKind), 1);
     this.traces.set(projectId, list);
+    if (observation && observation.entries.length < SESSION_LIMITS.maxObservationEntries) observation.entries.push(recorded);
     return recorded;
   }
 
@@ -189,8 +209,72 @@ export class AiSessions {
     if (code === 'not-found' && entry.input) entry.input.notSent = true;
   }
 
-  connectionOf(projectId) {
+  // 終わった観察の会話には書かない(利用者の記録に、印のない記録を残さないため)
+  checkConversation(projectId, conversation) {
+    if (conversation !== USER_CONVERSATION && !this.observations.has(slotOf(projectId, conversation))) {
+      throw new AiError(409, 'closed', 'この観察の会話はもう終わっています');
+    }
+  }
+
+  connectionOf(projectId, conversation = USER_CONVERSATION) {
+    const observation = this.observations.get(slotOf(projectId, conversation));
+    if (observation) return this.connections.get(observation.connection);
     return this.connections.get(this.selected.get(projectId) ?? this.defaultKind);
+  }
+
+  // 観察に使う接続。既定はモック。実モデルでの観察(費用と同意が要る)は、まだ作っていないので断る
+  observationConnection(kind = 'mock') {
+    const connection = this.connections.get(kind);
+    if (!connection) throw new AiError(400, 'invalid', `「${String(kind)}」という接続はありません`);
+    if (connection.billing) throw new AiError(403, 'unavailable', '実際の AI モデルでの観察は、まだ使えません。モックで観察してください');
+    return connection;
+  }
+
+  // 観察用の新しい会話を作り、その ID を返す
+  openObservation(projectId, { connection: kind = 'mock' } = {}) {
+    const definition = this.definition(projectId);
+    const connection = this.observationConnection(kind);
+    const conversation = `observation-${++this.observationSeq}`;
+    const slot = slotOf(projectId, conversation);
+    this.observations.set(slot, { connection: kind, entries: [] });
+    const session = freshSession(definition, JSON.stringify(definition));
+    this.sessions.set(slot, session);
+    // 会話の始まり(あいさつと最初の状態)を記録する
+    this.record(
+      projectId,
+      {
+        type: 'open',
+        from: 'prototype',
+        status: 'ok',
+        connection: connectionOfRecord(connection),
+        greeting: session.messages[0]?.text ?? null,
+        state: this.describeState(session),
+      },
+      conversation,
+    );
+    return conversation;
+  }
+
+  // 観察の会話の記録を、古い方から返す
+  observationTrace(projectId, conversation) {
+    const observation = this.observations.get(slotOf(projectId, conversation));
+    if (!observation) throw new AiError(404, 'closed', 'この観察の会話はもう終わっています');
+    return observation.entries.map((entry) => structuredClone(entry));
+  }
+
+  // 観察が終わったら、その会話を捨てる。応答を待っていたら止める
+  closeObservation(projectId, conversation) {
+    const slot = slotOf(projectId, conversation);
+    if (!this.observations.has(slot)) return false;
+    this.sessions.get(slot)?.controller?.abort();
+    this.sessions.delete(slot);
+    this.observations.delete(slot);
+    return true;
+  }
+
+  // 開いている会話の ID(利用者の会話も含む)。テストと調べもの用
+  conversations(projectId) {
+    return [...this.sessions.keys()].map((slot) => JSON.parse(slot)).filter(([id]) => id === projectId).map(([, conversation]) => conversation);
   }
 
   // 実行の前に Studio 画面に出す。選べる接続、選べない理由、送るもの、費用
@@ -260,18 +344,22 @@ export class AiSessions {
   }
 
   // 設定(app/ai.json)が変わったビルドに切り替わったら、その設定の初期状態から始める
-  session(projectId) {
+  // 観察の会話は、終わった後には使えない。設定が変わっても、試し直しの前の会話には入れない
+  session(projectId, conversation = USER_CONVERSATION) {
     const definition = this.definition(projectId);
     const key = JSON.stringify(definition);
-    const current = this.sessions.get(projectId);
+    const slot = slotOf(projectId, conversation);
+    const user = conversation === USER_CONVERSATION;
+    this.checkConversation(projectId, conversation);
+    const current = this.sessions.get(slot);
     if (current && current.key === key) return current;
     current?.controller?.abort();
     // 試し直しの途中の会話は、送り直しきれていないので覚えない。元の前の会話を残す
-    if (!current?.retrying && current?.messages.some((m) => m.role === 'user' || m.role === 'correction')) {
+    if (user && !current?.retrying && current?.messages.some((m) => m.role === 'user' || m.role === 'correction')) {
       this.previous.set(projectId, { name: current.definition.name, messages: current.messages.map((m) => structuredClone(m)) });
     }
     const session = freshSession(definition, key);
-    this.sessions.set(projectId, session);
+    this.sessions.set(slot, session);
     return session;
   }
 
@@ -280,7 +368,7 @@ export class AiSessions {
   snapshot(projectId, definition = this.definitionOf(projectId)) {
     if (!definition) return null;
     const key = JSON.stringify(definition);
-    const current = this.sessions.get(projectId);
+    const current = this.sessions.get(slotOf(projectId, USER_CONVERSATION));
     if (!current || current.key !== key) return null;
     const snapshot = { state: { ...current.state }, messages: current.messages.map((message) => structuredClone(message)) };
     const fresh = freshSession(definition, key);
@@ -292,8 +380,9 @@ export class AiSessions {
   // 応答を待っている途中でも置き換える。届いた応答は捨てる(リセットと同じ)
   restore(projectId, snapshot) {
     // 実モデルの応答を待っていたら、止めて費用を使い続けない
-    this.sessions.get(projectId)?.controller?.abort();
-    this.sessions.delete(projectId);
+    const slot = slotOf(projectId, USER_CONVERSATION);
+    this.sessions.get(slot)?.controller?.abort();
+    this.sessions.delete(slot);
     const definition = this.definitionOf(projectId);
     if (!definition) return snapshot === null;
     const session = this.session(projectId);
@@ -307,13 +396,13 @@ export class AiSessions {
 
   // 試し直しの途中も、発言と発言の間を含めて応答中とみなす(版の復元で、送り直しの途中の会話を取り替えない)
   isBusy(projectId) {
-    const session = this.sessions.get(projectId);
+    const session = this.sessions.get(slotOf(projectId, USER_CONVERSATION));
     return Boolean(session?.busy || session?.retrying);
   }
 
-  view(projectId) {
-    const { definition, state, messages, busy } = this.session(projectId);
-    const connection = this.connectionOf(projectId);
+  view(projectId, { conversation = USER_CONVERSATION } = {}) {
+    const { definition, state, messages, busy } = this.session(projectId, conversation);
+    const connection = this.connectionOf(projectId, conversation);
     return {
       connection: {
         kind: connection.kind,
@@ -336,8 +425,9 @@ export class AiSessions {
   reset(projectId) {
     this.definition(projectId);
     // 実モデルの応答を待っていたら、止めて費用を使い続けない
-    this.sessions.get(projectId)?.controller?.abort();
-    this.sessions.delete(projectId);
+    const slot = slotOf(projectId, USER_CONVERSATION);
+    this.sessions.get(slot)?.controller?.abort();
+    this.sessions.delete(slot);
     const view = this.view(projectId);
     this.record(projectId, {
       type: 'reset',
@@ -393,7 +483,8 @@ export class AiSessions {
         `${connection.label} への発言は、1 つの会話で ${SESSION_LIMITS.maxPaidReplies} 回までです。試し直す発言が ${users} 件あるので、接続をモックに戻してください`,
       );
     }
-    this.sessions.delete(projectId);
+    const slot = slotOf(projectId, USER_CONVERSATION);
+    this.sessions.delete(slot);
     const session = this.session(projectId);
     session.retrying = true;
     const result = { from: previous.name, via: connection.kind, replies: [], skipped: [], stopped: null };
@@ -424,7 +515,7 @@ export class AiSessions {
       }
     } catch (error) {
       // 途中で止まっても、そこまでの結果は残す。リセットや設定の切り替えで会話が替わったら、そちらを伝える
-      if (!(error instanceof AiError) || this.sessions.get(projectId) !== session) throw error;
+      if (!(error instanceof AiError) || this.sessions.get(slot) !== session) throw error;
       result.stopped = error.message;
     } finally {
       session.retrying = false;
@@ -434,21 +525,26 @@ export class AiSessions {
   }
 
   // 利用者の発言を接続に渡す。成功も失敗も、実行の記録に残す
-  // 試し直し(replaying)の発言は、Studio 画面から送ったものとして記録する
-  async send(projectId, text, { replaying = false } = {}) {
+  // 試し直し(replaying)の発言は、Studio 画面から送ったものとして記録する。conversation は会話の ID
+  async send(projectId, text, { replaying = false, conversation = USER_CONVERSATION } = {}) {
     // AI のない試作品は、記録する AI がないので記録しない
     this.definition(projectId);
-    const connection = this.connectionOf(projectId);
-    const entry = this.record(projectId, {
-      type: 'reply',
-      from: replaying ? 'studio' : 'prototype',
-      status: 'running',
-      connection: connectionOfRecord(connection),
-      text: typeof text === 'string' ? text.trim().slice(0, SESSION_LIMITS.maxTextLength) : '',
-    });
+    this.checkConversation(projectId, conversation);
+    const connection = this.connectionOf(projectId, conversation);
+    const entry = this.record(
+      projectId,
+      {
+        type: 'reply',
+        from: replaying ? 'studio' : 'prototype',
+        status: 'running',
+        connection: connectionOfRecord(connection),
+        text: typeof text === 'string' ? text.trim().slice(0, SESSION_LIMITS.maxTextLength) : '',
+      },
+      conversation,
+    );
     const started = Date.now();
     try {
-      return await this.reply(projectId, connection, text, entry, { replaying });
+      return await this.reply(projectId, connection, text, entry, { replaying, conversation });
     } catch (error) {
       AiSessions.fail(entry, error, 'reply');
       throw error;
@@ -457,12 +553,13 @@ export class AiSessions {
     }
   }
 
-  async reply(projectId, connection, text, entry, { replaying }) {
+  async reply(projectId, connection, text, entry, { replaying, conversation }) {
     if (typeof text !== 'string' || text.trim() === '') throw new AiError(400, 'invalid', '話す内容を書いてください');
     if (text.length > SESSION_LIMITS.maxTextLength) {
       throw new AiError(400, 'invalid', `${SESSION_LIMITS.maxTextLength} 文字までにしてください`);
     }
-    const session = this.session(projectId);
+    const slot = slotOf(projectId, conversation);
+    const session = this.session(projectId, conversation);
     if (session.busy) throw new AiError(409, 'busy', 'AI が前の発言に応答しています。少し待ってください');
     if (session.retrying && !replaying) throw new AiError(409, 'busy', '前の会話を試し直しています。終わるまで待ってください');
     this.checkRoom(session, 2);
@@ -499,7 +596,7 @@ export class AiSessions {
       result = await connection.respond({ ...input, signal: session.controller.signal });
     } catch (error) {
       // 応答を待つ間にリセットや設定の切り替えがあったら、そちらを伝える
-      if (this.sessions.get(projectId) !== session) throw new AiError(409, 'reset', '応答を待つ間に会話が最初に戻りました');
+      if (this.sessions.get(slot) !== session) throw new AiError(409, 'reset', '応答を待つ間に会話が最初に戻りました');
       if (error instanceof ConnectionError && Object.hasOwn(CONNECTION_ERRORS, error.code)) {
         const [status, code] = CONNECTION_ERRORS[error.code];
         throw new AiError(status, code, error.message);
@@ -510,7 +607,7 @@ export class AiSessions {
       session.controller = null;
     }
     // 応答を待つ間にリセットや設定の切り替えがあったら、古い会話に書き足さない
-    if (this.sessions.get(projectId) !== session) throw new AiError(409, 'reset', '応答を待つ間に会話が最初に戻りました');
+    if (this.sessions.get(slot) !== session) throw new AiError(409, 'reset', '応答を待つ間に会話が最初に戻りました');
     const reply = typeof result?.reply === 'string' ? result.reply.slice(0, 4000) : '';
     const applied = {};
     const changes = [];
@@ -550,38 +647,43 @@ export class AiSessions {
         rejected,
       }),
     );
-    return this.view(projectId);
+    return this.view(projectId, { conversation });
   }
 
   // 本人が、AI の理解した状態を直す。次の応答はこの記録を踏まえる。成功も失敗も、実行の記録に残す
-  correct(projectId, changes, { replaying = false } = {}) {
+  correct(projectId, changes, { replaying = false, conversation = USER_CONVERSATION } = {}) {
     this.definition(projectId);
-    const entry = this.record(projectId, {
-      type: 'correction',
-      from: replaying ? 'studio' : 'prototype',
-      status: 'running',
-      connection: connectionOfRecord(this.connectionOf(projectId)),
-      requested: isPlainObject(changes)
-        ? Object.entries(changes)
-            .slice(0, 20)
-            .map(([key, value]) => ({ key: key.slice(0, 64), value: shownValue(value) }))
-        : [],
-    });
+    this.checkConversation(projectId, conversation);
+    const entry = this.record(
+      projectId,
+      {
+        type: 'correction',
+        from: replaying ? 'studio' : 'prototype',
+        status: 'running',
+        connection: connectionOfRecord(this.connectionOf(projectId, conversation)),
+        requested: isPlainObject(changes)
+          ? Object.entries(changes)
+              .slice(0, 20)
+              .map(([key, value]) => ({ key: key.slice(0, 64), value: shownValue(value) }))
+          : [],
+      },
+      conversation,
+    );
     try {
-      const applied = this.applyCorrection(projectId, changes, { replaying });
+      const applied = this.applyCorrection(projectId, changes, { replaying, conversation });
       Object.assign(entry, redactDeep({ status: 'ok', changes: applied }));
-      return this.view(projectId);
+      return this.view(projectId, { conversation });
     } catch (error) {
       AiSessions.fail(entry, error, 'correction');
       throw error;
     }
   }
 
-  applyCorrection(projectId, changes, { replaying }) {
+  applyCorrection(projectId, changes, { replaying, conversation }) {
     if (!isPlainObject(changes) || Object.keys(changes).length === 0) {
       throw new AiError(400, 'invalid', '直す項目を { 項目の key: 値 } の形で渡してください');
     }
-    const session = this.session(projectId);
+    const session = this.session(projectId, conversation);
     if (session.busy) throw new AiError(409, 'busy', 'AI が応答しています。終わってから直してください');
     if (session.retrying && !replaying) throw new AiError(409, 'busy', '前の会話を試し直しています。終わるまで待ってください');
     const { fields } = session.definition;
