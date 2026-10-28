@@ -4,7 +4,7 @@ import { matchJobs } from './jobs.js';
 // プロダクト内 AI は、Studio の runtime が配る window.studio.ai から呼ぶ。
 // 会話と希望条件は Studio が持つので、この画面は受け取った session を描くだけにする。
 const ai = window.studio?.ai;
-const VIA = { mock: 'モック', 'claude-code': 'Claude Code' };
+const VIA = { mock: 'お試しの AI', 'claude-code': 'Claude Code' };
 
 function formatValue(field, value) {
   if (value === null || value === undefined) return '未定';
@@ -85,7 +85,7 @@ export default function App() {
 
   useEffect(() => {
     ai?.session().then(setSession, (e) => setError(e.message));
-    // Studio の画面で接続(モック、Claude Code)を切り替えたら、表示を変える
+    // Studio の画面で接続(お試しの AI、Claude Code)を切り替えたら、表示を変える
     return ai?.onChange?.(setSession);
   }, []);
 
@@ -128,7 +128,7 @@ export default function App() {
           架空のサービスと架空の求人です。実在の企業や人とは関係ありません。
           {session &&
             (isMock
-              ? ' 案内役の AI はモックで、決まった応答を返します。'
+              ? ' いまの案内役はお試しの AI です。決まった言葉だけ分かります。'
               : ` 案内役の AI は ${session.connection.label}(実際の AI モデル)です。送った文は AI の提供元に送られます。`)}
         </p>
       </header>

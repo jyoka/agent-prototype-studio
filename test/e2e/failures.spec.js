@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { expect, launchStudio, test, writeProject } from './studio.js';
+import { SAMPLES, chooseSample, expect, launchStudio, test, writeProject } from './studio.js';
 
 test('URL の鍵がない、または合わないときは、どうすればよいかを出す', async ({ page, home }) => {
   const studio = await launchStudio(home);
@@ -18,6 +18,7 @@ test('URL の鍵がない、または合わないときは、どうすればよ�
     await expect(page.locator('#connection')).toHaveText('つながっています');
     await expect(page.getByRole('alert')).toBeHidden();
     expect(new URL(page.url()).hash).toBe('');
+    await chooseSample(page, SAMPLES.library);
     const app = page.frameLocator('iframe[title="試作品"]');
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
   } finally {

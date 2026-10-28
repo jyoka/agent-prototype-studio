@@ -88,7 +88,7 @@ docs/                  使い方、設定、困ったとき、設計(architectur
 | `npm test` | 単体と結合のテスト(Node の test runner)。作る欄の API、偽の CLI に渡る引数と stdin、確認スクリプトの空回しを含む | 数秒 |
 | `npm run test:e2e` | ブラウザの E2E(Playwright の Chromium)。起動手順、サンプルの操作、モックの AI との会話と修正とリセット、偽の Claude Code への切り替えと履歴と失敗と中断、AI の実行の記録(正常と失敗、次にすること、伏せる文字列)、失敗の表示、試作品の隔離、作る欄の依頼・変更・反映・拒否・失敗・中断、作る欄で AI の振る舞いを変えて前の発言で試し直すこと、版の保存・変更・復元・起動し直した後の再開、引き継ぎの書き出しと、別の場所での確認(資料を読む、ソースを別の Studio で動かす)と秘密での停止、求人ではない題材(架空の学習相談)での作成・試行・変更・版・引き継ぎの通しと、Studio の画面と書き出しに求人の言葉が出ないこと、観察器の report(正常と、壊した見本のエラー、AI の要求の中継、7 つの操作とシナリオ、失敗した手順のスクリーンショット、見本のシナリオ)と、観察器の隔離(悪意のある見本、名前の解決、時間の上限)を確かめる | 1 分以内 |
 
-E2E と観察器のブラウザがないときは、`npm run install:chromium` で入れる。どのテストも実モデルと外部の API を呼ばない(`STUDIO_REAL=1` を付けた `test/e2e/real-loop.spec.js` だけが例外)。作る AI は偽接続(`src/agent/fake-claude.js`)か、それを呼ぶ偽の `claude` に差し替える。プロダクト内 AI の Claude Code は、偽の CLI(`test/fixtures/fake-claude.js`)に差し替える。
+E2E と観察器のブラウザがないときは、`npm run install:chromium` で入れる。どのテストも実モデルと外部の API を呼ばない(`STUDIO_REAL=1` を付けた `test/e2e/real-loop.spec.js` だけが例外)。作る AI の既定は自動(手元の Claude Code を使う)なので、テストは `STUDIO_AGENT=fake`(偽接続、`src/agent/fake-claude.js`)か、偽の `claude`(`STUDIO_CLAUDE_BIN`)を必ず明示する。`STUDIO_AGENT` を消すテストは、`STUDIO_CLAUDE_BIN` を偽の `claude` か、ない場所に向ける。E2E の `launchStudio` は、指定がなければ `STUDIO_AGENT=fake` にする。プロダクト内 AI の Claude Code は、偽の CLI(`test/fixtures/fake-claude.js`)に差し替える。
 
 - 不具合は、利用者から見た動きを再現する E2E を先に書き、失敗するのを見てから直します
 - 実モデルで守りが効くかは、`npm run check:claude` で確かめます。実モデルを呼ぶので、人が決めたときだけ動かします([docs/claude-code.md の「実機で確かめる」](docs/claude-code.md#実機で確かめる))

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ROOT, expect, launchStudio, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, expect, launchStudio, test } from './studio.js';
 
 // 求人でも LINE でもない題材(架空の学習相談)で、求人相談と同じ流れが通るかを確かめる(#281)。
 // 作成(サンプルを開く) → 試行(モックと偽の Claude Code) → 変更(画面と AI の振る舞い、試し直し) → 版 → 引き継ぎ。
@@ -21,7 +21,6 @@ const ASK_BY_EXAMPLE = 'すみません、うまく読み取れませんでし�
 
 function fakeEnv(home) {
   return {
-    STUDIO_ALLOW_CLAUDE_CODE: '1',
     STUDIO_CLAUDE_BIN: FAKE,
     FAKE_CLAUDE_LOG: path.join(home, 'fake-claude.jsonl'),
     ANTHROPIC_API_KEY: undefined,
@@ -97,7 +96,7 @@ async function runFlow(page, home, other, otherHome) {
     // 1. 作成: サンプルは、ほかのサンプルと同じく起動のときに置き場に写され、一覧から開ける
     expect(studio.output()).toContain('ビルド成功: sample-study-consult');
     await page.goto(studio.url);
-    await page.getByRole('button', { name: /サンプル: 架空の学習相談/ }).click();
+    await chooseSample(page, SAMPLES.studyConsult);
     const ui = parts(page);
     await expect(ui.app.getByRole('heading', { name: 'あおぞら学習相談' })).toBeVisible();
     await expect(ui.log.first()).toContainText(GREETING);
@@ -223,7 +222,7 @@ async function runFlow(page, home, other, otherHome) {
   ]);
   const readme = await fs.readFile(path.join(other, 'README.md'), 'utf8');
   await fs.writeFile(test.info().outputPath('handed-over-README.md'), readme);
-  expect(readme).toContain('# 引き継ぎ: サンプル: 架空の学習相談(プロダクト内 AI)');
+  expect(readme).toContain('# 引き継ぎ: 学習相談(架空・AI と話せる)');
   expect(readme).toMatch(/\| モック \| データ \| .*app\/courses\.js/);
   expect(readme).toContain('- 保存した版のどれとも違う作業中から書き出した。どの版を本番の基にするか決める。');
   expect(readme).toMatch(/\| 実機 \| プロダクト内 AI\(実モデル\) \| Claude Code で 1 回応答した。/);
@@ -239,7 +238,8 @@ async function runFlow(page, home, other, otherHome) {
   const elsewhere = await launchStudio(otherHome);
   try {
     await page.goto(elsewhere.url);
-    await page.getByRole('button', { name: /handed-over-study/ }).click();
+    // 名前は目録の title から作るので、サンプルと同じ名前になる。ID で選ぶ
+    await page.locator('[data-project-id="handed-over-study"]').click();
     const ui = parts(page);
     await expect(ui.app.getByRole('heading', { name: 'そよかぜ学習相談' })).toBeVisible();
     await ui.say('英会話を始めたいです');

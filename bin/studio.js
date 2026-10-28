@@ -92,17 +92,18 @@ console.log(`  ${studio.url}`);
 console.log(`データの置き場: ${config.home}`);
 const { connection } = studio;
 if (connection.kind === 'fake') {
-  console.log('作る AI: 偽接続(決まった応答だけ。Claude Code とモデルは呼びません)');
+  console.log('作る AI: 偽接続(STUDIO_AGENT=fake。決まった応答だけ。Claude Code とモデルは呼びません)');
 } else if (connection.problem) {
   console.log(`作る AI: Claude Code を使えません。${connection.problem}`);
+  if (connection.mode === 'auto') console.log('  試す、保存、本番開発への引き継ぎは使えます。');
 } else {
   console.log(`作る AI: Claude Code ${connection.version}(${connection.command})`);
   console.log(`  ${connection.billing.text}`);
 }
 if (config.allowClaudeCode) {
-  console.log('プロダクト内 AI に Claude Code(実モデル)を選べます。切り替える前に、送るものと費用が画面に出ます。');
+  console.log('本物の AI(Claude Code)は、画面で送るものと料金を確かめて同意してから使います。同意は Studio を止めるまで有効です。');
 } else {
-  console.log('プロダクト内 AI はモックだけで動きます(Claude Code を選ぶには STUDIO_ALLOW_CLAUDE_CODE=1)。');
+  console.log('試作品の中の AI は、お試しの AI(モック)だけで動きます(STUDIO_ALLOW_CLAUDE_CODE=0)。');
 }
 console.log('止めるときは、このターミナルで Ctrl+C を押してください。');
 console.log('');

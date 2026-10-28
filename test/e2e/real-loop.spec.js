@@ -12,6 +12,8 @@ const SKIP_REASON = '実モデル(Claude Code)を呼ぶので、STUDIO_REAL=1 �
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'loop-broken', 'app');
 const PROJECT = 'loop-broken';
 const TITLE = '確かめ用: 壊れた学習相談(架空)';
+// 一覧と試す欄の名前。ビルドの前は置き場の名前(TITLE)、後は目録の title から作った名前になるので、共通の言葉で探す
+const NAME = /確かめ用/;
 // 作る AI の起動は 3 回まで、1 回 10 分。関門の時間を足す
 const RUN_TIMEOUT_MS = 35 * 60_000;
 
@@ -27,7 +29,7 @@ test.describe('実モデルの閉じたループ', () => {
     await fs.mkdir(path.join(root, '.studio'), { recursive: true });
     await fs.writeFile(path.join(root, '.studio', 'project.json'), JSON.stringify({ title: TITLE }));
 
-    const studio = await launchStudio(home, { env: { STUDIO_AGENT: 'claude' } });
+    const studio = await launchStudio(home, { env: { STUDIO_AGENT: 'claude' }, real: true });
     const shots = [];
     const shoot = async (name) => {
       const file = testInfo.outputPath(`${name}.png`);
@@ -36,13 +38,15 @@ test.describe('実モデルの閉じたループ', () => {
     };
     try {
       await page.goto(studio.url);
-      await page.getByRole('button', { name: new RegExp(TITLE.replace(/[()]/g, '\\$&')) }).click();
+      await page.getByRole('button', { name: NAME }).click();
       const app = page.frameLocator('iframe[title="試作品"]');
       // 試す欄の幅は狭いので、依頼の前の見本は試す画面でも落ちている(見出しは出ない)
-      await expect(page.getByRole('region', { name: TITLE })).toBeVisible();
+      await expect(page.getByRole('region', { name: NAME })).toBeVisible();
 
       await page.getByLabel('依頼').fill(REQUEST);
       await page.getByRole('button', { name: '送る' }).click();
+      // 初めての送信は、本物の AI を使う前の同意を求める(src/server/real-ai.js)
+      await page.getByRole('group', { name: '本物の AI を使う前に' }).getByRole('button', { name: '同意して送る' }).click();
       const run = page.getByRole('list', { name: '作る会話' }).locator('> li.run').last();
       // 1 回目の関門の失敗(G5 か G6)が、作る会話に出る
       await expect(run.locator('[data-kind="launch-failed"], [data-kind="scenarios-failed"]').first()).toBeVisible({ timeout: RUN_TIMEOUT_MS });

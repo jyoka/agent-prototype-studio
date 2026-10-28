@@ -712,7 +712,8 @@ test('実モデルの呼び出しの 3 つの上限(会話の有料のターン 
   const projectCalls = new ProjectCallWindow({ now: () => now });
   const connection = paidConnection();
   const sessions = new AiSessions({ definitionOf: () => travel(), connections: [createMockConnection(), connection], projectCalls });
-  sessions.select('p', 'paid', { confirmed: true });
+  sessions.consent.agree();
+  sessions.select('p', 'paid');
 
   // 1 ターン: 呼び出しの回数と待ち時間が記録の 1 件に残る
   await sessions.send('p', '湖に行きたい');
@@ -740,8 +741,7 @@ test('実モデルの呼び出しの 3 つの上限(会話の有料のターン 
   sessions.reset('p');
 
   // プロジェクトごとに 1 時間 120 回。観察の会話も同じプロジェクトに数える。
-  // 実モデルでの観察は同意の画面(P24)の後なので、ここでは観察に有料の接続を使えるようにして数え方だけを確かめる
-  sessions.observationConnection = (kind) => sessions.connections.get(kind);
+  // 実モデルでの観察は、切り替えと同じ同意の口(useReal)を通る。同意は上で済んでいる
   while (projectCalls.count('p') < CALL_LIMITS.perProject - 4) projectCalls.take('p');
   const observation = sessions.openObservation('p', { connection: 'paid' });
   await sessions.send('p', '湖の町', { conversation: observation });
@@ -768,13 +768,13 @@ test('実モデルの呼び出しの 3 つの上限(会話の有料のターン 
   assert.equal(limited.input.notSent, true);
   assert.equal(turnLimited.input.notSent, undefined);
   // ほかのプロジェクトは別に数える。モックは数えない
-  sessions.select('q', 'paid', { confirmed: true });
+  sessions.select('q', 'paid');
   await sessions.send('q', '湖');
   sessions.select('p', 'mock');
   await sessions.send('p', '湖');
   // 1 時間たてば、また呼べる
   now += CALL_LIMITS.windowMs;
-  sessions.select('p', 'paid', { confirmed: true });
+  sessions.select('p', 'paid');
   assert.equal((await sessions.send('p', '山')).messages.at(-1).text, '有料の返事');
 });
 

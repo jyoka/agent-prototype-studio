@@ -16,10 +16,12 @@
 | 作る欄に「送れませんでした: … 作業中です」 | 前の依頼が終わるか、「中断」を押すまで待つ。1 つの試作品で動く依頼は 1 つだけ |
 | 作る欄に「時間の上限(10 分)を超えたので止めました」 | 依頼を小さく分けて送る |
 | 作る欄に「Claude Code にログインしていないか…」 | ターミナルで `claude` を起動し、`/login` でログインしてから送り直す。Studio はログインの情報を扱わない |
-| 作る欄の上の枠に「claude が見つかりません」「古すぎます」 | Claude Code を入れる、または `claude update` で更新する。別の場所にあるときは `STUDIO_CLAUDE_BIN` |
+| 作る欄の上の枠に「claude が見つかりません」「古すぎます」 | Claude Code を入れる、または `claude update` で更新して、Studio を起動し直す。別の場所にあるときは `STUDIO_CLAUDE_BIN`。Claude Code を使わずに試すときは `STUDIO_AGENT=fake` |
+| 作る欄の上の枠に「Claude Code にログインしていません」 | ターミナルで `claude` を起動し、`/login` でログインしてから、Studio を起動し直す。Studio はログインの情報を扱わない |
 | 試作品に「この試作品はプロダクト内 AI を使っていません」 | `app/ai.json` を置いて「作り直す」を押す([configuration.md の「プロダクト内 AI の設定」](configuration.md#プロダクト内-ai-の設定appaijson)) |
 | 試作品に「会話が長くなりすぎました」 | 「リセット」を押す(1 つの会話は 200 件まで) |
-| 「接続を選ぶ」で Claude Code を選べず「まだ使えない設定です」 | 社内の利用条件を確かめてから、`STUDIO_ALLOW_CLAUDE_CODE=1 npm start` で起動し直す |
+| 「接続を選ぶ」で Claude Code を選べず「本物の AI は、使わない設定で起動されています」 | `STUDIO_ALLOW_CLAUDE_CODE=0` で起動されている。会社として止めているときは、そのままモックで試す。止める理由がなければ、この変数を書かずに起動し直す |
+| 「本物の AI を使うことへの同意が要ります」 | 作る欄なら「同意して送る」、「接続を選ぶ」なら確認に印を付けて切り替える。同意は Studio を止めるまで有効で、起動し直すと消える([claude-code.md](claude-code.md#本物の-ai-を使う前の同意)) |
 | 「Claude Code が見つかりません」 | Claude Code を入れる。入れた場所が PATH にないときは、`STUDIO_CLAUDE_BIN` に実行ファイルの場所を指定する |
 | 「Claude Code にログインできていません」 | ターミナルで `claude` を起動してログインしてから、もう一度送る |
 | 「Claude Code の利用の上限に当たりました」 | 時間をおいて送り直すか、「接続を選ぶ」でモックに戻す。会話は変わらない |

@@ -1,14 +1,56 @@
 # 実モデル(Claude Code)を使う
 
-Studio の 2 つの AI は、既定では実モデルを呼びません。作る AI は偽接続、プロダクト内 AI はモックで動きます。このページは、どちらかを Claude Code(実際の AI モデル)に切り替えるときの手順と決まりです。
+作る AI の既定は自動です。Claude Code が見つかり、版が足り、ログインしていれば、Claude Code(実際の AI モデル)を使います。プロダクト内 AI の既定はモックで、実モデルを呼びません。このページは、2 つの AI が Claude Code を使うときの手順と決まりです。
 
-## 実モデル(Claude Code)と話す(許可したときだけ)
+## 本物の AI を使う前の同意
+
+本物の AI(Claude Code)は、使う前に Studio の画面で同意します。同意は 1 つで、Studio を止めるまで次の全部に効きます。
+
+- 直す AI(作る AI)の送信。作る AI が Claude Code のとき
+- プロダクト内 AI(試作品の中の AI)を Claude Code に切り替えること
+- 人の「確かめる」で、プロダクト内 AI に Claude Code を使うこと(画面は後のカードで足す)
+
+決まり:
+
+- 同意の前は、上の 3 つを理由のコード `consent-required` つきで断る。偽接続(`STUDIO_AGENT=fake`)とモックは、同意なしで使える。
+- 同意は Studio のメモリーにだけ持つ。Studio を起動し直すと消えるので、もう一度同意する。ディスクには覚えない。
+- プロダクト内 AI に Claude Code を選べないようにするときは、`STUDIO_ALLOW_CLAUDE_CODE=0` で起動する(会社として止めたいとき)。既定は選べる。作る AI は `STUDIO_AGENT` で選ぶ(`fake` なら Claude Code を呼ばない)。
+- 試作には架空のデータだけを使う。実モデルは利用者の個人アカウントで試してよい(2026-10-28 の決定。[PRD の「PRD の後に決めたこと」](prd.md))。
+
+同意のカードの画面は、まだありません(後のカードで作る)。それまでは、次の 2 か所で同意します。
+
+| 場所 | 同意のしかた |
+|---|---|
+| 作る欄 | 初めて送ると、送るもの、送り先、料金が出る。「同意して送る」で同意し、欄に残った依頼を送る。「やめる」なら送らない |
+| 試す欄の「接続を選ぶ」 | 「Claude Code」を選び、確認に印を付けて「Claude Code に切り替える」を押す |
+
+料金の文は、分かることだけを出します。環境変数の値と名前は出しません。
+
+| 場合 | 料金の文 |
+|---|---|
+| `CLAUDE_CODE_USE_BEDROCK`、`CLAUDE_CODE_USE_VERTEX`、`CLAUDE_CODE_USE_FOUNDRY`、`ANTHROPIC_BASE_URL`、`ANTHROPIC_AUTH_TOKEN` のどれかがある | 送り先と料金は、あなたの PC の設定に従います。 |
+| `ANTHROPIC_API_KEY` がある | API キーの設定があるので、使った分だけ料金がかかります。 |
+| `claude auth status` で方式が分かる | 方式の 1 文。例: `claude.ai` なら「Claude のアカウントでログインしているので、そのプランの利用枠を使います。」 |
+| どれでもない | 定額プランなら利用枠を使い、従量課金なら使った分だけかかる。どちらかは分からない、と出す |
+
+どの場合も、上限の文を添えます。数は設定の値から作ります。
+
+- 直すとき: 直す AI の 1 回の起動で 1 ドルまで(`STUDIO_MAX_BUDGET_USD`)。1 つの依頼で多くて 3 回起動する。API キーなどの設定で動くときに付ける
+- 話すとき: 1 回の呼び出しで 0.1 ドルまで、1 ターンで 4 回まで、試作品ごとに 1 時間 120 回まで
+
+API(Studio の画面だけが使う。ほかの API と同じく、トークンと Origin を確かめる):
+
+| API | すること |
+|---|---|
+| `GET /api/real-ai` | 同意の状態、カードの中身(送るもの、送り先、料金の文と上限)、直す AI の「詳しく」(足す指示の全文、渡す道具)を返す。`?project=<id>` を付けると、その試作品のプロダクト内 AI の「詳しく」(送る指示の全文、項目と選択肢、会話の件数、上限、回数の制限、道具を渡さないこと)も返す |
+| `POST /api/real-ai/consent` | 同意する。2 回目からは、最初に同意した時刻のまま |
+
+## 実モデル(Claude Code)と話す(同意したときだけ)
 
 同じ試作品のまま、プロダクト内 AI の接続をモックから Claude Code に切り替えられる。会話と条件はそのまま引き継ぐ。
 
 先に確かめること:
 
-- 社内の利用条件とデータの扱い。会社として Claude の Commercial Terms に同意するかが決まるまでは、切り替えない。
 - 架空のデータだけで試すこと。発言、会話の全体、`app/ai.json` の指示は Anthropic に送られる。
 - 費用。環境変数 `ANTHROPIC_API_KEY` があると、API の従量課金になる。なければ、Claude Code にログインしている本人のアカウントで動く。Pro や Max のサブスクリプションならその枠を、Console のアカウントなら API の従量課金を使う。Studio はログインの情報を読まないので、どちらかは画面に出せない。`CLAUDE_CODE_USE_BEDROCK`、`CLAUDE_CODE_USE_VERTEX`、`CLAUDE_CODE_USE_FOUNDRY`、`ANTHROPIC_BASE_URL`、`ANTHROPIC_AUTH_TOKEN` があるときは、送り先と課金がその設定に従うことを出す。
 
@@ -19,13 +61,11 @@ Studio の 2 つの AI は、既定では実モデルを呼びません。作る
 
 手順:
 
-1. Studio を、実モデルを許す印を付けて起動する。
-   - macOS のターミナル: `STUDIO_ALLOW_CLAUDE_CODE=1 npm start`
-   - Windows の PowerShell: `$env:STUDIO_ALLOW_CLAUDE_CODE=1; npm start`
-2. 「サンプル: 架空の求人相談(プロダクト内 AI)」を選ぶ。
+1. `npm start` で起動する。
+2. 「求人相談(架空・AI と話せる)」を選ぶ。初めて開いたときは選ばれている。
 3. 右の「詳細」の「接続を選ぶ」で「Claude Code」を選ぶ。送り先、送るもの、送らないもの、費用が出る。「送る指示の全文を見る」で、AI に渡す指示を全部読める。
-4. 確かめたら、チェックを入れて「Claude Code に切り替える」を押す。「試す」の上が「AI: Claude Code」になる。
-5. 試作品の欄に、自由な文で希望を書いて送る。例: `駅の近くで、本に囲まれて働けたらうれしいです`。各応答には「モック」か「Claude Code」の印が付く。右の「詳細」に、最後の応答にかかった秒数と、費用の目安(CLI が返したものの、そのターンの合計)が出る。
+4. 確かめたら、チェックを入れて「Claude Code に切り替える」を押す。これが本物の AI を使う同意になる。「試す」の上が「AI: Claude Code」になる。
+5. 試作品の欄に、自由な文で希望を書いて送る。例: `駅の近くで、本に囲まれて働けたらうれしいです`。各応答には「お試しの AI」(モック)か「Claude Code」の印が付く。右の「詳細」に、最後の応答にかかった秒数と、費用の目安(CLI が返したものの、そのターンの合計)が出る。
 6. 応答を待つ間は、右の「詳細」に「応答を止める」が出る。押すと Claude Code を止め、その発言は会話に残らない。書いた文は欄に残る。
 7. モックに戻すときは、「接続を選ぶ」で「モック」を選ぶ。
 
@@ -65,13 +105,37 @@ Claude Code の起動のしかた(どれも Claude Code の CLI のフラグで�
 
 2 種の呼び出しで違うのは `--json-schema` と `--system-prompt` だけ。発言、会話、決定の中身は argv に入れず、標準入力で渡す。作業フォルダーは、空の一時フォルダーにする。
 
-## 作る AI を Claude Code に切り替える
+## 作る AI と Claude Code
 
-実モデルを呼ぶので、次の 2 つが決まるまでは切り替えないでください。会社として Anthropic の Commercial Terms に同意するか。社内の利用条件とデータの扱い。試作には架空のデータだけを使ってください。
+作る AI は、`STUDIO_AGENT` で選ぶ。既定は `auto`(自動)。
+
+| `STUDIO_AGENT` | 作る AI |
+|---|---|
+| 書かない、`auto` | 起動のときに Claude Code を確かめる。使えれば Claude Code。使えなければ作る欄を使えない状態にし、理由を出す。偽接続には落とさない |
+| `claude` | Claude Code に固定する。確かめ方と、使えないときの出方は自動と同じ |
+| `fake` | 偽接続。決まった依頼だけに反応する。Claude Code もモデルも呼ばない |
+
+起動のときの確かめ(モデルは呼ばない):
+
+| 結果 | 確かめ方 | 作る欄 |
+|---|---|---|
+| 使える | 下の 3 つが全部通る | 送れる |
+| ない | PATH に `claude` がない。`STUDIO_CLAUDE_BIN` がない場所を指す | 「claude が見つかりません」と手順。送れない |
+| 古い | `claude --version` が 2.1.248 より前 | 「古すぎます」と `claude update`。送れない |
+| ログインしていない | `claude auth status --json` の `loggedIn` が `false` | 「ログインしていません」と `/login` の手順。送れない |
+
+- ログインしているかは、Claude Code 自身に聞く。Studio はログインの情報のファイルを読まない。出力から使うのは `loggedIn` と `authMethod`(方式)だけで、メールアドレスや組織など他の値は捨てる。画面にも記録にも出さない。
+- `auth status` の出力の形が分からない版では、使えるとする。ログインしていなければ、最初の送信の失敗で見分け、ログインの手順を出す。
+- 結果は `/api/projects` の `agent` の `mode`(`auto`、`claude`、`fake`)、`status`(`ready`、`missing`、`old`、`not-logged-in`、`unusable`)、`auth`(`loggedIn` と `method`)に出る。`unusable` は、Windows の npm 版の `claude.cmd` と、版を読めないとき。
+- 使えない状態から直したら(入れた、更新した、ログインした)、Studio を起動し直す。
+
+実モデルを呼ぶので、作る欄で初めて送るときに、本物の AI を使う同意を求めます([上の「本物の AI を使う前の同意」](#本物の-ai-を使う前の同意))。試作には架空のデータだけを使ってください。実モデルを呼ばずに試すときは `STUDIO_AGENT=fake` で起動します。
+
+Claude Code で作るときの手順:
 
 1. Claude Code 2.1.248 以上を入れ、ターミナルで `claude` を起動して、本人のアカウントでログインしておく。
-2. `STUDIO_AGENT=claude npm start`(Windows の PowerShell は `$env:STUDIO_AGENT='claude'; npm start`)で起動する。
-3. 「作る」欄の上の枠で、版と「認証と課金」を確かめてから送る。
+2. `npm start` で起動する。Claude Code に固定するときは `STUDIO_AGENT=claude npm start`(Windows の PowerShell は `$env:STUDIO_AGENT='claude'; npm start`)。
+3. 「作る」欄の上の枠で、版と「認証と課金」を確かめてから送る。初めて送るときは、同意を求める。「同意して送る」を押すと送る。
    - 環境に `ANTHROPIC_API_KEY` があると、サブスクの枠ではなく API の料金がかかる。枠にそう出る。そのときは作る AI の 1 回の起動に費用の上限(`STUDIO_MAX_BUDGET_USD`)を付ける。
    - 見込みは環境変数の有無だけから出す。Console(API)のアカウントで `claude` にログインしているときも API の料金がかかるが、送る前には見分けられない。
    - 実際にどれで動いたかは、会話の各依頼の終わりに「認証の報告」として出る(Claude Code が報告する `apiKeySource`)。
@@ -91,7 +155,7 @@ Windows の npm 版(`claude.cmd`)は使えない。ネイティブ版の `claude
 
 ### 実機で確かめる
 
-`--restricted` などの守りが実機で効くかを、架空のデータだけで確かめるスクリプトがある。実モデルを呼ぶので、上の 2 つが決まってから実行する。Claude Code を 5 回起動し、1 回ごとに費用の上限(`--max-budget-usd 0.5`)を付ける。
+`--restricted` などの守りが実機で効くかを、架空のデータだけで確かめるスクリプトがある。実モデルを呼ぶので、料金を確かめてから実行する。Claude Code を 5 回起動し、1 回ごとに費用の上限(`--max-budget-usd 0.5`)を付ける。
 
 ```sh
 npm run check:claude            # 何を確かめるかを出すだけ

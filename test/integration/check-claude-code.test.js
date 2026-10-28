@@ -57,7 +57,7 @@ async function shim(t, mode = null) {
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const bin = path.join(dir, 'claude');
   const marker = path.join(dir, 'called');
-  // 起動ごとの引数と作業ディレクトリを 1 行ずつ残す(--version は除く)
+  // 起動ごとの引数と作業ディレクトリを 1 行ずつ残す(--version と auth status は除く。どちらもモデルを呼ばない)
   const log = path.join(dir, 'launches.ndjson');
   const recorder = `require('fs').appendFileSync(process.argv[1], JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }) + '\\n')`;
   let cli = FAKE_CLI;
@@ -67,7 +67,7 @@ async function shim(t, mode = null) {
   }
   await fs.writeFile(
     bin,
-    `#!/bin/sh\ntouch "${marker}"\nif [ "$1" = "--version" ]; then echo "2.1.311 (Claude Code)"; exit 0; fi\n"${process.execPath}" -e "${recorder}" "${log}" "$@"\nexec "${process.execPath}" "${cli}" "$@"\n`,
+    `#!/bin/sh\ntouch "${marker}"\nif [ "$1" = "--version" ]; then echo "2.1.311 (Claude Code)"; exit 0; fi\nif [ "$1" = "auth" ]; then echo '{"loggedIn": true, "authMethod": "claude.ai"}'; exit 0; fi\n"${process.execPath}" -e "${recorder}" "${log}" "$@"\nexec "${process.execPath}" "${cli}" "$@"\n`,
     { mode: 0o755 },
   );
   return { bin, marker, log, dir };

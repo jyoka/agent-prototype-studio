@@ -10,12 +10,18 @@ test('既定はホームの PrototypeStudio と 4317、4318 番', () => {
   assert.equal(config.studioPort, 4317);
   assert.equal(config.previewPort, 4318);
   assert.equal(config.openBrowser, true);
-  assert.equal(config.allowClaudeCode, false);
+  // 本物の AI は既定で選べる(使う前に画面で同意する)
+  assert.equal(config.allowClaudeCode, true);
 });
 
-test('実モデル(Claude Code)は STUDIO_ALLOW_CLAUDE_CODE=1 のときだけ許す', () => {
-  assert.equal(loadConfig({ STUDIO_ALLOW_CLAUDE_CODE: '1' }).allowClaudeCode, true);
-  for (const value of ['', '0', 'true', 'yes']) assert.equal(loadConfig({ STUDIO_ALLOW_CLAUDE_CODE: value }).allowClaudeCode, false, value);
+test('本物の AI(Claude Code)は STUDIO_ALLOW_CLAUDE_CODE=0 のときだけ選べない。ほかの値は誤りにする', () => {
+  assert.equal(loadConfig({ STUDIO_ALLOW_CLAUDE_CODE: '0' }).allowClaudeCode, false);
+  // 1 は前の決まりの名残り。書いても既定と同じ
+  for (const value of [undefined, '', '1']) assert.equal(loadConfig({ STUDIO_ALLOW_CLAUDE_CODE: value }).allowClaudeCode, true, String(value));
+  // 止めるつもりで書いた値を、黙って「選べる」にしない
+  for (const value of ['false', 'no', 'true', 'yes']) {
+    assert.throws(() => loadConfig({ STUDIO_ALLOW_CLAUDE_CODE: value }), (error) => error instanceof ConfigError && /STUDIO_ALLOW_CLAUDE_CODE は 0/.test(error.message), value);
+  }
 });
 
 test('環境変数で置き場とポートを変えられる', () => {
@@ -32,9 +38,12 @@ test('ポートの値が正しくなければ、わかる文で止める', () =>
   assert.throws(() => loadConfig({ STUDIO_PORT: '5000', STUDIO_PREVIEW_PORT: '5000' }), /別の番号/);
 });
 
-test('作る AI の既定は偽接続。Claude Code は STUDIO_AGENT=claude で明示したときだけ', () => {
+test('作る AI の既定は自動。偽接続は STUDIO_AGENT=fake、Claude Code の固定は STUDIO_AGENT=claude で明示したときだけ', () => {
   const config = loadConfig({});
-  assert.equal(config.agent, 'fake');
+  assert.equal(config.agent, 'auto');
+  assert.equal(loadConfig({ STUDIO_AGENT: '' }).agent, 'auto');
+  assert.equal(loadConfig({ STUDIO_AGENT: 'fake' }).agent, 'fake');
+  assert.equal(loadConfig({ STUDIO_AGENT: 'auto' }).agent, 'auto');
   assert.equal(config.claudeBin, null);
   assert.equal(config.maxBudgetUsd, 1);
   const claude = loadConfig({ STUDIO_AGENT: 'claude', STUDIO_CLAUDE_BIN: '/opt/claude', STUDIO_MAX_BUDGET_USD: '0.5' });

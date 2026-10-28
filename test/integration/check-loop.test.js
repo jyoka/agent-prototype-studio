@@ -28,14 +28,14 @@ function runScript(args, env, timeoutMs = 30_000) {
   });
 }
 
-// 呼ばれたら印を残す偽の claude。--version だけに答える
+// 呼ばれたら印を残す偽の claude。--version と auth status(ログインの確かめ。モデルは呼ばない)だけに答える
 async function shim(t) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-check-loop-'));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const bin = path.join(dir, 'claude');
   const marker = path.join(dir, 'called');
   const launched = path.join(dir, 'launched');
-  await fs.writeFile(bin, `#!/bin/sh\ntouch "${marker}"\nif [ "$1" = "--version" ]; then echo "2.1.312 (Claude Code)"; exit 0; fi\ntouch "${launched}"\nexit 1\n`, { mode: 0o755 });
+  await fs.writeFile(bin, `#!/bin/sh\ntouch "${marker}"\nif [ "$1" = "--version" ]; then echo "2.1.312 (Claude Code)"; exit 0; fi\nif [ "$1" = "auth" ]; then echo '{"loggedIn": true, "authMethod": "api_key"}'; exit 0; fi\ntouch "${launched}"\nexit 1\n`, { mode: 0o755 });
   return { dir, bin, marker, launched };
 }
 

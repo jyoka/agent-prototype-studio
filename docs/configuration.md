@@ -10,9 +10,9 @@
 | `STUDIO_PORT` | `4317` | Studio の画面のポート。`0` で空いている番号 |
 | `STUDIO_PREVIEW_PORT` | `4318` | 試作品を配信するポート。`0` で空いている番号 |
 | `STUDIO_NO_OPEN` | なし | `1` でブラウザを自動で開かない |
-| `STUDIO_AGENT` | `fake` | 作る AI。`fake` は偽接続、`claude` は Claude Code |
-| `STUDIO_ALLOW_CLAUDE_CODE` | なし | `1` でプロダクト内 AI に Claude Code(実モデル)を選べるようにする。社内の利用条件を確かめてから付ける |
-| `STUDIO_CLAUDE_BIN` | PATH の `claude` | 起動する Claude Code の場所。作る AI(`STUDIO_AGENT=claude`)とプロダクト内 AI の両方で使う。テストでは偽の CLI を指す |
+| `STUDIO_AGENT` | `auto` | 作る AI。`auto`(自動)は、Claude Code が見つかり、版が足り、ログインしていれば Claude Code を使い、そうでなければ作る欄を使えない状態にして理由を出す。`claude` は Claude Code に固定する(判定は自動と同じ)。`fake` は偽接続で、モデルを呼ばない。テストと開発では `fake` か偽の `claude` を明示する |
+| `STUDIO_ALLOW_CLAUDE_CODE` | なし | `0` でプロダクト内 AI に Claude Code(本物の AI)を選べなくする(会社として止めたいとき)。書かなければ選べる。使う前に画面で同意する([claude-code.md](claude-code.md#本物の-ai-を使う前の同意))。`0` と `1`(前の決まりの名残りで、書かないのと同じ)のほかの値では起動しない |
+| `STUDIO_CLAUDE_BIN` | PATH の `claude` | 起動する Claude Code の場所。作る AI(`STUDIO_AGENT` が `auto` か `claude`)とプロダクト内 AI の両方で使う。ない場所を指すと、作る AI は「ない」になる。テストでは偽の CLI を指す |
 | `STUDIO_MAX_BUDGET_USD` | `1` | 作る AI で、API キーなど、サブスクの枠でないときに、作る AI の 1 回の起動に付ける費用の上限(ドル)。直すラウンドを合わせて、1 つの依頼で 3 回まで起動するので、1 つの依頼では最大でこの 3 倍になる。プロダクト内 AI の上限(1 回の呼び出し 0.1 ドル)は変えない |
 
 指定のしかた(例: Studio の画面のポートを 4327 にする):
@@ -27,7 +27,7 @@
 | 項目 | 中身 | 書かないとき |
 |---|---|---|
 | `formatVersion` | 形の版。`1` か `2`。版 2 で `composition`、`compositions`、`evals` を書ける | 書く(なければ誤り) |
-| `title` | 試作品の名前 | なし |
+| `title` | 試作品の名前。試作品の一覧には、この名前に AI と話せるかを添えて出す(例: `学習相談(架空)` は「学習相談(架空・AI と話せる)」) | 試作品の ID |
 | `entry` | 入口のファイル。`.jsx`、`.tsx`、`.js`、`.ts` のどれか | `main.jsx`、`main.tsx`、`main.js`、`main.ts` の順に探す |
 | `intent` | 意図。`purpose`(目的の文)と `tryThis`(試してほしいことの配列) | なし |
 | `constraints` | 制約の配列(「データはすべて架空」など) | なし |
@@ -48,7 +48,7 @@
 ```json
 {
   "formatVersion": 1,
-  "title": "あおぞら学習相談(架空)",
+  "title": "学習相談(架空)",
   "entry": "main.jsx",
   "intent": { "purpose": "相談者が学びたいことを話すと、合う講座が出る体験を試す", "tryThis": ["学びたいことを話す", "読み取られた項目を直す"] },
   "constraints": ["データはすべて架空"],

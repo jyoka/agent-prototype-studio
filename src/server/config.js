@@ -19,7 +19,8 @@ function parsePort(value, fallback, name) {
   return port;
 }
 
-const AGENTS = ['fake', 'claude'];
+// 作る AI の接続(STUDIO_AGENT)。auto は Claude Code が使えれば Claude Code、使えなければ使えない状態(agent-connection.js)
+export const AGENT_MODES = ['auto', 'claude', 'fake'];
 
 function parseBudget(value) {
   if (value === undefined || value === '') return DEFAULT_MAX_BUDGET_USD;
@@ -28,6 +29,14 @@ function parseBudget(value) {
     throw new ConfigError(`STUDIO_MAX_BUDGET_USD は 0 より大きく 100 以下の数で指定してください(今の値: ${value})`);
   }
   return budget;
+}
+
+// 本物の AI(試作品の中の AI の Claude Code)を選べるか。既定は選べる(使う前に画面で同意する。real-ai.js)。
+// 0 で選べなくする(会社として止めたいとき)。1 は前の決まりの名残りで、書いても既定と同じ
+function parseAllowClaudeCode(value) {
+  if (value === undefined || value === '' || value === '1') return true;
+  if (value === '0') return false;
+  throw new ConfigError(`STUDIO_ALLOW_CLAUDE_CODE は 0(本物の AI を選べなくする)か、書かないでください(今の値: ${value})`);
 }
 
 // データの置き場。ADR-0001 の既定は ~/PrototypeStudio
@@ -42,18 +51,18 @@ export function loadConfig(env = process.env) {
   if (studioPort !== 0 && studioPort === previewPort) {
     throw new ConfigError('STUDIO_PORT と STUDIO_PREVIEW_PORT には別の番号を指定してください');
   }
-  const agent = env.STUDIO_AGENT || 'fake';
-  if (!AGENTS.includes(agent)) {
-    throw new ConfigError(`STUDIO_AGENT は ${AGENTS.join(' か ')} で指定してください(今の値: ${agent})`);
+  const agent = env.STUDIO_AGENT || 'auto';
+  if (!AGENT_MODES.includes(agent)) {
+    throw new ConfigError(`STUDIO_AGENT は ${AGENT_MODES.join('、')} のどれかで指定してください(今の値: ${agent})`);
   }
   return {
     home: studioHome(env),
     studioPort,
     previewPort,
     openBrowser: env.STUDIO_NO_OPEN !== '1',
-    // プロダクト内 AI の実モデル(Claude Code)は、社内の利用条件を確かめた人が明示して許すまで選べない
-    allowClaudeCode: env.STUDIO_ALLOW_CLAUDE_CODE === '1',
-    // 作る AI。既定は偽接続で、Claude Code とモデルは呼ばない
+    // 試作品の中の AI の本物の AI(Claude Code)。STUDIO_ALLOW_CLAUDE_CODE=0 のときだけ選べない
+    allowClaudeCode: parseAllowClaudeCode(env.STUDIO_ALLOW_CLAUDE_CODE),
+    // 作る AI。既定は auto。偽接続は STUDIO_AGENT=fake と書いたときだけ
     agent,
     claudeBin: env.STUDIO_CLAUDE_BIN || null,
     // API キーなど、サブスクの枠でないときに 1 回の依頼に付ける費用の上限

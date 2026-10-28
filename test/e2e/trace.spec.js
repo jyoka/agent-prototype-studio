@@ -1,14 +1,13 @@
 import path from 'node:path';
 import { loadConfig } from '../../src/server/config.js';
 import { startStudio } from '../../src/server/index.js';
-import { ROOT, expect, launchStudio, test, writeProject } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, expect, launchStudio, test, writeProject } from './studio.js';
 
 // 実モデルは呼ばない。Claude Code は偽の CLI(test/fixtures/fake-claude.js)に差し替える
 const FAKE = path.join(ROOT, 'test', 'fixtures', 'fake-claude.js');
 
 function fakeEnv(home) {
   return {
-    STUDIO_ALLOW_CLAUDE_CODE: '1',
     STUDIO_CLAUDE_BIN: FAKE,
     FAKE_CLAUDE_LOG: path.join(home, 'fake-claude.jsonl'),
     ANTHROPIC_API_KEY: undefined,
@@ -22,7 +21,7 @@ function fakeEnv(home) {
 
 async function openJobConsult(page, studio) {
   await page.goto(studio.url);
-  await page.getByRole('button', { name: /サンプル: 架空の求人相談/ }).click();
+  await chooseSample(page, SAMPLES.jobConsult);
   const app = page.frameLocator('iframe[title="試作品"]');
   const message = app.getByLabel('メッセージ');
   const type = async (text) => {
@@ -108,10 +107,16 @@ test('Claude Code(偽)の実行の記録: 渡した指示と本文、受け取�
     const conditions = app.getByRole('region', { name: '希望条件' }).locator('.value');
     const alert = app.getByRole('alert');
 
+    // 同意の前は、本物の AI に切り替えられない(理由のコードつき)。記録にも切り替えは残らない
+    const refused = await studio.post('/api/projects/sample-job-consult/ai/connection', { kind: 'claude-code' });
+    expect(refused.status).toBe(403);
+    expect(JSON.parse(refused.text).error.code).toBe('consent-required');
+    // 切り替える前の確認(送るもの、費用、確かめた印)が、本物の AI を使う同意になる(同意のカードの画面 P25 までのつなぎ)
     await page.getByRole('radio', { name: 'Claude Code' }).check();
     await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: 'Claude Code に切り替える' }).click();
     await expect(entries.first()).toContainText('接続の切り替え: モック → Claude Code(Studio の画面から)');
+    expect((await studio.api('/api/real-ai')).consent.agreed).toBe(true);
     await expect(trace).toContainText('今の接続: Claude Code(実際の AI モデル)');
     await expect(trace).toContainText('AI が使えるツール: Claude Code にはツールを渡していません(--tools "")');
 
@@ -236,7 +241,7 @@ test('試作品のコードが決まりに合わない要求を送ったら、�
 
 test('試す画面で話している途中に観察を回しても、利用者の会話は残る。観察の会話は記録に「観察から」の印で出る', async ({ page, home }) => {
   // 観察はまだ画面から回せない(CLI もない)ので、同じプロセスで起動した Studio から回す
-  const config = loadConfig({ STUDIO_HOME: home, STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0', STUDIO_NO_OPEN: '1' });
+  const config = loadConfig({ STUDIO_HOME: home, STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0', STUDIO_NO_OPEN: '1', STUDIO_AGENT: 'fake' });
   const studio = await startStudio(config, { env: {} });
   try {
     const { app, say, entries } = await openJobConsult(page, studio);
@@ -269,7 +274,7 @@ test('試す画面で話している途中に観察を回しても、利用者�
 
     // 開き直しても、利用者の会話はサーバーに残っている
     await page.reload();
-    await page.getByRole('button', { name: /サンプル: 架空の求人相談/ }).click();
+    await chooseSample(page, SAMPLES.jobConsult);
     await expect(page.frameLocator('iframe[title="試作品"]').getByRole('region', { name: '会話' })).toContainText('しおかぜ町でお願いします');
   } finally {
     await studio.close();

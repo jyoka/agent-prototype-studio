@@ -24,7 +24,7 @@ function request(port, { method = 'GET', pathname = '/', headers = {}, body } = 
 
 async function withStudio(t) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-server-'));
-  const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false });
+  const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false, agent: 'fake' });
   t.after(async () => {
     await studio.close();
     await fs.rm(home, { recursive: true, force: true });
@@ -145,7 +145,7 @@ test('ポートが使われていれば、どのポートかわかるエラー�
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-server-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const port = blocker.address().port;
-  await assert.rejects(startStudio({ home, studioPort: port, previewPort: 0, openBrowser: false }), {
+  await assert.rejects(startStudio({ home, studioPort: port, previewPort: 0, openBrowser: false, agent: 'fake' }), {
     name: 'Error',
     message: `ポート ${port} は使われています`,
     envName: 'STUDIO_PORT',
@@ -166,7 +166,7 @@ test('::1 の同じポートを他のプロセスが使っていれば、起動�
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-server-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const port = squatter.address().port;
-  await assert.rejects(startStudio({ home, studioPort: 0, previewPort: port, openBrowser: false }), {
+  await assert.rejects(startStudio({ home, studioPort: 0, previewPort: port, openBrowser: false, agent: 'fake' }), {
     envName: 'STUDIO_PREVIEW_PORT',
   });
 });
@@ -186,10 +186,12 @@ test('壊れたプロジェクトがあっても、他の試作品は開ける',
     await fs.rm(home, { recursive: true, force: true });
   });
 
-  const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false });
+  const studio = await startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false, agent: 'fake' });
   t.after(() => studio.close());
   const projects = await studio.store.list();
-  assert.deepEqual(projects.map((p) => p.id), ['locked', 'sample-job-consult', 'sample-library', 'sample-study-consult']);
+  assert.deepEqual(projects.map((p) => p.id), ['sample-job-consult', 'sample-study-consult', 'sample-library', 'locked']);
+  // 一覧の名前は、表示中の版の目録の title と AI があるかから作る。ビルドできないものは置き場の名前のまま
+  assert.deepEqual(projects.map((p) => p.title), ['求人相談(架空・AI と話せる)', '学習相談(架空・AI と話せる)', '図書室(架空・AI なし)', 'locked']);
   const locked_ = projects.find((p) => p.id === 'locked');
   assert.equal(locked_.lastBuild.ok, false);
   assert.match(locked_.lastBuild.errors[0].text, /ビルドの途中で問題が起きました/);
@@ -201,7 +203,7 @@ test('データの置き場がふつうのファイルのときは、書き込�
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const home = path.join(dir, 'file');
   await fs.writeFile(home, '');
-  await assert.rejects(startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false }), HomeNotWritableError);
+  await assert.rejects(startStudio({ home, studioPort: 0, previewPort: 0, openBrowser: false, agent: 'fake' }), HomeNotWritableError);
 });
 
 test('プロダクト内 AI の API: 会話、修正、リセットと、その守り', async (t) => {
@@ -307,7 +309,7 @@ test('版の API: 保存、一覧、復元と、その守り', async (t) => {
   studio.store.releaseVersions('sample-job-consult');
 });
 
-test('プロダクト内 AI の接続の API: 既定はモック、実モデルは許されるまで選べず、Studio 画面以外からは切り替えられない', async (t) => {
+test('プロダクト内 AI の接続の API: 既定はモック、実モデルは止める設定では選べず、Studio 画面以外からは切り替えられない', async (t) => {
   const { token, sp, host } = await withStudio(t);
   const base = '/api/projects/sample-job-consult/ai';
   const headers = { host, 'x-studio-token': token, origin: `http://${host}`, 'content-type': 'application/json' };
@@ -325,15 +327,16 @@ test('プロダクト内 AI の接続の API: 既定はモック、実モデル�
   assert.equal(choices.status, 200);
   assert.equal(choices.body.selected, 'mock');
   const claude = choices.body.options.find((o) => o.kind === 'claude-code');
+  // config に allowClaudeCode がない(STUDIO_ALLOW_CLAUDE_CODE=0 と同じ扱い)ので選べない。同意の確かめは consent.test.js
   assert.equal(claude.available, false);
-  assert.match(claude.reason, /STUDIO_ALLOW_CLAUDE_CODE=1/);
+  assert.equal(claude.code, 'disabled');
   assert.ok(['subscription', 'api-key'].includes(claude.billing.kind));
   assert.match(claude.sends.systemPrompt, /しおかぜ求人相談/);
 
-  const refused = await call(`${base}/connection`, { kind: 'claude-code', confirmed: true });
+  const refused = await call(`${base}/connection`, { kind: 'claude-code' });
   assert.equal(refused.status, 403);
-  assert.equal(refused.body.error.code, 'unavailable');
-  assert.equal((await call(`${base}/connection`, { kind: 'claude-code', confirmed: true }, { origin: 'http://localhost:1' })).status, 403);
+  assert.equal(refused.body.error.code, 'disabled');
+  assert.equal((await call(`${base}/connection`, { kind: 'claude-code' }, { origin: 'http://localhost:1' })).status, 403);
   assert.equal((await call(`${base}/connection`, { kind: 'mock' })).body.session.connection.kind, 'mock');
   // 待っている応答がなくても、止める要求は会話を変えない
   assert.equal((await call(`${base}/cancel`, {})).body.session.messages.length, 1);

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import { buildApp, removeBuildsExcept } from './build.js';
-import { isValidProjectId, listProjects, projectPaths } from './projects.js';
+import { isValidProjectId, listProjects, projectName, projectPaths } from './projects.js';
 
 export class BusyError extends Error {}
 
@@ -32,7 +32,8 @@ export class ProjectStore {
       const entry = this.entry(project.id);
       return {
         id: project.id,
-        title: project.title,
+        // 表示中の版の目録から作る。まだ表示できる版がないときは、置き場に書いた名前のまま
+        title: entry.manifest ? projectName(entry.manifest.title ?? project.title, Boolean(entry.manifest.ai)) : project.title,
         appDir: project.paths.app,
         building: entry.building,
         running: entry.running,

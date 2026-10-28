@@ -18,9 +18,34 @@
 // 言い方の返事は、ふだんは Studio の守ること(数字を作らない、聞く問いの原文を入れる)に合う。
 // FAKE_CLAUDE_EXTRACTIONS があれば、そのファイル(JSON の { 発言: { updates, intent } })に書いた抽出を返す(モックと同じ抽出を返すため)。
 // FAKE_CLAUDE_LOG があれば、受け取った argv、cwd、stdin、関係する環境変数の「名前」を 1 行ずつ書く(値は書かない)。
+// 作る AI の接続の判定(agent-connection.js)のために、`--version` と `auth status` にも答える。
+// auth status は本物(2.1.312)と同じ形で、架空のメールアドレスと組織を含む(Studio が出さないかの確かめ)。
+// FAKE_CLAUDE_AUTH=logged-out なら、ログインしていない形を終了コード 1 で返す。
 import fs from 'node:fs';
 
 const argv = process.argv.slice(2);
+const FAKE_AUTH_SECRETS = ['fictional-user@example.com', '架空の組織', 'fictional-org-0000'];
+
+if (argv[0] === '--version') {
+  process.stdout.write('2.1.311 (Claude Code)\n');
+  process.exit(0);
+}
+if (argv[0] === 'auth' && argv[1] === 'status') {
+  const loggedOut = process.env.FAKE_CLAUDE_AUTH === 'logged-out';
+  const status = loggedOut
+    ? { loggedIn: false, authMethod: 'none', apiProvider: 'firstParty' }
+    : {
+        loggedIn: true,
+        authMethod: 'claude.ai',
+        apiProvider: 'firstParty',
+        email: FAKE_AUTH_SECRETS[0],
+        orgName: FAKE_AUTH_SECRETS[1],
+        orgId: FAKE_AUTH_SECRETS[2],
+        subscriptionType: 'max',
+      };
+  process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
+  process.exit(loggedOut ? 1 : 0);
+}
 const REQUIRED = ['-p', '--restricted', '--safe-mode', '--strict-mcp-config', '--no-session-persistence'];
 
 function option(name) {

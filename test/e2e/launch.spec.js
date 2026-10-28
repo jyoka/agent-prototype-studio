@@ -1,4 +1,39 @@
-import { expect, launchStudio, test } from './studio.js';
+import path from 'node:path';
+import { ROOT, SAMPLES, chooseSample, expect, launchStudio, test } from './studio.js';
+
+// 「分かるか」の確かめ(ux-redesign.md 9 節)のスクリーンショットの置き場。test-results/ は git が無視する
+const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
+
+// 偽の claude。--version と auth status に答え、auth status には架空のメールアドレスと組織を含む
+const FAKE = path.join(ROOT, 'test', 'fixtures', 'fake-claude.js');
+const FAKE_SECRETS = ['fictional-user@example.com', '架空の組織', 'fictional-org-0000'];
+
+test('U1: 新しい置き場で開くと、AI と話せる求人相談が選ばれ、一覧は利用者の言葉の名前で並ぶ', async ({ page, home }) => {
+  const studio = await launchStudio(home);
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(studio.url);
+
+    // 一覧の順と名前。名前は目録の title と、試作品の中の AI があるかから作る
+    const list = page.getByRole('navigation', { name: '試作品の一覧' }).getByRole('button');
+    const names = [SAMPLES.jobConsult, SAMPLES.studyConsult, SAMPLES.library].map((sample) => sample.name);
+    await expect(list).toHaveText(names.map((name) => new RegExp(`^${name.replace(/[()]/g, '\\$&')}`)));
+
+    // 最初に選ばれているのは求人相談
+    await expect(list.first()).toHaveAttribute('aria-current', 'true');
+    await expect(page.locator('#project-title')).toHaveText(SAMPLES.jobConsult.name);
+    const iframe = page.locator('iframe[title="試作品"]');
+    expect(await iframe.getAttribute('src')).toMatch(/\/p\/sample-job-consult\/[a-f0-9]{32}\/$/);
+    const app = page.frameLocator('iframe[title="試作品"]');
+    await expect(app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
+    await expect(app.getByRole('region', { name: '会話' }).getByRole('listitem').first()).toContainText('しおかぜ求人相談の案内役です');
+
+    // 最初の画面を 1440x900 で撮る(人の 5 秒の確かめと、新しい文脈のエージェントに見せるため)
+    await page.screenshot({ path: path.join(UX_SHOTS, 'P20-first.png') });
+  } finally {
+    await studio.stop();
+  }
+});
 
 test('npm start で起動し、ブラウザでサンプルの試作品を操作できる', async ({ page, home }) => {
   const studio = await launchStudio(home, { useNpm: true });
@@ -10,7 +45,8 @@ test('npm start で起動し、ブラウザでサンプルの試作品を操作�
     await expect(page.locator('#connection')).toHaveText('つながっています');
     // 鍵は URL から消え、履歴に残らない
     expect(new URL(page.url()).hash).toBe('');
-    await expect(page.getByRole('button', { name: /サンプル: 架空の図書室/ })).toHaveAttribute('aria-current', 'true');
+    // 図書室(AI のない試作品)を明示して選ぶ
+    await chooseSample(page, SAMPLES.library);
     await expect(page.locator('#build-status')).toContainText('ビルドに成功しました');
 
     const iframe = page.locator('iframe[title="試作品"]');
@@ -57,7 +93,77 @@ test('npm start で起動し、ブラウザでサンプルの試作品を操作�
     // 再読み込みしても、同じタブなら使い続けられる
     await page.reload();
     await expect(page.locator('#connection')).toHaveText('つながっています');
+    await chooseSample(page, SAMPLES.library);
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
+  } finally {
+    await studio.stop();
+  }
+});
+
+test('STUDIO_AGENT を書かずに起動すると自動で、Claude Code がなければ直す AI は使えないと出す', async ({ page, home }) => {
+  const studio = await launchStudio(home, { env: { STUDIO_AGENT: undefined, STUDIO_CLAUDE_BIN: path.join(home, 'no-such-claude') } });
+  try {
+    // URL の行の後の表示は、別の書き込みで少し遅れて届くことがある(macOS のパイプは非同期)
+    await expect.poll(() => studio.output()).toContain('作る AI: Claude Code を使えません。claude が見つかりません');
+    const { agent } = await studio.api('/api/projects');
+    expect(agent).toMatchObject({ mode: 'auto', kind: 'claude', status: 'missing', ready: false, auth: null });
+
+    await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.library);
+    await expect(page.locator('#agent-status')).toContainText('claude が見つかりません');
+    await expect(page.getByRole('button', { name: '送る' })).toBeDisabled();
+    // 偽接続には落とさない。試験用の依頼の例は出ない
+    await expect(page.locator('#examples')).toBeHidden();
+    // 試す画面は使える
+    await expect(page.frameLocator('iframe[title="試作品"]').getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
+  } finally {
+    await studio.stop();
+  }
+});
+
+test('自動で偽の claude を指すと、ログインしていれば Claude Code を使い、ログインの値は出さない', async ({ page, home }) => {
+  test.skip(process.platform === 'win32', '偽の claude(Node のスクリプト)を直接起動できないため');
+  const studio = await launchStudio(home, { env: { STUDIO_AGENT: undefined, STUDIO_CLAUDE_BIN: FAKE } });
+  try {
+    const data = await studio.api('/api/projects');
+    expect(data.agent).toMatchObject({ mode: 'auto', kind: 'claude', status: 'ready', ready: true, version: '2.1.311' });
+    expect(data.agent.auth).toEqual({ loggedIn: true, method: 'claude.ai' });
+    await page.goto(studio.url);
+    await expect(page.locator('#agent-status')).toContainText('接続: Claude Code 2.1.311');
+    for (const secret of FAKE_SECRETS) {
+      expect(JSON.stringify(data)).not.toContain(secret);
+      expect(studio.output()).not.toContain(secret);
+      await expect(page.locator('body')).not.toContainText(secret);
+    }
+  } finally {
+    await studio.stop();
+  }
+});
+
+test('自動で Claude Code にログインしていなければ、直す AI は使えないと出す', async ({ page, home }) => {
+  test.skip(process.platform === 'win32', '偽の claude(Node のスクリプト)を直接起動できないため');
+  const studio = await launchStudio(home, { env: { STUDIO_AGENT: undefined, STUDIO_CLAUDE_BIN: FAKE, FAKE_CLAUDE_AUTH: 'logged-out' } });
+  try {
+    const { agent } = await studio.api('/api/projects');
+    expect(agent).toMatchObject({ mode: 'auto', status: 'not-logged-in', ready: false, auth: { loggedIn: false, method: 'none' } });
+    await page.goto(studio.url);
+    await expect(page.locator('#agent-status')).toContainText('Claude Code にログインしていません');
+    await expect(page.getByRole('button', { name: '送る' })).toBeDisabled();
+  } finally {
+    await studio.stop();
+  }
+});
+
+test('STUDIO_AGENT を消すか claude にするテストが、偽の claude もない場所も指さなければ、起動しない', async ({ home }) => {
+  await expect(launchStudio(home, { env: { STUDIO_AGENT: undefined } })).rejects.toThrow(/STUDIO_CLAUDE_BIN/);
+  await expect(launchStudio(home, { env: { STUDIO_AGENT: 'claude' } })).rejects.toThrow(/STUDIO_CLAUDE_BIN/);
+});
+
+test('launchStudio の既定は偽接続', async ({ home }) => {
+  const studio = await launchStudio(home);
+  try {
+    const { agent } = await studio.api('/api/projects');
+    expect(agent).toMatchObject({ mode: 'fake', kind: 'fake', status: 'ready' });
   } finally {
     await studio.stop();
   }

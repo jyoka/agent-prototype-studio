@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test as base } from '@playwright/test';
+import { expect, test as base } from '@playwright/test';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const URL_PATTERN = /http:\/\/127\.0\.0\.1:\d+\/#token=[a-f0-9]{64}/;
@@ -81,14 +81,21 @@ const AGENT_ENV = [
 ];
 
 // 利用者と同じ手順(npm start、または node bin/studio.js)で起動し、表示された URL を返す。
-// env で環境変数を足す。値が undefined の名前は消す
-export async function launchStudio(home, { useNpm = false, env: extraEnv = {} } = {}) {
+// env で環境変数を足す。値が undefined の名前は消す。
+// 作る AI は、env で選ばなければ偽接続(STUDIO_AGENT=fake)にする。STUDIO_AGENT を消すか claude にするテストは、
+// STUDIO_CLAUDE_BIN で偽の claude か、ない場所を指す。指さなければ起動しない(手元の本物の Claude Code を呼ばないため)。
+// 本物を呼ぶのは real: true を渡したときだけ(test/e2e/real-loop.spec.js。STUDIO_REAL=1 のときだけ動く)
+export async function launchStudio(home, { useNpm = false, env: extraEnv = {}, real = false } = {}) {
   const command = useNpm ? (process.platform === 'win32' ? 'npm.cmd' : 'npm') : process.execPath;
   const args = useNpm ? ['start'] : ['bin/studio.js'];
   const env = { ...process.env, STUDIO_HOME: home, STUDIO_NO_OPEN: '1', STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0' };
   for (const name of AGENT_ENV) delete env[name];
+  env.STUDIO_AGENT = 'fake';
   Object.assign(env, extraEnv);
   for (const [name, value] of Object.entries(env)) if (value === undefined) delete env[name];
+  if (env.STUDIO_AGENT !== 'fake' && !env.STUDIO_CLAUDE_BIN && !real) {
+    throw new Error(`STUDIO_AGENT=${env.STUDIO_AGENT ?? '(なし)'} で起動するテストは、STUDIO_CLAUDE_BIN で偽の claude か、ない場所を指してください`);
+  }
   const child = spawn(command, args, {
     cwd: ROOT,
     env,
@@ -153,4 +160,21 @@ export const test = base.extend({
   },
 });
 
-export { expect } from '@playwright/test';
+export { expect };
+
+// サンプルの ID と、試作品の一覧の名前(Studio が目録の title と、試作品の中の AI があるかから作る)。
+// 一覧の順も、この順(求人相談、学習相談、図書室)
+export const SAMPLES = {
+  jobConsult: { id: 'sample-job-consult', name: '求人相談(架空・AI と話せる)' },
+  studyConsult: { id: 'sample-study-consult', name: '学習相談(架空・AI と話せる)' },
+  library: { id: 'sample-library', name: '図書室(架空・AI なし)' },
+};
+
+// 一覧からサンプルを選び、試作品の欄がそのサンプルに変わるまで待つ。
+// 初めて開いたときは求人相談が選ばれているので、ほかのサンプルを使うテストは、これで明示して選ぶ
+export async function chooseSample(page, sample) {
+  const button = page.getByRole('navigation', { name: '試作品の一覧' }).getByRole('button', { name: sample.name });
+  await button.click();
+  await expect(button).toHaveAttribute('aria-current', 'true');
+  await expect(page.locator('iframe[title="試作品"]')).toHaveAttribute('src', new RegExp(`/p/${sample.id}/`));
+}

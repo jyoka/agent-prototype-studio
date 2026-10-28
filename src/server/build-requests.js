@@ -8,6 +8,7 @@ import { buildClaudeArgs, DEFAULT_MAX_BUDGET_USD, MAX_TURNS, OBSERVE_TOOLS, writ
 import { describeStep } from '../observer/scenario.js';
 import { buildFixPrompt, describeFailure, ERROR_KIND_TEXT } from './fix-prompt.js';
 import { AI_FILE, describeDefinitionChanges } from './product-ai/definition.js';
+import { RealAiConsent } from './real-ai.js';
 import { readMessage } from './stream-json.js';
 import { describeSimulationChanges, referencedFiles, weakenedAiRules } from './sim/changes.js';
 
@@ -169,9 +170,12 @@ export class BuildRequests {
     timeoutMs = DEFAULT_AGENT_TIMEOUT_MS,
     scenarioLimits = SCENARIO_GATE_LIMITS,
     maxBudgetUsd = DEFAULT_MAX_BUDGET_USD,
+    consent = new RealAiConsent(),
   }) {
     this.store = store;
     this.connection = connection;
+    // 本物の AI を使う前の同意(real-ai.js)。接続が Claude Code のときだけ、送る前に確かめる。偽接続は同意なしで使える
+    this.consent = consent;
     // 決まった節が使う、接続の名前と問題。決まった節は、ここだけを見る
     this.agentLabel = connection.label;
     this.agentProblem = connection.problem;
@@ -243,6 +247,7 @@ export class BuildRequests {
     const paths = await this.store.requireProject(id);
     if (this.closing) throw new AgentUnavailableError('Studio を止めているところです');
     if (this.agentProblem) throw new AgentUnavailableError(this.agentProblem);
+    if (this.connection.kind === 'claude') this.consent.require('fix');
     this.store.claimRun(id);
 
     const run = {
