@@ -814,8 +814,9 @@ flowchart TD
 **P26 作るループの証拠を見せる、表示できないとき**(この文書の 7 と、ux-redesign.md の 7-6)
 - [ ] 作る run の結果(状態、関門の合否、スクリーンショット)を証拠の帯に出す。中身は開く操作で見える: `test/e2e/make-loop.spec.js`
 - [ ] 作業中の `app/` が変わると、前の証拠に古い印が付く(S6): `test/integration/evidence.test.js`、`test/e2e/make-loop.spec.js`
-- [ ] 試作品を表示できないとき(ux-redesign.md の 7-6)も、同じ帯に出す。「直す AI に直してもらう」は依頼の欄に文を入れるだけで、送るのは利用者
+- [ ] 試作品を表示できないとき(ux-redesign.md の 7-6)は、試す欄の上に出す(ワイヤーフレームとカードの Goal のとおり。作る run が表示の準備で止まったときは、その帯の状態の 1 文でも「新しい状態を表示できません」と言う)。「直す AI に直してもらう」は依頼の欄に文を入れるだけで、送るのは利用者
 - [ ] 帯の見える文字に、U3 の言葉がない(U3)
+- 関門の合否は `run.gates` の並びのまま出し、名前と失敗の文は `ITEM_LABELS` の `gate:<name>` と `RUN_STATUS` の `failed:<name>` から引く(agent-simulation.md の 8.2 の (b))。証拠が古いかは `/api/projects/<id>/evidence`(`src/server/evidence.js`)が、run の `appDigest` と今の `app/` の指紋を比べて返す
 - 実機: 画面のスクリーンショットを Report に付ける
 
 **P27 人の「確かめる」**(この文書の 8 の画面の側)

@@ -148,6 +148,7 @@ flowchart TB
 |---|---|---|
 | 起動 | `bin/studio.js`、`src/server/index.js`、`src/server/config.js` | 環境変数を読み、サンプルを写し、途中で止まった復元を戻し、2 つのサーバーを loopback で待ち受ける。起動ごとのトークンを作る |
 | Studio の API と画面 | `src/server/studio-server.js`、`src/server/security.js` | `/api/projects/...` と `/api/real-ai` の API と、`src/ui/` の画面を出す。Host、Origin、トークンを確かめる |
+| 作るループの証拠 | `src/server/evidence.js` | `/api/projects/<id>/evidence` で、終わった run ごとに証拠が古いか(`stale`)を返す。run が確かめた `app/` の指紋(`run.appDigest`)と、今の `app/` の指紋を比べて決める。`/api/projects/<id>/evidence/screenshot?file=` で、結果の帯のスクリーンショットを返す。読むのは `.studio/runs/` と `.studio/observations/` の中の PNG だけで、シンボリックリンクで外を指していても読まない。ほかの API と同じくトークンを要る |
 | 試作品の配信 | `src/server/preview-server.js` | ビルドしたものを別ポートから CSP つきで出す。API はない |
 | 試作品とビルド | `src/server/store.js`、`src/server/projects.js`、`src/server/build.js`、`src/server/inspect.js`、`src/server/manifest.js` | 試作品の一覧と置き場、`app/` と目録の検査、esbuild で 1 つの classic script に束ねる。一覧の名前は、表示中の版の目録の `title` と AI の有無から作る。一覧の順はサンプル(`SAMPLES` の順)が先 |
 | 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1〜G4、GE、G5、G6 を安い順に回す。失敗したら直す依頼(`fix-prompt.js`)を作って作る AI に返し、2 回まで直させる。`run.json` に残す |
@@ -214,7 +215,9 @@ flowchart TB
 
 観察の道具の MCP の設定(`mcp.json`)も、同じ `.studio/runs/<run-id>/` に置きます。
 
-`run.json` には、通った節の列(`nodes`。どの節にもラウンドの番号が付く)、最後のラウンドの関門の結果(`gates`)、ラウンドごとの節の列と関門の結果と直す依頼で返した失敗(`rounds`)、作る AI の起動の回数と時間(`agentLaunches`)、作る AI の道具の呼び出しの回数(`toolCalls`。全体、観察の道具、道具ごと)、変わったファイル、直すラウンドで変わったシナリオ、場面、ガードレール(`scenariosChanged`、`evalsChanged`、`guardsChanged`)、ビルドの結果、report の場所(`reports`)を書きます。依頼の文と直す依頼の文は書きません。G5 の report とスクリーンショットは `.studio/runs/<run-id>/rounds/<ラウンド>/` に、GE の結果はその下の `evals/` に、G6 のものはその下の `scenarios/` に置きます。
+`run.json` には、通った節の列(`nodes`。どの節にもラウンドの番号が付く)、最後のラウンドの関門の結果(`gates`。G5 は画面幅ごとのスクリーンショットの場所 `screenshots`、G6 はシナリオごとの手順と結果 `scenarios` も持つ)、関門が確かめた `app/` の指紋(`appDigest`)、ラウンドごとの節の列と関門の結果と直す依頼で返した失敗(`rounds`)、作る AI の起動の回数と時間(`agentLaunches`)、作る AI の道具の呼び出しの回数(`toolCalls`。全体、観察の道具、道具ごと)、変わったファイル、直すラウンドで変わったシナリオ、場面、ガードレール(`scenariosChanged`、`evalsChanged`、`guardsChanged`)、ビルドの結果、report の場所(`reports`)を書きます。依頼の文と直す依頼の文は書きません。直す依頼の文は、メモリーの run(`fixRequests`)にだけ持ち、画面の結果の帯で見せます。G5 の report とスクリーンショットは `.studio/runs/<run-id>/rounds/<ラウンド>/` に、GE の結果はその下の `evals/` に、G6 のものはその下の `scenarios/` に置きます。
+
+画面は、終わった run ごとに、直す欄に結果の帯を出します(状態の 1 文、スクリーンショット、直した回数。中身は開く操作の中)。帯の関門の並びは `run.gates` のままで、関門の名前と失敗の文は `src/ui/studio.js` の `ITEM_LABELS`(`gate:<name>`)と `RUN_STATUS`(`failed:<name>`)から引きます。新しい関門は、この 2 つの表に行を足すだけで帯に出ます。画面は一覧を読むたび(3 秒ごと)に `/api/projects/<id>/evidence` を読み、`app/` が変わった後の証拠に「この後に変わりました」の印を付けます(次の依頼、版の復元、手で変えたとき)。ビルドが失敗している間は、試す欄の上に「試作品を表示できません」を出します([ux-redesign.md の 7-6](../design/ux-redesign.md#7-6-エラー-試作品を表示できない準備の失敗))。
 
 ### 試す(試作品の中の AI と話す)
 

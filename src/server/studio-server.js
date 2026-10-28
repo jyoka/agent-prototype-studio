@@ -4,6 +4,7 @@ import { STUDIO_ROOT } from './config.js';
 import { isAllowedHost, tokensEqual } from './security.js';
 import { AgentUnavailableError, RequestError } from './build-requests.js';
 import { AiError } from './product-ai/session.js';
+import { EvidenceError, evidenceState, readEvidenceImage } from './evidence.js';
 import { ConsentRequiredError } from './real-ai.js';
 import { BusyError, NotFoundError } from './store.js';
 import { HandoffError } from './handoff.js';
@@ -166,6 +167,10 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
       return sendJson(res, 200, { runs: requests.list(requestsMatch[1]) });
     }
     if (requestsMatch && req.method === 'POST') return handleBuildRequest(req, res, requestsMatch[1]);
+    // 作るループの証拠。evidence は、終わった run ごとに証拠が古いか(今の app/ の指紋と比べる。S6)、
+    // evidence/screenshot は、結果の帯に出すスクリーンショット(.studio/runs/ と .studio/observations/ の中の画像だけ)
+    const evidenceMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/evidence(\/screenshot)?$/.exec(url.pathname);
+    if (evidenceMatch && req.method === 'GET') return handleEvidence(res, evidenceMatch[1], evidenceMatch[2] ? url.searchParams.get('file') : undefined);
     const cancelMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/build-requests\/([a-f0-9]{16})\/cancel$/.exec(url.pathname);
     if (cancelMatch && req.method === 'POST') {
       const run = requests.cancel(cancelMatch[1], cancelMatch[2]);
@@ -204,6 +209,33 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
       return handleAi(req, res, aiMatch[1], aiMatch[2]);
     }
     return sendError(res, 404, 'not-found', 'その API はありません');
+  }
+
+  // file が undefined なら、run ごとの古いかの印。文字列か null なら、その画像
+  async function handleEvidence(res, id, file) {
+    let paths;
+    try {
+      paths = await store.requireProject(id);
+    } catch (error) {
+      if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', error.message);
+      throw error;
+    }
+    if (file === undefined) return sendJson(res, 200, await evidenceState(paths, requests.list(id)));
+    let body;
+    try {
+      body = await readEvidenceImage(paths, file);
+    } catch (error) {
+      if (error instanceof EvidenceError) return sendError(res, error.status, error.code, error.message);
+      throw error;
+    }
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Content-Length': body.length,
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'",
+    });
+    res.end(body);
   }
 
   async function handleRealAi(req, res, url, consenting) {

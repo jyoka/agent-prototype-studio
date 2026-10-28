@@ -162,6 +162,15 @@ export const test = base.extend({
 
 export { expect };
 
+// 開発の言葉(ux-redesign.md 9 節の U3)。利用者の画面の見える文字には出さない(開発者向けの詳細は除く)
+export const U3_WORDS = ['偽接続', 'モック', 'ANTHROPIC_API_KEY', 'Console', 'app/ai.json', 'app/', 'ビルド', 'プロダクト内 AI', '認証の報告', 'STUDIO_', '--'];
+
+// 要素の見える文字(閉じた details の中と hidden の要素は入らない)に、開発の言葉がない
+export async function expectNoDevWords(locator) {
+  const text = await locator.innerText();
+  for (const word of U3_WORDS) expect(text, `「${word}」が見えています`).not.toContain(word);
+}
+
 // サンプルの ID と、試作品の一覧の名前(Studio が目録の title と、試作品の中の AI があるかから作る)。
 // 一覧の順も、この順(求人相談、学習相談、バイト探し、図書室)
 export const SAMPLES = {

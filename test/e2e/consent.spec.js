@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, launchStudio, openAiMenu, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, expect, expectNoDevWords, launchStudio, openAiMenu, test } from './studio.js';
 
 // 本物の AI を使う前の同意のカード(docs/design/ux-redesign.md の 6 節、P25)。
 // 実モデルは呼ばない。claude は偽物で、直す AI としては偽接続(src/agent/fake-claude.js)、
@@ -8,8 +8,6 @@ import { ROOT, SAMPLES, chooseSample, expect, launchStudio, openAiMenu, test } f
 
 // 「分かるか」の確かめ(ux-redesign.md 9 節)のスクリーンショットの置き場。test-results/ は git が無視する
 const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
-// 開発の言葉(U3)。カードの見える文字には出さない(「詳しく」の中は除く)
-const U3_WORDS = ['偽接続', 'モック', 'ANTHROPIC_API_KEY', 'Console', 'app/ai.json', 'app/', 'ビルド', 'プロダクト内 AI', '認証の報告', 'STUDIO_', '--'];
 const CARD = '本物の AI を使う前に';
 const MARK = '本物の AI(あなたの Claude Code)';
 const DECLINED = '言葉で直すには、本物の AI を使うことへの同意が要ります。';
@@ -39,12 +37,6 @@ async function writeFakeClaude(home) {
 // 直す AI も試作品の中の AI も、偽の claude を本物として使う起動(STUDIO_AGENT を書かない既定の起動と同じ)
 async function launchReal(home) {
   return launchStudio(home, { env: { STUDIO_AGENT: undefined, STUDIO_CLAUDE_BIN: await writeFakeClaude(home) } });
-}
-
-// カードの見える文字(閉じた「詳しく」の中は入らない)に、開発の言葉がない
-async function expectNoDevWords(card) {
-  const text = await card.innerText();
-  for (const word of U3_WORDS) expect(text, `「${word}」が見えています`).not.toContain(word);
 }
 
 const runsOf = async (studio) => (await studio.api(`/api/projects/${SAMPLES.jobConsult.id}/build-requests`)).runs;

@@ -85,7 +85,7 @@ npm start                  # 既定のブラウザで Studio が開く
 ## 開発
 
 ```sh
-npm test            # 単体と結合のテスト(数秒)
+npm test            # 単体と結合のテスト(1 分ほど)
 npm run test:e2e    # ブラウザの E2E(Playwright、全体でおよそ 3 分半)
 ```
 
