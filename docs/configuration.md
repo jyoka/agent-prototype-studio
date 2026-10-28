@@ -68,6 +68,59 @@
 | `initialState` | 項目の最初の値。書かない項目は未定 |
 | `mock` | モックの応答の型。`greeting`(最初のあいさつ)、`understood`、`afterCorrection`、`notUnderstood`、`complete`。`{changes}` と `{summary}` が `項目名「値」` の並びに置き換わる |
 
+### 版 2(段、終わる条件、守ること)
+
+`"formatVersion": 2` と書くと、何を聞くか、いつ段を切り替えるか、いつ終えるかを `ai.json` に書ける。決めるのは `ai.json` と Studio のコードで、モデルには決めさせない。版 1 の項目は、そのまま使える。
+
+```json
+{
+  "formatVersion": 2,
+  "name": "旅の相談(架空)",
+  "fields": [
+    { "key": "place", "label": "行き先", "required": true, "options": [{ "value": "湖の町", "keywords": ["湖"] }] },
+    { "key": "nights", "label": "泊数", "type": "number", "unit": "泊", "min": 1, "max": 14, "required": false }
+  ],
+  "flow": {
+    "steps": [
+      { "id": "hear", "ask": ["place", "nights"], "next": [{ "when": { "filled": "required" }, "to": "confirm" }] },
+      { "id": "confirm", "say": "summary", "next": [{ "when": { "intent": "yes" }, "to": "done" }, { "when": { "intent": "no" }, "to": "hear" }] }
+    ],
+    "maxTurns": 15
+  },
+  "end": { "say": "complete" },
+  "rules": { "noNewNumbers": true, "noLeading": true, "mustAsk": true, "maxReplyChars": 300, "forbidden": ["実在の宿の名前"] },
+  "mock": { "intents": { "yes": ["はい", "それで"], "no": ["ちがう"] } }
+}
+```
+
+| 項目 | 中身 | 書かないとき |
+|---|---|---|
+| `formatVersion` | 設定の版。`1` か `2` | 版 1 |
+| `fields[].required` | 終わる条件に入る項目か。`true` か `false` | `true` |
+| `flow.steps[]` | 段。最初の段から始まる。`id` は英字で始まる名前(`done` は使えない) | 段は 1 つ(`hear`)。全部の項目を並びの順に聞き、必須の項目が全部埋まったら終わる |
+| `flow.steps[].ask` | その段で聞く項目の `key` を、聞く順に並べる | 聞かない |
+| `flow.steps[].say` | その段で言うこと。`summary`(条件のまとめ、型は `mock.confirm`)か `complete`(終わりの文、型は `mock.complete`) | 言わない |
+| `flow.steps[].next[]` | 遷移。`when` の条件を満たすと `to` の段へ移る。`to` に `"done"` を書くと終わる。上から順に確かめ、最初に満たしたもので移る | 移らない |
+| `flow.maxTurns` | この回数で会話を終える。30 を超える値は 30 として読む | 30 |
+| `end.say` | 終わったときに言うこと。`summary` か `complete` | `complete` |
+| `rules` | 守ること。`noNewNumbers`(数字を作らない)、`noLeading`(誘導しない)、`mustAsk`(問いの原文を入れる)、`maxReplyChars`(返事の長さの上限、2000 まで)、`forbidden`(禁止の言葉、1 つ 100 文字までで 20 個まで) | 3 つの `true`、`maxReplyChars` は 1000、`forbidden` はなし |
+| `mock.intents` | モックが利用者の発言の種類(`intent`)を読むときの言葉。実モデルは使わない | なし |
+| `mock.confirm` | モックが条件のまとめ(`say` の `summary`)を言うときの型。`{summary}` が置き換わる | `今の条件は{summary}です。これでよいですか?` |
+
+遷移の条件(`when`)に書ける語は 3 つだけ。式や関数は書けない。1 つの `when` に 2 つ以上書くと、どれも満たすときに移る。
+
+| 語 | 満たすとき |
+|---|---|
+| `filled` | `"required"`(必須の項目が全部埋まった)か、項目の `key` の配列(その項目が全部埋まった) |
+| `intent` | 利用者の発言の種類が、書いた種類のとき。種類は `answer`、`yes`、`no`、`clarify`(質問を返した)、`aside`(関係のない話)、`restart`(最初から)。種類を増やせるのは Studio のコードだけ |
+| `turnsAtLeast` | 会話がこのターン数以上になった |
+
+- 版 1 の `ai.json`(`formatVersion` がない)は、上の「書かないとき」の版 2 として読む。全部の項目が必須になるので、全部が埋まったら終わる。今のモックと同じ振る舞いになる。
+- 版 1 のまま `flow`、`end`、`rules`、`fields[].required`、`mock.intents`、`mock.confirm` を書くと、検査の誤りになる。`"formatVersion": 2` を足して直す。
+- 存在しない段への遷移、`fields` にない項目を `ask` や `filled` に書くこと、知らない条件の語、知らない `intent` は、どれも検査の誤りになる。
+- 満たされ方のおかしい条件も誤りになる。必須の項目が 1 つもないのに `"filled": "required"` を使う(最初から満たされる)、`turnsAtLeast` が `flow.maxTurns` より大きい(満たされない)、の 2 つ。
+- 版 2 で会話を動かす作り(harness)は、まだない。今のモックと実モデルは、段と遷移を読まずに版 1 と同じく動く。
+
 試作品の画面からは `window.studio.ai` で呼ぶ。どれも、会話と状態の全体(`connection`、`fields`、`state`、`messages`)を返す。
 
 | 呼び方 | 中身 |
