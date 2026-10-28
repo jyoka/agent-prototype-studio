@@ -474,7 +474,7 @@ cwd: 空の一時フォルダー
 | 相手が書くプロンプト | `hostPrompt` | プロンプトの土台に使う(`from: "assumptions"`) |
 | DIP が書けるプロンプトの枠 | `slots.<枠>.maxChars` | 枠の文が長ければ、切らずに検査の誤りにする(長さの違いで結果が変わったことを隠さないため) |
 | 使えるメッセージの種類 | `messageTypes`、`messageLimits` | 返事の JSON の形をここから作る。合わない部品は文に落とし、記録に `surface-downgrade` を残す |
-| ツールの呼び方 | `toolCalling.maxPerReply`、`resultMaxChars` | 呼び出しの数と、ツールの結果の長さを切る |
+| ツールの呼び方 | `toolCalling.maxPerReply`、`resultMaxChars` | 1 回の返事の呼び出しの数を切る。結果が `resultMaxChars` より長ければ、ツールの口が結果を返さずに断る(3.5 の `maxResultChars`) |
 | ツールの認証 | `toolCalling.auth`(`none` か `bound-user`) | `bound-user` は、会話ごとの架空の利用者の ID をツールの口が持ち、モデルには見せない。本物の資格情報は使わない |
 | ツールの遅れと失敗 | `toolCalling.delayMs`、`faults` | ツールの口が遅らせる、決まった回に失敗を返す。失敗への振る舞いを場面で見る |
 | 記録の取り方 | `logging.partnerSees`、`dipSees` | 記録の全部は Studio が持つ。そのうえで、「相手から見える記録」「DIP から見える記録」を分けて出す。本番で DIP が何を観測できるかを見る |
@@ -500,11 +500,14 @@ cwd: 空の一時フォルダー
 試作品のツールを動かす Studio のコード。どこから呼ばれても、同じ関数を通る(S5 と同じ考え)。
 
 ```
-callTool({ tools, data, store, context, name, args }) -> { ok, result | error, guards[], ms }
+callTool({ tools, data, store, context, name, args })
+  -> { ok, result | error, guards[], ms, store, calls, handoff?, fault?, entry }
   tools    … 検査した tools.json
-  data     … data/*.json を JSON として読んだもの(読むだけ)
-  store    … 会話ごとの記録の店(record の op が書く。ファイルには書かない)
-  context  … 会話の ID、架空の利用者の ID、前提(遅れと失敗)、呼び出しの数
+  data     … data/*.json を JSON として読んだもの(読むだけ。loadToolData が app/ の .json だけを読む)
+  store    … 会話ごとの記録の店(record の op が書く。ファイルには書かない)。新しい店を store で返す
+  context  … 会話の ID、架空の利用者の ID、呼んだ参加者(by)、前提(遅れと失敗)、
+             呼び出しの数(calls。新しい数を calls で返す)、構成の引き継ぎの辺(handoffs)
+  entry    … 記録の 1 件(4.1 の steps のツールの項目。引数は伏せ、結果は長さと数と項目の名前だけ)
 ```
 
 処理(`do.op`)は 5 つ。増やせるのは Studio のコードだけ。
@@ -515,7 +518,7 @@ callTool({ tools, data, store, context, name, args }) -> { ok, result | error, g
 | `get` | データの中から 1 つを返す | `data`、`key`、`fields` |
 | `record` | 引数を記録の店に入れる。会話ごと。ツールの口はファイルにも `app/` にも書かない(ファイルに写すのは呼ぶ側。3.6) | `into`(記録の名前)、`mode`(`replace` か `append`) |
 | `fixed` | 決まった値を返す | `data`、または `value` |
-| `handoff` | 引き継ぎを頼む。通すかは会話の進め方が辺で決める | `to` |
+| `handoff` | 引き継ぎを頼む。辺にない引き継ぎはツールの口が断る。回数の上限と、通した後の切り替えは会話の進め方が決める | `to` |
 
 ツールの守り(`guards`)。ツールの口のコードが守るので、模擬のエージェントのモデルによらず必ず効く。
 
@@ -533,6 +536,26 @@ callTool({ tools, data, store, context, name, args }) -> { ok, result | error, g
 - 記録の店は、試す画面の会話と同じく、メモリーと版に置く(#278 の会話と状態と同じ扱い)。場面の回しでは、場面ごとに新しく作る(S15)
 - ツールの口は店を書かない。Claude Code の接続では、呼ぶ側のツールの MCP サーバーが `.studio/sim/<会話の ID>/store.json` に写し、Studio が返事の後にメモリーへ戻す(3.6)。正はメモリーの店で、ファイルは返事ごとに起動し直す MCP サーバーへの受け渡しだけに使う
 - 作る AI のための「試しに 1 回呼ぶ」口は、この設計では作らない。作る AI は、場面(`tool` の種類)を書き、関門 GE の結果で確かめる
+
+sim-2 で決めた細かい振る舞い(この文書に書いていなかったもの。コードは `src/server/sim/tool-gate.js`):
+
+| 所 | 決めたこと | 理由 |
+|---|---|---|
+| 進める順 | 形の検査 → `maxCallsPerConversation` → `requires` → `deny` → 引き継ぎの辺 → 前提の失敗 → 実行 → `hideFields` → `maxResultChars`。守りに当たったら、そこで止める。記録の `guards` には、調べた守りを順に `passed` か `blocked` で並べ、止めた後の守りは並べない | どこで止まったかを、記録だけで分かるようにするため(S22) |
+| 形の検査 | `inputSchema` にない引数は断る。引数の JSON は 2 万文字まで。ないツールの名前も `schema` で断る(呼び出しの数に数えない) | `record` が知らない引数を記録の店に入れないため。`deny` は書いた引数しか見ないため |
+| 呼び出しの数 | そのツールが呼ばれた回で数える。形の検査や守りで断った回も数える。`faults` の `onCall` も同じ回で見る | 同じ呼び出しの並びなら、いつも同じ回で止まり、同じ回で失敗するようにするため |
+| `requires` | 記録が `append` の配列なら、最後の 1 件で `equals` を見る | 同意を取り消した記録(`agreed: false`)を後から足したときに、前の同意で通さないため |
+| `deny` | 引数の中の文字列と数を全部、NFKC にそろえて見る。`looksLike` は `redact.js` の `findPersonalData` と同じ見分け方。`containsAny` は英字の大小を区別しない | 入れ子の引数や全角の文字(`０９０－…`、`＠`)で、すり抜けにくくするため |
+| `hideFields` | 結果の中の、その名前の項目を、入れ子の中まで除く。除いた項目があれば `blocked` と除いた項目の名前を残す(呼び出しは `ok`)。なければ `passed` | 7.3 の受け入れ条件の「当たったら blocked」を、項目を返さないことに当てた。呼び出しまで断ると、項目を除けば足りる場面でもツールが使えなくなるため |
+| `maxResultChars` | 宣言の上限と前提の `resultMaxChars` の小さいほうを超えた結果は、切らずに返さない(`blocked`)。モデルには「条件を絞ってください」と返す | JSON を途中で切ると、モデルが壊れた値を読む。7.3 の受け入れ条件の「当たったら実行せず」に合わせた |
+| `search` | `match` は、引数を渡したものだけで絞る。`contains` は NFKC にそろえる。`sort` は `<` と `>` だけで比べ、値のないもの(`null` も)を向きによらず後ろにする。型の違う値は型の名前の順。結果は `{ "count": 合った数, "items": [limit までの件] }` | 環境の言語の設定で順が変わらないようにするため。モックの `{result.count}` に、合った数を出すため |
+| `get` | `key` の項目が引数の `key` と同じものを返す。引数に `key` がないとき、合うものがないときは誤り(`ok: false`。守りではない) | 見つからないことを、モデルが読める文で返すため |
+| `record` | 結果は `{ "recorded": 記録の名前 }`。渡した店は変えず、新しい店を返す | ツールの口が店を書かないため(呼ぶ側が写す) |
+| 引き継ぎの辺 | 呼ぶ側が構成の `handoffs` と呼んだ参加者(`by`)を渡したときだけ見る。辺があれば、`carry` の名前の引数だけを `handoff.carry` で返す(`carry` が空なら何も渡さない)。辺を渡されなければ、引数をそのまま返す | 誰が呼んだかを知っているのは会話の進め方なので。2.5 の「辺にない引き継ぎは、モデルが頼んでも断る」をツールの守りで守るため |
+| 前提の遅れと失敗 | `delayMs` は、ないツールの名前のほかは、どの呼び出しでも待つ。`faults` に当たった回は、守りを通った後、実行せずに失敗を返す(`fault: true`。守りではないので `guards` に入れない) | 守りの判定は失敗の有無によらず残すため。失敗した回は記録の店を変えない |
+| 同じ呼び出し | 同じ `tools`、`data`、`store`、`context.calls`、引数なら、`ms` のほかは同じ値を返す。時刻と乱数を使わない | 接続によらず同じ結果と同じ守りの判定にするため(S19) |
+| 記録の 1 件(`entry`) | 引数、誤りの文、守りの理由、ツールの名前、知らない引数の名前まで、`redact.js` で伏せる | モデルが書いた値は、どこに入っても記録に残す前に伏せるため(4.1) |
+| データの読み込み(`loadToolData`) | `app/` の外を指すパス、`.json` でないファイル、配列でない `search` と `get` のデータは読まずに誤りにする。項目の名前は自分の項目だけを見る(`constructor` などを値と取り違えない) | 検査(`parseTools`)を通らない宣言を渡されても、守りが崩れないようにするため |
 
 ### 3.6 ツールの MCP サーバー
 
