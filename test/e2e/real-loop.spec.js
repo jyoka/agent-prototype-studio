@@ -29,7 +29,7 @@ test.describe('実モデルの閉じたループ', () => {
     await fs.mkdir(path.join(root, '.studio'), { recursive: true });
     await fs.writeFile(path.join(root, '.studio', 'project.json'), JSON.stringify({ title: TITLE }));
 
-    const studio = await launchStudio(home, { env: { STUDIO_AGENT: 'claude' } });
+    const studio = await launchStudio(home, { env: { STUDIO_AGENT: 'claude' }, real: true });
     const shots = [];
     const shoot = async (name) => {
       const file = testInfo.outputPath(`${name}.png`);

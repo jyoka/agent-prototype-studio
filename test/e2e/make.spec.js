@@ -206,7 +206,7 @@ test('Claude Code が見つからないときは、送る前に理由と次の�
   try {
     await page.goto(studio.url);
     await chooseSample(page, SAMPLES.library);
-    await expect(page.locator('#agent-status')).toContainText('Claude Code の版を確かめられません');
+    await expect(page.locator('#agent-status')).toContainText('claude が見つかりません');
     await expect(page.getByRole('button', { name: '送る' })).toBeDisabled();
     // 試す画面は使える
     await expect(page.frameLocator('iframe[title="試作品"]').getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();

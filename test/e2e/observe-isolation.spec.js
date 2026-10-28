@@ -192,7 +192,7 @@ test.beforeAll(async () => {
   });
   await new Promise((resolve) => udp.bind(0, '127.0.0.1', resolve));
 
-  const config = loadConfig({ STUDIO_HOME: home, STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0', STUDIO_NO_OPEN: '1' });
+  const config = loadConfig({ STUDIO_HOME: home, STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0', STUDIO_NO_OPEN: '1', STUDIO_AGENT: 'fake' });
   studio = await startStudio(config, { env: {} });
   const other = await buildOf('sample-library');
   await fs.writeFile(

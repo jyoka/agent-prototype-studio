@@ -28,7 +28,7 @@ test.beforeAll(async () => {
     await fs.mkdir(path.join(root, '.studio'), { recursive: true });
     await fs.writeFile(path.join(root, '.studio', 'project.json'), JSON.stringify({ title: `観察の見本: ${name}` }));
   }
-  const config = loadConfig({ STUDIO_HOME: home, STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0', STUDIO_NO_OPEN: '1' });
+  const config = loadConfig({ STUDIO_HOME: home, STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0', STUDIO_NO_OPEN: '1', STUDIO_AGENT: 'fake' });
   studio = await startStudio(config, { env: {} });
 });
 
