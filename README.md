@@ -85,7 +85,7 @@ npm start                  # 既定のブラウザで Studio が開く
 
 ```sh
 npm test            # 単体と結合のテスト(数秒)
-npm run test:e2e    # ブラウザの E2E(Playwright、1 分以内)
+npm run test:e2e    # ブラウザの E2E(Playwright、全体でおよそ 3 分半)
 ```
 
 どのテストも実モデルと外部の API を呼びません。テストの中身とコードの構成は [CONTRIBUTING.md](CONTRIBUTING.md) にあります。エージェントで作業するときは [AGENTS.md](AGENTS.md) を読んでください。
