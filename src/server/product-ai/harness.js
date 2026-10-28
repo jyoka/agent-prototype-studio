@@ -5,9 +5,11 @@ import { templateReply } from './mock.js';
 // プロダクト内 AI の harness(docs/design/harness.md の 4)。1 ターンを 3 段で回す:
 //   抽出(接続) → 決定(ここのコード) → 言い方(接続)
 // 何を聞くか、段の遷移、終わるかは app/ai.json とここのコードが決める。接続が返すのは抽出の JSON と返事の文だけ。
-// 接続の口は 2 つ: extract({ definition, fields, state, messages, text, signal }) -> { updates, intent }、
-// phrase({ definition, decision, state, messages, signal }) -> { reply }。
-// 1 回の呼び出しで { reply, updates } を返す接続(respond。今の Claude Code)も通す。jyoka/tasks#308 で 2 つの口に分ける。
+// 接続の口は 2 つ: extract({ definition, fields, state, messages, text, signal, meter }) -> { updates, intent }、
+// phrase({ definition, decision, state, messages, text, signal, meter }) -> { reply }。モックも Claude Code もこの 2 つを持つ。
+// 実モデルの接続は、出力が壊れていたら 1 回やり直し、だめなら retry と fallback に理由を入れて返す
+// (抽出は「変更なし」、言い方は reply なし。言い方はここで mock の型の文に代える)。meter は呼び出しの上限と記録(limits.js)。
+// 1 回の呼び出しで { reply, updates } を返す接続(respond。テスト用)も通す。
 // その返事は決定の前に作られるが、updates は同じ抽出の検査を通し、決定は harness が行う。
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -197,7 +199,7 @@ const describeState = (definition, state) =>
 
 // 1 ターン。接続の失敗(例外)はそのまま投げる。進み具合と状態は書き換えず、新しいものを返す。
 // trace に段ごとの中身(抽出、決定、言い方)を書き足す。途中で失敗しても、そこまでが残る
-export async function turn({ connection, definition, progress, state, messages, text, signal, trace = {} }) {
+export async function turn({ connection, definition, progress, state, messages, text, signal, meter, trace = {} }) {
   const fields = definition.fields;
   trace.extract = { input: { text, step: progress.step, fields: fields.map((field) => field.key), state: describeState(definition, state) } };
   let raw;
@@ -214,7 +216,10 @@ export async function turn({ connection, definition, progress, state, messages, 
     raw = { updates: oneCall?.updates, intent: oneCall?.intent };
   } else {
     trace.extract.via = 'connection';
-    raw = await connection.extract({ definition, fields, state, messages, text, signal });
+    const extracted = await connection.extract({ definition, fields, state, messages, text, signal, meter });
+    raw = extracted;
+    if (extracted?.retry) trace.extract.retry = extracted.retry;
+    if (extracted?.fallback) trace.extract.fallback = extracted.fallback;
   }
   trace.extract.output = { updates: raw?.updates ?? null, intent: raw?.intent == null ? null : shownValue(raw.intent) };
   const extraction = checkExtraction(definition, raw);
@@ -233,12 +238,20 @@ export async function turn({ connection, definition, progress, state, messages, 
     reply = oneCall.reply;
   } else {
     trace.phrase.via = 'connection';
-    const said = await connection.phrase({ definition, decision: decided.decision, state: decided.state, messages, signal });
+    const phraseInput = { definition, decision: decided.decision, state: decided.state, messages, text };
+    // 送る本文を、送る前に記録に残す(失敗しても見られるように)
+    const sent = connection.describePhrase?.(phraseInput);
+    if (sent?.stdin) trace.phrase.stdin = sent.stdin;
+    const said = await connection.phrase({ ...phraseInput, signal, meter });
+    if (said?.retry) trace.phrase.retry = said.retry;
     reply = said?.reply;
+    if (said?.fallback && (typeof reply !== 'string' || reply.trim() === '')) {
+      trace.phrase.fallback = `${said.fallback}ので、mock の型の文に代えた`;
+    }
   }
   if (typeof reply !== 'string' || reply.trim() === '') {
     // 返事が文でなければ、決定を mock の型に当てはめた決まりの文で返す
-    trace.phrase.fallback = '接続の返事が空か文でなかったので、mock の型の文に代えた';
+    trace.phrase.fallback ??= '接続の返事が空か文でなかったので、mock の型の文に代えた';
     reply = templateReply(definition, decided.decision, decided.state);
   }
   reply = reply.slice(0, 4000);

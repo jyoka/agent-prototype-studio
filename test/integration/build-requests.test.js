@@ -90,7 +90,10 @@ test('依頼を流しながら返し、変わったファイルをビルドし�
   assertGatesPassed(last);
   assert.equal(last.auth, 'none');
   assert.deepEqual(last.changedFiles, [{ file: 'app/App.jsx', change: 'modified' }]);
-  assert.deepEqual(last.build, { ok: true, errorCount: 0, stage: null, buildId: studio.store.previewBuildId('sample-library') });
+  // どの app/ の中身をビルドしたか(引き継ぎが、証拠が古いかを見る)
+  const { lastBuild } = (await studio.store.list()).find((p) => p.id === 'sample-library');
+  assert.match(lastBuild.appDigest, /^[0-9a-f]{64}$/);
+  assert.deepEqual(last.build, { ok: true, errorCount: 0, stage: null, buildId: studio.store.previewBuildId('sample-library'), appDigest: lastBuild.appDigest });
   assert.notEqual(studio.store.previewBuildId('sample-library'), before);
   // 通った節の列と関門の結果は .studio/runs/<run-id>/run.json に残る
   const record = JSON.parse(await fs.readFile(path.join(studio.store.home, 'projects', 'sample-library', last.evidence.run), 'utf8'));

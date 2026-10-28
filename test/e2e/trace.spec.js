@@ -124,7 +124,10 @@ test('Claude Code(偽)の実行の記録: 渡した指示と本文、受け取�
     await expect(ok).toContainText('起動の形: fake-claude.js -p --restricted --safe-mode --tools');
     await expect(ok).toContainText(/--system-prompt=…\(\d+ 文字\)/);
     await expect(ok).toContainText('応答の形: 構造化出力(--json-schema)を読みました');
-    await expect(ok).toContainText('費用の目安(CLI の報告): $0.0012');
+    // 抽出と言い方の 2 回の呼び出し。回数と待ち時間、費用の合計が出る
+    await expect(ok).toContainText(/実際の AI モデルの呼び出し: 2 回\(抽出 1 回、言い方 1 回\)、待った時間の合計 [\d.]+ 秒/);
+    await expect(ok.getByRole('list', { name: '呼び出しの 1 回ずつ' }).getByRole('listitem')).toHaveText([/^抽出\(1 回目\)/, /^言い方\(1 回目\)/]);
+    await expect(ok).toContainText('費用の目安(CLI の報告): $0.0024');
     await ok.getByText('指示(--system-prompt)の全文').click();
     await expect(ok.locator('pre').first()).toContainText('しおかぜ求人相談');
     await ok.getByText('本文(標準入力)の全文').click();

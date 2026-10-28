@@ -1,20 +1,24 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { digestSnapshot, snapshotApp } from './app-snapshot.js';
 import { ALLOWED_PACKAGES, buildApp } from './build.js';
+import { RUN_FORMAT } from './build-requests.js';
 import { STUDIO_ROOT } from './config.js';
+import { MANIFEST_FILE } from './manifest.js';
+import { baseScenarios, describeStep, readScenarios } from '../observer/scenario.js';
 import { VersionError, copyTree } from './versions.js';
-import { responseSchema, systemPrompt } from './product-ai/claude-code.js';
+import { extractPrompt, extractSchema, phrasePrompt, phraseSchema } from './product-ai/claude-code.js';
 import { formatValue } from './product-ai/definition.js';
 import { findPersonalData, findSecrets, redact, redactDeep } from './redact.js';
 import { BusyError } from './store.js';
 
-// 本番開発への引き継ぎ(#280)。試作品のソース、意図、AI の設定、モックと状態、未接続と未決事項を、
-// 1 つのフォルダーに書き出す。中身は決まった手順で作り、AI の判断は入れない(ADR-0001、Stripe の Minions)。
+// 本番開発への引き継ぎ(#280、#313)。試作品のソース、意図、AI の設定、モックと状態、未接続と未決事項、
+// 目録とシナリオ、最新の証拠の要約を、1 つのフォルダーに書き出す。中身は決まった手順で作り、AI の判断は入れない(ADR-0001、Stripe の Minions)。
 // 形は docs/handoff.md に書く。標準化は仮で、使われ方を見て直す。
 
 export const HANDOFF_FORMAT = 'prototype-studio-handoff';
-export const HANDOFF_FORMAT_VERSION = 1;
+export const HANDOFF_FORMAT_VERSION = 2;
 export const MAX_NOTE_LENGTH = 4000;
 const NOTE_KEYS = ['purpose', 'decided', 'undecided'];
 const NOTES_FILE = 'handoff-notes.json';
@@ -149,8 +153,91 @@ function describeConversation(definition, snapshot, connections) {
   };
 }
 
+// 目録(app/prototype.json)。ないときは、ビルドが読む既定の値(file が null)。パスは app/ からの相対
+function describePrototype(manifest) {
+  const { declared, ...fields } = manifest;
+  return { file: declared ? `app/${MANIFEST_FILE}` : null, ...fields };
+}
+
+// app/ のシナリオと、Studio がいつも先に回す基本のシナリオ。checks は各手順で確かめることの文
+async function describeScenarios(appDir, prototype, definition) {
+  const describe = (scenario) => ({ name: scenario.name, viewport: scenario.viewport, steps: scenario.steps, checks: scenario.steps.map(describeStep) });
+  const { scenarios } = await readScenarios(appDir, prototype.scenarios);
+  return {
+    folder: `app/${prototype.scenarios}`,
+    files: scenarios.map(({ file, scenario }) => ({ file, ...describe(scenario) })),
+    base: baseScenarios({ greeting: definition?.mock.greeting }).map(describe),
+  };
+}
+
+async function readJson(file) {
+  try {
+    return JSON.parse(await fs.readFile(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+// 最新の作る run(.studio/runs/<run-id>/run.json)と、その最後のラウンドの観察の report の要約。
+// 確かめた app/ の中身の指紋(appDigest)が今の app/ と違えば、古い(stale)。指紋が分からなければ stale は null
+async function latestEvidence(paths, appDigest) {
+  const runsDir = path.join(paths.studio, 'runs');
+  let record = null;
+  for (const entry of await fs.readdir(runsDir, { withFileTypes: true }).catch(() => [])) {
+    if (!entry.isDirectory()) continue;
+    const found = await readJson(path.join(runsDir, entry.name, 'run.json'));
+    if (found?.format !== RUN_FORMAT || found.id !== entry.name || typeof found.startedAt !== 'string') continue;
+    if (!record || found.startedAt > record.startedAt) record = found;
+  }
+  if (!record) return { appDigest, run: null };
+  const staleOf = (digest) => (typeof digest === 'string' ? digest !== appDigest : null);
+  const gates = Array.isArray(record.gates) ? record.gates : [];
+  const reports = [];
+  for (const gate of gates) {
+    if (typeof gate?.report !== 'string') continue;
+    // run のフォルダーの中の report だけを読む
+    const file = path.join(paths.root, ...gate.report.split('/'));
+    if (!file.startsWith(path.join(runsDir, record.id) + path.sep)) continue;
+    const report = await readJson(file);
+    if (!report) continue;
+    reports.push({
+      gate: gate.id,
+      file: gate.report,
+      verdict: report.verdict ?? null,
+      startedAt: report.startedAt ?? null,
+      appDigest: report.appDigest ?? null,
+      stale: staleOf(report.appDigest),
+      errorCount: Array.isArray(report.errors) ? report.errors.length : 0,
+      scenarios: (Array.isArray(report.scenarios) ? report.scenarios : []).map((s) => ({ name: s.name, base: s.base === true, file: s.file ?? null, verdict: s.verdict })),
+    });
+  }
+  const digest = record.build?.appDigest ?? reports.find((r) => r.appDigest)?.appDigest ?? null;
+  return {
+    appDigest,
+    run: {
+      file: `.studio/runs/${record.id}/run.json`,
+      id: record.id,
+      status: record.status,
+      startedAt: record.startedAt,
+      finishedAt: record.finishedAt ?? null,
+      rounds: Array.isArray(record.rounds) ? record.rounds.length : 1,
+      appDigest: digest,
+      stale: staleOf(digest),
+      gates: gates.map((g) => ({
+        id: g.id,
+        label: g.label,
+        status: g.status,
+        ...(g.summary ? { summary: g.summary } : {}),
+        ...(g.reason ? { reason: g.reason } : {}),
+        ...(Number.isFinite(g.errorCount) ? { errorCount: g.errorCount } : {}),
+      })),
+      reports,
+    },
+  };
+}
+
 // 実機、モック、未接続の一覧。どの試作品にも出る行と、見つけたものから出る行がある
-function capabilities({ fileCount, ai, conversation, scan }) {
+function capabilities({ fileCount, ai, conversation, scan, prototype }) {
   const rows = [];
   const add = (kind, item, prototype, production, evidence = []) => rows.push({ kind, item, prototype, production, evidence });
   const replies = conversation?.messages.filter((m) => m.role === 'assistant' && m.via) ?? [];
@@ -186,14 +273,18 @@ function capabilities({ fileCount, ai, conversation, scan }) {
       '本番のサーバーに、会話と状態を持つ API を作る。window.studio.ai の呼び方と、返す形(state、messages)が見本になる。',
     );
   }
+  // 目録に架空のデータの宣言があれば、推定の代わりにそれを出す
+  const declared = prototype.data.map((d) => ({ file: `app/${d.file}`, about: d.about }));
   add(
     'mock',
     'データ',
-    scan.dataFiles.length > 0
-      ? `app/ の中に書いた固定のデータ。架空のデータを置いたファイルの手がかり(推定): ${scan.dataFiles.join('、')}。`
-      : 'app/ の中に書いた固定の値と、操作の間だけ画面のメモリーにある値。',
+    declared.length > 0
+      ? `app/ の中に書いた固定のデータ。目録(app/prototype.json の data)に書かれた架空のデータ: ${declared.map((d) => `${d.file}(${d.about})`).join('、')}。`
+      : scan.dataFiles.length > 0
+        ? `app/ の中に書いた固定のデータ。架空のデータを置いたファイルの手がかり(推定): ${scan.dataFiles.join('、')}。`
+        : 'app/ の中に書いた固定の値と、操作の間だけ画面のメモリーにある値。',
     '本物のデータの出どころ(API、データベース)と、項目の意味を決める。',
-    scan.dataFiles,
+    declared.length > 0 ? declared.map((d) => d.file) : scan.dataFiles,
   );
   add(
     'missing',
@@ -223,11 +314,25 @@ function capabilities({ fileCount, ai, conversation, scan }) {
     );
   }
   add('missing', '本物のデータと個人情報', '試作品は架空のデータだけで試す決まり。', '個人情報の扱い、保存の期間、AI の提供元に送ってよい範囲を決める。');
+  // 作る AI が目録に書いた、本番で作るものと試作品の制約
+  const manifestFile = [`app/${MANIFEST_FILE}`];
+  for (const item of prototype.unimplemented) {
+    add('missing', item, '目録(app/prototype.json の unimplemented)に、本番で作るものとして書かれている。試作品にはない。', '本番で作る。', manifestFile);
+  }
+  if (prototype.constraints.length > 0) {
+    add(
+      'missing',
+      '試作品の制約(目録)',
+      `目録(app/prototype.json の constraints)に書かれた試作品の制約: ${prototype.constraints.join('、')}。`,
+      '本番でも同じ制約にするか、外すかを決める。',
+      manifestFile,
+    );
+  }
   return rows;
 }
 
 // Studio が見つけた、決める必要のあること
-function studioQuestions({ ai, conversation, working, scan, excluded }) {
+function studioQuestions({ ai, conversation, working, scan, excluded, evidence }) {
   const questions = [];
   if (ai && !conversation.messages.some((m) => m.real)) {
     questions.push('プロダクト内 AI を実モデルで試していない(会話の応答はモックだけ)。ai.json の instructions どおりに振る舞うかは、確かめていない。');
@@ -242,6 +347,14 @@ function studioQuestions({ ai, conversation, working, scan, excluded }) {
   }
   if (scan.signs.todo.length > 0) questions.push(`コードに未実装の印がある(${listWhere(scan.signs.todo)})。`);
   if (excluded.length > 0) questions.push(`秘密を入れるファイルを書き出しから外した(${excluded.map((e) => e.path).join('、')})。本番で要る設定か確かめる。`);
+  const { run } = evidence;
+  if (!run) {
+    questions.push('作る run の記録がない。Studio の関門(ビルド、起動の確認、シナリオ)で確かめた証拠は入っていない。');
+  } else {
+    if (run.stale === true) questions.push(`最新の証拠(${localTime(run.startedAt)} の作る run)は、今の app/ と違う中身で確かめたもので、古い。今の app/ は関門で確かめていない。`);
+    if (run.stale === null) questions.push(`最新の証拠(${localTime(run.startedAt)} の作る run)が、どの app/ の中身で確かめたものか分からない。`);
+    if (!['passed', 'fixed'].includes(run.status)) questions.push(`最新の作る run の結果は「${RUN_LABELS[run.status] ?? run.status}」で、関門をすべては通っていない。`);
+  }
   return questions;
 }
 
@@ -256,6 +369,7 @@ const ROLE_LABELS = { user: '利用者', assistant: 'AI', correction: '利用者
 const RUN_LABELS = {
   done: '終わった',
   passed: '通った',
+  fixed: '直して通った',
   unverified: '未確認',
   unchanged: '変更なし',
   failed: '失敗',
@@ -264,6 +378,7 @@ const RUN_LABELS = {
   'timed-out': '時間切れ',
   running: '作業中',
 };
+const GATE_LABELS = { passed: '通った', failed: '失敗', unverified: '未確認', unchanged: '変更なし', skipped: '行わない' };
 const localTime = (iso) => (iso ? new Date(iso).toLocaleString('ja-JP') : '');
 
 // 書き出した人のメモは引用にする。行頭の # などが見出しにならないように
@@ -277,6 +392,78 @@ function fieldRule(field) {
     return `数${field.unit ? `(単位: ${field.unit})` : ''}${range ? `、${range}` : ''}`;
   }
   return `選択肢: ${field.options.map((o) => o.value).join('、')}`;
+}
+
+// 作る AI が目録に書いた意図と制約。書き出した人のメモ(目的)と並べる
+function prototypeLines(prototype) {
+  const lines = ['## 作る AI が書いた意図と制約(目録)', ''];
+  if (!prototype.file) {
+    lines.push('目録(`app/prototype.json`)がありません。作る AI が書いた意図と制約はありません。', '');
+    return lines;
+  }
+  const list = (items) => (items.length > 0 ? items.map(oneLine).join('、') : '(なし)');
+  lines.push(
+    '作る AI が依頼から `app/prototype.json` に書いたものです。上の「目的」は書き出した人のメモで、こちらと並べて読みます。',
+    '',
+    `- 意図: ${prototype.intent.purpose ? oneLine(prototype.intent.purpose) : '(書かれていません)'}`,
+    `- 試してほしいこと: ${list(prototype.intent.tryThis)}`,
+    `- 制約: ${list(prototype.constraints)}`,
+    `- 本番で作るもの(未実装): ${list(prototype.unimplemented)}`,
+    `- 架空のデータ: ${prototype.data.length > 0 ? prototype.data.map((d) => `${code(`app/${d.file}`)}(${oneLine(d.about)})`).join('、') : '(なし)'}`,
+    '',
+  );
+  return lines;
+}
+
+function scenarioLines(scenarios) {
+  const lines = ['## シナリオ(確かめ方)', ''];
+  const row = (file, s) => `| ${file} | ${cell(s.name)} | ${s.viewport} | ${cell(s.checks.map((c, i) => `${i + 1}. ${c}`).join(' '))} |`;
+  lines.push(
+    `Studio の関門 G6 が観察器で回すシナリオです。試作品のシナリオは ${code(scenarios.folder)} にあり、形は handoff.json の \`scenarios\` にもあります。基本のシナリオは Studio のコードの中にあり、いつも先に回します。`,
+    '',
+    '| ファイル | 名前 | 画面幅 | 手順 |',
+    '|---|---|---|---|',
+    ...scenarios.files.map((s) => row(code(s.file), s)),
+    ...scenarios.base.map((s) => row('(Studio の基本)', s)),
+    '',
+  );
+  return lines;
+}
+
+function evidenceLines(evidence) {
+  const lines = ['## 最新の証拠', ''];
+  const { run } = evidence;
+  if (!run) {
+    lines.push('作る run の記録がありません。Studio の関門で確かめた証拠はありません。', '');
+    return lines;
+  }
+  const freshness = (stale) => (stale === true ? '**古い**(今の app/ と違う中身で確かめた)' : stale === false ? '今の app/ と同じ中身' : '分からない');
+  lines.push(
+    `最新の作る run の要約です。記録の全体は、試作品のフォルダーの ${code(run.file)} にあります(この引き継ぎには入れていません)。`,
+    '',
+    `- 結果: ${RUN_LABELS[run.status] ?? cell(run.status)}(ラウンド ${run.rounds} 回)`,
+    `- 日時: ${localTime(run.startedAt)} から ${localTime(run.finishedAt)}`,
+    `- 確かめた app/ の中身: ${freshness(run.stale)}`,
+    '',
+    '| 関門 | 名前 | 結果 | 中身 |',
+    '|---|---|---|---|',
+    ...run.gates.map((g) => `| ${g.id} | ${cell(g.label)} | ${GATE_LABELS[g.status] ?? cell(g.status)} | ${cell(g.summary ?? g.reason ?? '')} |`),
+    '',
+  );
+  if (run.reports.length > 0) {
+    lines.push(
+      '観察の report:',
+      '',
+      '| 関門 | 合否 | 日時 | 確かめた app/ | シナリオ |',
+      '|---|---|---|---|---|',
+      ...run.reports.map((r) => {
+        const scenarios = r.scenarios.map((s) => `${s.name}: ${GATE_LABELS[s.verdict] ?? s.verdict}`).join('、');
+        return `| ${r.gate} | ${GATE_LABELS[r.verdict] ?? cell(r.verdict)} | ${localTime(r.startedAt)} | ${freshness(r.stale)} | ${cell(scenarios)} |`;
+      }),
+      '',
+    );
+  }
+  return lines;
 }
 
 function renderReadme(h) {
@@ -300,6 +487,7 @@ function renderReadme(h) {
     '',
     noteBlock(h.notes.purpose),
     '',
+    ...prototypeLines(h.prototype),
     '## 決まったこと',
     '',
     noteBlock(h.notes.decided),
@@ -330,8 +518,8 @@ function renderReadme(h) {
       `- 名前: ${oneLine(ai.name)}`,
       `- 書き出したときの接続: ${ai.connection.label}${ai.connection.real ? '(実際の AI モデル)' : '(実際の AI モデルではない)'}`,
       '- 設定: `app/ai.json`',
-      '- 実モデルに渡す指示の全文: `ai/system-prompt.md`(ai.json の instructions に、Studio の決まりを足したもの)',
-      '- 応答の形(JSON スキーマ): `ai/response-schema.json`',
+      '- 実モデルに渡す指示の全文: `ai/system-prompt.md`(抽出の指示と、言い方の指示。言い方は ai.json の instructions に Studio の決まりを足したもの)',
+      '- 応答の形(JSON スキーマ): `ai/response-schema.json`(extract は抽出の形、phrase は言い方の形 `{reply}`)',
       '',
       '覚える項目:',
       '',
@@ -363,6 +551,7 @@ function renderReadme(h) {
     push('## プロダクト内 AI', '', 'この試作品は、プロダクト内 AI を使っていません(`app/ai.json` がありません)。', '');
   }
 
+  push(...scenarioLines(h.scenarios), ...evidenceLines(h.evidence));
   push(
     '## ソース',
     '',
@@ -404,6 +593,7 @@ function renderReadme(h) {
     '- 秘密情報。Studio は書き出す前に、API キーやトークンらしい文字列を探す。見つかったら書き出さない。',
     ...(h.excluded.length > 0 ? [`- 秘密を入れるファイル: ${h.excluded.map((e) => code(e.path)).join('、')}`] : []),
     '- AI の実行の記録(AI に渡した本文の全文を含む)、作る AI の返事、ログインの情報、環境変数、PC のフォルダーの場所。',
+    '- 作る run の記録の全体と、観察のスクリーンショット。要約だけを「最新の証拠」と handoff.json の `evidence` に入れた。',
     '- 会話の中のメールアドレスと電話番号らしい文字列は伏せた(`[伏せた: …]`)。',
     '',
     '## 試作品を動かす',
@@ -415,8 +605,6 @@ function renderReadme(h) {
   );
   return lines.join('\n');
 }
-
-const ENTRY_NAMES = ['main.jsx', 'main.tsx', 'main.js', 'main.ts'];
 
 function workingText(working, versions) {
   const version = versions.find((v) => v.id === working.versionId);
@@ -528,6 +716,10 @@ export class ProjectHandoffs {
       }
 
       const definition = build.ai ?? null;
+      const prototype = describePrototype(build.manifest);
+      const scenarios = await describeScenarios(appCopy, prototype, definition);
+      // 証拠が今の app/ と同じ中身で確かめたものかは、Studio のビルドと同じ指紋で比べる
+      const evidence = await latestEvidence(paths, digestSnapshot(await snapshotApp(paths.app)));
       const conversation = definition
         ? describeConversation(definition, this.aiSessions.snapshot(id, definition), this.aiSessions.connections)
         : null;
@@ -541,11 +733,14 @@ export class ProjectHandoffs {
         project: { id, title: redact(project?.title ?? id) },
         notes: redactDeep(notes),
         working: { ...working, text: workingText(working, versionList) },
-        capabilities: capabilities({ fileCount: scan.files.length, ai: definition, conversation, scan }),
+        capabilities: capabilities({ fileCount: scan.files.length, ai: definition, conversation, scan, prototype }),
         openQuestions: [
           ...(notes.undecided ? [{ from: 'person', text: redact(notes.undecided) }] : []),
-          ...studioQuestions({ ai: definition, conversation, working, scan, excluded }).map((text) => ({ from: 'studio', text })),
+          ...studioQuestions({ ai: definition, conversation, working, scan, excluded, evidence }).map((text) => ({ from: 'studio', text })),
         ],
+        prototype,
+        scenarios,
+        evidence,
         ai: definition
           ? {
               name: definition.name,
@@ -560,11 +755,13 @@ export class ProjectHandoffs {
           : null,
         conversation,
         source: {
-          entry: ENTRY_NAMES.map((n) => `app/${n}`).find((n) => scan.files.some((f) => f.path === n)) ?? null,
+          entry: prototype.entry ? `app/${prototype.entry}` : null,
           libraries: ALLOWED_PACKAGES.filter((p) => !p.includes('/')),
           files: scan.files,
           signs: scan.signs,
-          dataFiles: scan.dataFiles,
+          // 目録の data があればその宣言、なければファイルの名前と中からの推定
+          dataFiles: prototype.data.length > 0 ? prototype.data.map((d) => `app/${d.file}`) : scan.dataFiles,
+          dataFrom: prototype.data.length > 0 ? 'manifest' : 'guess',
           personalData: scan.personal,
         },
         versions: versionList.map((v) => ({ number: v.number, name: redact(v.name), kind: v.kind, savedAt: v.savedAt, builds: v.builds })),
@@ -579,12 +776,38 @@ export class ProjectHandoffs {
         openQuestions: manifest.openQuestions.filter((q) => q.from === 'studio').map((q) => q.text),
         createdAtLocal: createdAt.toLocaleString('ja-JP'),
       });
-      await fs.writeFile(path.join(tmp, 'README.md'), readme);
-      await fs.writeFile(path.join(tmp, 'handoff.json'), `${JSON.stringify(manifest, null, 2)}\n`);
-      if (definition) {
-        await fs.mkdir(path.join(tmp, 'ai'), { recursive: true });
-        await fs.writeFile(path.join(tmp, 'ai', 'system-prompt.md'), `${systemPrompt(definition)}\n`);
-        await fs.writeFile(path.join(tmp, 'ai', 'response-schema.json'), `${JSON.stringify(responseSchema(definition), null, 2)}\n`);
+      const outputs = [
+        ['README.md', readme],
+        ['handoff.json', `${JSON.stringify(manifest, null, 2)}\n`],
+        ...(definition
+          ? [
+              // 実モデルは抽出と言い方の 2 種の呼び出しで動く。それぞれの指示と応答の形を書く
+              [
+                'ai/system-prompt.md',
+                `# 抽出の指示\n\n${extractPrompt(definition)}\n\n# 言い方の指示\n\n${phrasePrompt(definition)}\n`,
+              ],
+              [
+                'ai/response-schema.json',
+                `${JSON.stringify({ extract: extractSchema(definition), phrase: phraseSchema() }, null, 2)}\n`,
+              ],
+            ]
+          : []),
+      ];
+      // app/ の外から足した中身(証拠の要約など)にも、ソースと同じく秘密を探す。見つけたら書き出さない
+      const secrets = outputs.flatMap(([file, text]) => findSecrets(text).map((found) => ({ file, ...found })));
+      if (secrets.length > 0) {
+        throw new HandoffError(
+          422,
+          'secret',
+          `書き出す資料に秘密情報らしい文字列があるので、書き出しませんでした。最新の作る run の記録から入ったものなら、試作品を直して作る欄で確かめ直してから書き出してください(${secrets
+            .slice(0, 5)
+            .map((s) => `${where(s)} ${s.kind}`)
+            .join('、')})`,
+        );
+      }
+      for (const [file, text] of outputs) {
+        await fs.mkdir(path.dirname(path.join(tmp, file)), { recursive: true });
+        await fs.writeFile(path.join(tmp, file), text);
       }
       await fs.rename(tmp, path.join(this.dir, name));
       this.log(`引き継ぎを書き出しました: ${id}(${name})`);

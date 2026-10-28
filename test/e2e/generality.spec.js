@@ -172,12 +172,16 @@ async function runFlow(page, home, other, otherHome) {
     await expect(ui.log.last()).toContainText('偽の Claude Code です');
     await expect(ui.values).toHaveText(['未定', 'プログラミング', '未定', '本で学ぶ']);
     const calls = (await fs.readFile(path.join(home, 'fake-claude.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
-    expect(calls).toHaveLength(1);
+    // 1 ターンは抽出と言い方の 2 回の呼び出し
+    expect(calls).toHaveLength(2);
     const argv = calls[0].argv.join('\n');
     expect(argv).toContain('あおぞら学習相談');
     expect(argv).toContain('- minutes(1日に使える時間): 数、単位は分、5 以上、300 以下');
-    expect(argv).not.toMatch(JOB_WORDS);
-    expect(calls[0].stdin).not.toMatch(JOB_WORDS);
+    for (const call of calls) {
+      expect(call.argv.join('\n')).not.toMatch(JOB_WORDS);
+      expect(call.stdin).not.toMatch(JOB_WORDS);
+    }
+    expect(calls[1].argv.join('\n')).toContain('あおぞら学習相談');
 
     // 7. 引き継ぎ: 書き出し、題材の項目と架空のデータの場所が出る。求人の言葉は入らない
     const handoff = page.getByRole('region', { name: '本番開発への引き継ぎ' });
@@ -185,8 +189,8 @@ async function runFlow(page, home, other, otherHome) {
     await handoff.getByLabel('未決事項').fill('講座の一覧を本物のデータにするか');
     await handoff.getByRole('button', { name: '引き継ぎ用に書き出す' }).click();
     const result = page.locator('#handoff-result');
-    // 未決事項は、書いた 1 件と、保存版と違う作業中から書き出したことを Studio が足した 1 件
-    await expect(result).toContainText('書き出しました。実機 2 件、モック 3 件、未接続 5 件、未決事項 2 件。');
+    // 未決事項は、書いた 1 件と、保存版と違う作業中から書き出したことを Studio が足した 1 件。未接続には、目録の未実装 3 つと制約が入る
+    await expect(result).toContainText('書き出しました。実機 2 件、モック 3 件、未接続 9 件、未決事項 2 件。');
     exported = await result.locator('code').textContent();
     await fs.cp(exported, other, { recursive: true });
 
