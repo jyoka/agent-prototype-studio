@@ -132,8 +132,10 @@ test('ビルドできない状態は保存せず、理由を出す。作る AI �
     await page.getByRole('button', { name: '今の作業中を保存' }).click();
     await expect(ui.badge).toHaveText('作業中 = 保存版 v1');
 
-    await page.getByLabel('依頼').fill('壊して');
+    await page.getByLabel('依頼').fill('壊して、直せないふりをして');
     await page.getByRole('button', { name: '送る' }).click();
+    // 作る AI が直すラウンドを終えて、壊れたまま人に返すまで待つ
+    await expect(page.getByRole('list', { name: '作る会話' }).locator('[data-kind="gave-up"]')).toBeVisible();
     await expect(page.locator('#build-status')).toContainText('ビルドに失敗しました');
     await page.getByRole('button', { name: '今の作業中を保存' }).click();
     await expect(ui.notice).toContainText('保存できませんでした: ビルドできない状態は保存できません');

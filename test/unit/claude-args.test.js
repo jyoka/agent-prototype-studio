@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AGENT_TOOLS, buildClaudeArgs, describeBilling } from '../../src/server/claude-args.js';
+import { buildFixPrompt } from '../../src/server/fix-prompt.js';
 
 function valueOf(args, flag) {
   return args[args.indexOf(flag) + 1];
@@ -53,4 +54,22 @@ test('作る AI への決まりに、目録の置き場所と形が入る', () =
   for (const key of ['formatVersion', 'entry', 'intent', 'constraints', 'unimplemented', 'data', 'ai', 'scenarios']) {
     assert.ok(prompt.includes(`"${key}"`), key);
   }
+});
+
+test('直すラウンドも同じ引数で起動する。直す依頼は引数に入れず、前の会話を引き継ぐ引数も入らない', () => {
+  const billing = describeBilling({});
+  const first = buildClaudeArgs({ billing });
+  const fixPrompt = buildFixPrompt({
+    request: '見出しを「架空の図書室」にして',
+    gate: { id: 'G4', name: 'compile', label: 'ビルド', status: 'failed', errors: [{ file: 'app/App.jsx', line: 2, column: 1, text: 'x' }] },
+    changedFiles: [{ file: 'app/App.jsx', change: 'modified' }],
+  });
+  // 起動引数は依頼の文を受け取らない。直すラウンドでも同じ値になる(S10)
+  assert.equal(buildClaudeArgs.length, 1);
+  assert.deepEqual(buildClaudeArgs({ billing }), first);
+  assert.equal(valueOf(first, '--tools'), AGENT_TOOLS);
+  assert.ok(first.every((arg) => !arg.includes('前の依頼') && !arg.includes(fixPrompt)));
+  // 前の会話は持ち込まない(S14)
+  for (const flag of ['--resume', '--continue', '--session-id', '--fork-session']) assert.ok(!first.includes(flag), flag);
+  assert.ok(first.includes('--no-session-persistence'));
 });
