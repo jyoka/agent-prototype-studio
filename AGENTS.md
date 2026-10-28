@@ -25,8 +25,9 @@
 ## 確かめ方
 
 ```sh
-npm test                                   # 単体と結合(数秒)
-node --test test/unit/<名前>.test.js       # 一部だけ
+npm test                                   # 単体と結合(1 分ほど)
+node --test test/unit/<名前>.test.js       # 単体の 1 ファイルだけ(数秒)
+node --test test/integration/<名前>.test.js  # 結合の 1 ファイルだけ(ブラウザを使うものは 1 分ほど)
 npm run test:e2e                           # ブラウザの E2E(全体でおよそ 3 分半)
 npx playwright test test/e2e/<名前>.spec.js  # E2E の一部だけ
 ```
@@ -34,6 +35,8 @@ npx playwright test test/e2e/<名前>.spec.js  # E2E の一部だけ
 作業中は、変えたところに関係するテストだけを動かす。画面や流れを変えたら、関係する E2E の spec だけを動かすのが基本。
 E2E の全体は PR の前に 1 回回す。全体の上限は 7 分(`playwright.config.js` の `globalTimeout`)。
 3 分を超えても、それだけで遅すぎるとは判断しない。上限で止まったときは、どの spec で止まったかを見てから直す。
+`npm test` はファイルを並べて回す。全体の時間は、いちばん遅いファイル(make-loop と observe-mcp)で決まる。
+1 つのテストだけなら `node --test --test-name-pattern="<名前の一部>" <ファイル>` で動かす。
 不具合は、利用者から見た動きを再現する E2E を先に書いてから直す。
 
 ## してはいけないこと

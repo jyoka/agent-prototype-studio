@@ -465,9 +465,13 @@ export class Observer {
     const response = await page.goto(build.hostUrl, { timeout: HOST_TIMEOUT_MS });
     if (!response?.ok()) throw new Error(`観察用の親ページを開けません(${response?.status() ?? '応答なし'})`);
     loadStarted = Date.now();
+    // ブラウザが閉じられたら(観察の道具のサーバーの中断など)、読み込みの上限まで待たない
+    const pageClosed = new Promise((resolve) => page.once('close', resolve));
     await page.evaluate((url) => window.studioObserveHost.open(url), build.previewUrl);
 
-    if (!(await waitFor(loaded, limit.loadTimeoutMs))) {
+    const loadedInTime = await waitFor(Promise.race([loaded, pageClosed]), limit.loadTimeoutMs);
+    if (page.isClosed()) throw new Error('読み込みの途中でブラウザのページが閉じられました');
+    if (!loadedInTime) {
       // ページは開いたのに runtime から合図がない。ビルドが消えたか、試作品が別のページへ移ったか、止まっている
       if (frameLoaded) {
         const status = await previewStatus(build.previewUrl);

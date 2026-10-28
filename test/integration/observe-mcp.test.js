@@ -16,6 +16,8 @@ const FIXTURES = path.join(STUDIO_ROOT, 'test', 'fixtures', 'observe');
 const JOB = 'sample-job-consult';
 const REQUEST_TIMEOUT_MS = 60_000;
 const EXIT_TIMEOUT_MS = 30_000;
+// 止めてから終わるまでの上限。読み込みの上限(15 秒)より短い。読み込みの途中で止めても、読み込みの上限まで待たない
+const STOP_WITHIN_MS = 10_000;
 const TEST_TIMEOUT_MS = 180_000;
 const GREETING = 'こんにちは。しおかぜ求人相談の案内役です';
 const TYPED = 'しおかぜ町でカフェのアルバイトを探しています';
@@ -405,8 +407,11 @@ async function interruptOpen(waitMs, interrupt, args = []) {
   server.call('open').catch(() => {});
   await sleep(waitMs);
   interrupt?.(server);
+  const begin = Date.now();
   const exit = await exitWithin(server);
+  const exitMs = Date.now() - begin;
   await assertCleanedUp(server, exit);
+  assert.ok(exitMs < STOP_WITHIN_MS, `止めてから ${exitMs}ms で終わりました。stderr: ${server.stderr()}`);
   return { server, exit };
 }
 
