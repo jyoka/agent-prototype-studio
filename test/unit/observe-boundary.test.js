@@ -75,3 +75,47 @@ test('観察用の親ページは Studio の API を呼ばず、トークンを�
   assert.doesNotMatch(code, /allow-same-origin/);
   assert.doesNotMatch(code, /\bimport\b/);
 });
+
+// 観察を呼ぶ所(作るループの G5 と G6、Studio の observe()、CLI)は、同じ入口(observe-entry.js)を使う(S5)
+const ENTRY = path.join(ROOT, 'src', 'server', 'observe-entry.js');
+const CALLERS = [path.join(ROOT, 'src', 'server', 'index.js'), path.join(ROOT, 'bin', 'observe.js')];
+
+async function sourceFiles() {
+  const files = [];
+  for (const dir of ['src', 'bin']) {
+    for (const name of await fs.readdir(path.join(ROOT, dir), { recursive: true })) {
+      const file = path.join(ROOT, dir, name);
+      if (name.endsWith('.js') && path.relative(OBSERVER_DIR, file).startsWith('..')) files.push(file);
+    }
+  }
+  return files;
+}
+
+test('呼ぶ所が同じ入口を使う: 観察器を直接呼ぶのは入口だけで、作るループと CLI は入口の observeProject を呼ぶ', async () => {
+  // 観察器の observe({ build, ... }) を呼ぶのは、観察器の外では入口だけ
+  const direct = [];
+  for (const file of await sourceFiles()) {
+    const code = (await fs.readFile(file, 'utf8')).replace(/^\s*\/\/.*$/gm, '');
+    if (/\.observe\(\s*\{/.test(code)) direct.push(path.relative(ROOT, file));
+  }
+  assert.deepEqual(direct, [path.relative(ROOT, ENTRY)]);
+
+  for (const file of CALLERS) {
+    const source = await fs.readFile(file, 'utf8');
+    const fromEntry = importsOf(source).some((spec) => path.resolve(path.dirname(file), spec) === ENTRY);
+    assert.ok(fromEntry, `${path.relative(ROOT, file)} が観察の入口を import していません`);
+    assert.match(source, /\bobserveProject\(\{/, `${path.relative(ROOT, file)} が observeProject を呼んでいません`);
+  }
+
+  // 作るループの関門 G5 と G6(build-requests.js の this.observe)には、入口を通す observeGate を渡す
+  const index = await fs.readFile(CALLERS[0], 'utf8');
+  assert.match(index, /observe: observeGate,/);
+  const gate = index.slice(index.indexOf('async function observeGate('), index.indexOf('const requests = new BuildRequests('));
+  assert.match(gate, /observeShown\(/);
+  const shown = index.slice(index.indexOf('async function observeShown('), index.indexOf('async function observeGate('));
+  assert.match(shown, /return observeProject\(\{/);
+  // CLI は作業中の app/ を見るモードで、プロダクト内 AI はモックに決めている
+  const cli = await fs.readFile(CALLERS[1], 'utf8');
+  assert.match(cli, /mode: 'working'/);
+  assert.match(cli, /aiConnection: 'mock'/);
+});

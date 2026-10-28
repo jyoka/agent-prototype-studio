@@ -67,7 +67,9 @@ flowchart TB
         redact["伏せる、秘密を探す<br/>redact.js"]
     end
 
+    observeEntry["観察の入口<br/>src/server/observe-entry.js observeProject"]
     observer["観察器<br/>src/observer/observe.js、browser.js、<br/>operations.js、scenario.js"]
+    observeCli["観察の CLI<br/>bin/observe.js(npm run observe)"]
 
     subgraph local["データの置き場: ~/PrototypeStudio"]
         app[("projects/ID/app/<br/>作る AI が書ける唯一の場所")]
@@ -91,7 +93,7 @@ flowchart TB
     agent -- "子プロセス(cwd は app/)" --> cli
     cli -- "読み書き" --> app
     requests -- "G2〜G4 検査、契約、ビルド" --> store
-    requests -- "G5 起動の確認、G6 シナリオ<br/>(index.js が渡す observe)" --> observer
+    requests -- "G5 起動の確認、G6 シナリオ<br/>(index.js が渡す observe)" --> observeEntry
     requests -- "run.json" --> dotstudio
     store --> def
     store -- "esbuild" --> dotstudio
@@ -106,13 +108,16 @@ flowchart TB
     handoff -- "書き出す" --> handoffs
     handoff -- "run.json と report を読む" --> dotstudio
     handoff --> redact
-    entry -- "observe()" --> observer
+    entry -- "observe()" --> observeEntry
+    observeCli -- "working: app/ を一時にビルド" --> observeEntry
+    observeEntry -- "observe()" --> observer
     observer -- "playwright-core で操作" --> host
     host -- "MessageChannel" --> oframe
     host -- "開く" --> api
     oframe -- "読む" --> preview
     host -- "エラー、AI の要求<br/>(exposeBinding)" --> observer
     observer -- "スクリーンショット" --> dotstudio
+    observeEntry -- "report.json" --> dotstudio
 ```
 
 | 部品 | ファイル | すること |
@@ -129,6 +134,8 @@ flowchart TB
 | 偽接続 | `src/agent/fake-claude.js` | `claude -p` と同じ形の出力を出す偽の CLI。モデルを呼ばない |
 | runtime | `src/runtime/runtime.js` | 試作品に配る。試作品のエラーを画面に知らせ、`window.studio.ai` を配る |
 | 観察器 | `src/observer/observe.js`、`src/observer/browser.js` | 表示中のビルドをヘッドレスの Playwright の Chromium で開き、読み込み、エラー、スクリーンショット、シナリオの結果、最後の画面、合否を report で返す。ブラウザは Studio の中で 1 つ。観察は 1 つずつ、毎回新しい文脈で回す。文脈は観察用の親ページと観察するビルドにだけ要求を出せ、名前の解決は loopback だけ([ADR 0002](../adr/0002-observer-and-harness.md))。作る AI、画面、版、会話の実装は import しない。設計は [harness.md の 3](../design/harness.md#3-観察) |
+| 観察の入口 | `src/server/observe-entry.js` | 観察を呼ぶ所が、どれも通る `observeProject`。同じ形の report を返す。モードは 2 つ。`shown` は Studio の表示中のビルドを見る。`working` は作業中の `app/` を一時フォルダーにビルドし、loopback の空いているポートに自分の試作品の配信と観察用の親ページを立てて見る。`working` の AI は、その観察だけのモックの会話。観察器は会話の実装を import しないので、入口は `src/server/` に置く |
+| 観察の CLI | `bin/observe.js` | `npm run observe -- <プロジェクト>`。入口を `working` で呼び、結果をターミナルに出す。終了コードは `passed` で 0 |
 | 観察器の操作とシナリオ | `src/observer/operations.js`、`src/observer/scenario.js` | 7 つの操作(読む、要素の一覧と検査、クリック、入力、スクロール、画面幅、スクリーンショット)と 4 つの確かめ。シナリオの手順と、1 つずつの呼び出し(`observe()` の `operate`)が同じ関数を使う。シナリオの形の検査、`app/scenarios/` の読み込み、Studio の基本のシナリオ([形](../configuration.md#シナリオappscenariosjson)) |
 | 観察用の親ページ | `src/ui/observe.html`、`src/ui/observe.js` | Studio の `/observe.html` に置く静的なページ。試作品を同じ sandbox の iframe に入れ、エラーと AI の要求を `exposeBinding` で観察器に渡す。Studio の API は呼ばない(CSP の `connect-src 'none'`) |
 
@@ -192,9 +199,21 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 
 ### 観察する(ヘッドレスのブラウザで試作品を動かす)
 
-1. 呼ぶ側が `startStudio` の `observe(<id>, { scenarios, viewports, aiConnection, operate, limits })` を呼ぶ。`scenarios` を渡さなければ、目録の `scenarios` のフォルダー(既定は `app/scenarios/`)から読む。`aiConnection: 'mock'` で観察用の会話の `ai` 関数(`createObservationAi`)を作り、やり取りを report の `ai` に入れる。作る run の関門 G5 と G6 も、同じ観察の入口を使う。G5 はシナリオを回さず、基本のシナリオも回さない。プロダクト内 AI の要求は断る。G6 は目録のシナリオと基本のシナリオを回し、プロダクト内 AI はいつもモックの観察用の会話で答える。どちらも report とスクリーンショットは `.studio/runs/` に置く
+観察を呼ぶ所は、今は 3 つです。どれも観察の入口 `observeProject`(`src/server/observe-entry.js`)を通り、同じ形の report を返します(harness.md の S5)。
+
+| 呼ぶ所 | 入口のモード | 見るもの | プロダクト内 AI | report とスクリーンショット |
+|---|---|---|---|---|
+| 作る run の関門 G5、G6(`build-requests.js` → `index.js` の `observeGate`) | `shown` | Studio の表示中のビルド | G5 は断る。G6 はいつもモックの観察用の会話 | `.studio/runs/<run-id>/rounds/<n>/` |
+| Studio の `observe(<id>, { scenarios, viewports, ai, aiConnection, operate, limits })`(`index.js`) | `shown` | Studio の表示中のビルド | 渡した `ai` 関数か、`aiConnection` の観察用の会話 | `.studio/observations/<観察の ID>/` |
+| CLI `npm run observe -- <プロジェクト>`(`bin/observe.js`) | `working` | 作業中の `app/` を一時フォルダーにビルドしたもの | いつもモック。実モデルは選べない | `.studio/observations/<観察の ID>/` |
+
+後の作る AI の観察の道具(MCP サーバー、jyoka/tasks#311)は `working` で、画面の「確かめる」(P27)は `shown` で、同じ入口を呼ぶ。
+
+1. 呼ぶ所が `observeProject({ projectDir, mode, ... })` を呼ぶ。`scenarios` を渡さなければ、目録の `scenarios` のフォルダー(既定は `app/scenarios/`)から読む。`aiConnection: 'mock'` で観察用の会話の `ai` 関数(`createObservationAi`)を作り、やり取りを report の `ai` に入れる。G5 はシナリオを回さず、基本のシナリオも回さない。G6 は目録のシナリオと基本のシナリオを回す。`outDir` を渡さなければ、`.studio/observations/<観察の ID>/` を新しく作り、`report.json` もそこに書く
+   - `shown`: Studio が、表示中のビルドの結果と、Studio のプレビューの配信と `/observe.html` の URL を渡す
+   - `working`: 入口が `app/` を `os.tmpdir()` の下にビルドし、loopback の空いているポートに試作品の配信(`preview-server.js`)と観察用の親ページ(`studio-server.js` の `createObserveHostHandler`。API とトークンはない)を立てる。プロジェクトの `.studio/builds/` と表示中のビルドには触れない。終わったら配信を止め、一時フォルダーを消す
 2. ビルドに失敗していれば、ブラウザを開かずに `failed` を返す
-3. `ObserverBrowser` が Playwright の Chromium を起動するか、起動したものを使い回す。見つからなければ `unverified` と入れ方を返す
+3. `ObserverBrowser` が Playwright の Chromium を起動するか、起動したものを使い回す(Studio の中では 1 つを使い回す。CLI は観察ごとに起動して閉じる)。見つからなければ `unverified` と入れ方を返す
 4. 新しい文脈で `/observe.html` を開き、試作品の URL を iframe で読む。runtime のエラー、`console.error`、処理されない reject は、`MessagePort` から親ページを通って観察器に届く。親ページと観察するビルドの外への要求は断ち、`blocked-request` のエラーにする
 5. 15 秒で読み込みが終わらなければ時間切れのエラーにする。終われば、指定した画面幅ごとにスクリーンショットを `.studio/observations/<観察の ID>/` に撮る
 6. Studio の基本のシナリオ(起動、AI のある試作品ではあいさつ)、渡されたシナリオの順に、手順どおりに回す。試作品の iframe の中を、役割と名前、ラベル、文字で指して操作する。失敗した手順で止め、そのときの画面を撮る。最後に画面の文字とアクセシビリティの木の要約、空でないかを report の `page` に入れる
@@ -214,7 +233,7 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | `projects/<id>/app/prototype.json` | 目録。入口、意図、制約、架空のデータ、AI の設定、シナリオの置き場所。ビルドのたびに検査する。なければ既定の値で読む([形](../configuration.md#試作品の目録appprototypejson)) | 作る AI、版の復元 |
 | `projects/<id>/app/scenarios/` | シナリオ(`*.json`)。観察器が手順どおりに回す([形](../configuration.md#シナリオappscenariosjson)) | 作る AI、版の復元 |
 | `projects/<id>/.studio/builds/` | ビルドの結果 | Studio |
-| `projects/<id>/.studio/observations/` | 観察のスクリーンショット(画面幅ごと、シナリオの手順、失敗したとき) | 観察器 |
+| `projects/<id>/.studio/observations/<観察の ID>/` | 観察の report(`report.json`)とスクリーンショット(画面幅ごと、シナリオの手順、失敗したとき)。観察ごとに新しいフォルダー | 観察の入口、観察器 |
 | `projects/<id>/.studio/runs/<run-id>/` | 作る run の記録(`run.json`)と、G5 と G6 の report とスクリーンショット。新しい 20 個だけ残す | Studio、観察器 |
 | `projects/<id>/.studio/versions/`、`working.json` | 保存した版と、どの版から作業しているか | Studio |
 | `projects/<id>/.studio/handoff-notes.json` | 引き継ぎのメモ | Studio |
