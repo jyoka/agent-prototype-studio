@@ -319,13 +319,60 @@ button { font: inherit; }
 .run .steps li.step-short::before { content: "・"; }
 .run-updated { margin: 0.3rem 0 0; padding: 0.3rem 0.5rem; border-left: 3px solid var(--ok); background: #eaf5ee; }
 .run-status { margin: 0.3rem 0 0; font-size: 0.8rem; color: var(--muted); }
-.run-dev { margin-top: 0.2rem; font-size: 0.75rem; color: var(--muted); }
-.run-dev summary { cursor: pointer; }
-.run-dev ul { margin: 0.2rem 0; padding-left: 1.1rem; }
-.run-dev li { word-break: break-all; }
-.run-dev p { margin: 0.1rem 0; }
+.run-dev, .evidence-dev { margin-top: 0.2rem; font-size: 0.75rem; color: var(--muted); }
+.run-dev summary, .evidence-dev summary { cursor: pointer; }
+.run-dev ul, .evidence-dev ul { margin: 0.2rem 0; padding-left: 1.1rem; }
+.run-dev li, .evidence-dev li { word-break: break-all; }
+.run-dev p, .evidence-dev p { margin: 0.1rem 0; }
 .run[data-status="failed"] .run-status, .run[data-status="timed-out"] .run-status { color: var(--error); }
 .run[data-status="done"] .run-status, .run[data-status="fixed"] .run-status { color: var(--ok); }
+/* 作るループの結果の帯(harness.md の 7.2) */
+.evidence { margin-top: 0.4rem; padding: 0.4rem 0.6rem; border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 6px; background: var(--panel); }
+.evidence[data-status="passed"], .evidence[data-status="fixed"] { border-left-color: var(--ok); }
+.evidence[data-status="failed"] { border-left-color: var(--error); }
+.evidence[data-status="unverified"] { border-left-color: #c77700; }
+.evidence .run-status { margin: 0; font-size: 0.9rem; color: var(--text); }
+.evidence[data-status="failed"] .run-status { color: var(--error); }
+.evidence[data-stale="true"] { background: var(--bg); }
+.evidence-stale { margin: 0.3rem 0 0; padding: 0.2rem 0.4rem; border-radius: 4px; background: var(--warn-bg); font-size: 0.8rem; }
+.evidence-shots { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; margin: 0.4rem 0 0; padding: 0; }
+.evidence-shots li { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; font-size: 0.75rem; }
+.shot { padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); cursor: zoom-in; line-height: 0; }
+.shot img { display: block; width: auto; height: 64px; max-width: 120px; object-fit: cover; object-position: top; }
+.evidence-rounds { margin: 0.3rem 0 0; font-size: 0.8rem; }
+.evidence-actions:empty { display: none; }
+.evidence-more { margin-top: 0.3rem; font-size: 0.85rem; }
+.evidence-more > summary { cursor: pointer; color: var(--accent); }
+.evidence-more .card-label { margin: 0.5rem 0 0.1rem; font-weight: 600; }
+.evidence-gates { list-style: none; margin: 0.3rem 0 0; padding: 0; }
+.evidence-gates > li { padding: 0.15rem 0 0.15rem 0.4rem; border-left: 3px solid var(--line); margin: 0.15rem 0; }
+.evidence-gates > li[data-status="passed"] { border-left-color: var(--ok); }
+.evidence-gates > li[data-status="failed"] { border-left-color: var(--error); }
+.evidence-gates > li[data-status="unverified"] { border-left-color: #c77700; }
+.evidence-gates .gate-result { font-weight: 600; }
+.evidence-problems { margin: 0.1rem 0 0; padding-left: 1.1rem; word-break: break-word; }
+.evidence-line { display: block; color: var(--muted); }
+.evidence-scenario { margin: 0.2rem 0; }
+.evidence-scenario p { margin: 0; }
+.evidence-scenario ol { margin: 0.1rem 0; padding-left: 1.4rem; }
+.evidence-fix p { margin: 0.2rem 0 0; }
+.evidence-raw summary { cursor: pointer; color: var(--muted); font-size: 0.8rem; }
+.evidence-raw pre { margin: 0.2rem 0; padding: 0.3rem; max-height: 12rem; overflow: auto; background: var(--bg); white-space: pre-wrap; word-break: break-word; font-size: 0.75rem; }
+.shot-dialog { max-width: 92vw; max-height: 92vh; padding: 0.6rem; border: 1px solid var(--line); border-radius: 8px; }
+.shot-dialog::backdrop { background: rgb(0 0 0 / 0.5); }
+.shot-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.4rem; }
+.shot-dialog-head p { margin: 0; font-weight: 600; }
+.shot-dialog-head button { border: 0; background: none; font-size: 1.2rem; cursor: pointer; }
+.shot-dialog-image img { display: block; max-width: calc(92vw - 1.4rem); max-height: calc(92vh - 4rem); }
+/* 試作品を表示できないとき(ux-redesign.md 7-6) */
+.preview-broken { margin-bottom: 0.6rem; padding: 0.6rem 0.8rem; border: 1px solid var(--error); border-radius: 6px; background: var(--error-bg); }
+.preview-broken[hidden] { display: none; }
+.preview-broken h3 { margin: 0 0 0.3rem; font-size: 0.95rem; }
+.preview-broken p { margin: 0.2rem 0 0.4rem; }
+.preview-broken button { padding: 0.35rem 0.8rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--accent); cursor: pointer; }
+.preview-broken .problem-list { margin: 0.2rem 0; padding-left: 1.1rem; }
+.frame-label { margin: 0 0 0.2rem; font-size: 0.8rem; color: var(--muted); }
+.frame-label[hidden] { display: none; }
 .make-error { color: var(--error); padding: 0.4rem 0; }
 .request-form { display: flex; flex-direction: column; gap: 0.3rem; }
 .request-form label { font-weight: 600; }
