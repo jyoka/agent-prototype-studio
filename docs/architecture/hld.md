@@ -296,5 +296,6 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 
 - [ADR 0001: ローカル実行と隔離の方式](../adr/0001-local-runtime-and-isolation.md)
 - [ADR 0002: 観察器と harness](../adr/0002-observer-and-harness.md)(観察器のブラウザ、観察器の隔離、直すラウンドの回数)
+- [ADR 0003: エージェントの構成を模擬する基盤](../adr/0003-agent-simulation.md)(案。まだ作っていない。設計は [agent-simulation.md](../design/agent-simulation.md))
 - [初見で分かる画面の設計](../design/ux-redesign.md)
 - [引き継ぎの形](../handoff.md)
