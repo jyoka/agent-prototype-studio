@@ -91,7 +91,7 @@ flowchart TB
     agent -- "子プロセス(cwd は app/)" --> cli
     cli -- "読み書き" --> app
     requests -- "G2〜G4 検査、契約、ビルド" --> store
-    requests -- "G5 起動の確認<br/>(index.js が渡す observe)" --> observer
+    requests -- "G5 起動の確認、G6 シナリオ<br/>(index.js が渡す observe)" --> observer
     requests -- "run.json" --> dotstudio
     store --> def
     store -- "esbuild" --> dotstudio
@@ -120,7 +120,7 @@ flowchart TB
 | Studio の API と画面 | `src/server/studio-server.js`、`src/server/security.js` | `/api/projects/...` の API と `src/ui/` の画面を出す。Host、Origin、トークンを確かめる |
 | 試作品の配信 | `src/server/preview-server.js` | ビルドしたものを別ポートから CSP つきで出す。API はない |
 | 試作品とビルド | `src/server/store.js`、`src/server/projects.js`、`src/server/build.js`、`src/server/inspect.js`、`src/server/manifest.js` | 試作品の一覧と置き場、`app/` と目録の検査、esbuild で 1 つの classic script に束ねる |
-| 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1〜G5 を安い順に回す。失敗したら直す依頼(`fix-prompt.js`)を作って作る AI に返し、2 回まで直させる。`run.json` に残す |
+| 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1〜G6 を安い順に回す。失敗したら直す依頼(`fix-prompt.js`)を作って作る AI に返し、2 回まで直させる。`run.json` に残す |
 | プロダクト内 AI | `src/server/product-ai/` | 試作品ごとの会話、状態、実行の記録を持つ。1 ターンは harness(`harness.js`)が抽出 → 決定 → 言い方で回し、何を聞くか、段の遷移、終わるかはコードが決める。接続はモックか Claude Code。`app/ai.json` を検査する |
 | 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する |
 | 引き継ぎ | `src/server/handoff.js` | 作業中の試作品を `handoffs/` に書き出す。形は [handoff.md](../handoff.md) |
@@ -143,33 +143,35 @@ flowchart TB
 | 前の指紋(`fingerprint`) | コード | `app/` の指紋(`snapshotApp`)と、表示中のプロダクト内 AI の設定を取る |
 | 作る AI(`agent`) | モデル | `startAgentProcess` が偽接続か Claude Code を `app/` で起動する。引数は `buildClaudeArgs`、依頼は標準入力。stream-json を `readMessage` で項目に直して画面に流す。直すラウンドでも、引数、cwd、時間の上限、止め方は同じで、標準入力が直す依頼になるだけ |
 | G1 変更の確認(`changes`) | コード | 指紋を取り直し、変わったファイルを出す。変わっていなければ、ここで終わる(`unchanged`)。直すラウンドで変わっていなければ、直せなかったとして `failed` で終わる |
-| G2 検査、G3 契約、G4 ビルド(`inspect`、`contract`、`compile`) | コード | `ProjectStore.build` の 1 回の呼び出し。`buildApp` が誤りに段の名前を付けるので、どの関門で止まったかが分かる。失敗したら、試す画面は前のビルドのまま |
+| G2 検査、G3 契約、G4 ビルド(`inspect`、`contract`、`compile`) | コード | `ProjectStore.build` の 1 回の呼び出し。`buildApp` が誤りに段の名前を付けるので、どの関門で止まったかが分かる。G3 は目録、`ai.json`、目録が指すシナリオ(`readScenarios`)の形を検査し、シナリオの誤りはファイル、シナリオ、手順で返す。失敗したら、試す画面は前のビルドのまま |
 | G5 起動の確認(`launch`) | コード | 新しいビルドを観察器で開く。基本のシナリオなしで、3 つの画面幅を撮る。読み込みが 15 秒以内に終わり、エラーと `console.error` がなく、画面が空でなければ通る。ビルドが失敗したら行わない |
-| 直す依頼(`fix`) | コード | G2〜G5 のどれかが失敗したら入る。直すラウンドが `MAX_FIX_ROUNDS`(2 回)に満たなければ、`buildFixPrompt`(`fix-prompt.js`)で直す依頼を作り、作る AI の節に戻る。満たしたら、失敗と証拠を人に返す |
+| G6 シナリオ(`scenarios`) | コード | G5 が通ったら入る。`app/scenarios/` の各シナリオと、Studio の基本のシナリオを観察器で回す。プロダクト内 AI は、利用者が選んだ接続によらず、いつもモックの観察用の会話(`createObservationAi`)。時間の上限は 1 本 60 秒、関門の全体で 3 分。超えたら G6 の失敗。失敗したシナリオごとに、名前、失敗した手順、期待と実際、そのときの画面の文字を残す |
+| 直す依頼(`fix`) | コード | G2〜G6 のどれかが失敗したら入る。直すラウンドが `MAX_FIX_ROUNDS`(2 回)に満たなければ、`buildFixPrompt`(`fix-prompt.js`)で直す依頼を作り、作る AI の節に戻る。満たしたら、失敗と証拠を人に返す |
 | 証拠をまとめる(`evidence`) | コード | 結果の状態を決め、関門の結果を作る会話に出し、`.studio/runs/<run-id>/run.json` に残す |
 
 1. 利用者が「作る」欄に依頼を書く。画面が `POST /api/projects/<id>/build-requests` を送る
 2. `execute` が節を順に回す。どの節も次の節を返し、通った節を `run.nodes` に残す。関門は失敗した段で止まり、直す依頼の節へ進む
-3. 直すラウンド: 直す依頼の節が、失敗を決まった型の文にして作る AI に返す。入れるのは、元の依頼、直前のラウンドで失敗した関門の名前と結果(8,000 文字まで)、変わったファイルの名前だけ。前の会話や report の全部は入れない。作る AI が直したら、G1 から回し直す。作る AI の起動は 1 つの依頼で 3 回まで。依頼の前から同じ失敗が出ていたら、印(`preexisting`)を付ける
+3. 直すラウンド: 直す依頼の節が、失敗を決まった型の文にして作る AI に返す。入れるのは、元の依頼、直前のラウンドで失敗した関門の名前と結果(8,000 文字まで。G6 はシナリオの名前、失敗した手順、期待と実際、そのときの画面の文字)、変わったファイルの名前だけ。前の会話や report の全部は入れない。作る AI が直したら、G1 から回し直す。作る AI の起動は 1 つの依頼で 3 回まで。依頼の前から同じ失敗が出ていたら、印(`preexisting`)を付ける
 4. `app/ai.json` が変わってビルドが通ったら、前の設定との違いを会話に出す
-5. ビルドが通ったら、画面が iframe を新しいビルドに切り替える。G5 で失敗しても切り替える(利用者が失敗を見られるように)。会話には「確かめで失敗あり」と出す
-6. 観察器が使えない(Playwright の Chromium がない)ときは、G5 を「未確認」にする。通ったとは扱わない。直すラウンドにも進まない
-7. 中断と時間切れは、直すラウンドの作る AI にも同じく効く。止めた run と、作る AI が失敗した run は、直させない。関門を回している間の中断は、今の関門を終えてから止め、次の直すラウンドに進まない
+5. ビルドが通ったら、画面が iframe を新しいビルドに切り替える。G5 か G6 で失敗しても切り替える(利用者が失敗を見られるように)。会話には「確かめで失敗あり」と出す
+6. 観察器が使えない(Playwright の Chromium がない)ときは、G5 と G6 を「未確認」にする。通ったとは扱わない。直すラウンドにも進まない
+7. 直すラウンドで `app/scenarios/`(目録のシナリオの置き場所)が変わったら、結果に「確かめ方が変わりました」と出し、`run.json` の `scenariosChanged` に印を残す。作る AI がシナリオを弱めて通すことを、人が見つけられるようにするため。基本のシナリオは `app/` の外にあり、作る AI は変えられない
+8. 中断と時間切れは、直すラウンドの作る AI にも同じく効く。止めた run と、作る AI が失敗した run は、直させない。関門を回している間の中断は、今の関門を終えてから止め、次の直すラウンドに進まない
 
-作る会話には、ラウンドの区切り(`round`)、直す依頼の要約(`fix-request`)、人に返したこと(`gave-up`)、前からの失敗の印(`preexisting`)が項目として出ます。
+作る会話には、ラウンドの区切り(`round`)、直す依頼の要約(`fix-request`)、G6 の結果(`scenarios-ok`、`scenarios-failed`、`scenarios-unverified`)、確かめ方が変わった印(`scenarios-changed`)、人に返したこと(`gave-up`)、前からの失敗の印(`preexisting`)が項目として出ます。
 
 結果の状態(`run.status`)は次のどれかです。
 
 | 状態 | 意味 |
 |---|---|
-| `passed` | 最初のラウンドで、関門 G1〜G5 がすべて通った |
-| `fixed` | 直すラウンドの後に、関門 G1〜G5 がすべて通った |
-| `unverified` | ビルドは通ったが、観察器が使えず、起動を確かめていない |
+| `passed` | 最初のラウンドで、関門 G1〜G6 がすべて通った |
+| `fixed` | 直すラウンドの後に、関門 G1〜G6 がすべて通った |
+| `unverified` | ビルドは通ったが、観察器が使えず、起動かシナリオを確かめていない |
 | `unchanged` | `app/` が変わらなかった |
-| `failed` | 2 回の直すラウンドの後も、関門 G2〜G5 のどれかで失敗した。直すラウンドで `app/` が変わらなかったときも含む |
+| `failed` | 2 回の直すラウンドの後も、関門 G2〜G6 のどれかで失敗した。直すラウンドで `app/` が変わらなかったときも含む |
 | `agent-failed`、`cancelled`、`timed-out` | 作る AI が失敗した、中断した、時間の上限を超えた。変わったファイルがあれば、G1〜G4 は回す |
 
-`run.json` には、通った節の列(`nodes`。どの節にもラウンドの番号が付く)、最後のラウンドの関門の結果(`gates`)、ラウンドごとの節の列と関門の結果と直す依頼で返した失敗(`rounds`)、作る AI の起動の回数と時間(`agentLaunches`)、変わったファイル、ビルドの結果、report の場所(`reports`)を書きます。依頼の文と直す依頼の文は書きません。G5 の report とスクリーンショットは `.studio/runs/<run-id>/rounds/<ラウンド>/` に置きます。
+`run.json` には、通った節の列(`nodes`。どの節にもラウンドの番号が付く)、最後のラウンドの関門の結果(`gates`)、ラウンドごとの節の列と関門の結果と直す依頼で返した失敗(`rounds`)、作る AI の起動の回数と時間(`agentLaunches`)、変わったファイル、直すラウンドで変わったシナリオ(`scenariosChanged`)、ビルドの結果、report の場所(`reports`)を書きます。依頼の文と直す依頼の文は書きません。G5 の report とスクリーンショットは `.studio/runs/<run-id>/rounds/<ラウンド>/` に、G6 のものはその下の `scenarios/` に置きます。
 
 ### 試す(試作品の中の AI と話す)
 
@@ -189,7 +191,7 @@ Claude Code の接続は、今は 1 回の呼び出し(`respond`)で返事と `u
 
 ### 観察する(ヘッドレスのブラウザで試作品を動かす)
 
-1. 呼ぶ側が `startStudio` の `observe(<id>, { scenarios, viewports, aiConnection, operate, limits })` を呼ぶ。`scenarios` を渡さなければ、目録の `scenarios` のフォルダー(既定は `app/scenarios/`)から読む。`aiConnection: 'mock'` で観察用の会話の `ai` 関数(`createObservationAi`)を作り、やり取りを report の `ai` に入れる。作る run の関門 G5 も、同じ観察の入口を使う(シナリオは回さず、基本のシナリオも回さない。`aiConnection` は渡さず、プロダクト内 AI の要求は断る。report とスクリーンショットは `.studio/runs/` に置く)
+1. 呼ぶ側が `startStudio` の `observe(<id>, { scenarios, viewports, aiConnection, operate, limits })` を呼ぶ。`scenarios` を渡さなければ、目録の `scenarios` のフォルダー(既定は `app/scenarios/`)から読む。`aiConnection: 'mock'` で観察用の会話の `ai` 関数(`createObservationAi`)を作り、やり取りを report の `ai` に入れる。作る run の関門 G5 と G6 も、同じ観察の入口を使う。G5 はシナリオを回さず、基本のシナリオも回さない。プロダクト内 AI の要求は断る。G6 は目録のシナリオと基本のシナリオを回し、プロダクト内 AI はいつもモックの観察用の会話で答える。どちらも report とスクリーンショットは `.studio/runs/` に置く
 2. ビルドに失敗していれば、ブラウザを開かずに `failed` を返す
 3. `ObserverBrowser` が Playwright の Chromium を起動するか、起動したものを使い回す。見つからなければ `unverified` と入れ方を返す
 4. 新しい文脈で `/observe.html` を開き、試作品の URL を iframe で読む。runtime のエラー、`console.error`、処理されない reject は、`MessagePort` から親ページを通って観察器に届く。親ページと観察するビルドの外への要求は断ち、`blocked-request` のエラーにする
@@ -212,7 +214,7 @@ Claude Code の接続は、今は 1 回の呼び出し(`respond`)で返事と `u
 | `projects/<id>/app/scenarios/` | シナリオ(`*.json`)。観察器が手順どおりに回す([形](../configuration.md#シナリオappscenariosjson)) | 作る AI、版の復元 |
 | `projects/<id>/.studio/builds/` | ビルドの結果 | Studio |
 | `projects/<id>/.studio/observations/` | 観察のスクリーンショット(画面幅ごと、シナリオの手順、失敗したとき) | 観察器 |
-| `projects/<id>/.studio/runs/<run-id>/` | 作る run の記録(`run.json`)と、G5 の report とスクリーンショット。新しい 20 個だけ残す | Studio、観察器 |
+| `projects/<id>/.studio/runs/<run-id>/` | 作る run の記録(`run.json`)と、G5 と G6 の report とスクリーンショット。新しい 20 個だけ残す | Studio、観察器 |
 | `projects/<id>/.studio/versions/`、`working.json` | 保存した版と、どの版から作業しているか | Studio |
 | `projects/<id>/.studio/handoff-notes.json` | 引き継ぎのメモ | Studio |
 | `handoffs/` | 引き継ぎの書き出し | Studio |

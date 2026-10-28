@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { FAKE_CLI } from '../../src/server/agent-connection.js';
 import { BuildRequests, MAX_FIX_ROUNDS } from '../../src/server/build-requests.js';
+import { startStudio } from '../../src/server/index.js';
 import { describeBilling } from '../../src/server/claude-args.js';
 import { STUDIO_ROOT } from '../../src/server/config.js';
 import { readFixPrompt } from '../../src/server/fix-prompt.js';
@@ -13,7 +14,8 @@ import { ProjectStore } from '../../src/server/store.js';
 
 // 作るループを閉じる(docs/design/harness.md の 2.1〜2.4、S1、S12、S14)。
 // 作る AI は偽接続か、決まった手順で app/ を書く小さな台本(どちらもモデルを呼ばない)。
-// 観察器(関門 G5)は、呼ぶ側が渡す observe 関数を差し替えて確かめる
+// 観察器(関門 G5、G6)は、呼ぶ側が渡す observe 関数を差し替えて確かめる。
+// 関門 G6 の終わりの方のテストは、Studio を起動し、本物の観察器(Playwright の Chromium)でシナリオを回す
 const PROJECT = 'sample-library';
 const ENV = { PATH: process.env.PATH };
 const BROKEN_LINE = 'const studioBroken = ; // 偽接続が「壊して」で入れた行\n';
@@ -24,6 +26,11 @@ function passedReport() {
 
 function failedReport(message = '架空の在庫表が読めません') {
   return { ...passedReport(), verdict: 'failed', errors: [{ kind: 'runtime', message, stack: '' }] };
+}
+
+// 関門 G6 の report。基本のシナリオ 1 本が通った
+function scenariosReport() {
+  return { ...passedReport(), scenarios: [{ name: '起動して描画が空でなく、エラーがない', base: true, file: null, verdict: 'passed', steps: [], failed: null }] };
 }
 
 // 台本の作る AI。呼ばれるたびに、受け取ったもの(引数、cwd、stdin、環境変数の名前)を RECORD_FILE に 1 行で残し、
@@ -46,7 +53,7 @@ if (step === 'hang') {
 }
 `;
 
-async function setup(t, { steps, observe = passedReport, timeoutMs } = {}) {
+async function setup(t, { steps, observe = passedReport, scenarios = scenariosReport, timeoutMs, scenarioLimits } = {}) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-make-loop-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   await ensureSampleProjects(home, path.join(STUDIO_ROOT, 'samples'));
@@ -62,13 +69,20 @@ async function setup(t, { steps, observe = passedReport, timeoutMs } = {}) {
     env = { ...ENV, RECORD_FILE: recordFile, STEPS: JSON.stringify(steps) };
     connection = { kind: 'claude', label: '台本', command: process.execPath, prefixArgs: [script], billing: describeBilling(env), problem: null };
   }
+  // calls は関門 G5 の観察、scenarioCalls は関門 G6 の観察
   const calls = [];
+  const scenarioCalls = [];
   const requests = new BuildRequests({
     store,
     connection,
     env,
     ...(timeoutMs ? { timeoutMs } : {}),
+    ...(scenarioLimits ? { scenarioLimits } : {}),
     observe: async (id, options) => {
+      if (options.gate === 'scenarios') {
+        scenarioCalls.push(options);
+        return scenarios(scenarioCalls.length);
+      }
       calls.push(options);
       return observe(calls.length);
     },
@@ -86,7 +100,7 @@ async function setup(t, { steps, observe = passedReport, timeoutMs } = {}) {
       .filter(Boolean)
       .map((line) => JSON.parse(line));
   const appFile = () => fs.readFile(path.join(root, 'app', 'App.jsx'), 'utf8');
-  return { home, root, store, requests, calls, start, send, readRun, records, appFile };
+  return { home, root, store, requests, calls, scenarioCalls, start, send, readRun, records, appFile };
 }
 
 const gateStatus = (gates) => Object.fromEntries(gates.map((gate) => [gate.id, gate.status]));
@@ -106,10 +120,10 @@ test('関門の失敗を直す依頼にして作る AI に返し、直った版�
   // ラウンドごとの節の列。直した後は G1 から回し直す
   assert.deepEqual(record.rounds.map((round) => round.nodes), [
     ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', 'fix'],
-    ['agent', 'changes', 'inspect', 'contract', 'compile', 'launch', 'evidence'],
+    ['agent', 'changes', 'inspect', 'contract', 'compile', 'launch', 'scenarios', 'evidence'],
   ]);
-  assert.deepEqual(gateStatus(record.rounds[0].gates), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'failed', G5: 'skipped' });
-  assert.deepEqual(gateStatus(record.rounds[1].gates), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', G5: 'passed' });
+  assert.deepEqual(gateStatus(record.rounds[0].gates), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'failed', G5: 'skipped', G6: 'skipped' });
+  assert.deepEqual(gateStatus(record.rounds[1].gates), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', G5: 'passed', G6: 'passed' });
   assert.deepEqual(record.gates, record.rounds[1].gates);
   assert.equal(record.rounds[1].input, 'fix');
   assert.equal(record.rounds[1].fixOf.round, 1);
@@ -118,19 +132,24 @@ test('関門の失敗を直す依頼にして作る AI に返し、直った版�
   // 起動の確認は直した版だけで行い、report はそのラウンドのフォルダーに置く
   assert.equal(calls.length, 1);
   assert.equal(calls[0].outDir, path.join(root, '.studio', 'runs', run.id, 'rounds', '2'));
-  assert.deepEqual(record.reports, [{ gate: 'G5', round: 2, file: `.studio/runs/${run.id}/rounds/2/report.json` }]);
+  assert.deepEqual(record.reports, [
+    { gate: 'G5', round: 2, file: `.studio/runs/${run.id}/rounds/2/report.json` },
+    { gate: 'G6', round: 2, file: `.studio/runs/${run.id}/rounds/2/scenarios/report.json` },
+  ]);
+  // 直すラウンドで変わったのは App.jsx だけ。シナリオは変わっていない
+  assert.deepEqual(record.scenariosChanged, []);
   // 依頼の文と直す依頼の文は run.json に入れない
   assert.ok(!JSON.stringify(record).includes('壊して'));
 
   // 作る会話に、ラウンドの区切りと直す依頼の要約を出す
   assert.deepEqual(
-    kinds(run).filter((kind) => ['changes', 'build-failed', 'round', 'fix-request', 'build-ok', 'launch-ok', 'gates'].includes(kind)),
-    ['changes', 'build-failed', 'round', 'fix-request', 'changes', 'build-ok', 'launch-ok', 'gates'],
+    kinds(run).filter((kind) => ['changes', 'build-failed', 'round', 'fix-request', 'build-ok', 'launch-ok', 'scenarios-ok', 'gates', 'scenarios-changed'].includes(kind)),
+    ['changes', 'build-failed', 'round', 'fix-request', 'changes', 'build-ok', 'launch-ok', 'scenarios-ok', 'gates'],
   );
   assert.equal(run.items.find((item) => item.kind === 'round').text, '直すラウンド 1/2: 作る AI を起動し直します(起動 2/3 回目)。');
   assert.match(run.items.find((item) => item.kind === 'fix-request').text, /^G4 ビルドの失敗\(app\/App\.jsx:2:\d+ .+\)を作る AI に返しました。添えたのは、元の依頼、失敗の中身、変わったファイルの名前\(1 個\)だけです。$/);
   assert.ok(run.items.some((item) => item.kind === 'assistant' && item.text.startsWith('Studio の直す依頼を読みました(失敗した関門: G4 ビルド)')));
-  assert.equal(run.items.find((item) => item.kind === 'gates').text, 'Studio が確かめた結果(直すラウンド 1 の後): G1 変更の確認: 通った、G2 検査: 通った、G3 契約: 通った、G4 ビルド: 通った、G5 起動の確認: 通った');
+  assert.equal(run.items.find((item) => item.kind === 'gates').text, 'Studio が確かめた結果(直すラウンド 1 の後): G1 変更の確認: 通った、G2 検査: 通った、G3 契約: 通った、G4 ビルド: 通った、G5 起動の確認: 通った、G6 シナリオ: 通った');
 });
 
 test('起動の確認(G5)の失敗も直す依頼にして返す。2 回目の直す依頼には、直前のラウンドの失敗だけを入れる', async (t) => {
@@ -145,7 +164,7 @@ test('起動の確認(G5)の失敗も直す依頼にして返す。2 回目の�
   assert.equal(record.agentLaunches.count, 3);
   assert.deepEqual(record.rounds.map((round) => round.fixOf?.gate ?? null), [null, 'G4', 'G5']);
   assert.deepEqual(gateStatus(record.rounds[1].gates).G5, 'failed');
-  assert.deepEqual(record.reports.map((report) => report.round), [2, 3]);
+  assert.deepEqual(record.reports.map((report) => [report.gate, report.round]), [['G5', 2], ['G5', 3], ['G6', 3]]);
 
   const [first, second, third] = await records();
   assert.equal(first.stdin, '見出しを「台本の図書室」にして');
@@ -213,10 +232,10 @@ test('直すラウンドで app/ が変わらなかったら、そこで failed 
   assert.equal(calls.length, 1);
   const record = await readRun(run);
   assert.deepEqual(record.rounds[1].nodes, ['agent', 'changes', 'evidence']);
-  assert.deepEqual(gateStatus(record.rounds[1].gates), { G1: 'unchanged', G2: 'skipped', G3: 'skipped', G4: 'skipped', G5: 'skipped' });
+  assert.deepEqual(gateStatus(record.rounds[1].gates), { G1: 'unchanged', G2: 'skipped', G3: 'skipped', G4: 'skipped', G5: 'skipped', G6: 'skipped' });
   assert.deepEqual(record.rounds[1].changedFiles, []);
   // 結果には、前のラウンドの G5 の失敗が残る
-  assert.deepEqual(gateStatus(record.gates), { G1: 'unchanged', G2: 'passed', G3: 'passed', G4: 'passed', G5: 'failed' });
+  assert.deepEqual(gateStatus(record.gates), { G1: 'unchanged', G2: 'passed', G3: 'passed', G4: 'passed', G5: 'failed', G6: 'skipped' });
   assert.equal(record.gates.find((gate) => gate.id === 'G1').detail, '直すラウンドで app/ が変わりませんでした');
   const gaveUp = run.items.find((item) => item.kind === 'gave-up');
   assert.match(gaveUp.text, /^直すラウンドで app\/ が変わらなかったので、ここで止めました。前のラウンドの失敗\(G5 起動の確認\)は直っていません。/);
@@ -335,4 +354,202 @@ test('直すラウンドの作る AI も、中断できる', async (t) => {
   assert.equal(run.status, 'cancelled');
   const record = await readRun(run);
   assert.deepEqual(record.agentLaunches.launches.map((launch) => [launch.round, launch.outcome]), [[1, 'passed'], [2, 'cancelled']]);
+});
+
+test('関門 G6 の全体の時間の上限を超えたら、G6 の失敗にする', async (t) => {
+  // 観察が返らない(試作品が止まり、観察器も返さない)
+  const { scenarioCalls, send, readRun } = await setup(t, { scenarios: () => new Promise(() => {}), scenarioLimits: { gateTimeoutMs: 1000 } });
+  const begin = Date.now();
+  const run = await send('見出しを「返らない図書室」にして');
+  assert.ok(Date.now() - begin < 15_000, `${Date.now() - begin}ms`);
+  assert.equal(scenarioCalls[0].limits.observeTimeoutMs, 1000);
+  const record = await readRun(run);
+  const g6 = record.rounds[0].gates.find((gate) => gate.id === 'G6');
+  assert.equal(g6.status, 'failed');
+  assert.equal(g6.summary, 'シナリオの関門が時間の上限(1 秒)を超えました。無限ループや重い処理がないか確かめてください');
+  assert.deepEqual(g6.errors.map((e) => e.kind), ['timeout']);
+  assert.equal(record.rounds[1].fixOf.gate, 'G6');
+  assert.ok(run.items.some((item) => item.kind === 'scenarios-failed' && item.text.startsWith('確かめで失敗あり: シナリオの関門が時間の上限(1 秒)を超えました')));
+});
+
+// ここから先は、Studio を起動し、本物の観察器(Playwright の Chromium)で関門 G6 のシナリオを回す
+const PRODUCT_AI_CLI = path.join(STUDIO_ROOT, 'test', 'fixtures', 'fake-claude.js');
+
+async function bootStudio(t, { config = {}, env = {}, scenarioLimits, projects = {} } = {}) {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-make-loop-g6-'));
+  for (const [id, files] of Object.entries(projects)) {
+    const root = path.join(home, 'projects', id);
+    for (const [name, content] of Object.entries(files)) {
+      await fs.mkdir(path.dirname(path.join(root, 'app', name)), { recursive: true });
+      await fs.writeFile(path.join(root, 'app', name), content);
+    }
+    await fs.mkdir(path.join(root, '.studio'), { recursive: true });
+    await fs.writeFile(path.join(root, '.studio', 'project.json'), JSON.stringify({ title: id }));
+  }
+  const studio = await startStudio(
+    { home, studioPort: 0, previewPort: 0, openBrowser: false, ...config },
+    { env: { PATH: process.env.PATH, ...env }, scenarioLimits },
+  );
+  t.after(async () => {
+    await studio.close();
+    await fs.rm(home, { recursive: true, force: true });
+  });
+  const send = async (id, text) => {
+    const started = await studio.requests.start(id, text);
+    return new Promise((resolve) => started.subscribe(() => {}, resolve));
+  };
+  const projectFile = (id, file) => path.join(home, 'projects', id, ...file.split('/'));
+  const readJson = async (id, file) => JSON.parse(await fs.readFile(projectFile(id, file), 'utf8'));
+  return { home, studio, send, projectFile, readJson };
+}
+
+// Playwright の Chromium がない環境では、関門 G5 と G6 が未確認になる(通ったとは扱わない)。そのときは確かめられない
+function skipWithoutChromium(t, run) {
+  const launch = run.gates.find((gate) => gate.id === 'G5');
+  if (launch.status !== 'unverified' || !/Chromium/.test(launch.reason ?? '')) return false;
+  t.skip('Playwright の Chromium がない');
+  return true;
+}
+
+test('関門 G6 で app/scenarios/ と基本のシナリオを回し、失敗を直すラウンドに返し、直った版で fixed になる', async (t) => {
+  const { send, readJson, projectFile } = await bootStudio(t);
+  const run = await send('sample-library', 'シナリオを足して、見出しを崩して');
+  if (skipWithoutChromium(t, run)) return;
+  assert.equal(run.status, 'fixed', JSON.stringify(run.items, null, 2));
+  const record = await readJson('sample-library', run.evidence.run);
+  assert.deepEqual(record.rounds.map((round) => round.nodes), [
+    ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', 'launch', 'scenarios', 'fix'],
+    ['agent', 'changes', 'inspect', 'contract', 'compile', 'launch', 'scenarios', 'evidence'],
+  ]);
+  assert.deepEqual(record.rounds.map((round) => gateStatus(round.gates).G6), ['failed', 'passed']);
+  assert.equal(record.rounds[1].fixOf.gate, 'G6');
+
+  // 失敗の中身: シナリオの名前、失敗した手順、期待と実際、そのときの画面の文字
+  const g6 = record.rounds[0].gates.find((gate) => gate.id === 'G6');
+  assert.equal(g6.scenarioCount, 2);
+  assert.equal(g6.baseCount, 1);
+  assert.equal(g6.failures.length, 1);
+  const [failure] = g6.failures;
+  assert.deepEqual(
+    { scenario: failure.scenario, file: failure.file, base: failure.base, step: failure.step, expected: failure.expected },
+    { scenario: '見出しが出る', file: 'app/scenarios/heading.json', base: false, step: 1, expected: '役割 heading、名前「こもれび図書室」 が見える' },
+  );
+  assert.equal(failure.actual, '役割 heading、名前「こもれび図書室」 が見えません');
+  assert.match(failure.pageText, /こ〓も〓れ〓び〓図〓書〓室/);
+
+  // 直す依頼の要約と、偽接続が G6 の失敗を読んだこと
+  assert.equal(
+    run.items.find((item) => item.kind === 'fix-request').text,
+    'G6 シナリオの失敗(シナリオ「見出しが出る」(app/scenarios/heading.json)の 1 番目の手順で失敗しました)を作る AI に返しました。添えたのは、元の依頼、失敗の中身、変わったファイルの名前(2 個)だけです。',
+  );
+  assert.ok(run.items.some((item) => item.kind === 'assistant' && item.text.startsWith('Studio の直す依頼を読みました(失敗した関門: G6 シナリオ)')));
+  assert.match(run.items.find((item) => item.kind === 'scenarios-failed').text, /^確かめで失敗あり: シナリオ「見出しが出る」の 1 番目の手順で失敗しました\(役割 heading、名前「こもれび図書室」 が見えません\)/);
+  assert.equal(
+    run.items.find((item) => item.kind === 'scenarios-ok').text,
+    'シナリオを確かめました。基本のシナリオ 1 本と、app/ のシナリオ 1 本が、すべて通りました(プロダクト内 AI はモック)。',
+  );
+
+  // 直した版の report: 基本のシナリオと app/ のシナリオが通っている
+  const passed = await readJson('sample-library', record.reports.find((report) => report.gate === 'G6' && report.round === 2).file);
+  assert.deepEqual(passed.scenarios.map((scenario) => [scenario.base, scenario.file, scenario.verdict]), [
+    [true, null, 'passed'],
+    [false, 'app/scenarios/heading.json', 'passed'],
+  ]);
+  assert.match(await fs.readFile(projectFile('sample-library', 'app/App.jsx'), 'utf8'), /<h1>こもれび図書室<\/h1>/);
+  // シナリオは最初のラウンドで足した。直すラウンドでは変わっていないので、確かめ方の印はない
+  assert.deepEqual(record.scenariosChanged, []);
+  assert.ok(!kinds(run).includes('scenarios-changed'));
+});
+
+test('直すラウンドでシナリオが変わったら「確かめ方が変わりました」と出し、run.json に印を残す', async (t) => {
+  const { send, readJson } = await bootStudio(t);
+  const run = await send('sample-library', 'シナリオを足して、見出しを崩して、シナリオを弱めて直して');
+  if (skipWithoutChromium(t, run)) return;
+  // 作る AI はシナリオを弱めて通した。関門は通るが、印が残る
+  assert.equal(run.status, 'fixed', JSON.stringify(run.items, null, 2));
+  const changed = run.items.filter((item) => item.kind === 'scenarios-changed');
+  assert.deepEqual(changed.map((item) => item.text), [
+    '確かめ方が変わりました: 直すラウンド 1 で、作る AI がシナリオを変えました(app/scenarios/heading.json)。シナリオを弱めたり消したりして通していないか、変わったシナリオを確かめてください。',
+  ]);
+  // 結果の項目の後に出す
+  assert.ok(kinds(run).indexOf('scenarios-changed') > kinds(run).indexOf('gates'));
+  const record = await readJson('sample-library', run.evidence.run);
+  assert.deepEqual(record.scenariosChanged, [{ round: 2, files: [{ file: 'app/scenarios/heading.json', change: 'modified' }] }]);
+  assert.deepEqual(record.rounds.map((round) => round.scenariosChanged ?? false), [false, true]);
+});
+
+test('関門の中のプロダクト内 AI はいつもモック。利用者が実モデルの接続を選んでいても、関門ではモックを使う', async (t) => {
+  const log = path.join(os.tmpdir(), `studio-g6-product-ai-${process.pid}-${Date.now()}.ndjson`);
+  t.after(() => fs.rm(log, { force: true }));
+  // 実モデルの接続(Claude Code)は、偽の CLI を指す。呼ばれたら log に 1 行残る
+  const { studio, send, readJson } = await bootStudio(t, {
+    config: { allowClaudeCode: true },
+    env: { STUDIO_CLAUDE_BIN: PRODUCT_AI_CLI, FAKE_CLAUDE_LOG: log },
+  });
+  const id = 'sample-study-consult';
+  studio.aiSessions.select(id, 'claude-code', { confirmed: true });
+  assert.equal(studio.aiSessions.connectionChoices(id).selected, 'claude-code');
+
+  const run = await send(id, '見出しを「あおぞら学習相談 二」にして');
+  if (skipWithoutChromium(t, run)) return;
+  assert.equal(run.status, 'passed', JSON.stringify(run.gates, null, 2));
+  const g6 = run.gates.find((gate) => gate.id === 'G6');
+  // 基本のシナリオ(起動、あいさつ)と、app/scenarios/ の会話のシナリオ(aiState を確かめる)
+  assert.equal(g6.scenarioCount, 3);
+  assert.equal(g6.baseCount, 2);
+  const report = await readJson(id, g6.report);
+  assert.ok(report.scenarios.some((scenario) => scenario.file === 'app/scenarios/talk-and-plan.json' && scenario.verdict === 'passed'));
+  // 関門の中の AI のやり取りは、観察用の会話で、接続はモック
+  assert.ok(report.ai.some((entry) => entry.type === 'reply'), JSON.stringify(report.ai.map((entry) => entry.type)));
+  for (const entry of report.ai) {
+    assert.ok(entry.observation, JSON.stringify(entry));
+    if (entry.connection) assert.deepEqual(entry.connection, { kind: 'mock', label: entry.connection.label, real: false });
+  }
+  // 実モデルの接続は 1 回も起動していない。利用者の選んだ接続はそのままで、観察の会話は閉じている
+  await assert.rejects(fs.access(log), { code: 'ENOENT' });
+  assert.equal(studio.aiSessions.connectionChoices(id).selected, 'claude-code');
+  assert.ok(studio.aiSessions.conversations(id).every((conversation) => !conversation.startsWith('observation-')));
+});
+
+test('シナリオ 1 本の時間の上限を超えたら、G6 の失敗になる(押すと止まらないループに入る見本)', async (t) => {
+  const { send, readJson } = await bootStudio(t, {
+    scenarioLimits: { scenarioTimeoutMs: 2000 },
+    projects: {
+      'loop-board': {
+        // 読み込みと起動の確認(G5)は通る。ボタンを押すと止まらないループに入る
+        'main.jsx': [
+          "import { createRoot } from 'react-dom/client';",
+          'function spin() {',
+          '  let count = 0;',
+          '  while (count >= 0) count = (count + 1) % 1000;',
+          '}',
+          "createRoot(document.getElementById('root')).render(",
+          '  <main>',
+          '    <h1>架空の掲示板</h1>',
+          '    <button onClick={spin}>並べ替える</button>',
+          '  </main>,',
+          ');',
+          '',
+        ].join('\n'),
+        'scenarios/sort.json': JSON.stringify({
+          name: '並べ替えると終わる',
+          steps: [{ do: 'click', target: { role: 'button', name: '並べ替える' } }, { expect: 'text', contains: '並べ替えました' }],
+        }),
+      },
+    },
+  });
+  const begin = Date.now();
+  const run = await send('loop-board', '見出しを「架空の掲示板 二」にして');
+  if (skipWithoutChromium(t, run)) return;
+  assert.ok(Date.now() - begin < 90_000, `${Date.now() - begin}ms`);
+  const record = await readJson('loop-board', run.evidence.run);
+  assert.equal(gateStatus(record.rounds[0].gates).G5, 'passed');
+  const g6 = record.rounds[0].gates.find((gate) => gate.id === 'G6');
+  assert.equal(g6.status, 'failed', JSON.stringify(g6));
+  const failure = g6.failures.find((f) => f.file === 'app/scenarios/sort.json');
+  assert.equal(failure.actual, 'シナリオが 2 秒で終わりませんでした');
+  // 直す依頼で返す。偽接続は直すところが見つからず app/ を変えないので、そこで failed
+  assert.equal(record.rounds[1].fixOf.gate, 'G6');
+  assert.equal(run.status, 'failed');
+  assert.equal(gateStatus(record.gates).G6, 'failed');
 });

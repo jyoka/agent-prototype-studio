@@ -161,7 +161,8 @@ button { font: inherit; }
 .run .steps li .who { display: block; font-size: 0.75rem; color: var(--muted); }
 .run .steps li[data-kind="denied"],
 .run .steps li[data-kind="cancelled"],
-.run .steps li[data-kind="hint"] { border-left-color: #c77700; background: var(--warn-bg); }
+.run .steps li[data-kind="hint"],
+.run .steps li[data-kind="scenarios-changed"] { border-left-color: #c77700; background: var(--warn-bg); }
 .run .steps li[data-kind="failed"],
 .run .steps li[data-kind="tool-error"],
 .run .steps li[data-kind="build-failed"],

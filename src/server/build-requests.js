@@ -5,6 +5,7 @@ import path from 'node:path';
 import { startAgentProcess, STOP_STEPS_MS } from './agent-process.js';
 import { diffSnapshots, MAX_SNAPSHOT_ENTRIES, snapshotApp } from './app-snapshot.js';
 import { buildClaudeArgs, DEFAULT_MAX_BUDGET_USD, MAX_TURNS } from './claude-args.js';
+import { describeStep } from '../observer/scenario.js';
 import { buildFixPrompt, describeFailure, ERROR_KIND_TEXT } from './fix-prompt.js';
 import { AI_FILE, describeDefinitionChanges } from './product-ai/definition.js';
 import { readMessage } from './stream-json.js';
@@ -20,6 +21,11 @@ const MAX_GATE_ERRORS = 20;
 const MAX_GATE_TEXT = 1000;
 // 起動の確認で撮る画面幅。証拠のスクリーンショットになる
 const LAUNCH_VIEWPORTS = ['mobile', 'tablet', 'desktop'];
+// 関門 G6 の時間の上限: シナリオ 1 本と、関門の全体(harness.md の 2.2)。超えたら、その関門の失敗
+export const SCENARIO_GATE_LIMITS = Object.freeze({ scenarioTimeoutMs: 60_000, gateTimeoutMs: 3 * 60_000 });
+// 関門 G6 の結果に残す、失敗したシナリオの数と、そのときの画面の文字の長さ
+const MAX_GATE_FAILURES = 20;
+const MAX_FAILURE_PAGE_TEXT = 2000;
 export const RUN_FORMAT = 'prototype-studio-run';
 // 直すラウンドの上限。作る AI の起動は、1 つの依頼で最初の 1 回と合わせて 3 回まで(harness.md の 2.2、2026-10-28 の決定)
 export const MAX_FIX_ROUNDS = 2;
@@ -37,6 +43,7 @@ export const BLUEPRINT = Object.freeze([
   { name: 'contract', kind: 'code', gate: 'G3', label: '契約' },
   { name: 'compile', kind: 'code', gate: 'G4', label: 'ビルド' },
   { name: 'launch', kind: 'code', gate: 'G5', label: '起動の確認' },
+  { name: 'scenarios', kind: 'code', gate: 'G6', label: 'シナリオ' },
   { name: 'fix', kind: 'code', label: '直す依頼' },
   { name: 'evidence', kind: 'code', label: '証拠をまとめる' },
 ].map((node) => Object.freeze(node)));
@@ -46,6 +53,7 @@ const BUILD_GATES = ['inspect', 'contract', 'compile'];
 const GATE_STATUS_TEXT = { passed: '通った', failed: '失敗', unverified: '未確認', unchanged: '変更なし', skipped: '行わない' };
 
 const clip = (value, max = MAX_GATE_TEXT) => String(value ?? '').slice(0, max);
+const GATE_TIMEOUT = Symbol('gate-timeout');
 const freshGates = () => GATES.map((node) => ({ id: node.gate, name: node.name, label: node.label, status: 'skipped' }));
 // ビルドの誤りを、関門の結果に残す形にする
 const gateErrors = (errors) =>
@@ -53,7 +61,10 @@ const gateErrors = (errors) =>
 
 // 失敗の指紋。依頼の前から同じ失敗が出ていたかを比べる。行と列は、前後の行が変わるとずれるので入れない
 function failureSignature(gate) {
-  const errors = (gate.errors ?? []).map((e) => (e.text !== undefined ? `${e.file} ${e.text}` : `${e.kind} ${e.message}`)).sort();
+  const errors = [
+    ...(gate.failures ?? []).map((f) => `${f.file ?? ''} ${f.scenario} ${f.step ?? ''} ${f.actual}`),
+    ...(gate.errors ?? []).map((e) => (e.text !== undefined ? `${e.file} ${e.text}` : `${e.kind} ${e.message}`)),
+  ].sort();
   return JSON.stringify([gate.name, errors.length > 0 ? errors : [gate.summary ?? '']]);
 }
 
@@ -73,13 +84,59 @@ function launchGate(report, reason) {
   return { ...base, status: 'passed' };
 }
 
+// 関門 G6 の結果を、観察器の report から決める。report がなければ未確認。
+// 失敗したシナリオごとに、名前、失敗した手順、期待と実際、そのときの画面の文字を残す(直す依頼に入れる)
+function scenarioGate(report, reason) {
+  if (!report) return { status: 'unverified', reason };
+  const scenarios = report.scenarios ?? [];
+  const errors = (report.errors ?? []).slice(0, MAX_GATE_ERRORS).map((e) => ({ kind: e.kind, message: clip(e.message) }));
+  const failed = scenarios.filter((scenario) => scenario.verdict !== 'passed');
+  const failures = failed.slice(0, MAX_GATE_FAILURES).map((scenario) => {
+    const n = scenario.failed?.step ?? null;
+    const step = n ? scenario.steps?.[n - 1]?.step : null;
+    return {
+      scenario: clip(scenario.name, 200),
+      file: scenario.file ?? null,
+      base: scenario.base === true,
+      step: n,
+      expected: step ? clip(describeStep(step), 300) : null,
+      actual: clip(scenario.failed?.message ?? 'シナリオが通りませんでした'),
+      pageText: scenario.failed?.pageText ? clip(scenario.failed.pageText.replace(/\s+/g, ' ').trim(), MAX_FAILURE_PAGE_TEXT) : null,
+    };
+  });
+  const base = {
+    verdict: report.verdict,
+    scenarioCount: scenarios.length,
+    baseCount: scenarios.filter((scenario) => scenario.base).length,
+    failedCount: failed.length,
+    failures,
+    errorCount: report.errors?.length ?? 0,
+    errors,
+  };
+  if (report.verdict === 'unverified') return { ...base, status: 'unverified', reason: report.reason ?? '観察器が理由を返しませんでした' };
+  if (report.verdict !== 'failed' && scenarios.length > 0) return { ...base, status: 'passed' };
+  if (report.verdict !== 'failed') return { ...base, status: 'unverified', reason: 'シナリオを回せませんでした' };
+  const first = failures[0];
+  let summary;
+  if (first) {
+    const where = first.step ? `の ${first.step} 番目の手順` : '';
+    summary = `シナリオ「${first.scenario}」${where}で失敗しました(${clip(first.actual, 200)})`;
+    if (failed.length > 1) summary += `。ほか ${failed.length - 1} 本`;
+  } else if (errors[0]) {
+    summary = `シナリオの間に${ERROR_KIND_TEXT[errors[0].kind] ?? errors[0].kind}がありました(${clip(errors[0].message, 200)})`;
+  } else {
+    summary = 'シナリオの確かめで失敗しました';
+  }
+  return { ...base, status: 'failed', summary };
+}
+
 // 関門の結果から、run の結果の状態を決める(harness.md の 2.4)。作る AI を止めたときと失敗したとき、
 // 直すラウンドで app/ が変わらなかったときは、その節で決まる
 function finalStatus(gates, round) {
   const by = Object.fromEntries(gates.map((gate) => [gate.name, gate.status]));
   if (by.changes === 'unchanged') return 'unchanged';
   if (gates.some((gate) => gate.status === 'failed')) return 'failed';
-  if (by.launch === 'unverified') return 'unverified';
+  if (by.launch === 'unverified' || by.scenarios === 'unverified') return 'unverified';
   return round > 1 ? 'fixed' : 'passed';
 }
 
@@ -88,8 +145,10 @@ export class AgentUnavailableError extends Error {}
 
 // 作る欄の依頼を受け、作る run を blueprint の節の順に回す。
 // 作る AI の節(model)と、決まった節(code)を分ける(ADR-0001、Stripe の Minions)。
-// observe(id, { viewports, outDir }) は、表示中のビルドを観察器で開き、report を返す関数(関門 G5)。
-// なければ G5 は未確認になる。onNode({ projectId, runId, node, kind }) は、節に入るたびに呼ぶ(確かめ用)
+// observe(id, { gate, viewports, outDir, limits }) は、表示中のビルドを観察器で開き、report を返す関数。
+// gate が 'launch' なら関門 G5(基本のシナリオなし)、'scenarios' なら関門 G6(app/ のシナリオと基本のシナリオを、
+// プロダクト内 AI をモックにして回す)。なければ G5 と G6 は未確認になる。
+// scenarioLimits は G6 の時間の上限(SCENARIO_GATE_LIMITS)。onNode({ projectId, runId, node, kind }) は、節に入るたびに呼ぶ(確かめ用)
 export class BuildRequests {
   constructor({
     store,
@@ -99,6 +158,7 @@ export class BuildRequests {
     log = () => {},
     onNode = () => {},
     timeoutMs = DEFAULT_AGENT_TIMEOUT_MS,
+    scenarioLimits = SCENARIO_GATE_LIMITS,
     maxBudgetUsd = DEFAULT_MAX_BUDGET_USD,
   }) {
     this.store = store;
@@ -111,11 +171,12 @@ export class BuildRequests {
     this.log = log;
     this.onNode = onNode;
     this.timeoutMs = timeoutMs;
+    this.scenarioLimits = { ...SCENARIO_GATE_LIMITS, ...scenarioLimits };
     this.maxBudgetUsd = maxBudgetUsd;
     this.runs = new Map();
     this.active = new Map();
     this.versions = new Map();
-    // プロジェクトごとの、表示中のビルドの起動の確認の失敗(依頼の前から同じ失敗が出ていたかを比べる)
+    // プロジェクトごとの、表示中のビルドの起動の確認かシナリオの失敗(依頼の前から同じ失敗が出ていたかを比べる)
     this.launchFailures = new Map();
     this.closing = false;
   }
@@ -192,6 +253,8 @@ export class BuildRequests {
       round: 1,
       rounds: [{ round: 1, input: 'request', changedFiles: [], gates: null }],
       launches: [],
+      // 直すラウンドで app/ のシナリオが変わったら、ラウンドとファイルを残す(確かめ方が変わった印)
+      scenariosChanged: [],
       evidence: null,
     };
     this.onNode({ projectId: id, runId: run.id, node: 'accept', kind: 'code' });
@@ -255,6 +318,8 @@ export class BuildRequests {
     state.before = await snapshotApp(state.paths.app);
     state.roundBefore = state.before;
     state.aiBefore = this.store.aiDefinition(state.id);
+    // シナリオの置き場所(表示中の版の目録)。直すラウンドでシナリオが変わったかを見るのに使う
+    state.scenarioFolder = this.store.manifest(state.id)?.scenarios ?? null;
     state.appDirs = [state.paths.app, await fs.realpath(state.paths.app)];
     state.knownFailure = this.knownFailure(state.id);
     return { next: 'agent', outcome: 'passed' };
@@ -408,10 +473,24 @@ export class BuildRequests {
       this.setGate(run, 'changes', { status: 'unchanged', changedFiles: 0 });
       return { next: 'evidence', outcome: 'unchanged' };
     }
+    if (fixing) this.noteScenarioChanges(state, changed);
     const names = `${changed.slice(0, 50).map((c) => c.file).join('、')}${changed.length > 50 ? ` ほか ${changed.length - 50} 個` : ''}`;
     this.addItem(id, run, 'changes', `${fixing ? '直すラウンドで変わったファイル' : '変わったファイル'}: ${names}`);
     this.setGate(run, 'changes', { status: 'passed', changedFiles: changed.length });
     return { next: 'inspect', outcome: 'passed' };
+  }
+
+  // 直すラウンドで、作る AI が app/ のシナリオを変えたか。シナリオを弱めて通すことを防ぐため、
+  // 変わったら印を残し、結果に「確かめ方が変わりました」と出す(harness.md の 2.3)。
+  // シナリオの置き場所は、依頼の前と今の目録の両方を見る(目録で置き場所を変えても見逃さない)
+  noteScenarioChanges(state, changed) {
+    const { id, run } = state;
+    const folders = new Set(['scenarios', state.scenarioFolder, this.store.manifest(id)?.scenarios].filter(Boolean));
+    const prefixes = [...folders].map((folder) => `app/${folder}/`);
+    const files = changed.filter((change) => prefixes.some((prefix) => change.file.startsWith(prefix)));
+    if (files.length === 0) return;
+    run.scenariosChanged.push({ round: run.round, files: files.slice(0, 50) });
+    state.currentRound.scenariosChanged = true;
   }
 
   // 直すラウンドで app/ が変わらなかったとき。前のラウンドの失敗を隠さない:
@@ -496,7 +575,7 @@ export class BuildRequests {
       reason = 'この Studio では観察器を使えません';
     } else {
       try {
-        report = await this.observe(id, { viewports: LAUNCH_VIEWPORTS, outDir: roundDir });
+        report = await this.observe(id, { gate: 'launch', viewports: LAUNCH_VIEWPORTS, outDir: roundDir });
       } catch (error) {
         reason = `観察の途中で問題が起きました: ${clip(error?.message ?? error, 300)}`;
       }
@@ -519,6 +598,79 @@ export class BuildRequests {
     } else {
       this.launchFailures.delete(id);
       this.addItem(id, run, 'launch-unverified', `起動は確かめていません(未確認): ${gate.reason}`);
+      // 起動を確かめていない版では、シナリオも回さない。通ったとは扱わない
+      this.setGate(run, 'scenarios', { status: 'unverified', reason: '起動の確認が未確認なので、シナリオは回していません' });
+    }
+    const next = { passed: 'scenarios', failed: 'fix' }[gate.status] ?? 'evidence';
+    return { next, outcome: gate.status };
+  }
+
+  // 節 scenarios(G6 シナリオ): app/ のシナリオと Studio の基本のシナリオを、観察器で回す。
+  // プロダクト内 AI はいつもモック(呼ぶ側の observe が観察用の会話をモックで作る。ADR-0001 の T6)。
+  // 時間の上限は 1 本 scenarioTimeoutMs、関門の全体で gateTimeoutMs。超えたら、この関門の失敗にする
+  async node_scenarios(state) {
+    const { id, paths, run, active } = state;
+    if (run.status === 'cancelled' || run.status === 'timed-out' || this.closing) {
+      const reason = this.closing ? 'Studio を止めているので、シナリオは回しません' : '作る AI を止めたので、シナリオは回しません';
+      this.setGate(run, 'scenarios', { status: 'skipped', reason });
+      return { next: 'evidence', outcome: 'skipped' };
+    }
+    // 起動の確認の間に中断を受けたら、次の関門には進まない
+    if (active.cancelRequested) {
+      run.status = 'cancelled';
+      this.setGate(run, 'scenarios', { status: 'skipped', reason: '中断したので、シナリオは回していません' });
+      this.addItem(id, run, 'cancelled', '中断しました。G6 シナリオの確かめは行いません。');
+      return { next: 'evidence', outcome: 'cancelled' };
+    }
+    const { scenarioTimeoutMs, gateTimeoutMs } = this.scenarioLimits;
+    const outDir = path.join(this.runDir(paths, run), 'rounds', String(run.round), 'scenarios');
+    const reportFile = path.join(outDir, 'report.json');
+    const timeoutText = `シナリオの関門が時間の上限(${Math.round(gateTimeoutMs / 1000)} 秒)を超えました。無限ループや重い処理がないか確かめてください`;
+    let report = null;
+    let reason = null;
+    let timedOut = false;
+    if (typeof this.observe !== 'function') {
+      reason = 'この Studio では観察器を使えません';
+    } else {
+      const started = Date.now();
+      let timer;
+      const deadline = new Promise((resolve) => {
+        timer = setTimeout(() => resolve(GATE_TIMEOUT), gateTimeoutMs);
+      });
+      try {
+        const observing = Promise.resolve(this.observe(id, { gate: 'scenarios', viewports: [], outDir, limits: { scenarioTimeoutMs, observeTimeoutMs: gateTimeoutMs } }));
+        observing.catch(() => {});
+        const result = await Promise.race([observing, deadline]);
+        // 観察器が自分の上限で止まったときは、未確認の report が返る。関門の上限を使い切っていれば時間切れ
+        if (result === GATE_TIMEOUT || (result?.verdict === 'unverified' && Date.now() - started >= gateTimeoutMs)) timedOut = true;
+        else report = result;
+      } catch (error) {
+        reason = `観察の途中で問題が起きました: ${clip(error?.message ?? error, 300)}`;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    if (report) {
+      await fs.mkdir(outDir, { recursive: true });
+      await fs.writeFile(reportFile, `${JSON.stringify(report, null, 2)}\n`);
+    }
+    const gate = timedOut
+      ? { status: 'failed', summary: timeoutText, errorCount: 1, errors: [{ kind: 'timeout', message: timeoutText }], failures: [] }
+      : scenarioGate(report, reason);
+    gate.report = report ? this.relativeToProject(paths, reportFile) : null;
+    this.setGate(run, 'scenarios', gate);
+    const checked = run.gates.find((g) => g.name === 'scenarios');
+    if (gate.status === 'passed') {
+      this.launchFailures.delete(id);
+      const own = gate.scenarioCount - gate.baseCount;
+      this.addItem(id, run, 'scenarios-ok', `シナリオを確かめました。基本のシナリオ ${gate.baseCount} 本と、app/ のシナリオ ${own} 本が、すべて通りました(プロダクト内 AI はモック)。`);
+    } else if (gate.status === 'failed') {
+      this.addItem(id, run, 'scenarios-failed', `確かめで失敗あり: ${gate.summary}。試す画面は新しいビルドにしたので、そこで動きを確かめられます。`);
+      this.markPreexisting(state, checked);
+      this.launchFailures.set(id, { buildId: run.build?.buildId ?? null, signature: failureSignature(checked) });
+    } else {
+      this.launchFailures.delete(id);
+      this.addItem(id, run, 'scenarios-unverified', `シナリオは確かめていません(未確認): ${gate.reason}`);
     }
     return { next: gate.status === 'failed' ? 'fix' : 'evidence', outcome: gate.status };
   }
@@ -587,6 +739,16 @@ export class BuildRequests {
       const when = run.round > 1 ? `(直すラウンド ${run.round - 1} の後)` : '';
       this.addItem(id, run, 'gates', `Studio が確かめた結果${when}: ${parts.join('、')}`);
     }
+    if (run.scenariosChanged.length > 0) {
+      const files = [...new Set(run.scenariosChanged.flatMap((change) => change.files.map((file) => file.file)))];
+      const rounds = run.scenariosChanged.map((change) => change.round - 1).join('、');
+      this.addItem(
+        id,
+        run,
+        'scenarios-changed',
+        `確かめ方が変わりました: 直すラウンド ${rounds} で、作る AI がシナリオを変えました(${files.join('、')})。シナリオを弱めたり消したりして通していないか、変わったシナリオを確かめてください。`,
+      );
+    }
     this.log(`作る AI の実行が終わりました: ${id}(${run.status}、起動 ${run.launches.length} 回、変わったファイル ${run.changedFiles.length} 個)`);
     return { next: null, outcome: 'passed' };
   }
@@ -628,6 +790,8 @@ export class BuildRequests {
         launches: run.launches,
       },
       changedFiles: run.changedFiles,
+      // 直すラウンドで app/ のシナリオが変わったら、確かめ方が変わった印(ラウンドとファイル)
+      scenariosChanged: run.scenariosChanged,
       build: run.build,
       reports: run.rounds.flatMap((round) => (round.gates ?? []).filter((gate) => gate.report).map((gate) => ({ gate: gate.id, round: round.round, file: gate.report }))),
     };
