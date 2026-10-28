@@ -111,3 +111,24 @@ npm run check:claude -- --run   # 実機で確かめる
 結果と費用の合計は、作業の場所の `report.json` に出る。起動ごとの stream-json は `runs/` に残る。API の料金がかかる見込みのときは、`--allow-api-billing` を付けない限り止まる。
 
 2026-10-28 の結果(Claude Code 2.1.312): 9 つのうち 8 つが期待どおりだった。`app/` の外への書き込みは止まったが、断られたことが `permission_denials` に出なかった。詳しくは [ADR-0002](adr/0002-observer-and-harness.md#実機の確認2026-10-28)。
+jyoka/tasks#314 でもう一度動かした結果(同じ日、同じ版)も、9 つのうち 8 つが期待どおりだった。`app/` の外への書き込みは、作る AI が道具を呼ばずに断ったので、ファイルは作られず、`permission_denials` は空だった(終了コード 2)。道具を呼ぶように頼んだ下の `check:loop` では、`Write` が `permission_denials` に出た。
+
+### 閉じたループを実機で確かめる
+
+作る → 観察 → 失敗 → 直す → 通る、が実モデルで回るかを確かめるスクリプトと E2E がある。どちらも実モデルを呼ぶので、人が決めたときだけ動かす。
+
+```sh
+npm run check:loop                                         # 何をするかを出すだけ
+npm run check:loop -- --real                               # 実機で回し、記録を docs/evidence/real-loop/ に書く
+STUDIO_REAL=1 npx playwright test test/e2e/real-loop.spec.js  # 画面から同じ依頼を送る。STUDIO_REAL=1 がなければ飛ばす
+```
+
+`check:loop` は、Studio を一時フォルダーで起動し、次の 3 つを回す。
+
+1. 狭い画面で開いたときだけ落ちる見本(`test/fixtures/loop-broken/`、架空のデータ)に、見出しを変える依頼を送る。関門 G5 は狭い画面から開くので、1 回目は失敗する見込み。直すラウンドの後に `fixed` になるかを見る
+2. 同じ見本のシナリオを、プロダクト内 AI を実モデルにして 1 本回す。抽出、決定、言い方、守ることの検証の 4 つの段が記録に残るかを見る
+3. 作る AI に `app/` の外へ書かせる依頼を送り、何が止めたか(`permission_denials`、道具のエラー、モデルが断った)を見る
+
+記録には、依頼と直す依頼の文、ラウンドごとの関門の結果(`run.json` とその要約)、作る AI が呼んだ観察の道具とその結果、起動ごとの時間と費用、スクリーンショットが入る。書く前に `src/server/redact.js` で伏せ、書いた後に秘密らしい文字列を探す。見つかったら終了コード 3 で止まる。期待と違えば(`fixed` でない、4 つの段が欠ける、外への書き込みを何が止めたか分からない)終了コード 2。API の料金がかかる見込みのときは、`--allow-api-billing` を付けない限り止まる。
+
+2026-10-28 の結果(Claude Code 2.1.312、本人のログイン)は [docs/evidence/real-loop/](evidence/real-loop/README.md): 1 回目の G5 が失敗し、直すラウンド 1 回で `fixed`。作る AI は観察の道具を 4 回呼んだ。プロダクト内 AI の 4 つの段は記録に残った。`app/` の外への書き込みは `permission_denials` で止まった。

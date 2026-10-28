@@ -148,7 +148,9 @@ export class AgentUnavailableError extends Error {}
 // observe(id, { gate, viewports, outDir, limits }) は、表示中のビルドを観察器で開き、report を返す関数。
 // gate が 'launch' なら関門 G5(基本のシナリオなし)、'scenarios' なら関門 G6(app/ のシナリオと基本のシナリオを、
 // プロダクト内 AI をモックにして回す)。なければ G5 と G6 は未確認になる。
-// scenarioLimits は G6 の時間の上限(SCENARIO_GATE_LIMITS)。onNode({ projectId, runId, node, kind }) は、節に入るたびに呼ぶ(確かめ用)
+// scenarioLimits は G6 の時間の上限(SCENARIO_GATE_LIMITS)。onNode({ projectId, runId, node, kind }) は、節に入るたびに呼ぶ(確かめ用)。
+// onAgentEvent({ projectId, runId, round, type, ... }) は、作る AI に渡した文(type: 'input'、text)と、
+// 作る AI の stream-json の 1 行(type: 'message'、message)ごとに呼ぶ(実機の確かめの記録用。scripts/check-loop.js)
 export class BuildRequests {
   constructor({
     store,
@@ -157,6 +159,7 @@ export class BuildRequests {
     env = process.env,
     log = () => {},
     onNode = () => {},
+    onAgentEvent = () => {},
     timeoutMs = DEFAULT_AGENT_TIMEOUT_MS,
     scenarioLimits = SCENARIO_GATE_LIMITS,
     maxBudgetUsd = DEFAULT_MAX_BUDGET_USD,
@@ -170,6 +173,7 @@ export class BuildRequests {
     this.env = env;
     this.log = log;
     this.onNode = onNode;
+    this.onAgentEvent = onAgentEvent;
     this.timeoutMs = timeoutMs;
     this.scenarioLimits = { ...SCENARIO_GATE_LIMITS, ...scenarioLimits };
     this.maxBudgetUsd = maxBudgetUsd;
@@ -370,15 +374,19 @@ export class BuildRequests {
     let handle;
     try {
       state.mcpConfig = await writeObserveMcpConfig({ dir: this.runDir(paths, run), projectDir: paths.root, maxSeconds: this.timeoutMs / 1000 });
+      const input = state.fixPrompt ?? run.request;
+      const event = { projectId: id, runId: run.id, round: run.round };
+      this.onAgentEvent({ ...event, type: 'input', text: input });
       handle = startAgentProcess({
         command: connection.command,
         args: [...connection.prefixArgs, ...buildClaudeArgs({ billing: connection.billing, mcpConfig: state.mcpConfig, maxBudgetUsd: this.maxBudgetUsd })],
         cwd: paths.app,
         // 利用者の環境変数をそのまま渡す。値は読まない、残さない
         env: this.env,
-        input: state.fixPrompt ?? run.request,
+        input,
         timeoutMs: this.timeoutMs,
         onMessage: (message) => {
+          this.onAgentEvent({ ...event, type: 'message', message });
           const read = readMessage(message, state.appDirs);
           if (read.init) {
             run.auth = read.init.apiKeySource;
@@ -430,6 +438,9 @@ export class BuildRequests {
       outcome,
       exitCode: exit.code ?? null,
       signal: exit.signal ?? null,
+      // Claude Code が result で返した費用と、やりとりの回数(返さなかったら null)
+      costUsd: result?.costUsd ?? null,
+      numTurns: result?.numTurns ?? null,
     });
 
     for (const denial of result?.denials ?? []) {
@@ -803,6 +814,10 @@ export class BuildRequests {
       agentLaunches: {
         count: run.launches.length,
         durationMs: run.launches.reduce((sum, launch) => sum + launch.durationMs, 0),
+        // 費用は Claude Code が返した分の合計。どの起動も返さなかったら null
+        costUsd: run.launches.some((launch) => Number.isFinite(launch.costUsd))
+          ? run.launches.reduce((sum, launch) => sum + (Number.isFinite(launch.costUsd) ? launch.costUsd : 0), 0)
+          : null,
         launches: run.launches,
       },
       // 作る AI の道具の呼び出しの回数。observe は観察の道具(mcp__observe__)の分
