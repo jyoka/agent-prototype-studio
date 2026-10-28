@@ -1,0 +1,11 @@
+{
+  "formatVersion": 1,
+  "id": "no-tool-hello",
+  "kind": "no-tool",
+  "about": "あいさつだけでは、ツールを呼ばない",
+  "turns": [{ "user": "こんにちは" }],
+  "expect": [
+    { "check": "noToolCall" },
+    { "check": "replyMaxChars", "value": 300 }
+  ]
+}
