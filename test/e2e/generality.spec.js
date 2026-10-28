@@ -53,7 +53,7 @@ function parts(page) {
     log: app.getByRole('region', { name: '会話' }).getByRole('listitem'),
     runs: page.getByRole('list', { name: '作る会話' }).locator('> li.run'),
     retryBar: page.getByRole('region', { name: '試し直す' }),
-    comparison: page.getByRole('region', { name: '試し直しの結果' }).getByRole('listitem'),
+    comparison: page.getByRole('region', { name: '試し直す' }).getByRole('region', { name: '直す前と後の返事' }).getByRole('listitem'),
     async say(text) {
       await message.fill(text);
       await app.getByRole('button', { name: '送る' }).click();
@@ -147,15 +147,14 @@ async function runFlow(page, home, other, otherHome) {
     );
     await expect(ui.log).toHaveCount(1);
     await expect(ui.plan.locator('dt')).toHaveText(['1日に使える時間', '学びたいこと', 'いまの段階', '学び方']);
-    await expect(ui.retryBar).toContainText('前の会話(発言 2 件、修正 1 件)を、今の設定で送り直せます。');
-    await ui.retryBar.getByRole('button', { name: '前の発言で試し直す' }).click();
+    await expect(ui.retryBar).toContainText('前の会話(発言 2 件、修正 1 件)を、新しい設定で送り直せます。');
+    await ui.retryBar.getByRole('button', { name: '同じ発言で試し直す' }).click();
     await expect(ui.log).toHaveCount(6);
     await expect(ui.log.nth(2)).toContainText(AFTER_SUBJECT_MINUTES_FIRST);
     await expect(ui.log.nth(3)).toHaveText('あなたの修正: いまの段階を「はじめて」に直しました。');
-    await openDevDetails(page);
-    await expect(ui.comparison.nth(0)).toContainText(`前(モック): ${AFTER_SUBJECT}`);
-    await expect(ui.comparison.nth(0)).toContainText(`今(モック): ${AFTER_SUBJECT_MINUTES_FIRST}`);
-    await expect(ui.comparison.nth(0)).toContainText('応答が変わりました');
+    await expect(ui.comparison.nth(0)).toContainText(`前: ${AFTER_SUBJECT}`);
+    await expect(ui.comparison.nth(0)).toContainText(`後: ${AFTER_SUBJECT_MINUTES_FIRST}`);
+    await expect(ui.comparison.nth(0)).toContainText('変わりました');
     await expect(ui.values).toHaveText(['30分', '英会話', 'はじめて', '動画で学ぶ']);
 
     // 読み取れなかったときの返事の例は、この題材の選択肢から作る

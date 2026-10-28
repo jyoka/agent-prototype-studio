@@ -259,6 +259,11 @@ export class BuildRequests {
     return (this.runs.get(id) ?? []).map((run) => structuredClone(run));
   }
 
+  // 依頼の状態の並び(古い方から)。最初の一歩の案内(first-steps.js)が、2 番が済んだかを読む
+  statuses(id) {
+    return (this.runs.get(id) ?? []).map((run) => run.status);
+  }
+
   touch(id, run) {
     this.versions.set(id, (this.versions.get(id) ?? 0) + 1);
     this.active.get(id)?.emitter.emit('update', structuredClone(run));
@@ -1075,7 +1080,7 @@ export class BuildRequests {
       return;
     }
     const after = lines.length > 0 && aiAfter
-      ? '試す画面の会話は、新しい設定で最初から始まります。設定を変える前に試す画面で話していたときは、試す画面の上の「前の発言で試し直す」で、同じ発言を新しい設定に送り直せます。'
+      ? '試す画面の会話は、新しい設定で最初から始まります。設定を変える前に試す画面で話していたときは、試作品の上の「同じ発言で試し直す」で、同じ発言を新しい設定に送り直せます。'
       : '';
     const text = [
       ...(weakened.length > 0
