@@ -36,6 +36,7 @@ test('stream-json の行を、作る会話の項目に直す', () => {
     { kind: 'tool', text: '書き換える: app/App.jsx' },
     { kind: 'tool', text: '中身を探す: h1' },
   ]);
+  assert.deepEqual(assistant.toolUses, ['Edit', 'Grep']);
 
   const toolError = readMessage(
     { type: 'user', message: { content: [{ type: 'tool_result', is_error: true, content: [{ type: 'text', text: 'denied' }] }, { type: 'tool_result', content: 'ok' }] } },
@@ -62,6 +63,28 @@ test('stream-json の行を、作る会話の項目に直す', () => {
 
 test('知らない形の行は無視する', () => {
   for (const message of [null, 'x', { type: 'stream_event' }, { type: 'assistant', message: { content: 'x' } }]) {
-    assert.deepEqual(readMessage(message, APP), { items: [], init: null, result: null });
+    assert.deepEqual(readMessage(message, APP), { items: [], init: null, result: null, toolUses: [] });
   }
+});
+
+test('観察の道具の呼び出しは、作る会話に短く出し、名前を回数の記録に渡す', () => {
+  const read = readMessage(
+    {
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'tool_use', id: 't1', name: 'mcp__observe__open', input: {} },
+          { type: 'tool_use', id: 't2', name: 'mcp__observe__click', input: { target: { role: 'button', name: '送る' } } },
+          { type: 'tool_use', id: 't3', name: 'mcp__observe__set_viewport', input: { viewport: 'mobile' } },
+        ],
+      },
+    },
+    APP,
+  );
+  assert.deepEqual(read.items, [
+    { kind: 'tool', text: '観察: 開く' },
+    { kind: 'tool', text: '観察: 押す(role=button name=送る)' },
+    { kind: 'tool', text: '観察: 画面幅を変える(mobile)' },
+  ]);
+  assert.deepEqual(read.toolUses, ['mcp__observe__open', 'mcp__observe__click', 'mcp__observe__set_viewport']);
 });

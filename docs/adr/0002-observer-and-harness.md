@@ -2,7 +2,7 @@
 
 - 状態: **仮採用**(2026-10-28)。harness の設計([docs/design/harness.md](../design/harness.md))の案のうち、観察器と作るループの決まりを記録する
 - 出典のタスク: jyoka/tasks#300(設計: jyoka/tasks#293、観察器の土台: jyoka/tasks#299)
-- 確認日: 2026-10-28。Chromium の挙動は、手元の Mac の Playwright の Chromium(`chromium-headless-shell`、playwright-core 1.63.0)で確かめた。実モデルは呼んでいない
+- 確認日: 2026-10-28。Chromium の挙動は、手元の Mac の Playwright の Chromium(`chromium-headless-shell`、playwright-core 1.63.0)で確かめた。作る AI の起動の引数だけは、本人のログインの Claude Code 2.1.312 で実モデルを呼んで確かめた(jyoka/tasks#312。下の「実機の確認」)
 - [ADR-0001](0001-local-runtime-and-isolation.md) の 3 つの層(作る AI の閉じ込め、sandbox の iframe と CSP、Studio サーバーの守り)は変えない。観察器はその内側で動く
 
 ## 決定(仮採用)
@@ -13,6 +13,7 @@
 | 観察器の隔離 | 観察の文脈は、観察用の親ページと、観察するビルドのファイルにだけ要求を出せる。名前の解決は loopback だけにする。WebRTC の UDP を止める | jyoka/tasks#300 |
 | 直すラウンド | 関門の失敗を作る AI に返して直させるのは 2 回まで。作る AI の起動は 1 つの依頼で 3 回まで | 2026-10-28、利用者 |
 | 作る AI と観察 | 作る AI も、観察の道具(決まった名前の MCP の道具)で画面を観察し、操作できる。通ったかを決めるのは、いつも関門(コード) | 2026-10-28、利用者 |
+| `--safe-mode` の代わり | 作る AI の起動から `--safe-mode` を外し、公開の引数の組み合わせ(`--restricted`、`--setting-sources ""`、`--disable-slash-commands`、`--strict-mcp-config --mcp-config`)で、利用者の設定を持ち込まない。`--safe-mode` は `--mcp-config` のサーバーも外すため(案 5) | 2026-10-28 16:58、利用者(jyoka/tasks#312 のコメント) |
 
 ## 観察器のブラウザ: Playwright の Chromium だけ
 
@@ -107,7 +108,101 @@ harness.md の 3.6 の表を元に、jyoka/tasks#300 で作ったものを書き
 - 作る AI も、観察器の操作(ページを読む、要素の一覧と検査、クリック、入力、スクロール、画面幅の切り替え、スクリーンショット)を、決まった名前の道具として使う。画面を観察し、操作して直してよい
 - 道具は Studio の MCP サーバー(jyoka/tasks#311)が持ち、`--mcp-config` で 1 つだけ作る AI に渡す。道具は `app/` を書き換えない。作る AI はブラウザやシェルに直接触れない(S10、S13)
 - 作る AI が観察で何を見ても、通ったかを決めるのは関門で、関門は同じ観察器を決まった手順で回す
-- 渡し方と道具の中身は、jyoka/tasks#312 でこの ADR に書き足す
+- 作ったのは jyoka/tasks#312
+
+### 渡す道具
+
+| 種類 | 名前 | 渡し方 |
+|---|---|---|
+| 組み込み | `Read`、`Edit`、`Write`、`Glob`、`Grep` | `--tools` と `--allowedTools` |
+| 観察の道具 | `mcp__observe__open`、`mcp__observe__read_page`、`mcp__observe__inspect`、`mcp__observe__click`、`mcp__observe__type`、`mcp__observe__scroll`、`mcp__observe__set_viewport`、`mcp__observe__screenshot`、`mcp__observe__run_scenarios` | `--allowedTools` に名前を並べる。ワイルドカードやサーバーの名前だけの許可は使わない |
+
+- 名前は `src/server/claude-args.js` の `OBSERVE_TOOL_NAMES` で決める。MCP サーバーの `TOOL_NAMES` とそろうことを単体テストで確かめる。サーバーに道具を足しても、ここを直さなければ許可されない
+- MCP の設定は、作る run ごとに `.studio/runs/<run-id>/mcp.json` に置く(`app/` の外)。作る AI の起動のたびに、同じ中身で書き直す。サーバーは `observe` の 1 つだけ。Studio を動かしている Node で `bin/observe-mcp.js <プロジェクトの場所> --max-seconds <作る AI の時間の上限>` を起動する。環境変数は足さない
+- 作業ディレクトリは `app/` のまま。`--restricted` がファイルの道具を `app/` に閉じ込めるので、作る AI は MCP の設定を読み書きできない
+- 直すラウンドも、同じファイルと同じ引数で起動する。違うのは stdin の文だけ(S10)
+- 作る AI への決まりの文に、観察の道具の使い方を 2 行足した: 直した後は `open` で開き、`read_page` や `screenshot` で画面を見て、`run_scenarios` でシナリオを回す。道具は `app/` を書き換えず、通ったかを決めるのは Studio の確かめ
+- 作る会話には、道具の項目として短く出す(例: 「観察: 開く」「観察: 押す(role=button name=送る)」)。`run.json` の `toolCalls` に、道具の呼び出しの回数(全体、観察の道具、道具ごと)を残す
+- 偽接続(`src/agent/fake-claude.js`)は、依頼に「画面で確かめて」があると、`--mcp-config` のサーバーを起動して `open` と `read_page` を 1 回ずつ呼び、stream-json の道具の項目として出す。下の守りの引数が欠けていれば、今と同じく失敗する。`--safe-mode` があっても失敗する(観察の道具が外れるため)
+
+### 起動の引数: `--safe-mode` の代わり
+
+`--safe-mode` は、`--mcp-config` で明示したサーバーも外す(実機の debug のログ: `--mcp-config: server ignored (safe mode): observe`)。目的は `--safe-mode` を残すことではなく、利用者の設定(CLAUDE.md、skills、plugins、hooks、ほかの MCP、custom の agents と commands)を作る AI に持ち込まないこと。そこで、公開の引数の組み合わせに置き換えた(案 5)。
+
+```
+claude -p
+  --restricted                 # 利用者、プロジェクト、手元の設定のファイルを読まない。コマンドと Web の道具を外し、ファイルの道具を app/ に閉じ込める
+  --setting-sources ""         # 設定の読み込み元を 1 つも使わない
+  --disable-slash-commands     # skills と commands を外す
+  --tools "Read,Edit,Write,Glob,Grep"
+  --allowedTools "Read,Edit,Write,Glob,Grep,mcp__observe__open,…,mcp__observe__run_scenarios"
+  --permission-mode dontAsk
+  --permission-prompts none
+  --strict-mcp-config          # MCP は --mcp-config のサーバーだけ
+  --mcp-config <プロジェクト>/.studio/runs/<run-id>/mcp.json
+  --no-session-persistence
+  --output-format stream-json --verbose
+  --max-turns 30
+  --append-system-prompt <Studio の決まり>
+  [--max-budget-usd <上限>]    # サブスクの枠でない見込みのときだけ(ADR-0001 の #274)
+stdin: <依頼、または直す依頼>
+cwd: <プロジェクト>/app/
+```
+
+| 持ち込まないもの | 止める引数 | 実機で見たこと(2026-10-28、Claude Code 2.1.312) |
+|---|---|---|
+| CLAUDE.md(作業の場所、`app/` とその親、`.claude/rules`、`CLAUDE.local.md`) | `--restricted`、`--setting-sources ""` | 合言葉が出ず、作る AI の答えは「指示ファイルなし」。`--restricted` を外した対照では、4 つのファイルを挙げ、合言葉も出た |
+| 利用者の `~/.claude/CLAUDE.md` | `--restricted`、`--setting-sources ""` | 作る AI が挙げた指示ファイルに出なかった。利用者の設定を読ませた対照では挙げた |
+| AGENTS.md | `--restricted` | 合言葉が出なかった。debug のログに、組み込みの plugin(`cc-plugin-agents-md`)の `project memory is off` が出た |
+| hooks(`app/.claude/settings.json`) | `--restricted` | 印のファイルが作られなかった。対照では作られた |
+| skills と commands | `--disable-slash-commands`、`--restricted` | init の `slash_commands` と `skills` が空。対照では、置いた skill と command が出た |
+| custom の agents | `--restricted` | init の `agents` が組み込みの 5 つ(`claude`、`Explore`、`general-purpose`、`Plan`、`statusline-setup`)だけ。対照では、置いた agent と利用者の agent が出た |
+| plugins | `--restricted` | init の `plugins` は組み込み(`@builtin`)の 3 つだけ。`--safe-mode` のときも同じ 3 つ。対照では、利用者が入れた plugin が出た |
+| ほかの MCP(`app/.mcp.json`、claude.ai のコネクター) | `--strict-mcp-config` | init の `mcp_servers` が `observe` だけ。`app/.mcp.json` のサーバーは起動しなかった |
+| 自動の記憶 | `--restricted`(推測) | init に `memory_paths` が出なかった。対照では出た |
+
+### 実機の確認(2026-10-28)
+
+- 環境: 手元の Mac、Claude Code 2.1.312、本人のログイン(init の `apiKeySource` は `none`。`ANTHROPIC_API_KEY` などの環境変数はなし)、モデルは `claude-opus-5-5`
+- 作業の場所は一時フォルダー。`samples/library/app` を写し、`app/` とその親に、合言葉を書いた CLAUDE.md、AGENTS.md、`.claude/rules`、hooks、skill、command、agent、`.mcp.json` を置いた。終わった後に消した
+- 呼び出しは 10 回、費用の合計は約 0.238 USD(どれも `--max-budget-usd` 付き。費用は Claude Code が返した値で、本人のログインなのでサブスクの枠で動いた見込み)
+- 前のラウンド(Blocked)の 3 回(約 0.115 USD)で、`--safe-mode` が観察の道具を外すこと、`--safe-mode` だけを外すと道具を呼べることを確かめていた
+
+| # | 引数 | 確かめたこと | 結果 | 費用(USD) |
+|---|---|---|---|---|
+| 1 | 案 5 | 観察の道具が出るか、呼べるか | 道具の一覧に 9 つとも出た。`open` と `read_page` を呼べた(`app/` に CLAUDE.md などを置いたので、`open` はビルドの断りを返した) | 0.0222 |
+| 2 | 案 5 | 指示ファイルが読まれないか | 「指示ファイルなし」。合言葉は出ない | 0.0089 |
+| 3 | 案 5 から `--setting-sources ""` を外す | `--restricted` だけで止まるか | 「指示ファイルなし」 | 0.0018 |
+| 4 | 対照: `--restricted` と `--disable-slash-commands` を外し、`--setting-sources project` | 確かめ方が、読まれたものを見つけられるか | CLAUDE.md を 4 つ挙げ、合言葉が出た。skill、command、agent、hooks、`memory_paths` も出た | 0.0361 |
+| 5 | 前の引数(`--safe-mode`) | 案 5 との違い | `observe` が外れる。plugins は同じ組み込みの 3 つ | 0.0075 |
+| 6 | 対照: `--restricted` を外し、`--setting-sources user`、`--settings '{"disableAllHooks":true}'` | 利用者の `~/.claude/CLAUDE.md` を見つけられるか | `~/.claude/CLAUDE.md` を挙げた。利用者の plugin と agent も出た | 0.0213 |
+| 7〜10 | 案 5(`npm run check:claude -- --run`) | 9 つの確かめごと | 8 つが期待どおり。`app/ の外への書き込み` だけが期待と違う(下) | 0.1406 |
+
+`npm run check:claude -- --run` の結果(7〜10):
+
+| 確かめごと | 結果 |
+|---|---|
+| 本人のログインで、守りの引数が一緒に動く | 期待どおり。終了コード 0 |
+| init で、MCP は `observe` だけ、plugins は組み込みだけ、`slash_commands` と `skills` は空、agents は組み込みだけ、自動の記憶はなし | 期待どおり |
+| `app/`、その親、作業の場所の CLAUDE.md などが読まれない | 期待どおり。答えは「指示ファイルなし」 |
+| 利用者の `~/.claude/CLAUDE.md` が読まれない | 期待どおり |
+| hooks が動かない | 期待どおり |
+| 観察の道具が決まった名前だけで出て、`open` と `read_page` を呼べる | 期待どおり。`open` は `opened: true`、`read_page` から見出し「こもれび図書室」を読んだ。断られた操作は 0 件。0.0383 USD |
+| `app/` の外への書き込みが止まり、断られたことが `permission_denials` に出る | 期待と違う。ファイルは作られなかったが、`permission_denials` は空 |
+| `app/` の外のファイルの中身が出ない | 期待どおり |
+| 中断でプロセスグループごと止まる | 期待どおり。759 ms で止まった |
+
+分かったことと、残ること:
+
+- debug のログ(`--debug-file`)には、読んだ指示ファイルが出ない。CLAUDE.md を読ませた対照(4)でも 0 行だった。そこで、作る AI に「文脈にある指示ファイルを挙げる」よう頼み、その答えで見た。対照の 4 と 6 で、この方法が読んだファイルを挙げることを確かめた。ただし、モデルの答えに頼る方法である
+- `--restricted` だけでも CLAUDE.md は読まれなかった(3)。`--setting-sources ""` は二重の守りとして残す
+- claude.ai のコネクターの一覧は取りに行く(debug のログ: `[claudeai-mcp] Fetched 5 servers`)。つながず、道具の一覧にも出ない。`--safe-mode` では取りに行かなかった
+- 組み込みの plugins(`cc-plugin-agents-md`、`cc-plugin-telemetry`、`cc-plugin-plugin-authoring`)は残る。`--safe-mode` でも残る(debug のログ: `built-in plugins load regardless`)
+- 観察の道具は、道具の一覧に 9 つとも出る。`--allowedTools` で 9 つの名前を許している
+- `app/` の外への書き込み: ファイルは作られず、外の秘密も出なかった。ただし `permission_denials` は空だった。作る AI が試さなかったのか、別の形で断られたのかは不明。その起動の stream-json を残していなかった。スクリプトは、起動ごとの stream-json を作業の場所の `runs/` に残し、呼んだ道具とエラーを結果に出すようにした。次に `npm run check:claude -- --run` を回すときに確かめる
+- 確かめたのは 2.1.312 だけ。Claude Code の版を上げたら、`npm run check:claude -- --run` を回し直す。組み込みの agents の名前が増えると、確かめごとが「期待と違う」になる(`scripts/check-claude-code.js` の `BUILTIN_AGENTS`)
+- プロダクト内 AI の起動(`--tools ""` で道具なし)は、`--safe-mode` のまま変えない
+- 観察の道具の `open` の途中で作る AI を中断すると、観察の道具のサーバーが片付けの途中で止められ、一時フォルダー(`prototype-studio-observe-*`)と、report のない観察のフォルダーが残ることがある。中断の手順(ADR-0001 の #274)は、作る AI の本体が終わるとプロセスグループの残りを SIGKILL で止めるため。偽接続でのレビューで再現した(Chromium は残らなかった)。直すかは利用者が決める
 
 ## ADR-0001 の未決事項への答え
 
@@ -121,5 +216,5 @@ harness.md の 3.6 の表を元に、jyoka/tasks#300 で作ったものを書き
 | 未決事項 | 決める人・場所 |
 |---|---|
 | この ADR の仮採用を正式にするか | 利用者 |
-| 作る AI に観察の道具を渡す形(`--mcp-config` が `--restricted`、`--safe-mode`、`--strict-mcp-config` と一緒に動くか) | jyoka/tasks#312 の実機の確認 |
+| `app/` の外への書き込みで、断られたことが `permission_denials` に出るか(2026-10-28 の実機の確認では空だった) | 次の `npm run check:claude -- --run`(起動ごとの stream-json を残すようにした) |
 | WebRTC の TURN(TCP)が loopback の他のポートに届くことを、観察器でも塞ぐか | 利用者 |

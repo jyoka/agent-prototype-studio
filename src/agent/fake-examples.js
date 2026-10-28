@@ -2,6 +2,7 @@
 // fieldTemplate がある例は、選んでいる試作品の app/ai.json の最後の項目の名前を {field} に入れて出す(題材に依存させない)。
 export const FAKE_EXAMPLES = [
   { text: '見出しを「ひだまり図書室」にして', note: 'app/ の見出しを書き換え、試す画面に反映する' },
+  { text: '見出しを「ひだまり図書室」にして、画面で確かめて', note: '見出しを書き換えた後、作る AI が観察の道具(open、read_page)で画面を開いて読む' },
   {
     text: '「項目の名前」を先に聞くようにして',
     fieldTemplate: '「{field}」を先に聞くようにして',

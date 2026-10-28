@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // 決定的な偽接続。`claude -p --output-format stream-json` と同じ形の行を出す。
 // モデルも外部の API も呼ばない。依頼の文の言葉で、決まった動きをする(fake-examples.js)。
-// Studio が組み立てた引数をそのまま受け取り、ADR-0001 の守りが入っていなければ失敗する。
+// Studio が組み立てた引数をそのまま受け取り、ADR-0001 と ADR-0002 の守りが入っていなければ失敗する。
+// 「画面で確かめて」があれば、--mcp-config の観察の道具のサーバーを起動し、open と read_page を 1 回ずつ呼ぶ。
+import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { AGENT_TOOLS } from '../server/claude-args.js';
+import readline from 'node:readline';
+import { AGENT_TOOLS, ALLOWED_TOOLS, OBSERVE_SERVER, OBSERVE_TOOLS } from '../server/claude-args.js';
 import { readFixPrompt } from '../server/fix-prompt.js';
 
 const STEP_MS = 120;
@@ -20,9 +23,15 @@ const SCRAMBLE = '〓';
 const HEADING_SCENARIO = 'heading.json';
 const HEADING_PATTERN = /(<h1(?:\s[^>]*)?>)([^<{]*)(<\/h1>)/;
 const SESSION_ID = '00000000-0000-4000-8000-000000000000';
+// 観察の道具のサーバーとのやりとりの上限。open はビルドとブラウザの起動を含む(サーバーの上限は 90 秒)
+const MCP_TIMEOUTS = { setupMs: 15_000, callMs: 120_000, closeMs: 30_000 };
 const started = Date.now();
 let turns = 0;
 let toolSeq = 0;
+// 引数で渡された MCP の設定のファイル(checkArgs で確かめる)
+let mcpConfigFile = null;
+// 「画面で確かめて」があれば、見出しを変えた後に観察の道具で確かめる
+let observeAfterEdit = false;
 
 function emit(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -45,26 +54,37 @@ function finish({ isError = false, subtype = isError ? 'error_during_execution' 
   process.exitCode = isError ? 1 : 0;
 }
 
-function checkArgs(argv) {
+// 守りの引数がそろっているか。--safe-mode は --mcp-config のサーバーを外すので、代わりの引数を見る(ADR-0002)
+async function checkArgs(argv) {
   const problems = [];
   const has = (flag) => argv.includes(flag);
   const value = (flag) => (has(flag) ? argv[argv.indexOf(flag) + 1] : undefined);
-  for (const flag of ['-p', '--restricted', '--safe-mode', '--strict-mcp-config', '--no-session-persistence', '--verbose']) {
+  for (const flag of ['-p', '--restricted', '--disable-slash-commands', '--strict-mcp-config', '--no-session-persistence', '--verbose']) {
     if (!has(flag)) problems.push(`${flag} がありません`);
   }
   const expected = {
+    '--setting-sources': '',
     '--permission-mode': 'dontAsk',
     '--permission-prompts': 'none',
     '--output-format': 'stream-json',
     '--tools': AGENT_TOOLS,
-    '--allowedTools': AGENT_TOOLS,
+    '--allowedTools': ALLOWED_TOOLS,
   };
   for (const [flag, want] of Object.entries(expected)) {
-    if (value(flag) !== want) problems.push(`${flag} が ${want} ではありません`);
+    if (value(flag) !== want) problems.push(`${flag} が ${JSON.stringify(want)} ではありません`);
   }
-  for (const banned of ['--dangerously-skip-permissions', '--add-dir', '--mcp-config', 'bypassPermissions']) {
+  for (const banned of ['--dangerously-skip-permissions', '--add-dir', 'bypassPermissions']) {
     if (has(banned)) problems.push(`${banned} は渡してはいけません`);
   }
+  if (has('--safe-mode')) problems.push('--safe-mode があると、--mcp-config の観察の道具が外れます');
+  if (argv.filter((arg) => arg === '--mcp-config').length !== 1) return [...problems, '--mcp-config がちょうど 1 つではありません'];
+  // MCP の設定は app/ の外に置き、観察の道具のサーバーだけを持つ(S10、S13)
+  const file = path.resolve(value('--mcp-config') ?? '');
+  if (insideCwd(file)) problems.push('--mcp-config のファイルが作業ディレクトリ(app/)の中にあります');
+  const config = await fs.readFile(file, 'utf8').then(JSON.parse).catch(() => null);
+  const names = Object.keys(config?.mcpServers ?? {});
+  if (names.length !== 1 || names[0] !== OBSERVE_SERVER) problems.push(`--mcp-config のサーバーが ${OBSERVE_SERVER} だけではありません`);
+  else mcpConfigFile = file;
   return problems;
 }
 
@@ -147,7 +167,109 @@ async function changeHeading(request) {
   }
   const safe = wanted.replace(/[<>{}&]/g, '');
   await editFile(target, match[0], `${match[1]}${safe}${match[3]}`);
-  const text = `見出しを「${safe}」に変えました(${path.relative(process.cwd(), target.file)})。`;
+  let text = `見出しを「${safe}」に変えました(${path.relative(process.cwd(), target.file)})。`;
+  if (observeAfterEdit) text += `観察の道具で確かめると、${(await observeScreen()).text}。`;
+  await say(text);
+  return finish({ text });
+}
+
+// 観察の道具のサーバー(--mcp-config の observe)を起動し、MCP の JSON-RPC で呼ぶ。終わったら入力を閉じ、上限つきで終わりを待つ
+async function connectObserve() {
+  const config = JSON.parse(await fs.readFile(mcpConfigFile, 'utf8'));
+  const server = config.mcpServers[OBSERVE_SERVER];
+  const child = spawn(server.command, server.args ?? [], { stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, ...(server.env ?? {}) } });
+  // 起動できなかったとき(error)も、終わったとして扱う
+  const exited = new Promise((resolve) => {
+    child.once('exit', resolve);
+    child.once('error', resolve);
+  });
+  const pending = new Map();
+  let seq = 0;
+  readline.createInterface({ input: child.stdout }).on('line', (line) => {
+    let message;
+    try {
+      message = JSON.parse(line);
+    } catch {
+      return;
+    }
+    pending.get(message.id)?.(message);
+  });
+  const settleAll = () => {
+    for (const settle of pending.values()) settle({ error: { message: '観察の道具のサーバーが終わりました' } });
+  };
+  child.once('exit', settleAll);
+  child.once('error', settleAll);
+  child.stdin.on('error', () => {});
+  const send = (message) => child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`);
+  const request = (method, params, timeoutMs) =>
+    new Promise((resolve) => {
+      const id = (seq += 1);
+      const timer = setTimeout(() => settle({ error: { message: `${method} が ${timeoutMs / 1000} 秒で終わりませんでした` } }), timeoutMs);
+      function settle(message) {
+        clearTimeout(timer);
+        pending.delete(id);
+        resolve(message);
+      }
+      pending.set(id, settle);
+      send({ id, method, params });
+    });
+  const close = async () => {
+    child.stdin.end();
+    const timer = setTimeout(() => child.kill('SIGKILL'), MCP_TIMEOUTS.closeMs);
+    await exited;
+    clearTimeout(timer);
+  };
+  const init = await request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'fake-claude', version: '0' } }, MCP_TIMEOUTS.setupMs);
+  if (init.error) {
+    await close();
+    throw new Error(init.error.message);
+  }
+  send({ method: 'notifications/initialized' });
+  return { request, close };
+}
+
+// 道具を 1 回呼び、stream-json の道具の項目(tool_use と tool_result)として出す。画像は出さず、文字だけを返す
+async function callObserveTool(client, name, args = {}) {
+  toolSeq += 1;
+  const id = `toolu_fake_${toolSeq}`;
+  await assistant([{ type: 'tool_use', id, name: `mcp__${OBSERVE_SERVER}__${name}`, input: args }]);
+  const reply = await client.request('tools/call', { name, arguments: args }, MCP_TIMEOUTS.callMs);
+  const text = reply.error ? reply.error.message : (reply.result?.content ?? []).filter((part) => part.type === 'text').map((part) => part.text).join('\n');
+  const isError = Boolean(reply.error || reply.result?.isError);
+  emit({ type: 'user', session_id: SESSION_ID, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: text, is_error: isError }] } });
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    // 誤りの文
+  }
+  return { isError, text, json };
+}
+
+// open と read_page を 1 回ずつ呼び、画面の見出し(アクセシビリティの木の level=1)を返す
+async function observeScreen() {
+  let client;
+  try {
+    client = await connectObserve();
+  } catch (error) {
+    return { ok: false, text: `観察の道具を使えませんでした(${error.message})` };
+  }
+  try {
+    const opened = await callObserveTool(client, 'open');
+    if (opened.isError || opened.json?.opened !== true) return { ok: false, text: '観察の道具で開けませんでした' };
+    const page = await callObserveTool(client, 'read_page');
+    if (page.isError) return { ok: false, text: '観察の道具で画面を読めませんでした' };
+    const heading = /heading "([^"]*)" \[level=1\]/.exec(page.json?.tree ?? '')?.[1] ?? null;
+    return { ok: true, heading, text: heading ? `画面の見出しは「${heading}」でした` : '画面に見出しが見つかりませんでした' };
+  } finally {
+    await client.close();
+  }
+}
+
+// 「画面で確かめて」だけの依頼。ファイルは変えずに、観察の道具で画面を読む
+async function observeOnly() {
+  const seen = await observeScreen();
+  const text = `観察の道具で画面を確かめました。${seen.text}。ファイルは変えていません。`;
   await say(text);
   return finish({ text });
 }
@@ -380,8 +502,9 @@ async function main() {
   process.on('SIGTERM', () => process.exit(143));
 
   const argv = process.argv.slice(2);
-  const problems = checkArgs(argv);
+  const problems = await checkArgs(argv);
   const request = (await readStdin()).trim();
+  // 実機の init と同じ項目。偽接続は利用者の設定を読まないので、MCP は渡された観察の道具だけで、ほかは空
   emit({
     type: 'system',
     subtype: 'init',
@@ -389,7 +512,12 @@ async function main() {
     cwd: process.cwd(),
     model: 'fake',
     permissionMode: argv[argv.indexOf('--permission-mode') + 1],
-    tools: AGENT_TOOLS.split(','),
+    tools: [...AGENT_TOOLS.split(','), ...(mcpConfigFile ? OBSERVE_TOOLS : [])],
+    mcp_servers: mcpConfigFile ? [{ name: OBSERVE_SERVER, status: 'connected' }] : [],
+    slash_commands: [],
+    skills: [],
+    agents: [],
+    plugins: [],
     // 値は読まない。有無だけ
     apiKeySource: process.env.ANTHROPIC_API_KEY ? 'ANTHROPIC_API_KEY' : 'none',
   });
@@ -404,6 +532,13 @@ async function main() {
   // 直す依頼は元の依頼の文を含むので、ほかの言葉より先に見る
   const fix = readFixPrompt(request);
   if (fix) return fixRequested(fix);
+  // 偽接続は CLAUDE.md などの指示ファイルを読まない(実機の確かめ scripts/check-claude-code.js で使う)
+  if (/指示ファイル/.test(request)) {
+    await say('指示ファイルなし');
+    return finish({ text: '指示ファイルなし' });
+  }
+  observeAfterEdit = /画面で確かめ/.test(request);
+  if (observeAfterEdit && !/見出し/.test(request)) return observeOnly();
   if (/ログイン/.test(request)) {
     return finish({ isError: true, text: 'Not logged in · Please run /login' });
   }
@@ -420,7 +555,7 @@ async function main() {
   if (/直/.test(request)) return repairApp();
   if (/見出し/.test(request)) return changeHeading(request);
 
-  const text = '偽接続なので、決まった依頼だけを扱えます。例: 見出しを「ひだまり図書室」にして、シナリオを足して見出しを崩して、「項目の名前」を先に聞くようにして、読み取れなかったときは例を出して聞き返すようにして、app/ の外にメモを書いて、壊して、直して、失敗して、ゆっくり進めて。「壊して」には「2 回目で直して」「直せないふりをして」を添えられます';
+  const text = '偽接続なので、決まった依頼だけを扱えます。例: 見出しを「ひだまり図書室」にして、見出しを「ひだまり図書室」にして画面で確かめて、シナリオを足して見出しを崩して、「項目の名前」を先に聞くようにして、読み取れなかったときは例を出して聞き返すようにして、app/ の外にメモを書いて、壊して、直して、失敗して、ゆっくり進めて。「壊して」には「2 回目で直して」「直せないふりをして」を添えられます';
   await say(text);
   return finish({ text });
 }

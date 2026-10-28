@@ -70,7 +70,7 @@ flowchart TB
     observeEntry["観察の入口<br/>src/server/observe-entry.js observeProject"]
     observer["観察器<br/>src/observer/observe.js、browser.js、<br/>operations.js、scenario.js"]
     observeCli["観察の CLI<br/>bin/observe.js(npm run observe)"]
-    observeMcp["観察の道具の MCP サーバー<br/>bin/observe-mcp.js、src/server/observe-mcp.js<br/>(作る AI に渡すのは jyoka/tasks#312)"]
+    observeMcp["観察の道具の MCP サーバー<br/>bin/observe-mcp.js、src/server/observe-mcp.js<br/>(作る AI に --mcp-config で渡す)"]
 
     subgraph local["データの置き場: ~/PrototypeStudio"]
         app[("projects/ID/app/<br/>作る AI が書ける唯一の場所")]
@@ -93,6 +93,7 @@ flowchart TB
     requests --> agent
     agent -- "子プロセス(cwd は app/)" --> cli
     cli -- "読み書き" --> app
+    cli -- "子プロセス(--mcp-config)" --> observeMcp
     requests -- "G2〜G4 検査、契約、ビルド" --> store
     requests -- "G5 起動の確認、G6 シナリオ<br/>(index.js が渡す observe)" --> observeEntry
     requests -- "run.json" --> dotstudio
@@ -152,7 +153,7 @@ flowchart TB
 |---|---|---|
 | 受け付け(`accept`) | コード | `BuildRequests.start` が依頼の形と上限、接続の問題を確かめる。1 つの試作品で動く依頼は 1 つだけ(`ProjectStore.claimRun`) |
 | 前の指紋(`fingerprint`) | コード | `app/` の指紋(`snapshotApp`)と、表示中のプロダクト内 AI の設定を取る |
-| 作る AI(`agent`) | モデル | `startAgentProcess` が偽接続か Claude Code を `app/` で起動する。引数は `buildClaudeArgs`、依頼は標準入力。stream-json を `readMessage` で項目に直して画面に流す。直すラウンドでも、引数、cwd、時間の上限、止め方は同じで、標準入力が直す依頼になるだけ |
+| 作る AI(`agent`) | モデル | `startAgentProcess` が偽接続か Claude Code を `app/` で起動する。引数は `buildClaudeArgs`、依頼は標準入力。観察の道具の MCP の設定を、run ごとに `.studio/runs/<run-id>/mcp.json`(`app/` の外)に書き、`--mcp-config` で渡す。stream-json を `readMessage` で項目に直して画面に流し、道具の呼び出しを数える。直すラウンドでも、引数(MCP の設定のファイルを含む)、cwd、時間の上限、止め方は同じで、標準入力が直す依頼になるだけ |
 | G1 変更の確認(`changes`) | コード | 指紋を取り直し、変わったファイルを出す。変わっていなければ、ここで終わる(`unchanged`)。直すラウンドで変わっていなければ、直せなかったとして `failed` で終わる |
 | G2 検査、G3 契約、G4 ビルド(`inspect`、`contract`、`compile`) | コード | `ProjectStore.build` の 1 回の呼び出し。`buildApp` が誤りに段の名前を付けるので、どの関門で止まったかが分かる。G3 は目録、`ai.json`、目録が指すシナリオ(`readScenarios`)の形を検査し、シナリオの誤りはファイル、シナリオ、手順で返す。失敗したら、試す画面は前のビルドのまま |
 | G5 起動の確認(`launch`) | コード | 新しいビルドを観察器で開く。基本のシナリオなしで、3 つの画面幅を撮る。読み込みが 15 秒以内に終わり、エラーと `console.error` がなく、画面が空でなければ通る。ビルドが失敗したら行わない |
@@ -182,7 +183,9 @@ flowchart TB
 | `failed` | 2 回の直すラウンドの後も、関門 G2〜G6 のどれかで失敗した。直すラウンドで `app/` が変わらなかったときも含む |
 | `agent-failed`、`cancelled`、`timed-out` | 作る AI が失敗した、中断した、時間の上限を超えた。変わったファイルがあれば、G1〜G4 は回す |
 
-`run.json` には、通った節の列(`nodes`。どの節にもラウンドの番号が付く)、最後のラウンドの関門の結果(`gates`)、ラウンドごとの節の列と関門の結果と直す依頼で返した失敗(`rounds`)、作る AI の起動の回数と時間(`agentLaunches`)、変わったファイル、直すラウンドで変わったシナリオ(`scenariosChanged`)、ビルドの結果、report の場所(`reports`)を書きます。依頼の文と直す依頼の文は書きません。G5 の report とスクリーンショットは `.studio/runs/<run-id>/rounds/<ラウンド>/` に、G6 のものはその下の `scenarios/` に置きます。
+観察の道具の MCP の設定(`mcp.json`)も、同じ `.studio/runs/<run-id>/` に置きます。
+
+`run.json` には、通った節の列(`nodes`。どの節にもラウンドの番号が付く)、最後のラウンドの関門の結果(`gates`)、ラウンドごとの節の列と関門の結果と直す依頼で返した失敗(`rounds`)、作る AI の起動の回数と時間(`agentLaunches`)、作る AI の道具の呼び出しの回数(`toolCalls`。全体、観察の道具、道具ごと)、変わったファイル、直すラウンドで変わったシナリオ(`scenariosChanged`)、ビルドの結果、report の場所(`reports`)を書きます。依頼の文と直す依頼の文は書きません。G5 の report とスクリーンショットは `.studio/runs/<run-id>/rounds/<ラウンド>/` に、G6 のものはその下の `scenarios/` に置きます。
 
 ### 試す(試作品の中の AI と話す)
 
@@ -212,11 +215,13 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | CLI `npm run observe -- <プロジェクト>`(`bin/observe.js`) | `working` | 作業中の `app/` を一時フォルダーにビルドしたもの | いつもモック。実モデルは選べない | `.studio/observations/<観察の ID>/` |
 | 観察の道具の MCP サーバー `npm run observe:mcp -- <プロジェクト>`(`src/server/observe-mcp.js`) | `working` | 作業中の `app/` を一時フォルダーにビルドしたもの | いつもモック。実モデルは選べない | `.studio/observations/<観察の ID>/` |
 
-画面の「確かめる」(P27)は `shown` で、同じ入口を呼ぶ。MCP サーバーを作る AI の起動に渡すのは jyoka/tasks#312 です。
+画面の「確かめる」(P27)は `shown` で、同じ入口を呼ぶ。MCP サーバーは、作る AI の起動に `--mcp-config` で 1 つだけ渡す(下の「観察の道具の MCP サーバー」)。
 
 #### 観察の道具の MCP サーバー
 
 作る AI が自分で画面を読み、操作するための道具です(harness.md の S4)。道具の呼び出しは 1 つずつ順に回します。
+
+作る AI(Claude Code)は、このサーバーを自分の子のプロセスとして起動します。Studio は作る run ごとに MCP の設定を `.studio/runs/<run-id>/mcp.json` に書き、`--mcp-config` と `--strict-mcp-config` で渡します。許可する道具は 9 つの名前(`mcp__observe__open` など)を並べ、ワイルドカードを使いません。`--safe-mode` はこのサーバーも外すので、作る AI の起動には付けません。代わりの引数と実機の確認は [ADR 0002](../adr/0002-observer-and-harness.md#作る-ai-が観察の道具を使う)。
 
 | 道具 | すること |
 |---|---|

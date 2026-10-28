@@ -94,6 +94,8 @@ Studio サーバー(Node.js、1 プロセス、利用者の権限で動く)
 
 ## 作る AI(Claude Code)の起動
 
+> jyoka/tasks#312(2026-10-28)で、この節の `--safe-mode` を外し、`--setting-sources ""`、`--disable-slash-commands`、`--mcp-config`(観察の道具のサーバーだけ)に置き換えた。偽接続は、`--safe-mode` があると失敗するようになった。今の引数は [ADR-0002 の「作る AI が観察の道具を使う」](0002-observer-and-harness.md#作る-ai-が観察の道具を使う)が正。この節は #274 の時点の記録として残す。
+
 偽接続でも実接続でも、組み立てる引数は同じにする。偽接続では、実行ファイルを偽の CLI に差し替えるだけにする。
 
 ```
@@ -114,6 +116,7 @@ cwd: ~/PrototypeStudio/projects/<id>/app/
 
 - 依頼の文は stdin で渡す。argv に入れると、`-` で始まる依頼がフラグとして読まれる。Windows で npm 版の `claude.cmd` を起動するときは cmd.exe を通るので、argv の文字がコマンドとして解釈される恐れもある。
 - `--safe-mode` は、CLAUDE.md、skills、installed plugins、hooks、MCP servers などを外し、認証と組み込みのツールと権限はそのまま動かす(`claude --help`)。`--restricted` と一緒に使えるかは要実機。
+- jyoka/tasks#312 で、作る AI の起動から `--safe-mode` を外した。`--mcp-config` で渡す観察の道具も外すため。代わりに `--setting-sources ""` と `--disable-slash-commands` を足し、`--mcp-config` で観察の道具のサーバーを 1 つだけ渡す。今の引数と実機の確認の結果は [ADR-0002 の「作る AI が観察の道具を使う」](0002-observer-and-harness.md#作る-ai-が観察の道具を使う)。プロダクト内 AI の起動は `--safe-mode` のまま
 - 「作る」会話の続き: #274 で、依頼ごとに新しい会話で動かすことにした(仮)。`--resume` は使わず、`--no-session-persistence` を付ける。前の依頼の内容は `app/` のファイルを通じて引き継ぐ。下の「#274 で決めたこと」。
 
 `--restricted` について公式に書かれていること(cli-reference、permission-modes):
@@ -409,7 +412,7 @@ AiSessions  会話を新しい設定で最初からにし、前の会話を 1 �
 | 未決事項 | 決める人・場所 |
 |---|---|
 | この ADR の仮採用を正式にするか | 利用者(2026-10-28 の朝) |
-| `--restricted` と `--safe-mode` が本人ログインで一緒に動くか、閉じ込めが実際に効くか | 利用者が `npm run check:claude -- --run` で確かめる(会社の利用条件が決まってから) |
+| `--restricted` と `--safe-mode` が本人ログインで一緒に動くか、閉じ込めが実際に効くか | 作る AI は jyoka/tasks#312 で `--safe-mode` を外し、代わりの引数で実機の確認をした(ADR-0002)。`app/` の外への書き込みで `permission_denials` が出るかは、まだ確かめられていない |
 | WebRTC と DNS の先読みの残る危険を受け入れるか | 利用者(実データを使う前に) |
 | 作る AI の権限の確認を画面で受けるか(SDK の `canUseTool` など)、`dontAsk` で拒否だけにするか | #274 で `dontAsk` で拒否だけに仮決め。利用者が確かめる |
 | プロダクト内 AI の Claude Code の起動の形(#276 で仮に決めた)が、実機で動くか。`--restricted` と `--safe-mode` と `--tools ""` と `--json-schema` を一緒に使えるか、`--system-prompt` がサブスクのログインで効くか、応答の速さ、上限に当たったときの出力 | 実機の確認(許可と予算が要る) |

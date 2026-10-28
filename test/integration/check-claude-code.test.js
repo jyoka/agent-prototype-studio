@@ -32,12 +32,15 @@ async function shim(t) {
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const bin = path.join(dir, 'claude');
   const marker = path.join(dir, 'called');
+  // 起動ごとの引数と作業ディレクトリを 1 行ずつ残す(--version は除く)
+  const log = path.join(dir, 'launches.ndjson');
+  const recorder = `require('fs').appendFileSync(process.argv[1], JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }) + '\\n')`;
   await fs.writeFile(
     bin,
-    `#!/bin/sh\ntouch "${marker}"\nif [ "$1" = "--version" ]; then echo "2.1.311 (Claude Code)"; exit 0; fi\nexec "${process.execPath}" "${FAKE_CLI}" "$@"\n`,
+    `#!/bin/sh\ntouch "${marker}"\nif [ "$1" = "--version" ]; then echo "2.1.311 (Claude Code)"; exit 0; fi\n"${process.execPath}" -e "${recorder}" "${log}" "$@"\nexec "${process.execPath}" "${FAKE_CLI}" "$@"\n`,
     { mode: 0o755 },
   );
-  return { bin, marker };
+  return { bin, marker, log };
 }
 
 test('--run がなければ、何を確かめるかを出すだけで Claude Code を呼ばない', posixOnly, async (t) => {
@@ -55,14 +58,38 @@ test('API の料金がかかる見込みなら、明示しない限り止める'
   assert.match(output, /--allow-api-billing/);
 });
 
-test('偽の claude で最後まで動き、6 つの確かめごとを報告に残す', posixOnly, async (t) => {
-  const { bin } = await shim(t);
-  const { output } = await runScript(['--run'], { PATH: process.env.PATH, STUDIO_CLAUDE_BIN: bin });
+test('偽の claude で最後まで動き、9 つの確かめごとと費用を報告に残す', posixOnly, async (t) => {
+  const { bin, log } = await shim(t);
+  const { output } = await runScript(['--run'], { PATH: process.env.PATH, STUDIO_CLAUDE_BIN: bin, HOME: process.env.HOME });
   const root = /作業の場所: (.+)/.exec(output)?.[1];
   assert.ok(root, output);
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const report = JSON.parse(await fs.readFile(path.join(root, 'report.json'), 'utf8'));
-  assert.deepEqual(Object.keys(report.results).sort(), ['auth', 'claude-md', 'hooks', 'interrupt', 'read-outside', 'write-outside']);
-  // 偽の claude は守りどおりに振る舞うので、すべて期待どおりになる。実機の結果ではない
-  for (const [key, result] of Object.entries(report.results)) assert.equal(result.status, '確かめた: 期待どおり', key);
+  assert.deepEqual(Object.keys(report.results).sort(), [
+    'auth',
+    'claude-md',
+    'customizations',
+    'hooks',
+    'interrupt',
+    'observe-tools',
+    'read-outside',
+    'user-claude-md',
+    'write-outside',
+  ]);
+  // 偽の claude は守りどおりに振る舞うので、すべて期待どおりになる。実機の結果ではない。
+  // ~/.claude/CLAUDE.md がない PC では、user-claude-md は確かめられない
+  for (const [key, result] of Object.entries(report.results)) {
+    if (key === 'user-claude-md' && result.status === '確かめられなかった') continue;
+    assert.equal(result.status, '確かめた: 期待どおり', `${key}: ${result.detail}`);
+  }
+  assert.equal(report.launches, 4);
+  assert.equal(report.totalCostUsd, 0);
+  // どの起動にも費用の上限が付き、MCP の設定は app/ の外にある
+  const launches = (await fs.readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(launches.length, 4);
+  for (const launch of launches) {
+    assert.equal(launch.argv[launch.argv.indexOf('--max-budget-usd') + 1], '0.5');
+    const config = launch.argv[launch.argv.indexOf('--mcp-config') + 1];
+    assert.ok(path.relative(launch.cwd, config).startsWith('..'), config);
+  }
 });
