@@ -102,6 +102,10 @@ const els = {
   connection: $('connection'),
   banner: $('banner'),
   bannerText: $('banner-text'),
+  firstSteps: $('first-steps'),
+  firstStepsList: $('first-steps-list'),
+  firstStepsHint: $('first-steps-hint'),
+  firstStepsClose: $('first-steps-close'),
   list: $('project-list'),
   title: $('project-title'),
   projectMenuButton: $('project-menu-button'),
@@ -208,6 +212,11 @@ const consent = { agreed: false, agreedAt: null, card: null, info: null, decline
 const ai = { projectId: null, session: null, loaded: false, choices: null, seq: 0, switching: false, retry: null };
 // 試し直している試作品。別の試作品を選んでも、その試作品の欄には出さない
 const retryingProjects = new Set();
+// 試し直しの帯の「直す前と後の返事」を開いている試作品(再描画で閉じないよう覚える)。試し直しが終わると開く
+const retryOpen = new Set();
+// 最初の一歩の案内(ux-redesign.md 2 節)。dismissed は閉じたか(サーバーが Studio を止めるまで覚える)。
+// 手順の済みは、一覧の API の試作品ごとの firstSteps(src/server/first-steps.js)
+const firstSteps = { dismissed: false, touching: false };
 // AI の実行の記録(#277)。open は、開いている「渡したもの、受け取ったもの」の記録の ID
 const trace = { projectId: null, entries: null, snapshot: '', seq: 0, timer: null, open: new Set() };
 const TRACE_POLL_MS = 1000;
@@ -309,6 +318,9 @@ async function refresh() {
     clearBanner();
     agent = data.agent;
     setConsentState(data.consent);
+    // この画面で閉じた後は、閉じたことを送り終える前の一覧で、もう一度出さない
+    firstSteps.dismissed ||= data.firstSteps?.dismissed === true;
+    renderFirstSteps(selectedProject());
     const snapshot = JSON.stringify(data.projects);
     if (snapshot !== lastSnapshot) {
       lastSnapshot = snapshot;
@@ -659,7 +671,102 @@ function renderMake(project) {
   renderConversation(project);
   renderRealAiMarks();
   renderSaveMark(project);
+  renderFirstSteps(project);
 }
+
+// 最初の一歩の案内(ux-redesign.md 2 節、7-1、7-2、7-4)。1 行の説明と 3 つの手順を、上の帯の下に出す。
+// 手順は、サーバーが返す済み(first-steps.js)で進み、最初のまだ済んでいない手順に aria-current="step" を付ける。
+// 下の 1 文は、今の手順で何をするか。直す AI が直しきれなかったとき(failed)は、2 番を済みにせず、結果の帯を見るように言う
+const FIRST_STEPS = [
+  { key: 'tried', label: '試す', noAi: '試作品の画面を触る' },
+  { key: 'fixed', label: '言葉で直す' },
+  { key: 'triedFixed', label: '直った結果を試す' },
+];
+
+// 選んでいる試作品が AI を使わないか(読み込みが終わるまでは、使うものとして扱う)
+function withoutAi(project) {
+  return ai.projectId === project.id && ai.loaded && !ai.session;
+}
+
+function firstStepsHint(project, current) {
+  const noAi = withoutAi(project);
+  const role = ai.projectId === project.id && ai.session ? aiRole(ai.session.name) : 'AI';
+  const fixing = Boolean(project.running || sending?.projectId === project.id || runningRun(project.id));
+  if (current === 0) {
+    return noAi ? 'まず左の試作品の画面を、押したり書いたりしてみましょう。' : `まず左の試作品で、${role}に話しかけてみましょう。`;
+  }
+  if (current === 1 && fixing) return `${FIX_AI} が直しています。終わると、試作品が新しくなります。`;
+  if (current === 1 && project.firstSteps?.lastRun === 'failed') {
+    return { text: `${FIX_AI} が直しきれませんでした。右の「言葉で直す」の結果を見て、頼み方を変えてもう一度送ってください。`, tone: 'warn' };
+  }
+  if (current === 1) return '気になったところを、右の「言葉で直す」に頼んでみましょう。押すと入る例もあります。';
+  if (current === 2 && ai.projectId === project.id && ai.retry?.available) {
+    return '試作品の上の「同じ発言で試し直す」で、直す前と後の返事を比べられます。';
+  }
+  if (current === 2) return noAi ? '直った試作品の画面を、もう一度触ってみましょう。' : `直った試作品で、もう一度${role}に話しかけてみましょう。`;
+  return '3 つの手順が終わりました。ほかにも気になるところがあれば、言葉で直せます。';
+}
+
+function renderFirstSteps(project) {
+  const shown = Boolean(project) && !firstSteps.dismissed;
+  els.firstSteps.hidden = !shown;
+  if (!shown) return;
+  const progress = project.firstSteps ?? {};
+  const noAi = withoutAi(project);
+  const current = FIRST_STEPS.findIndex((step) => !progress[step.key]);
+  els.firstStepsList.replaceChildren(
+    ...FIRST_STEPS.map((step, index) => {
+      const li = element('li');
+      const done = Boolean(progress[step.key]);
+      li.dataset.state = done ? 'done' : index === current ? 'current' : 'todo';
+      if (index === current) li.setAttribute('aria-current', 'step');
+      // 枠は手順の名前にだけ付ける(手順の間の矢印は、li の前に CSS で出す)
+      const name = element('span', undefined, 'first-steps-name');
+      if (done) name.append(element('span', '✓ ', 'first-steps-mark'));
+      name.append(document.createTextNode(`${index + 1} ${(noAi && step.noAi) || step.label}`));
+      if (done) name.append(element('span', '(済み)', 'visually-hidden'));
+      li.append(name);
+      return li;
+    }),
+  );
+  const hint = firstStepsHint(project, current);
+  els.firstStepsHint.textContent = typeof hint === 'string' ? hint : hint.text;
+  els.firstStepsHint.dataset.tone = typeof hint === 'string' ? '' : hint.tone;
+}
+
+els.firstStepsClose.addEventListener('click', async () => {
+  firstSteps.dismissed = true;
+  renderFirstSteps(selectedProject());
+  try {
+    await api('/api/first-steps', { method: 'POST', json: { dismiss: true } });
+  } catch (error) {
+    handleError(error);
+  }
+});
+
+// AI のない試作品では、試作品の画面を触ると、案内の 1 番(直した後なら 3 番)が済む。
+// 試作品は別の origin の iframe なので、中の操作は見えない。iframe に焦点が移ったこと(この画面の blur)で知る
+async function touchedPreview() {
+  const project = selectedProject();
+  if (!project || firstSteps.dismissed || firstSteps.touching || !withoutAi(project) || preview.projectId !== project.id) return;
+  const progress = project.firstSteps ?? {};
+  if (progress.tried && (!progress.fixed || progress.triedFixed)) return;
+  firstSteps.touching = true;
+  try {
+    await api('/api/first-steps', { method: 'POST', json: { touched: project.id } });
+    await refresh();
+  } catch (error) {
+    handleError(error);
+  } finally {
+    firstSteps.touching = false;
+  }
+}
+
+window.addEventListener('blur', () => {
+  setTimeout(() => {
+    if (preview.frame && document.activeElement === preview.frame) touchedPreview();
+  }, 0);
+});
 
 // 終わって試作品が新しくなった実行。何を変えたかは、Studio が確かめた変わったファイルから言う(直す AI の報告に頼らない)
 const UPDATED_STATUSES = new Set(['done', 'passed', 'fixed', 'unverified']);
@@ -968,7 +1075,8 @@ function evidenceBand(projectId, run, { check = false, again = false } = {}) {
 // 人の「確かめる」(harness.md の 3.1、P27)。その他の引き出しの「試作品を自動で確かめる」と、結果の帯の「もう一度確かめる」から始める。
 // サーバー(src/server/checks.js)が、作るループと同じ観察の入口を、表示中の試作品を見るモードで呼ぶ。
 // 結果は直す欄の会話に、作る run と時刻の順に並べ、同じ形の結果の帯で出す。試す欄の会話は変わらない
-const CHECK_AI = { mock: 'お試しの AI', 'claude-code': '本物の AI' };
+// 試作品の中の AI の接続の、利用者の言葉(確かめるときの AI、試し直しの前と後の返事)
+const AI_WORDS = { mock: 'お試しの AI', 'claude-code': '本物の AI' };
 const CHECK_STATUS = {
   running: () => '試作品を自動で確かめています…',
   passed: () => '確かめました。問題は見つかりませんでした',
@@ -1005,7 +1113,7 @@ function checkAgain() {
   button.disabled = !project || !canCheck(project);
   button.addEventListener('click', () => startCheck());
   if (!(ai.projectId === selectedId && ai.session)) return [button];
-  return [button, element('span', `試作品の中の AI: ${CHECK_AI[checkConnection()]}`, 'muted')];
+  return [button, element('span', `試作品の中の AI: ${AI_WORDS[checkConnection()]}`, 'muted')];
 }
 
 // 開発者向け: report の場所、観察の ID、確かめた app/ の指紋、接続
@@ -1029,7 +1137,7 @@ function checkItem(projectId, check, again) {
   const li = element('li', undefined, 'run check');
   li.dataset.status = check.status;
   const head = element('div', undefined, 'bubble user');
-  const via = check.ai ? `(試作品の中の AI: ${CHECK_AI[check.connection] ?? check.connection})` : '';
+  const via = check.ai ? `(試作品の中の AI: ${AI_WORDS[check.connection] ?? check.connection})` : '';
   head.append(element('span', 'あなた', 'who'), element('p', `試作品を自動で確かめる${via}`));
   li.append(head);
   if (check.status === 'running') li.append(element('p', CHECK_STATUS.running(), 'run-status'));
@@ -1598,38 +1706,36 @@ function unavailableReason(option) {
   return [element('p', UNAVAILABLE.missing.lead(), 'hint'), dev];
 }
 
-function viaLabel(kind) {
-  return kind ? `(${ai.choices?.options.find((o) => o.kind === kind)?.label ?? kind})` : '';
-}
-
-// 試し直しの結果。同じ発言への、前の設定の応答と今の設定の応答を並べる
+// 直す前と後の返事(試し直しの帯の中)。同じ発言への、前の設定の返事と新しい設定の返事を並べる。
+// 前と後で AI(お試しか本物か)が違うときだけ、どちらの AI の返事かを添える
 function retryResultBlock(result) {
-  const box = element('section', undefined, 'ai-retry');
-  box.setAttribute('aria-label', '試し直しの結果');
-  box.append(element('p', '試し直しの結果(前の設定 → 今の設定)', 'ai-name'));
+  const box = element('section');
+  box.setAttribute('aria-label', '直す前と後の返事');
   const list = element('ol');
   for (const reply of result.replies) {
     const li = document.createElement('li');
     const changed = reply.before !== reply.after;
+    const via = (kind) => (reply.beforeVia && reply.afterVia && reply.beforeVia !== reply.afterVia ? `(${AI_WORDS[kind] ?? kind})` : '');
     li.dataset.changed = String(changed);
     li.append(
       element('p', `あなた: ${reply.text}`, 'retry-user'),
-      element('p', `前${viaLabel(reply.beforeVia)}: ${reply.before ?? '(応答なし)'}`, 'retry-before'),
-      element('p', `今${viaLabel(reply.afterVia)}: ${reply.after}`, 'retry-after'),
-      element('p', changed ? '応答が変わりました' : '同じ応答です', 'muted'),
+      element('p', `前${via(reply.beforeVia)}: ${reply.before ?? '(返事なし)'}`, 'retry-before'),
+      element('p', `後${via(reply.afterVia)}: ${reply.after}`, 'retry-after'),
+      element('p', changed ? '変わりました' : '同じ返事です', changed ? 'retry-changed' : 'muted'),
     );
     list.append(li);
   }
   box.append(list);
   if (result.skipped.length > 0) {
-    box.append(element('p', `送り直さなかった修正(今の設定にない項目か、決まりに合わない値): ${result.skipped.join('、')}`, 'hint'));
+    box.append(element('p', `送り直さなかった修正(新しい設定にない項目か、決まりに合わない値): ${result.skipped.join('、')}`, 'hint'));
   }
   if (result.stopped) box.append(element('p', `途中で止まりました: ${result.stopped}`, 'failed'));
   return box;
 }
 
-// 試す画面の上。プロダクト内 AI の設定が変わった後に、前の会話の発言と修正を、今の設定で送り直す。
-// 応答するのはプロダクト内 AI で、作る AI は動かない
+// 試し直しの帯(ux-redesign.md 7-4)。試す欄の上に置く。試作品の中の AI の設定が変わった後に、
+// 前の会話の発言と修正を、新しい設定で送り直す。応答するのは試作品の中の AI で、直す AI は動かない。
+// 直す前と後の返事は、帯の中の開く操作で見る。本物の AI を選んでいるときは、使う回数をボタンの横に出す
 function renderRetry() {
   const info = ai.session && ai.projectId === selectedId ? ai.retry : null;
   els.retryBar.hidden = !info?.available;
@@ -1637,24 +1743,31 @@ function renderRetry() {
     els.retryBar.replaceChildren();
     return;
   }
+  const projectId = ai.projectId;
   const counts = `発言 ${info.userMessages} 件${info.corrections > 0 ? `、修正 ${info.corrections} 件` : ''}`;
   const fresh = !ai.session.messages.some((m) => m.role === 'user' || m.role === 'correction');
-  const busy = info.retrying || retryingProjects.has(ai.projectId);
+  const busy = info.retrying || retryingProjects.has(projectId);
   let text;
-  if (busy) text = `前の会話(${counts})を、今の設定で送り直しています…`;
-  else if (info.result) text = `前の会話(${counts})を、今の設定で送り直しました。前と今の応答は、「その他」の「開発者向けの詳細」の「試し直しの結果」で比べられます。`;
-  else if (fresh) text = `プロダクト内 AI の設定が変わったので、会話は新しい設定で最初から始まっています。前の会話(${counts})を、今の設定で送り直せます。`;
-  else text = `設定が変わる前の会話(${counts})を、今の設定で送り直せます。今の会話は最初に戻ります。`;
-  const nodes = [element('p', text)];
-  const option = ai.choices?.options.find((o) => o.kind === ai.session.connection.kind);
-  if (option?.billing) {
-    nodes.push(element('p', `接続は ${option.label} です。送り直す発言ごとに実際の AI モデルを呼び、費用がかかります(${info.userMessages} 回)。`, 'retry-cost'));
-  }
-  const button = element('button', info.result ? 'もう一度試し直す' : '前の発言で試し直す');
+  if (busy) text = `前の会話(${counts})を、新しい設定で送り直しています…`;
+  else if (info.result) text = `前の会話(${counts})を、新しい設定で送り直しました。`;
+  else if (fresh) text = `会話は新しい設定で最初から始まっています。前の会話(${counts})を、新しい設定で送り直せます。`;
+  else text = `設定が変わる前の会話(${counts})を、新しい設定で送り直せます。今の会話は最初に戻ります。`;
+  const nodes = [element('h3', 'AI の設定が変わりました'), element('p', text)];
+  const button = element('button', info.result ? 'もう一度試し直す' : '同じ発言で試し直す');
   button.type = 'button';
-  button.disabled = busy || ai.switching || waitingFor(ai.projectId) > 0;
+  button.disabled = busy || ai.switching || waitingFor(projectId) > 0;
   button.addEventListener('click', retryAi);
-  els.retryBar.replaceChildren(...nodes, button);
+  nodes.push(button);
+  const option = ai.choices?.options.find((o) => o.kind === ai.session.connection.kind);
+  if (option?.billing) nodes.push(element('span', `発言 ${info.userMessages} 回分、本物の AI を使います`, 'retry-cost'));
+  if (info.result) {
+    const details = element('details', undefined, 'retry-result');
+    details.open = retryOpen.has(projectId);
+    details.addEventListener('toggle', () => (details.open ? retryOpen.add(projectId) : retryOpen.delete(projectId)));
+    details.append(element('summary', '直す前と後の返事'), retryResultBlock(info.result));
+    nodes.push(details);
+  }
+  els.retryBar.replaceChildren(...nodes);
 }
 
 // 試作品の中の AI を本物にするときの同意のカード。試す欄の上に出す
@@ -1689,6 +1802,7 @@ function renderAi() {
   renderAiWaiting();
   renderTryConsent();
   renderRealAiMarks();
+  renderFirstSteps(selectedProject());
   els.aiSwitch.hidden = !session;
   if (!session) {
     setAiMenu(false);
@@ -1724,7 +1838,6 @@ function renderAi() {
     element('p', `利用者の発言: ${count} 件`, 'muted'),
     list,
   );
-  if (ai.retry?.result) nodes.push(retryResultBlock(ai.retry.result));
   els.aiStatus.replaceChildren(...nodes);
   renderTrace();
   syncTracePolling();
@@ -2095,7 +2208,11 @@ async function retryAi() {
   renderAi();
   try {
     const { session, retry } = await api(`/api/projects/${encodeURIComponent(projectId)}/ai/retry`, { method: 'POST' });
+    // 直す前と後の返事は、帯の中で開いて見せる
+    retryOpen.add(projectId);
     showAiSession(projectId, session, retry);
+    // 試し直すと、最初の一歩の案内の 3 番が済む
+    refresh();
     const result = retry.result;
     if (result?.stopped) addEvent('warning', `試し直しが途中で止まりました: ${result.stopped}`);
     else addEvent('info', `前の会話の発言 ${result?.replies.length ?? 0} 件を、今の設定で送り直しました。`);
@@ -2591,6 +2708,8 @@ function createAiRelay(iframe, port, projectId) {
       const { session, retry } = await request;
       showAiSession(projectId, session, retry);
       reply({ id: data.id, ok: true, session });
+      // 話すと、最初の一歩の案内の 1 番(直した後なら 3 番)が済む
+      if (data.op === 'send') refresh();
       // 待つ間に開き直していたら、新しく開いた試作品に知らせる(studio.ai.onChange)
       if (iframe !== preview.frame && preview.projectId === projectId) preview.port?.postMessage({ type: 'ai-session', session });
     } catch (error) {

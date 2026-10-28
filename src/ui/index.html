@@ -31,6 +31,14 @@
   <div id="banner" class="banner" role="alert" hidden>
     <p id="banner-text"></p>
   </div>
+  <!-- 最初の一歩の案内(ux-redesign.md 2 節、7-1)。1 行の説明と 3 つの手順。手順は状態で進み、今の手順に aria-current="step" を付ける。
+       閉じたことは、Studio を止めるまでサーバーが覚える -->
+  <section id="first-steps" class="first-steps" aria-label="はじめの手順" hidden>
+    <p class="first-steps-lead">試作品を試して、気になるところを言葉で直す場所です。</p>
+    <button type="button" id="first-steps-close" class="first-steps-close">閉じる</button>
+    <ol id="first-steps-list" class="first-steps-list" aria-label="3 つの手順"></ol>
+    <p id="first-steps-hint" class="first-steps-hint" role="status"></p>
+  </section>
   <main class="layout">
     <section class="preview" aria-labelledby="try-heading">
       <div class="toolbar" id="try-toolbar">
@@ -48,6 +56,7 @@
       <div id="try-consent" class="try-consent" hidden></div>
       <!-- 試作品の中の AI の応答を待つ間だけ、「応答を止める」を出す -->
       <div id="ai-waiting" class="ai-waiting" role="status" hidden></div>
+      <!-- 試し直しの帯(ux-redesign.md 7-4)。AI の設定が変わった後に、前の会話の発言を新しい設定で送り直し、直す前と後の返事をこの中で開く -->
       <div id="retry-bar" class="retry-bar" role="region" aria-label="試し直す" hidden></div>
       <!-- 試作品を表示できないとき(ux-redesign.md 7-6)。誤りの場所は「開発者向け」の中にだけ出す -->
       <div id="preview-broken" class="preview-broken" role="group" aria-labelledby="preview-broken-heading" hidden>

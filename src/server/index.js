@@ -6,6 +6,7 @@ import { Observer } from '../observer/observe.js';
 import { BuildRequests, MAX_FIX_ROUNDS } from './build-requests.js';
 import { ProjectChecks } from './checks.js';
 import { STUDIO_ROOT } from './config.js';
+import { FirstSteps } from './first-steps.js';
 import { ProjectHandoffs } from './handoff.js';
 import { createPreviewHandler } from './preview-server.js';
 import { createClaudeCodeConnection } from './product-ai/claude-code.js';
@@ -151,6 +152,8 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   });
   // 人の「確かめる」(P27)。作るループと同じ入口を、表示中のビルドを見るモードで呼ぶ(observeShown)
   const checks = new ProjectChecks({ store, aiSessions, observe: observeShown, log });
+  // 最初の一歩の案内の進み方と、閉じたこと。メモリーにだけ持ち、起動し直すと消える(first-steps.js)
+  const firstSteps = new FirstSteps({ statusesOf: (id) => requests.statuses(id) });
   const servers = [];
   const versions = new ProjectVersions({ store, aiSessions, log });
   const handoffs = new ProjectHandoffs({ home: config.home, store, aiSessions, versions, requests, log });
@@ -178,6 +181,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
           product: projectId ? aiSessions.realDetails(projectId) : null,
         }),
       consent,
+      firstSteps,
     }),
   );
   servers.push(studioServer);

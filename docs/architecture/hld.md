@@ -147,7 +147,8 @@ flowchart TB
 | 部品 | ファイル | すること |
 |---|---|---|
 | 起動 | `bin/studio.js`、`src/server/index.js`、`src/server/config.js` | 環境変数を読み、サンプルを写し、途中で止まった復元を戻し、2 つのサーバーを loopback で待ち受ける。起動ごとのトークンを作る |
-| Studio の API と画面 | `src/server/studio-server.js`、`src/server/security.js` | `/api/projects/...` と `/api/real-ai` の API と、`src/ui/` の画面を出す。Host、Origin、トークンを確かめる |
+| Studio の API と画面 | `src/server/studio-server.js`、`src/server/security.js` | `/api/projects/...`、`/api/real-ai`、`/api/first-steps` の API と、`src/ui/` の画面を出す。Host、Origin、トークンを確かめる |
+| 最初の一歩の案内 | `src/server/first-steps.js` | 画面の上の 3 つの手順(試す → 言葉で直す → 直った結果を試す)の進み方と、案内を閉じたことを、メモリーにだけ持つ(起動し直すと消える)。1 番と 3 番は `ai/messages` と `ai/retry` の成功(AI のない試作品は、画面が送る `POST /api/first-steps` の `touched`)で進む。2 番は、作る run の状態(`BuildRequests.statuses`)が `passed`、`fixed`、`unverified` のどれかなら済み。`/api/projects` の試作品ごとの `firstSteps` と、全体の `firstSteps.dismissed` で返す |
 | 人の「確かめる」 | `src/server/checks.js` | `/api/projects/<id>/checks` で、表示中の試作品を自動で確かめる(P27)。`index.js` の `observeShown` を通して観察の入口を `shown` で呼び、結果を作る run の関門 G5、G6 と同じ形(`launchGate`、`scenarioGate`)にまとめる。作る run、ビルド、版の操作の間は 409(`ProjectStore.claimCheck`)。試作品の中の AI の既定はお試しで、本物は同意の後だけ(`AiSessions.observationConnection`)。確かめの一覧はメモリーにだけ置く |
 | 作るループの証拠 | `src/server/evidence.js` | `/api/projects/<id>/evidence` で、終わった run と人の「確かめる」ごとに証拠が古いか(`stale`)を返す。run が確かめた `app/` の指紋(`run.appDigest`)と、今の `app/` の指紋を比べて決める。`/api/projects/<id>/evidence/screenshot?file=` で、結果の帯のスクリーンショットを返す。読むのは `.studio/runs/` と `.studio/observations/` の中の PNG だけで、シンボリックリンクで外を指していても読まない。ほかの API と同じくトークンを要る |
 | 試作品の配信 | `src/server/preview-server.js` | ビルドしたものを別ポートから CSP つきで出す。API はない |
@@ -233,7 +234,7 @@ flowchart TB
 
 Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p` を 1 回ずつ)で、この口を持つ。モデルが返すのは抽出の JSON と `{reply}` だけ。出力の形が壊れていたら 1 回やり直し、だめなら抽出は「変更なし」、言い方はモックの型の文にする。呼び出しの前に、`AiSessions` が渡す数え役(`product-ai/limits.js`)で上限を確かめる。上限に当たったら、モデルを呼ばずに失敗を返す。呼び出しの回数と待ち時間は、記録の 1 件(`calls`)に残す。
 
-接続の切り替え(`ai/connection`)、応答を止める(`ai/cancel`)、試し直し(`ai/retry`)は、Studio の画面からだけ呼べます。試作品からは呼べません。
+接続の切り替え(`ai/connection`)、応答を止める(`ai/cancel`)、試し直し(`ai/retry`)は、Studio の画面からだけ呼べます。試作品からは呼べません。試し直しの結果(直す前と後の返事)は、画面が試す欄の上の試し直しの帯に出します([ux-redesign.md の 7-4](../design/ux-redesign.md#7-4-直った結果を試す画面))。
 
 構成(`app/composition.json`)のある試作品では、3 の代わりに、会話の進め方(`sim/orchestrator.js` の `runTurn`)が 1 ターンを回します。今話す参加者が harness なら上の `turn()`、模擬のエージェントならプロンプトを組んで接続を呼び(ツールはツールの口を通る)、返事の部品を前提に合わせ、出口の確かめをします。引き継ぎのツールが通ると、辺と上限と受け渡す値を確かめて、引き継いだ先が同じターンで 1 回だけ話します。試作品には `participants`、`active`、`records` と、発言の `from`、`parts` を足した会話を返します。試作品は `studio.ai.send(text, { action })` でボタンの `action` も送れます。
 

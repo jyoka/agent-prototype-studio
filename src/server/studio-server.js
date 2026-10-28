@@ -85,7 +85,7 @@ async function readJson(req) {
   }
 }
 
-function projectView(project, previewPort, runs, checks) {
+function projectView(project, previewPort, runs, checks, firstSteps) {
   return {
     id: project.id,
     title: project.title,
@@ -98,6 +98,8 @@ function projectView(project, previewPort, runs, checks) {
     checking: checks.checking,
     checksVersion: checks.version,
     lastBuild: project.lastBuild,
+    // 最初の一歩の案内の、この試作品の手順の済み(first-steps.js)
+    firstSteps: firstSteps.view(project.id),
     previewUrl: project.previewBuildId
       ? `http://localhost:${previewPort}/p/${project.id}/${project.previewBuildId}/`
       : null,
@@ -105,9 +107,10 @@ function projectView(project, previewPort, runs, checks) {
 }
 
 // Studio 画面と API。API はすべてトークンを要求する(ADR-0001 の層 3)。
-// realAi(projectId) は本物の AI を使う前の同意のカードの中身(real-ai.js の consentView)、consent は同意の状態
-export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, token, ports, realAi, consent }) {
-  const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id));
+// realAi(projectId) は本物の AI を使う前の同意のカードの中身(real-ai.js の consentView)、consent は同意の状態。
+// firstSteps は最初の一歩の案内の進み方と、閉じたこと(first-steps.js)
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, token, ports, realAi, consent, firstSteps }) {
+  const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps);
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
   // EventSource はヘッダーにトークンを付けられないので、画面は fetch の応答をストリームで読む(ADR-0001)。
@@ -150,9 +153,12 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     }
     if (req.method === 'GET' && url.pathname === '/api/projects') {
       const projects = await store.list();
-      // consent は本物の AI を使う前の同意の状態。画面は、本物の AI を使っている間の印を、これで出す
-      return sendJson(res, 200, { projects: projects.map(view), agent, consent: consent.state() });
+      // consent は本物の AI を使う前の同意の状態。画面は、本物の AI を使っている間の印を、これで出す。
+      // firstSteps は最初の一歩の案内を閉じたか(手順の済みは、試作品ごとの firstSteps)
+      return sendJson(res, 200, { projects: projects.map(view), agent, consent: consent.state(), firstSteps: firstSteps.state() });
     }
+    // 最初の一歩の案内。{ dismiss: true } で閉じる。{ touched: 試作品の ID } は、AI のない試作品の画面を触ったこと(画面が送る)
+    if (url.pathname === '/api/first-steps' && req.method === 'POST') return handleFirstSteps(req, res);
     // 本物の AI を使う前の同意。GET はカードの中身(?project= で、その試作品の中の AI の「詳しく」も入れる)、
     // POST の consent は同意する。ほかの API と同じく、トークンと Origin(Studio の画面から)を確かめた後にだけ届く
     if (url.pathname === '/api/real-ai' || url.pathname === '/api/real-ai/consent') {
@@ -264,6 +270,20 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     }
   }
 
+  async function handleFirstSteps(req, res) {
+    let body;
+    try {
+      body = await readJson(req);
+    } catch (error) {
+      if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
+      throw error;
+    }
+    if (body?.dismiss === true) firstSteps.dismiss();
+    else if (typeof body?.touched === 'string' && (await store.list()).some((p) => p.id === body.touched)) firstSteps.tried(body.touched);
+    else return sendError(res, 400, 'invalid', '{ dismiss: true } か、{ touched: 試作品の ID } を送ってください');
+    return sendJson(res, 200, { firstSteps: firstSteps.state() });
+  }
+
   async function handleRealAi(req, res, url, consenting) {
     const projectId = url.searchParams.get('project');
     if (projectId !== null && !(await store.list()).some((p) => p.id === projectId)) {
@@ -353,6 +373,8 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       else if (action === 'corrections') session = aiSessions.correct(id, body?.changes);
       else if (action === 'retry') session = await aiSessions.retry(id);
       else session = aiSessions.reset(id);
+      // 話したことと試し直したことは、最初の一歩の案内の手順を進める(1 番、直した後なら 3 番)
+      if (action === 'messages' || action === 'retry') firstSteps.tried(id);
       return sendJson(res, 200, { session, retry: aiSessions.retryInfo(id) });
     } catch (error) {
       if (error instanceof AiError) return sendError(res, error.status, error.code, error.message, error.next);

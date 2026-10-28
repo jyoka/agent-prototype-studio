@@ -359,6 +359,8 @@ test('作る欄でプロダクト内 AI の設定を変えると、変化を作�
   assert.ok(settings, JSON.stringify(run.items));
   assert.match(settings.text, /聞く順と項目の並び: 職種、雇用区分、勤務地、時給の下限 → 時給の下限、職種、雇用区分、勤務地/);
   assert.match(settings.text, /実モデルへの指示\(instructions\)に足した文: 「足りない項目は、「時給の下限」から先に聞いてください。」/);
+  // 案内するボタンの名前は、画面の試し直しの帯のボタンと同じ
+  assert.match(settings.text, /試作品の上の「同じ発言で試し直す」で、同じ発言を新しい設定に送り直せます。/);
   assert.deepEqual(studio.store.aiDefinition('sample-job-consult').fields.map((f) => f.key), ['wage', 'jobType', 'employmentType', 'area']);
 
   // 設定が変わったので、会話は最初から。前の会話は試し直せる
