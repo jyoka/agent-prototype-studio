@@ -35,6 +35,8 @@ const MAX_STACK = 4000;
 const MAX_AI_REQUESTS = 50;
 const MAX_AI_TEXT = 2000;
 const MAX_AI_CHANGES = 20;
+const MAX_PAGE_TEXT = 2000;
+const PAGE_TIMEOUT_MS = 5_000;
 
 // 親ページが Node に渡す知らせの種類と、report の errors の kind
 const EVENT_KINDS = {
@@ -93,9 +95,10 @@ function emptyReport(build) {
     browser: null,
     load: { done: false, durationMs: null, timeoutMs: null },
     errors: [],
-    // 観察用の会話(jyoka/tasks#301)、シナリオと最後の画面(jyoka/tasks#302)で埋める
+    // 観察用の会話(jyoka/tasks#301)、シナリオ(jyoka/tasks#302)で埋める
     ai: [],
     scenarios: [],
+    // 最後の画面: { text, empty }。アクセシビリティの木の要約は jyoka/tasks#302 で足す
     page: null,
     screenshots: [],
     verdict: 'unverified',
@@ -130,6 +133,24 @@ function waitFor(promise, ms) {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 class StepTimeoutError extends Error {}
+
+// 試作品の iframe の中で動かす。文字がなく、大きさのある要素もなければ、空の画面とみなす
+function readPage(max) {
+  const body = document.body;
+  if (!body) return { text: '', empty: true };
+  const shown = String(body.innerText ?? '').replace(/\s+/g, ' ').trim();
+  const skip = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'TEMPLATE', 'NOSCRIPT']);
+  let sized = false;
+  for (const element of body.querySelectorAll('*')) {
+    if (skip.has(element.tagName) || element.id === 'root') continue;
+    const rect = element.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      sized = true;
+      break;
+    }
+  }
+  return { text: shown.slice(0, max), empty: shown === '' && !sized };
+}
 
 // プレビューの配信が、そのビルドを今も返すか
 async function previewStatus(url) {
@@ -325,6 +346,20 @@ export class Observer {
         return;
       }
       report.screenshots.push({ name, viewport: name, width: size.width, height: size.height, file });
+    }
+
+    // 最後の画面の文字と、空でないか(関門 G5 が見る)
+    const frame = page.mainFrame().childFrames()[0];
+    if (!frame) return;
+    try {
+      const read = await within(frame.evaluate(readPage, MAX_PAGE_TEXT), PAGE_TIMEOUT_MS, '画面を読めません');
+      // 試作品の中で作った値なので、決まった形に写す
+      report.page = { text: text(read?.text, MAX_PAGE_TEXT), empty: read?.empty === true };
+    } catch (error) {
+      // 読めなかったときは page を null のままにする(空かどうかは分からない)
+      if (error instanceof StepTimeoutError) {
+        addError('timeout', '画面の中身を読めませんでした。試作品が応答していません。読み込みの後に無限ループや重い処理がないか確かめてください');
+      }
     }
   }
 

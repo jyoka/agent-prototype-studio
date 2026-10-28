@@ -125,8 +125,9 @@ for (const [name, manifest, expected] of BROKEN) {
       result.errors.some((e) => e.file === 'app/prototype.json' && expected.test(e.text)),
       JSON.stringify(result.errors),
     );
-    // ai.json の誤りと同じ形で返す
-    assert.deepEqual(Object.keys(result.errors[0]).sort(), ['column', 'file', 'line', 'lineText', 'text']);
+    // ai.json の誤りと同じ形で返す。段は関門 G3 の契約
+    assert.deepEqual(Object.keys(result.errors[0]).sort(), ['column', 'file', 'line', 'lineText', 'stage', 'text']);
+    assert.equal(result.errors[0].stage, 'contract');
     assert.equal(await fs.readdir(buildsDir).catch(() => []).then((d) => d.length), 0);
   });
 }

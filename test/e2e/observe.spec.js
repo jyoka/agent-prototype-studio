@@ -7,7 +7,7 @@ import { expect, ROOT, test } from './studio.js';
 
 // 観察器は Studio の画面を開かずに使う。このファイルのテストは page(Studio の画面)を開かない。
 const FIXTURES = path.join(ROOT, 'test', 'fixtures', 'observe');
-const NAMES = ['ok', 'build-error', 'render-error', 'console-error', 'infinite-loop', 'late-loop', 'navigate', 'unhandled-rejection', 'ai'];
+const NAMES = ['ok', 'empty', 'build-error', 'render-error', 'console-error', 'infinite-loop', 'late-loop', 'navigate', 'unhandled-rejection', 'ai'];
 
 let home;
 let studio;
@@ -51,7 +51,10 @@ test('正常な見本は passed になり、読み込みの時間と、指定し
   expect(report.load.done).toBe(true);
   expect(report.load.durationMs).toBeGreaterThanOrEqual(0);
   expect(report.load.timeoutMs).toBe(15_000);
-  expect(report).toMatchObject({ ai: [], scenarios: [], page: null });
+  expect(report).toMatchObject({ ai: [], scenarios: [] });
+  expect(report.page.empty).toBe(false);
+  expect(report.page.text).toContain('架空の花屋 ひだまり');
+  expect(report.page.text).toContain('ひまわり 300 円');
 
   // 指定した 2 つだけ。tablet は撮らない
   expect(report.screenshots.map((s) => s.viewport)).toEqual(['mobile', 'desktop']);
@@ -62,6 +65,12 @@ test('正常な見本は passed になり、読み込みの時間と、指定し
   }
   expect(report.screenshots[0]).toMatchObject({ width: 390, height: 844 });
   expect(report.screenshots[1]).toMatchObject({ width: 1280, height: 800 });
+});
+
+test('何も描かない試作品は、エラーがなくても page.empty が true になる', async () => {
+  const report = await studio.observe('obs-empty', { viewports: [] });
+  expect(report.errors).toEqual([]);
+  expect(report.page).toEqual({ text: '', empty: true });
 });
 
 test('ビルドの失敗は、ブラウザを開かずに build のエラーと failed を返す', async () => {
