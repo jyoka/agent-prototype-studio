@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { SAMPLES, chooseSample, closeMore, expect, launchStudio, openDevDetails, test } from './studio.js';
+import { SAMPLES, chooseSample, chooseTestRequest, closeMore, expect, launchStudio, openDevDetails, test } from './studio.js';
 
 // 自然言語でプロダクト内 AI の振る舞いを変え、前の発言を新しい設定で試し直す(#279)。
 // 作る AI は偽接続(src/agent/fake-claude.js)、プロダクト内 AI はモック。モデルも外部の API も呼ばない。
@@ -44,11 +44,14 @@ test('作る欄の依頼でプロダクト内 AI の設定が変わり、前の�
     await expect(bar).toBeHidden();
 
     // 2. 作る欄で、振る舞いの変え方を自然言語で頼む。作る AI が書くのは設定(app/ai.json)
-    await page.getByRole('button', { name: '読み取れなかったときは例を出して聞き返すようにして' }).click();
+    // 偽接続の試験用の依頼は、開発者向けの詳細から選ぶ
+    await chooseTestRequest(page, '読み取れなかったときは例を出して聞き返すようにして');
     await page.getByRole('button', { name: '送る' }).click();
     let run = makeRuns(page).last();
     await expect(run.locator('.run-status')).toContainText('終わりました');
-    await expect(run).toContainText('書く: app/ai.json');
+    await expect(run.getByText('AI の設定を書きました')).toBeVisible();
+    await expect(run.locator('.run-dev')).toContainText('書く: app/ai.json');
+    await expect(run.locator('.run-updated')).toHaveText('AI の設定を変えました。試作品は新しくなっています。');
     await expect(run).toContainText('変わったファイル: app/ai.json');
     // 変わったかどうかは、作る AI の報告ではなく Studio が設定どうしを比べて出す
     let settings = run.locator('[data-kind="ai-settings"]');

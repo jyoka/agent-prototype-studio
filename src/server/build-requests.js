@@ -208,7 +208,8 @@ export class BuildRequests {
     this.active.get(id)?.emitter.emit('update', structuredClone(run));
   }
 
-  addItem(id, run, kind, text) {
+  // extra は項目に足す値(操作の短い文 summary など)
+  addItem(id, run, kind, text, extra = {}) {
     if (AGENT_ITEM_KINDS.has(kind) && run.items.filter((item) => AGENT_ITEM_KINDS.has(item.kind)).length >= MAX_ITEMS_PER_RUN) {
       if (!run.items.some((item) => item.kind === 'skipped')) {
         run.items.push({ kind: 'skipped', text: '作る AI の知らせが多すぎるので、ここから先は省きます。', at: new Date().toISOString() });
@@ -216,7 +217,7 @@ export class BuildRequests {
       }
       return;
     }
-    run.items.push({ kind, text, at: new Date().toISOString() });
+    run.items.push({ kind, text, ...extra, at: new Date().toISOString() });
     this.touch(id, run);
   }
 
@@ -406,7 +407,7 @@ export class BuildRequests {
           }
           if (read.result) result = read.result;
           for (const name of read.toolUses) this.countToolCall(run, name);
-          for (const item of read.items) this.addItem(id, run, item.kind, item.text);
+          for (const { kind, text, ...extra } of read.items) this.addItem(id, run, kind, text, extra);
         },
       });
     } catch (error) {

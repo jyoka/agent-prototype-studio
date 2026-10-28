@@ -5,8 +5,10 @@ const MESSAGE_WINDOW_MS = 5000;
 const MAX_MESSAGES_PER_WINDOW = 20;
 const MAX_UNEXPECTED_LOADS = 3;
 const MAX_EVENTS = 50;
+// 作る会話の項目の「誰が」の名前。接続(偽接続、Claude Code)の名前は、開発者向けの詳細にだけ出す(ux-redesign.md 4 節)
+const FIX_AI = '直す AI';
 const RUN_STATUS = {
-  running: (run) => `${run.agent}が作業しています…`,
+  running: () => `${FIX_AI} が作業しています…`,
   done: () => '終わりました',
   failed: () => '失敗しました',
   cancelled: () => '中断しました',
@@ -15,7 +17,7 @@ const RUN_STATUS = {
   fixed: () => '終わりました。作る AI が直すラウンドで直し、Studio が確かめた関門は、すべて通りました',
   unverified: () => '終わりました。起動の確認はしていません(未確認)',
   unchanged: () => '終わりました。app/ は変わっていません',
-  'agent-failed': (run) => `${run.agent}が失敗しました`,
+  'agent-failed': () => `${FIX_AI} が失敗しました`,
 };
 const ITEM_LABELS = {
   tool: '操作',
@@ -92,6 +94,15 @@ const els = {
   events: $('events'),
   eventsEmpty: $('events-empty'),
   agentStatus: $('agent-status'),
+  devAgentMark: $('dev-agent-mark'),
+  makeTarget: $('make-target'),
+  unavailable: $('agent-unavailable'),
+  unavailableHeading: $('agent-unavailable-heading'),
+  unavailableLead: $('agent-unavailable-lead'),
+  unavailableSteps: $('agent-unavailable-steps'),
+  unavailableDetail: $('agent-unavailable-detail'),
+  testRequests: $('test-requests'),
+  testRequestList: $('test-request-list'),
   conversation: $('conversation'),
   requestForm: $('request-form'),
   requestText: $('request-text'),
@@ -139,7 +150,8 @@ let makeConsent = null;
 // 開発者向けの詳細に出している、プロダクト内 AI の会話と状態。
 // choices は選べる接続と、実行の前に出す「送るもの」と「費用」。confirm は実モデルへ切り替える前の確認。
 // retry は設定が変わる前の会話と、試し直しの結果(Studio の画面だけに出す。試作品には渡さない)
-const ai = { projectId: null, session: null, choices: null, seq: 0, confirm: null, switching: false, retry: null };
+// loaded は projectId の読み込みが終わったか(AI を使わない試作品では、終わっても session は null)
+const ai = { projectId: null, session: null, loaded: false, choices: null, seq: 0, confirm: null, switching: false, retry: null };
 // 試し直している試作品。別の試作品を選んでも、その試作品の欄には出さない
 const retryingProjects = new Set();
 // AI の実行の記録(#277)。open は、開いている「渡したもの、受け取ったもの」の記録の ID
@@ -384,9 +396,10 @@ function renderBuild(project) {
   els.buildStatus.replaceChildren(...nodes);
 }
 
-// 作る欄。接続の種類と、どの認証で動くかを、送る前に見せる(#274 の Ready conditions)
+// 開発者向けの詳細の「直す AI(作る AI)の接続」。接続の種類、版、認証の見込み、実行ファイル、使えない理由を出す
 function renderAgentStatus() {
   const nodes = [];
+  els.devAgentMark.hidden = agent?.kind !== 'fake';
   if (!agent) {
     els.agentStatus.replaceChildren();
     return;
@@ -395,16 +408,15 @@ function renderAgentStatus() {
   els.agentStatus.dataset.billing = agent.billing.mode;
   els.agentStatus.dataset.ready = String(agent.ready);
   if (agent.kind === 'fake') {
-    nodes.push(element('p', '接続: 偽接続', 'agent-name'));
+    nodes.push(element('p', '接続: 偽接続(STUDIO_AGENT=fake)', 'agent-name'));
     nodes.push(element('p', '決まった応答だけを返します。Claude Code もモデルも呼ばないので、料金はかかりません。'));
     nodes.push(element('p', `Claude Code に切り替えたときの認証の見込み: ${agent.billing.text}`, 'muted'));
   } else {
-    nodes.push(element('p', `接続: Claude Code${agent.version ? ` ${agent.version}` : ''}`, 'agent-name'));
+    nodes.push(element('p', `接続: Claude Code${agent.version ? ` ${agent.version}` : ''}(STUDIO_AGENT=${agent.mode})`, 'agent-name'));
     if (agent.problem) {
-      nodes.push(element('p', agent.problem, 'failed'));
+      nodes.push(element('p', `使えません(${agent.status}): ${agent.problem}`, 'failed'));
     } else {
-      const billing = element('p', `認証と課金: ${agent.billing.text}`, 'billing');
-      nodes.push(billing);
+      nodes.push(element('p', `認証と課金: ${agent.billing.text}`, 'billing'));
       nodes.push(
         element(
           'p',
@@ -422,25 +434,117 @@ function renderAgentStatus() {
   els.agentStatus.replaceChildren(...nodes);
 }
 
+// 直す AI が使えないときのカード(ux-redesign.md 7-5)。見出しの 1 文は判定で変える。
+// サーバーの理由の文(実行ファイルの場所、spawn … ENOENT など)は、カードの中の「開発者向け」にだけ出す
+const RESTART_STEP = 'Studio を止めて、もう一度起動する';
+const UNAVAILABLE = {
+  missing: {
+    heading: '言葉で直すには、Claude Code が要ります',
+    lead: () => 'この PC で Claude Code が見つかりません。',
+    steps: ['Claude Code を入れる', 'ターミナルで claude を起動して、ログインする', RESTART_STEP],
+  },
+  old: {
+    heading: 'Claude Code が古いので使えません',
+    lead: (view) => `この PC の Claude Code${view.version ? ` ${view.version}` : ''} は古いので、Studio から安全に動かせません。`,
+    steps: ['ターミナルで claude update を実行して、Claude Code を新しくする', RESTART_STEP],
+  },
+  'not-logged-in': {
+    heading: 'Claude Code にログインしていません',
+    lead: () => 'Claude Code は見つかりましたが、ログインしていません。',
+    steps: ['ターミナルで claude を起動して、/login でログインする', RESTART_STEP],
+  },
+  unusable: {
+    heading: 'この Claude Code は、Studio から使えません',
+    lead: () => 'この PC の Claude Code を、Studio から動かせませんでした。',
+    steps: ['Claude Code を入れ直すか、新しくする', 'ターミナルで claude を起動できることを確かめる', RESTART_STEP],
+  },
+};
+
+function renderUnavailable() {
+  const card = agent && !agent.ready ? UNAVAILABLE[agent.status] ?? UNAVAILABLE.unusable : null;
+  els.unavailable.hidden = !card;
+  els.unavailable.dataset.status = agent?.status ?? '';
+  if (!card) return;
+  els.unavailableHeading.textContent = card.heading;
+  els.unavailableLead.textContent = card.lead(agent);
+  els.unavailableSteps.replaceChildren(...card.steps.map((step) => element('li', step)));
+  const detail = [element('p', agent.problem ?? '理由は分かりません。')];
+  if (agent.command) {
+    const where = element('p', '確かめた場所: ');
+    where.append(element('code', agent.command));
+    detail.push(where);
+  }
+  els.unavailableDetail.replaceChildren(...detail);
+}
+
+// 利用者に見せる依頼の例。本物の直す AI で意味のある依頼にする(ux-redesign.md 5 節)。
+// AI のある試作品では、最後の項目(最初の項目は、もう最初に聞く)を先に聞く例を入れる。AI のない試作品は Studio の共通の例だけ。
+// {role} は試作品の AI の役の名前(「案内役」など)。題材の言葉は Studio に持たず、AI の設定の名前から取る
+const COMMON_EXAMPLES = ['見出しの色を落ち着いた青にして', 'ボタンを大きくして', '説明の文を短くして'];
+const AI_EXAMPLES = ['{field}を先に聞くようにして', '{role}の話し方を、もっとやわらかくして', '見出しの色を落ち着いた青にして'];
+const MAX_ROLE = 8;
+
+// AI の設定の名前(「しおかぜ求人相談の案内役(架空)」)の、最後の「の」の後ろを役の名前にする。取れなければ「AI」
+function aiRole(name) {
+  const role = String(name ?? '').replace(/\s*\([^()]*\)$/u, '').split('の').at(-1).trim();
+  return role && role.length <= MAX_ROLE ? role : 'AI';
+}
+
+function userExamples(project) {
+  if (!project) return [];
+  if (ai.projectId !== project.id) return project.previewUrl ? [] : COMMON_EXAMPLES;
+  // 読み込みの途中は出さない(共通の例から AI の例に入れ替わって、押す場所がずれないため)
+  if (!ai.loaded) return [];
+  const fields = ai.session?.fields ?? [];
+  if (fields.length < 2) return COMMON_EXAMPLES;
+  const role = aiRole(ai.session.name);
+  return AI_EXAMPLES.map((text) => text.replace('{field}', () => fields.at(-1).label).replace('{role}', () => role));
+}
+
+function fillRequest(text) {
+  els.requestText.value = text;
+  els.requestText.focus();
+}
+
+function renderExamples() {
+  const project = selectedProject();
+  // 直す AI が使えないときは、送れないので例も出さない(使えないときのカードを出す)
+  const examples = agent?.ready ? userExamples(project) : [];
+  els.examples.hidden = examples.length === 0;
+  els.exampleList.replaceChildren(
+    ...examples.map((text) => {
+      const li = document.createElement('li');
+      const button = element('button', text);
+      button.type = 'button';
+      button.addEventListener('click', () => fillRequest(text));
+      li.append(button);
+      return li;
+    }),
+  );
+  renderTestRequests();
+}
+
 // 例の文に、選んでいる試作品の AI の項目の名前を入れる。最初の項目は、もう最初に聞くので最後の項目にする
-function exampleText(example) {
+function testRequestText(example) {
   const fields = ai.projectId === selectedId ? ai.session?.fields ?? [] : [];
   if (!example.fieldTemplate || fields.length < 2) return example.text;
   return example.fieldTemplate.replace('{field}', () => fields.at(-1).label);
 }
 
-function renderExamples() {
+// 開発者向けの詳細の「試験用の依頼」。偽接続(STUDIO_AGENT=fake)のときだけ、サーバーが例を返す。
+// 押すと依頼の欄に入れ、引き出しを閉じる(引き出しは依頼の欄の上に重なるため)
+function renderTestRequests() {
   const examples = agent?.examples ?? [];
-  els.examples.hidden = examples.length === 0;
-  els.exampleList.replaceChildren(
+  els.testRequests.hidden = examples.length === 0;
+  els.testRequestList.replaceChildren(
     ...examples.map((example) => {
       const li = document.createElement('li');
-      const text = exampleText(example);
+      const text = testRequestText(example);
       const button = element('button', text);
       button.type = 'button';
       button.addEventListener('click', () => {
-        els.requestText.value = text;
-        els.requestText.focus();
+        setMorePanel(false);
+        fillRequest(text);
       });
       li.append(button, element('span', example.note, 'muted'));
       return li;
@@ -452,16 +556,58 @@ function runningRun(projectId) {
   return conversations.get(projectId)?.runs.find((run) => run.status === 'running') ?? null;
 }
 
+// 直す欄の上の名前。一覧の名前の終わりの括弧(架空・AI と話せる など)は省く
+function shortTitle(project) {
+  return project.title.replace(/\s*\([^()]*\)$/u, '') || project.title;
+}
+
 function renderMake(project) {
   renderAgentStatus();
+  renderUnavailable();
   renderExamples();
+  els.makeTarget.textContent = project ? `${shortTitle(project)}への依頼` : '';
   const running = Boolean(project?.running || sending?.projectId === project?.id || (project && runningRun(project.id)));
   const ready = Boolean(project && agent?.ready && !running && !project.building && !project.versioning && !sending);
   els.requestText.disabled = !ready;
+  els.requestText.placeholder = agent && !agent.ready ? '直す AI が使えないので、送れません' : '例: 見出しの色を落ち着いた青にして';
   els.send.disabled = !ready;
   els.cancel.hidden = !(project && runningRun(project.id));
   renderConversation(project);
   renderSaveMark(project);
+}
+
+// 終わって試作品が新しくなった実行。何を変えたかは、Studio が確かめた変わったファイルから言う(直す AI の報告に頼らない)
+const UPDATED_STATUSES = new Set(['done', 'passed', 'fixed', 'unverified']);
+const AI_SETTINGS_FILE = 'app/ai.json';
+
+function updatedText(run) {
+  const files = (run.changedFiles ?? []).map((change) => change.file);
+  if (!UPDATED_STATUSES.has(run.status) || files.length === 0 || !run.build?.ok) return null;
+  const what = [];
+  if (files.includes(AI_SETTINGS_FILE)) what.push('AI の設定');
+  if (files.some((file) => file !== AI_SETTINGS_FILE)) what.push('試作品のファイル');
+  return `${what.join('と')}を変えました。試作品は新しくなっています。`;
+}
+
+// 開いている、実行ごとの「開発者向け」(再描画で閉じないよう、実行の ID で覚える)
+const openRunDetails = new Set();
+
+// 実行ごとの「開発者向け」。操作の詳細(ファイルの名前、道具の名前)、接続の名前、認証の報告を出す
+function runDevDetails(run) {
+  const box = element('details', undefined, 'run-dev');
+  box.open = openRunDetails.has(run.id);
+  box.addEventListener('toggle', () => (box.open ? openRunDetails.add(run.id) : openRunDetails.delete(run.id)));
+  box.append(element('summary', '開発者向け: 操作の詳細'));
+  const tools = run.items.filter((item) => item.kind === 'tool');
+  if (tools.length > 0) {
+    const list = element('ul');
+    list.setAttribute('aria-label', '操作の詳細');
+    list.append(...tools.map((item) => element('li', `${ITEM_LABELS.tool}: ${item.text}`)));
+    box.append(list);
+  }
+  box.append(element('p', `接続: ${run.agent}`, 'muted'));
+  if (run.auth) box.append(element('p', `認証の報告: ${run.auth}`, 'muted'));
+  return box;
 }
 
 function renderConversation(project) {
@@ -474,21 +620,35 @@ function renderConversation(project) {
     request.append(element('span', 'あなた', 'who'), element('p', run.request));
     li.append(request);
     const steps = element('ul', undefined, 'steps');
+    let lastSummary = null;
     for (const item of run.items) {
+      // 操作は短い文にする(ux-redesign.md 7-3)。続けて同じ文になるときは 1 つにまとめる
+      if (item.kind === 'tool') {
+        const summary = item.summary ?? '作業を進めました';
+        if (summary === lastSummary) continue;
+        lastSummary = summary;
+        const step = element('li', undefined, 'step-short');
+        step.dataset.kind = item.kind;
+        step.append(element('span', summary, 'text'));
+        steps.append(step);
+        continue;
+      }
+      lastSummary = null;
       const step = document.createElement('li');
       step.dataset.kind = item.kind;
       if (item.kind === 'assistant') {
         step.className = 'bubble agent';
-        step.append(element('span', run.agent, 'who'), element('p', item.text));
+        step.append(element('span', FIX_AI, 'who'), element('p', item.text));
       } else {
         step.append(element('span', ITEM_LABELS[item.kind] ?? item.kind, 'who'), element('span', item.text, 'text'));
       }
       steps.append(step);
     }
     li.append(steps);
-    const status = element('p', (RUN_STATUS[run.status] ?? (() => run.status))(run), 'run-status');
-    if (run.auth) status.append(element('span', `(認証の報告: ${run.auth})`, 'muted'));
-    li.append(status);
+    const updated = updatedText(run);
+    if (updated) li.append(element('p', updated, 'run-updated'));
+    li.append(element('p', (RUN_STATUS[run.status] ?? (() => run.status))(run), 'run-status'));
+    li.append(runDevDetails(run));
     return li;
   });
   if (makeError) nodes.push(element('li', makeError, 'make-error'));
@@ -868,6 +1028,7 @@ async function loadAi(projectId) {
   if (projectId !== ai.projectId) setAiMenu(false);
   ai.projectId = projectId;
   ai.session = null;
+  ai.loaded = false;
   ai.choices = null;
   ai.confirm = null;
   ai.retry = null;
@@ -885,14 +1046,16 @@ async function loadAi(projectId) {
     if (seq !== ai.seq) return;
     if (!(error instanceof ApiError && error.code === 'no-ai')) handleError(error);
   }
+  ai.loaded = true;
   renderAi();
 }
 
 function showAiSession(projectId, session, retry) {
   if (ai.projectId !== projectId) return;
-  // 先に送った読み込みの結果で、新しい状態を上書きしない
+  // 先に送った読み込みの結果で、新しい状態を上書きしない。読み込みは、これで終わったことにする
   ai.seq += 1;
   ai.session = session;
+  ai.loaded = true;
   if (retry !== undefined) ai.retry = retry;
   if (ai.choices) ai.choices.selected = session.connection.kind;
   renderAi();

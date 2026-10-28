@@ -120,14 +120,15 @@ Claude Code の起動のしかた(どれも Claude Code の CLI のフラグで�
 | 結果 | 確かめ方 | 言葉で直す欄 |
 |---|---|---|
 | 使える | 下の 3 つが全部通る | 送れる |
-| ない | PATH に `claude` がない。`STUDIO_CLAUDE_BIN` がない場所を指す | 「claude が見つかりません」と手順。送れない |
-| 古い | `claude --version` が 2.1.248 より前 | 「古すぎます」と `claude update`。送れない |
-| ログインしていない | `claude auth status --json` の `loggedIn` が `false` | 「ログインしていません」と `/login` の手順。送れない |
+| ない | PATH に `claude` がない。`STUDIO_CLAUDE_BIN` がない場所を指す | カード「言葉で直すには、Claude Code が要ります」と手順。送れない |
+| 古い | `claude --version` が 2.1.248 より前 | カード「Claude Code が古いので使えません」と `claude update`。送れない |
+| ログインしていない | `claude auth status --json` の `loggedIn` が `false` | カード「Claude Code にログインしていません」と `/login` の手順。送れない |
 
 - ログインしているかは、Claude Code 自身に聞く。Studio はログインの情報のファイルを読まない。出力から使うのは `loggedIn` と `authMethod`(方式)だけで、メールアドレスや組織など他の値は捨てる。画面にも記録にも出さない。
 - `auth status` の出力の形が分からない版では、使えるとする。ログインしていなければ、最初の送信の失敗で見分け、ログインの手順を出す。
 - 結果は `/api/projects` の `agent` の `mode`(`auto`、`claude`、`fake`)、`status`(`ready`、`missing`、`old`、`not-logged-in`、`unusable`)、`auth`(`loggedIn` と `method`)に出る。`unusable` は、Windows の npm 版の `claude.cmd` と、版を読めないとき。
 - 使えない状態から直したら(入れた、更新した、ログインした)、Studio を起動し直す。
+- カードには、何ができないかと、使えるようにする手順だけを出す。サーバーの理由の文(実行ファイルの場所、`spawn … ENOENT` など)は、カードの中の「開発者向け: 確かめた結果」と、「その他」→「開発者向けの詳細」の「直す AI(作る AI)の接続」に出す。
 
 実モデルを呼ぶので、言葉で直す欄で初めて送るときに、本物の AI を使う同意を求めます([上の「本物の AI を使う前の同意」](#本物の-ai-を使う前の同意))。試作には架空のデータだけを使ってください。実モデルを呼ばずに試すときは `STUDIO_AGENT=fake` で起動します。
 
@@ -135,10 +136,10 @@ Claude Code で作るときの手順:
 
 1. Claude Code 2.1.248 以上を入れ、ターミナルで `claude` を起動して、本人のアカウントでログインしておく。
 2. `npm start` で起動する。Claude Code に固定するときは `STUDIO_AGENT=claude npm start`(Windows の PowerShell は `$env:STUDIO_AGENT='claude'; npm start`)。
-3. 「言葉で直す」欄の上の枠で、版と「認証と課金」を確かめてから送る。初めて送るときは、同意を求める。「同意して送る」を押すと送る。
-   - 環境に `ANTHROPIC_API_KEY` があると、サブスクの枠ではなく API の料金がかかる。枠にそう出る。そのときは作る AI の 1 回の起動に費用の上限(`STUDIO_MAX_BUDGET_USD`)を付ける。
+3. 「言葉で直す」欄で送る。初めて送るときは、同意を求める。送るもの、送り先、料金を確かめて「同意して送る」を押すと送る。版と「認証と課金」の見込みは、「その他」→「開発者向けの詳細」の「直す AI(作る AI)の接続」で見られる。
+   - 環境に `ANTHROPIC_API_KEY` があると、サブスクの枠ではなく API の料金がかかる。同意の中身と「認証と課金」にそう出る。そのときは作る AI の 1 回の起動に費用の上限(`STUDIO_MAX_BUDGET_USD`)を付ける。
    - 見込みは環境変数の有無だけから出す。Console(API)のアカウントで `claude` にログインしているときも API の料金がかかるが、送る前には見分けられない。
-   - 実際にどれで動いたかは、会話の各依頼の終わりに「認証の報告」として出る(Claude Code が報告する `apiKeySource`)。
+   - 実際にどれで動いたかは、会話の各依頼の「開発者向け: 操作の詳細」に「認証の報告」として出る(Claude Code が報告する `apiKeySource`)。
 
 Studio が Claude Code をどう動かすか:
 
@@ -147,7 +148,7 @@ Studio が Claude Code をどう動かすか:
 - 読み書きを `app/` の中に限り、コマンドの実行と Web の取得をさせない設定で起動する。権限の確認は Claude Code が行い、確認が要る操作は断られる。断られた操作は会話に出す。
 - 利用者の設定(CLAUDE.md、skills、plugins、hooks、ほかの MCP、custom の agents と commands)は読ませない。`--safe-mode` は観察の道具も外すので使わず、上の引数の組み合わせで止める。2026-10-28 に Claude Code 2.1.312 で確かめた([ADR-0002](adr/0002-observer-and-harness.md#作る-ai-が観察の道具を使う))。
 - 作る AI には、観察の道具(`open`、`read_page`、`inspect`、`click`、`type`、`scroll`、`set_viewport`、`screenshot`、`run_scenarios`)を渡す。作業中の `app/` を開いて画面を読み、操作し、シナリオを回せる。道具は `app/` を書き換えない。Studio は依頼ごとに MCP の設定を `.studio/runs/<run-id>/mcp.json`(`app/` の外)に書き、観察の道具のサーバーだけを渡す。直すラウンドも同じ設定で起動する。
-- 観察の道具を使うと、作る会話に「観察: 開く」のような項目が出る。道具の呼び出しの回数は `.studio/runs/<run-id>/run.json` の `toolCalls` に残る。観察の道具の時間とブラウザの分だけ、1 回の依頼が長くなることがある。
+- 観察の道具を使うと、作る会話に「試作品の画面を開いて確かめました」のような短い文が出る。道具の名前(「観察: 開く」など)は、依頼ごとの「開発者向け: 操作の詳細」に出る。道具の呼び出しの回数は `.studio/runs/<run-id>/run.json` の `toolCalls` に残る。観察の道具の時間とブラウザの分だけ、1 回の依頼が長くなることがある。
 - 依頼ごとに新しい会話で動かす。前の依頼の内容は、`app/` のファイルを通じて引き継がれる。
 - 作る AI の 1 回の起動は 10 分、やりとりは 30 回まで。関門で失敗すると、Studio が直す依頼を返して起動し直す(直すラウンド)。起動は 1 つの依頼で 3 回まで。上限は起動ごとに効く。中断や時間切れでは、SIGINT、SIGTERM、強制終了の順に止める。本体が終わった後に残った子のプロセスも止める。Studio を止めたとき(Ctrl+C、ターミナルを閉じたとき)も、動いている作る AI を止める。
 

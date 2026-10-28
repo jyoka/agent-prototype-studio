@@ -221,3 +221,12 @@ export async function openDevDetails(page) {
   await expect(page.locator('#build-status')).toBeVisible();
   return details;
 }
+
+// 偽接続(STUDIO_AGENT=fake)の試験用の依頼を、その他 → 開発者向けの詳細の「試験用の依頼」から選ぶ。
+// 押すと依頼の欄に入り、引き出しは閉じる(ux-redesign.md 5 節、U4)。送るのは呼んだ側
+export async function chooseTestRequest(page, text) {
+  await openDevDetails(page);
+  await page.getByRole('list', { name: '偽の直す AI で試せる例' }).getByRole('button', { name: text, exact: true }).click();
+  await expect(page.locator('#more-panel')).toBeHidden();
+  await expect(page.getByLabel('依頼')).toHaveValue(text);
+}
