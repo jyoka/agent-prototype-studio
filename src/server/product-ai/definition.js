@@ -583,7 +583,8 @@ export function describeDefinitionChanges(before, after) {
   return lines;
 }
 
-function describeWhen(when, labelOf) {
+// 遷移の条件を、利用者向けの文にする(harness の決定の理由にも使う)
+export function describeWhen(when, labelOf) {
   const parts = [];
   if (when.filled === 'required') parts.push('必須の項目が埋まった');
   else if (when.filled) parts.push(`${when.filled.map(labelOf).join('、')}が埋まった`);

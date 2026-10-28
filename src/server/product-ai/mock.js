@@ -1,7 +1,9 @@
 import { formatValue } from './definition.js';
 
 // モックの接続。実際のモデルは呼ばず、app/ai.json の言葉と型だけで、いつも同じ応答を返す。
-// 実モデルの接続(#276)も同じ形 respond({ definition, state, messages, text }) -> { reply, updates } にする。
+// harness(harness.js)の 2 つの口を持つ。何を聞くか、段の遷移、終わるかは harness が決める。
+//   extract({ definition, fields, state, messages, text }) -> { updates, intent }  言葉の一致で読む
+//   phrase({ definition, decision, state, messages }) -> { reply }               mock の型に当てはめる
 
 const normalize = (value) => value.normalize('NFKC');
 
@@ -48,14 +50,37 @@ function extractNumber(field, text) {
   return found;
 }
 
-export function extractUpdates(definition, text) {
+export function extractUpdates(definition, text, fields = definition.fields) {
   const normalized = normalize(text);
   const updates = {};
-  for (const field of definition.fields) {
+  for (const field of fields) {
     const value = field.type === 'number' ? extractNumber(field, normalized) : extractChoice(field, normalized);
     if (value !== undefined) updates[field.key] = value;
   }
   return updates;
+}
+
+// 発言の種類: mock.intents の言葉が文の中で一番前に出てきた種類を採る(はい/いいえは文の頭に来やすい)。
+// 言葉がなく、項目の値を読めたら answer。どちらもなければ null(読み取れなかった)
+export function extractIntent(definition, text, updates) {
+  const normalized = normalize(text);
+  let found = null;
+  let foundAt = Infinity;
+  for (const [intent, words] of Object.entries(definition.mock.intents)) {
+    for (const word of words) {
+      const at = normalized.indexOf(normalize(word));
+      if (at >= 0 && at < foundAt) {
+        foundAt = at;
+        found = intent;
+      }
+    }
+  }
+  return found ?? (Object.keys(updates).length > 0 ? 'answer' : null);
+}
+
+export function mockExtract({ definition, fields = definition.fields, text }) {
+  const updates = extractUpdates(definition, text, fields);
+  return { updates, intent: extractIntent(definition, text, updates) };
 }
 
 function fill(template, values) {
@@ -71,33 +96,24 @@ function describe(definition, state, keys) {
     .join('、');
 }
 
-// 最後の AI の発言より後に、本人が直した項目
-function correctedSinceLastReply(messages) {
-  const keys = [];
-  for (let i = messages.length - 1; i >= 0 && messages[i].role !== 'assistant'; i -= 1) {
-    if (messages[i].role !== 'correction') continue;
-    for (const change of messages[i].changes) if (!keys.includes(change.key)) keys.unshift(change.key);
-  }
-  return keys;
-}
+// 段や終わりで言うことの型。summary はまとめて確かめる型、complete は終わりの型
+const SAY_TEMPLATES = { summary: 'confirm', complete: 'complete' };
 
-export function mockReply(definition, state, messages, text) {
-  const updates = extractUpdates(definition, text);
-  const next = { ...state, ...updates };
-  const corrected = correctedSinceLastReply(messages).filter((key) => !Object.hasOwn(updates, key));
+// 決定(harness の decision)を、mock の型に当てはめた文にする。実モデルの言い方が使えないときの決まった文にも使う
+export function templateReply(definition, decision, state) {
   const { mock, fields } = definition;
+  const summary = () => describe(definition, state, fields.map((f) => f.key));
   const parts = [];
-  if (corrected.length > 0) parts.push(fill(mock.afterCorrection, { changes: describe(definition, next, corrected) }));
-  const changed = Object.keys(updates);
-  if (changed.length > 0) parts.push(fill(mock.understood, { changes: describe(definition, next, changed) }));
-  else if (corrected.length === 0) parts.push(mock.notUnderstood);
-  const missing = fields.find((field) => next[field.key] === null);
-  if (missing) {
-    parts.push(missing.question);
-  } else {
-    parts.push(fill(mock.complete, { summary: describe(definition, next, fields.map((f) => f.key)) }));
+  if (decision.corrected.length > 0) parts.push(fill(mock.afterCorrection, { changes: describe(definition, state, decision.corrected) }));
+  if (decision.changes.length > 0) {
+    parts.push(fill(mock.understood, { changes: describe(definition, state, decision.changes.map((change) => change.key)) }));
+  } else if (decision.corrected.length === 0 && (decision.intent === null || decision.intent === 'answer')) {
+    // はい、いいえなど、項目でない答えを読めたときは「読み取れなかった」と言わない
+    parts.push(mock.notUnderstood);
   }
-  return { reply: parts.filter(Boolean).join(''), updates };
+  if (decision.say) parts.push(fill(mock[SAY_TEMPLATES[decision.say]], { summary: summary() }));
+  if (decision.ask) parts.push(fields.find((field) => field.key === decision.ask).question);
+  return parts.filter(Boolean).join('');
 }
 
 export function createMockConnection() {
@@ -111,11 +127,15 @@ export function createMockConnection() {
       return {
         to: null,
         tools: this.tools,
-        rule: 'app/ai.json の各項目の選択肢と keywords が発言の中にあるかで値を読み取り、mock の型に当てはめて返事を作ります。',
+        rule:
+          '抽出: app/ai.json の各項目の選択肢と keywords、mock.intents の言葉が発言の中にあるかで、値と発言の種類を読み取ります。何を聞くか、段の遷移、終わるかは harness が決めます。言い方: その決定を mock の型に当てはめて返事を作ります。',
       };
     },
-    async respond({ definition, state, messages, text }) {
-      return mockReply(definition, state, messages, text);
+    async extract({ definition, fields, text }) {
+      return mockExtract({ definition, fields, text });
+    },
+    async phrase({ definition, decision, state }) {
+      return { reply: templateReply(definition, decision, state) };
     },
   };
 }
