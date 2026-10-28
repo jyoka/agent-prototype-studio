@@ -21,6 +21,8 @@ export const DEFAULT_LIMITS = Object.freeze({
   loadTimeoutMs: 15_000,
   // 読み込みの後、描画中の例外と遅れて出るエラーを待つ時間
   settleMs: 500,
+  // 観察の全体の上限。null なら loadTimeoutMs + settleMs + 30 秒。超えたら文脈ごと閉じる(ADR-0001 の T8)
+  observeTimeoutMs: null,
 });
 
 const HOST_TIMEOUT_MS = 10_000;
@@ -32,11 +34,14 @@ const EXTRA_TIMEOUT_MS = 30_000;
 const MAX_ERRORS = 50;
 const MAX_MESSAGE = 1000;
 const MAX_STACK = 4000;
+const MAX_URL = 500;
 const MAX_AI_REQUESTS = 50;
 const MAX_AI_TEXT = 2000;
 const MAX_AI_CHANGES = 20;
 // report の ai に入れるやり取りの数(会話の始まりと、要求の上限の分)
 const MAX_AI_ENTRIES = MAX_AI_REQUESTS + 1;
+const MAX_PAGE_TEXT = 2000;
+const PAGE_TIMEOUT_MS = 5_000;
 
 // 親ページが Node に渡す知らせの種類と、report の errors の kind
 const EVENT_KINDS = {
@@ -97,8 +102,9 @@ function emptyReport(build) {
     errors: [],
     // 観察の中のプロダクト内 AI とのやり取り(ai.entries() が返す、AI の実行の記録と同じ形)
     ai: [],
-    // シナリオと最後の画面(jyoka/tasks#302)で埋める
+    // シナリオ(jyoka/tasks#302)で埋める
     scenarios: [],
+    // 最後の画面: { text, empty }。アクセシビリティの木の要約は jyoka/tasks#302 で足す
     page: null,
     screenshots: [],
     verdict: 'unverified',
@@ -120,6 +126,26 @@ function buildErrors(result) {
   }));
 }
 
+// 観察の文脈から出してよい要求: 観察用の親ページとその script(同じ名前の .js)、観察するビルドのファイル。
+// Studio の API、他のプロジェクトと他の版、外部への要求は断つ(S8、S13)。CSP の前で断てないもの
+// (frame-src が通す、プレビューの origin の中の他のプロジェクトへの移動など)もここで止まる
+function requestFilter(build) {
+  const host = new URL(build.hostUrl);
+  const hostFiles = new Set([host.pathname, host.pathname.replace(/\.html$/, '.js')]);
+  const preview = new URL(build.previewUrl);
+  return (url) => {
+    let target;
+    try {
+      target = new URL(url);
+    } catch {
+      return false;
+    }
+    if (target.origin === host.origin) return hostFiles.has(target.pathname);
+    if (target.origin === preview.origin) return target.pathname.startsWith(preview.pathname);
+    return false;
+  };
+}
+
 function waitFor(promise, ms) {
   let timer;
   return Promise.race([
@@ -133,6 +159,24 @@ function waitFor(promise, ms) {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 class StepTimeoutError extends Error {}
+
+// 試作品の iframe の中で動かす。文字がなく、大きさのある要素もなければ、空の画面とみなす
+function readPage(max) {
+  const body = document.body;
+  if (!body) return { text: '', empty: true };
+  const shown = String(body.innerText ?? '').replace(/\s+/g, ' ').trim();
+  const skip = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'TEMPLATE', 'NOSCRIPT']);
+  let sized = false;
+  for (const element of body.querySelectorAll('*')) {
+    if (skip.has(element.tagName) || element.id === 'root') continue;
+    const rect = element.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      sized = true;
+      break;
+    }
+  }
+  return { text: shown.slice(0, max), empty: shown === '' && !sized };
+}
 
 // 呼ぶ側の ai 関数が entries() を持っていれば、観察の中のやり取りを report に入れる
 function aiEntries(ai) {
@@ -212,13 +256,16 @@ export class Observer {
 
     if (names.length > 0 && !outDir) throw new TypeError('スクリーンショットを置く outDir を渡してください');
     const first = VIEWPORTS[names[0] ?? 'desktop'];
+    const observeTimeoutMs = limit.observeTimeoutMs ?? limit.loadTimeoutMs + limit.settleMs + EXTRA_TIMEOUT_MS;
     // 時間を超えて返った操作が、返した後の report を書き換えないように、写しに書く
     const draft = structuredClone(report);
     try {
-      await this.browser.withContext({ viewport: { ...first } }, (context, browser) =>
+      // service worker の要求は route を通らないので、使わせない。ダウンロードも受けない
+      const options = { viewport: { ...first }, serviceWorkers: 'block', acceptDownloads: false };
+      await this.browser.withContext(options, (context, browser) =>
         within(
           this.run({ context, browser, build, names, ai, limit, outDir, report: draft }),
-          limit.loadTimeoutMs + limit.settleMs + EXTRA_TIMEOUT_MS,
+          observeTimeoutMs,
           '観察が時間内に終わりませんでした',
         ),
       );
@@ -242,13 +289,34 @@ export class Observer {
   async run({ context, browser, build, names, ai, limit, outDir, report }) {
     report.browser = { name: 'chromium', version: browser.version() };
     report.load.timeoutMs = limit.loadTimeoutMs;
+    const addError = (kind, message, stack = '', extra = {}) => {
+      if (report.errors.length >= MAX_ERRORS) return;
+      report.errors.push({ kind, message: text(message, MAX_MESSAGE), stack: text(stack, MAX_STACK), ...extra, at: new Date().toISOString() });
+    };
+    // 断った要求は errors に残す。blockedBy は断ったもの(route は観察器、csp は試作品の CSP)
+    const addBlocked = (url, blockedBy) => {
+      const message =
+        blockedBy === 'route'
+          ? `試作品が観察するビルドの外へ要求を出したので、断ちました: ${url}`
+          : `試作品の CSP が要求を断ちました: ${url}`;
+      addError('blocked-request', message, '', { url: text(url, MAX_URL), blockedBy });
+    };
+
+    // ページを開く前に、文脈のすべての要求(iframe の中も)を調べる
+    const allowed = requestFilter(build);
+    await context.route('**/*', (route) => {
+      const url = route.request().url();
+      if (allowed(url)) return route.continue().catch(() => {});
+      addBlocked(url, 'route');
+      return route.abort('blockedbyclient').catch(() => {});
+    });
+    // CSP が断った要求は route に届かない。ブラウザが知らせる失敗から拾う(fetch など、要求にならないものは拾えない)
+    context.on('requestfailed', (request) => {
+      if (request.failure()?.errorText === 'csp') addBlocked(request.url(), 'csp');
+    });
+
     const page = await context.newPage();
     const fromHost = (source) => source.page === page && source.frame === page.mainFrame();
-
-    const addError = (kind, message, stack = '') => {
-      if (report.errors.length >= MAX_ERRORS) return;
-      report.errors.push({ kind, message: text(message, MAX_MESSAGE), stack: text(stack, MAX_STACK), at: new Date().toISOString() });
-    };
 
     let onLoad;
     const loaded = new Promise((resolve) => {
@@ -341,6 +409,20 @@ export class Observer {
         return;
       }
       report.screenshots.push({ name, viewport: name, width: size.width, height: size.height, file });
+    }
+
+    // 最後の画面の文字と、空でないか(関門 G5 が見る)
+    const frame = page.mainFrame().childFrames()[0];
+    if (!frame) return;
+    try {
+      const read = await within(frame.evaluate(readPage, MAX_PAGE_TEXT), PAGE_TIMEOUT_MS, '画面を読めません');
+      // 試作品の中で作った値なので、決まった形に写す
+      report.page = { text: text(read?.text, MAX_PAGE_TEXT), empty: read?.empty === true };
+    } catch (error) {
+      // 読めなかったときは page を null のままにする(空かどうかは分からない)
+      if (error instanceof StepTimeoutError) {
+        addError('timeout', '画面の中身を読めませんでした。試作品が応答していません。読み込みの後に無限ループや重い処理がないか確かめてください');
+      }
     }
   }
 

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { INSTALL_COMMAND, launchOptions, ObserverBrowser } from '../../src/observer/browser.js';
+import { INSTALL_COMMAND, LAUNCH_ARGS, launchOptions, ObserverBrowser } from '../../src/observer/browser.js';
 import { Observer } from '../../src/observer/observe.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -43,7 +43,7 @@ function fakeLaunch() {
 }
 
 test('起動に channel も executablePath も渡さない(利用者の Chrome と Edge を使わない)', async () => {
-  assert.deepEqual(Object.keys(launchOptions()).sort(), ['headless', 'timeout']);
+  assert.deepEqual(Object.keys(launchOptions()).sort(), ['args', 'headless', 'timeout']);
   assert.equal(launchOptions().headless, true);
   const fake = fakeLaunch();
   const browser = new ObserverBrowser({ launch: fake.launch });
@@ -56,6 +56,20 @@ test('起動に channel も executablePath も渡さない(利用者の Chrome �
     const source = await fs.readFile(path.join(ROOT, 'src', 'observer', file), 'utf8');
     assert.doesNotMatch(source, /channel\s*:|msedge|chrome-beta|executablePath\s*:/, file);
   }
+});
+
+test('起動の引数で、名前の解決を loopback だけにし、DNS の先読みと WebRTC の UDP を止める(ADR-0002)', () => {
+  const { args } = launchOptions();
+  assert.deepEqual(args, [...LAUNCH_ARGS]);
+  assert.ok(args.includes('--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1'));
+  assert.ok(args.includes('--force-webrtc-ip-handling-policy=disable_non_proxied_udp'));
+  // 行き止まりのプロキシは、解決されない名前(.invalid)にする
+  const proxy = args.find((arg) => arg.startsWith('--proxy-server='));
+  assert.match(new URL(proxy.slice('--proxy-server='.length)).hostname, /\.invalid$/);
+  // Playwright が付ける --disable-features を上書きしない。デバッグの口は Playwright のパイプのまま
+  assert.equal(args.some((arg) => /^--(disable-features|remote-debugging-port|proxy-bypass-list)/.test(arg)), false);
+  // 呼ぶたびに新しい配列を返す(呼ぶ側が書き換えても次の起動に響かない)
+  assert.notEqual(launchOptions().args, launchOptions().args);
 });
 
 test('ブラウザは 1 回だけ起動して使い回し、文脈は 1 つずつ開く', async () => {
@@ -184,7 +198,7 @@ test('止めた後に待っていた観察は、unverified を返す', async () 
 
 test('時間の上限は、正しい名前と値だけを受ける', async () => {
   const observer = new Observer({ browser: new ObserverBrowser({ launch: fakeLaunch().launch }) });
-  for (const limits of [{ loadTimeoutMs: Number.NaN }, { loadTimeoutMs: -1 }, { loadTimeoutMs: '15000' }, { totalMs: 1 }]) {
+  for (const limits of [{ loadTimeoutMs: Number.NaN }, { loadTimeoutMs: -1 }, { loadTimeoutMs: '15000' }, { totalMs: 1 }, { observeTimeoutMs: null }]) {
     await assert.rejects(observer.observe({ build: OK_BUILD, viewports: [], limits }), /limits/, JSON.stringify(limits));
   }
 });
