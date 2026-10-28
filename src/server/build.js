@@ -12,16 +12,23 @@ import { createBuildId } from './security.js';
 import { readSimulation } from './sim/composition.js';
 
 // 試作品が import できる、Studio が同梱するライブラリ。
+// studio-talk は Studio のコードの中の会話の枠(docs/design/agent-simulation.md の 3.8。src/runtime/studio-talk/)
 export const ALLOWED_PACKAGES = [
   'react',
   'react/jsx-runtime',
   'react/jsx-dev-runtime',
   'react-dom',
   'react-dom/client',
+  'studio-talk',
 ];
 
 const RUNTIME_FILE = path.join(STUDIO_ROOT, 'src', 'runtime', 'runtime.js');
 const NODE_MODULES = path.join(STUDIO_ROOT, 'node_modules');
+// node_modules の外にある同梱のライブラリ。名前と、入口のファイル
+const STUDIO_TALK_DIR = path.join(STUDIO_ROOT, 'src', 'runtime', 'studio-talk');
+const STUDIO_MODULES = { 'studio-talk': path.join(STUDIO_TALK_DIR, 'index.js') };
+// 同梱のライブラリのうち、npm のパッケージでなく Studio のコードの中にあるものの名前
+export const STUDIO_PACKAGES = Object.keys(STUDIO_MODULES);
 
 function isInside(parent, child) {
   const relative = path.relative(parent, child);
@@ -33,14 +40,14 @@ function isBareSpecifier(spec) {
 }
 
 // import の解決先を、app/ の中と同梱のライブラリだけに限る(ADR-0001 の「ビルド」)。
-function restrictImports(appReal, nodeModulesReal) {
+function restrictImports(appReal, nodeModulesReal, studioTalkReal) {
   return {
     name: 'studio-restrict-imports',
     setup(build) {
       build.onResolve({ filter: /.*/ }, async (args) => {
         if (args.pluginData?.studioInner || args.kind === 'entry-point') return undefined;
         // 同梱ライブラリの中の import は、そのまま解決させる
-        if (isInside(nodeModulesReal, args.importer)) return undefined;
+        if (isInside(nodeModulesReal, args.importer) || isInside(studioTalkReal, args.importer)) return undefined;
         if (!isInside(appReal, args.importer)) {
           return { errors: [{ text: `app/ の外からの読み込みは扱えません: ${args.path}` }] };
         }
@@ -57,6 +64,7 @@ function restrictImports(appReal, nodeModulesReal) {
               errors: [{ text: `「${args.path}」は使えません。使えるライブラリ: ${ALLOWED_PACKAGES.join(', ')}` }],
             };
           }
+          if (Object.hasOwn(STUDIO_MODULES, args.path)) return { path: await fs.realpath(STUDIO_MODULES[args.path]) };
           return build.resolve(args.path, {
             kind: args.kind,
             resolveDir: STUDIO_ROOT,
@@ -202,7 +210,7 @@ export async function buildApp({ appDir, buildsDir }) {
       // 元の名前は日本語や空白を含み得るので、配信できる名前にする
       assetNames: 'asset-[hash]',
       logLevel: 'silent',
-      plugins: [restrictImports(appReal, await fs.realpath(NODE_MODULES))],
+      plugins: [restrictImports(appReal, await fs.realpath(NODE_MODULES), await fs.realpath(STUDIO_TALK_DIR))],
     });
   } catch (error) {
     if (Array.isArray(error.errors)) {

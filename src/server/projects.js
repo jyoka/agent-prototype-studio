@@ -10,6 +10,8 @@ export const SAMPLES = [
   { id: 'sample-job-consult', dir: 'job-consult' },
   // 求人ではない題材で、同じ作成・試行・変更・引き継ぎの流れが通るかを確かめるサンプル(#281)
   { id: 'sample-study-consult', dir: 'study-consult' },
+  // 構成 A の見本。相手の会社のエージェント(模擬)がトークを回し、こちらのツールを呼ぶ(docs/design/agent-simulation.md の 2.4)
+  { id: 'sample-part-time', dir: 'part-time' },
   { id: 'sample-library', dir: 'library' },
 ];
 

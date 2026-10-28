@@ -5,6 +5,9 @@ import path from 'node:path';
 import test from 'node:test';
 import { buildApp } from '../../src/server/build.js';
 import { STUDIO_ROOT } from '../../src/server/config.js';
+import { PART_KINDS } from '../../src/server/sim/assumptions.js';
+import { SURFACE_THEMES } from '../../src/server/sim/composition.js';
+import { readScenarios } from '../../src/observer/scenario.js';
 
 async function makeApp(t, files) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-build-'));
@@ -65,6 +68,46 @@ test('同梱のライブラリの中の import は解決できる', async (t) =>
   });
   const result = await buildApp({ appDir, buildsDir });
   assert.equal(result.ok, true, JSON.stringify(result.errors));
+});
+
+test('同梱の会話の枠(studio-talk)を、試作品が import できる。部品 5 つと見た目 3 つが束ねた出力に入る', async (t) => {
+  const { appDir, buildsDir } = await makeApp(t, {
+    'main.jsx': [
+      'import { createRoot } from "react-dom/client";',
+      'import { Talk, TalkPart, useStudioTalk, TALK_THEMES, TALK_PART_KINDS } from "studio-talk";',
+      'console.log(TalkPart, useStudioTalk, TALK_THEMES, TALK_PART_KINDS);',
+      'createRoot(document.body).render(<Talk theme="web" title="架空の会話" />);',
+      '',
+    ].join('\n'),
+  });
+  const result = await buildApp({ appDir, buildsDir });
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  const out = path.join(buildsDir, result.buildId);
+  assert.deepEqual((await fs.readdir(out)).sort(), ['app.css', 'app.js', 'index.html', 'runtime.js']);
+  // 見た目は app.css に入り、index.html が読む
+  const css = await fs.readFile(path.join(out, 'app.css'), 'utf8');
+  for (const theme of ['talk', 'web', 'plain']) assert.match(css, new RegExp(`\\.studio-talk--${theme}`));
+  assert.match(await fs.readFile(path.join(out, 'index.html'), 'utf8'), /href="app.css"/);
+  // React は 1 つだけ束ねる(試作品と会話の枠で同じものを使う)
+  const js = await fs.readFile(path.join(out, 'app.js'), 'utf8');
+  assert.equal(js.match(/^\s*\/\/ .*node_modules\/react\/cjs\/react\.development\.js$/gm)?.length, 1);
+  for (const kind of PART_KINDS) assert.match(js, new RegExp(`case "${kind}"`));
+
+  // 部品の種類と見た目の名前は、会話の進め方(parts.js)と構成の検査(composition.js)と同じ
+  const source = await fs.readFile(path.join(STUDIO_ROOT, 'src', 'runtime', 'studio-talk', 'index.js'), 'utf8');
+  const listOf = (name) => JSON.parse(new RegExp(`export const ${name} = (\\[[^\\]]*\\]);`).exec(source)[1].replaceAll("'", '"'));
+  assert.deepEqual(listOf('TALK_PART_KINDS'), PART_KINDS);
+  assert.deepEqual(listOf('TALK_THEMES'), SURFACE_THEMES);
+});
+
+test('同梱の会話の枠の中のファイルは、名前で直接は読み込めない', async (t) => {
+  const inner = path.join(STUDIO_ROOT, 'src', 'runtime', 'studio-talk', 'index.js');
+  const { appDir, buildsDir } = await makeApp(t, { 'main.js': `import "studio-talk/talk.css";\nimport ${JSON.stringify(inner)};\n` });
+  const result = await buildApp({ appDir, buildsDir });
+  assert.equal(result.ok, false);
+  const texts = result.errors.map((e) => e.text).join('\n');
+  assert.match(texts, /「studio-talk\/talk\.css」は使えません/);
+  assert.match(texts, /app\/ の外のファイルは読み込めません/);
 });
 
 test('日本語や空白の名前の画像も、配信できる名前で出力する', async (t) => {
@@ -194,4 +237,39 @@ test('目録が指すシナリオの形の誤りは、contract の段の失敗�
   // 形の正しいシナリオだけなら、ビルドは通る
   const fine = await makeApp(t, { 'main.js': MAIN, 'scenarios/a-good.json': good });
   assert.equal((await buildApp({ appDir: fine.appDir, buildsDir: fine.buildsDir })).ok, true);
+});
+
+test('見本のバイト探し(構成 A)は、ツール 5 つ、前提 2 つ、モックの決まり、場面 12 本、シナリオ 1 本を持ち、会話の枠を使ってビルドできる(R1)', async (t) => {
+  const { buildsDir } = await makeApp(t, {});
+  const appDir = path.join(STUDIO_ROOT, 'samples', 'part-time', 'app');
+  const result = await buildApp({ appDir, buildsDir });
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  // 名前は「題材(架空)」の形。目録は版 1 のままで、既定の場所の構成、場面を読む
+  assert.equal(result.manifest.title, 'バイト探し(架空)');
+  assert.equal(result.manifest.formatVersion, 1);
+  assert.ok(result.manifest.constraints.includes('データはすべて架空'));
+  assert.deepEqual(result.manifest.data.map((d) => d.file), ['data/jobs.json', 'data/questions.json']);
+  // ai.json はない。構成 A は構成のファイルだけで AI と話せる
+  assert.equal(result.ai, null);
+  const { composition, tools, assumptions, mocks, evals } = result.simulation;
+  assert.equal(composition.file, 'composition.json');
+  assert.equal(composition.driver, 'partner');
+  assert.deepEqual(composition.participants.map((p) => [p.id, p.kind, p.owner]), [['partner', 'agent', 'partner']]);
+  assert.deepEqual(composition.surface, { kind: 'talk', theme: 'talk' });
+  assert.deepEqual(tools['tools.json'].tools.map((tool) => tool.name), ['search_jobs', 'get_job', 'suggest_questions', 'record_consent', 'save_wish']);
+  assert.deepEqual(composition.participants[0].tools, tools['tools.json'].tools.map((tool) => tool.name));
+  assert.deepEqual(assumptions.map((a) => a.assumption.id), ['partner-a', 'partner-b']);
+  // 前提 B はカードを使えない(会話の枠の E2E で、カードが文に落ちるのを確かめる)
+  assert.ok(assumptions[0].assumption.messageTypes.includes('card'));
+  assert.ok(!assumptions[1].assumption.messageTypes.includes('card'));
+  assert.deepEqual(mocks.map((m) => m.file), ['mocks/partner.json']);
+  assert.equal(evals.length, 12);
+  // ツールだけの場面と、会話の場面の両方がある
+  assert.ok(evals.some((e) => e.scenario.kind === 'tool'));
+  assert.ok(evals.some((e) => e.scenario.kind === 'risky'));
+  const { scenarios, errors } = await readScenarios(appDir, result.manifest.scenarios);
+  assert.deepEqual(errors, []);
+  assert.equal(scenarios.length, 1);
+  // 画面は同梱の会話の枠を使う
+  assert.match(await fs.readFile(path.join(buildsDir, result.buildId, 'app.css'), 'utf8'), /\.studio-talk--talk/);
 });

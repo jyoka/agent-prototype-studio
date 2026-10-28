@@ -33,7 +33,8 @@ export class ProjectStore {
       return {
         id: project.id,
         // 表示中の版の目録から作る。まだ表示できる版がないときは、置き場に書いた名前のまま
-        title: entry.manifest ? projectName(entry.manifest.title ?? project.title, Boolean(entry.manifest.ai)) : project.title,
+        // AI と話せるのは、AI の設定(ai.json)か構成(composition.json)があるとき
+        title: entry.manifest ? projectName(entry.manifest.title ?? project.title, Boolean(entry.manifest.ai || entry.simulation?.composition)) : project.title,
         appDir: project.paths.app,
         building: entry.building,
         running: entry.running,

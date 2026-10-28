@@ -1,0 +1,171 @@
+/* 会話の枠(studio-talk)の見た目。talk(トークのアプリ風)、web(Web のチャット風)、plain の 3 つ。
+   特定の会社のアプリの色の組み合わせは使わない。名前は studio-talk で始め、試作品の CSS と重ならないようにする */
+.studio-talk {
+  --st-bg: #f3f5f8;
+  --st-ink: #1f2933;
+  --st-sub: #5b6672;
+  --st-mine-bg: #33507a;
+  --st-mine-ink: #fff;
+  --st-theirs-bg: #fff;
+  --st-line: #d5dbe3;
+  --st-accent: #33507a;
+  --st-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 12px;
+  background: var(--st-bg);
+  color: var(--st-ink);
+  font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  box-sizing: border-box;
+}
+.studio-talk *,
+.studio-talk *::before,
+.studio-talk *::after {
+  box-sizing: border-box;
+}
+
+.studio-talk__header { display: grid; gap: 2px; }
+.studio-talk__title { margin: 0; font-size: 1.2rem; }
+.studio-talk__note { margin: 0; color: var(--st-sub); font-size: 0.85rem; }
+.studio-talk__error { margin: 0; padding: 6px 10px; border-radius: 6px; background: #fdecea; color: #8a1c12; }
+.studio-talk__thinking { margin: 0; color: var(--st-sub); font-size: 0.85rem; }
+
+.studio-talk__log {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 160px;
+}
+.studio-talk__item { display: flex; flex-direction: column; gap: 2px; max-width: 85%; }
+.studio-talk__item--user { align-self: flex-end; align-items: flex-end; }
+.studio-talk__item--assistant { align-self: flex-start; }
+.studio-talk__item--correction,
+.studio-talk__item--notice { align-self: center; max-width: 100%; color: var(--st-sub); font-size: 0.8rem; }
+.studio-talk__who { font-size: 0.75rem; color: var(--st-sub); display: flex; gap: 6px; align-items: center; }
+.studio-talk__via { padding: 0 6px; border: 1px solid var(--st-line); border-radius: 999px; font-size: 0.7rem; }
+
+.studio-talk__bubble {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--st-radius);
+  background: var(--st-theirs-bg);
+  display: grid;
+  gap: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.studio-talk__item--user .studio-talk__bubble { background: var(--st-mine-bg); color: var(--st-mine-ink); }
+.studio-talk__text { margin: 0; white-space: pre-wrap; }
+.studio-talk__notice {
+  margin: 0;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
+  font-size: 0.8rem;
+  color: var(--st-sub);
+  white-space: pre-wrap;
+}
+
+.studio-talk__buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.studio-talk__button,
+.studio-talk__chip {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--st-accent);
+  background: #fff;
+  color: var(--st-accent);
+}
+.studio-talk__button { cursor: pointer; }
+.studio-talk__button:hover:not(:disabled) { background: var(--st-accent); color: #fff; }
+.studio-talk__button:disabled { opacity: 0.5; cursor: default; }
+.studio-talk__chip { opacity: 0.55; border-style: dashed; }
+
+.studio-talk__card {
+  border: 1px solid var(--st-line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+  min-width: 200px;
+  white-space: normal;
+}
+.studio-talk__card-title { margin: 0; font-size: 0.95rem; }
+.studio-talk__card-text { margin: 0; color: var(--st-sub); font-size: 0.85rem; white-space: pre-wrap; }
+.studio-talk__carousel { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.studio-talk__carousel .studio-talk__card { flex: 0 0 220px; }
+
+.studio-talk__form { display: flex; gap: 6px; }
+.studio-talk__field { flex: 1; display: flex; }
+.studio-talk__field input {
+  flex: 1;
+  font: inherit;
+  padding: 8px 12px;
+  border: 1px solid var(--st-line);
+  border-radius: 999px;
+  background: #fff;
+}
+.studio-talk__send {
+  font: inherit;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--st-accent);
+  color: #fff;
+  cursor: pointer;
+}
+.studio-talk__send:disabled { opacity: 0.5; cursor: default; }
+.studio-talk__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* talk: トークのアプリ風。淡い地に吹き出し、丸いボタン(上の既定の値) */
+.studio-talk--talk { border-radius: 12px; }
+
+/* web: Web のチャット風。白地に枠、角は小さめ */
+.studio-talk--web {
+  --st-bg: #fff;
+  --st-mine-bg: #2d3a4a;
+  --st-theirs-bg: #eef1f5;
+  --st-accent: #2d3a4a;
+  --st-radius: 8px;
+  border: 1px solid var(--st-line);
+  border-radius: 8px;
+}
+.studio-talk--web .studio-talk__button,
+.studio-talk--web .studio-talk__chip,
+.studio-talk--web .studio-talk__field input,
+.studio-talk--web .studio-talk__send { border-radius: 6px; }
+
+/* plain: 吹き出しを使わず、行を並べるだけ */
+.studio-talk--plain {
+  --st-bg: transparent;
+  --st-mine-bg: transparent;
+  --st-mine-ink: inherit;
+  --st-theirs-bg: transparent;
+  --st-accent: #333;
+  padding: 0;
+}
+.studio-talk--plain .studio-talk__item { max-width: 100%; align-self: stretch; align-items: stretch; }
+.studio-talk--plain .studio-talk__bubble { padding: 0; border-radius: 0; }
+.studio-talk--plain .studio-talk__item--user .studio-talk__bubble { font-weight: 600; }
+.studio-talk--plain .studio-talk__button,
+.studio-talk--plain .studio-talk__chip,
+.studio-talk--plain .studio-talk__field input,
+.studio-talk--plain .studio-talk__send { border-radius: 4px; }
