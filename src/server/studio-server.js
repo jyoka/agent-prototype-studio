@@ -145,7 +145,8 @@ export function createStudioHandler({ store, requests, agent, aiSessions, versio
     }
     if (req.method === 'GET' && url.pathname === '/api/projects') {
       const projects = await store.list();
-      return sendJson(res, 200, { projects: projects.map(view), agent });
+      // consent は本物の AI を使う前の同意の状態。画面は、本物の AI を使っている間の印を、これで出す
+      return sendJson(res, 200, { projects: projects.map(view), agent, consent: consent.state() });
     }
     // 本物の AI を使う前の同意。GET はカードの中身(?project= で、その試作品の中の AI の「詳しく」も入れる)、
     // POST の consent は同意する。ほかの API と同じく、トークンと Origin(Studio の画面から)を確かめた後にだけ届く

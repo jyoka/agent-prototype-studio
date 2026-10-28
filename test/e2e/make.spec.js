@@ -247,7 +247,7 @@ test('Claude Code に切り替えると、版と認証の見込みを送る前�
     await sendRequest(page, '見出しを「本番の形で」にして');
     const consent = page.getByRole('group', { name: '本物の AI を使う前に' });
     await expect(consent).toContainText('AI は、あなたの Claude Code で動きます。');
-    await expect(consent).toContainText('料金: API キーの設定があるので、使った分だけ料金がかかります。');
+    await expect(consent).toContainText('API キーの設定があるので、使った分だけ料金がかかります。');
     await expect(consent).toContainText('直すときは、直す AI の 1 回の起動で 1 ドルまでです');
     await expect(consent).not.toContainText('fictional-value-for-test');
     await expect(page.getByLabel('依頼')).toHaveValue('見出しを「本番の形で」にして');
@@ -258,7 +258,7 @@ test('Claude Code に切り替えると、版と認証の見込みを送る前�
     await expect(page.getByRole('list', { name: '作る会話' })).toContainText('言葉で直すには、本物の AI を使うことへの同意が要ります。');
     expect((await studio.api('/api/real-ai')).consent.agreed).toBe(false);
     await page.getByRole('button', { name: '送る' }).click();
-    await consent.getByRole('button', { name: '同意して送る' }).click();
+    await consent.getByRole('button', { name: '同意して使う' }).click();
     await expect(consent).toBeHidden();
     const run = lastRun(page);
     await expect(run.locator('.bubble.agent .who').first()).toHaveText('直す AI');
@@ -463,7 +463,7 @@ test('作業中は操作を短い文で出し、終わったら何を変えた�
     await expect(app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
     await page.getByRole('list', { name: '直し方の例' }).getByRole('button', { name: '時給の下限を先に聞くようにして' }).click();
     await page.getByRole('button', { name: '送る' }).last().click();
-    await page.getByRole('group', { name: '本物の AI を使う前に' }).getByRole('button', { name: '同意して送る' }).click();
+    await page.getByRole('group', { name: '本物の AI を使う前に' }).getByRole('button', { name: '同意して使う' }).click();
 
     const run = lastRun(page);
     await expect(run.getByText('AI の設定を読みました')).toBeVisible({ timeout: 15_000 });

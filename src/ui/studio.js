@@ -84,6 +84,11 @@ const els = {
   reset: $('reset'),
   aiSwitch: $('ai-switch'),
   aiMenu: $('ai-menu'),
+  tryConsent: $('try-consent'),
+  realAiTry: $('real-ai-try'),
+  realAiTryInfo: $('real-ai-try-info'),
+  realAiMake: $('real-ai-make'),
+  realAiMakeInfo: $('real-ai-make-info'),
   aiBadge: $('ai-badge'),
   aiStatus: $('ai-status'),
   aiWaiting: $('ai-waiting'),
@@ -144,14 +149,16 @@ let agent = null;
 const conversations = new Map();
 let sending = null;
 let makeError = null;
-// 本物の AI を使う前の同意(サーバーは src/server/real-ai.js)。同意のカードの画面(P25)ができるまでの、最小のつなぎ。
-// 直す欄の送信が同意の前で断られたら、{ projectId, view }(view は /api/real-ai の中身)を入れ、送るもの、送り先、料金を出す
-let makeConsent = null;
+// 本物の AI を使う前の同意(ux-redesign.md 6 節。サーバーは src/server/real-ai.js)。
+// agreed はサーバーの同意の状態(一覧の API の consent)。card は出している同意のカードで、いつも 1 枚だけ(直す欄と試す欄で重ねない)。
+// card の use は fix(直す欄の送信)か product(試作品の中の AI を本物にする)、kind は切り替える接続、send は同意の後に欄の依頼を送るか。
+// view は /api/real-ai の中身。info は印を押して開いた中身(place は try か make)。declined は直す欄で「やめる」を選んだ後
+const consent = { agreed: false, agreedAt: null, card: null, info: null, declined: false, agreeing: false, seq: 0 };
 // 開発者向けの詳細に出している、プロダクト内 AI の会話と状態。
-// choices は選べる接続と、実行の前に出す「送るもの」と「費用」。confirm は実モデルへ切り替える前の確認。
+// choices は選べる接続と、実行の前に出す「送るもの」と「費用」。
 // retry は設定が変わる前の会話と、試し直しの結果(Studio の画面だけに出す。試作品には渡さない)
 // loaded は projectId の読み込みが終わったか(AI を使わない試作品では、終わっても session は null)
-const ai = { projectId: null, session: null, loaded: false, choices: null, seq: 0, confirm: null, switching: false, retry: null };
+const ai = { projectId: null, session: null, loaded: false, choices: null, seq: 0, switching: false, retry: null };
 // 試し直している試作品。別の試作品を選んでも、その試作品の欄には出さない
 const retryingProjects = new Set();
 // AI の実行の記録(#277)。open は、開いている「渡したもの、受け取ったもの」の記録の ID
@@ -254,6 +261,7 @@ async function refresh() {
     appliedSeq = seq;
     clearBanner();
     agent = data.agent;
+    setConsentState(data.consent);
     const snapshot = JSON.stringify(data.projects);
     if (snapshot !== lastSnapshot) {
       lastSnapshot = snapshot;
@@ -332,7 +340,7 @@ function renderList() {
       if (selectedId === project.id) return;
       selectedId = project.id;
       makeError = null;
-      makeConsent = null;
+      closeConsent();
       versions.message = null;
       render();
       syncConversation();
@@ -573,6 +581,7 @@ function renderMake(project) {
   els.send.disabled = !ready;
   els.cancel.hidden = !(project && runningRun(project.id));
   renderConversation(project);
+  renderRealAiMarks();
   renderSaveMark(project);
 }
 
@@ -652,7 +661,8 @@ function renderConversation(project) {
     return li;
   });
   if (makeError) nodes.push(element('li', makeError, 'make-error'));
-  if (makeConsent && makeConsent.projectId === project?.id) nodes.push(consentBlock(makeConsent.view));
+  if (consent.declined && !consent.card) nodes.push(declinedBlock());
+  if (consent.card?.use === 'fix' && consent.card.projectId === project?.id) nodes.push(consentCard(consent.card.view, { tag: 'li', card: consent.card }));
   if (nodes.length === 0) nodes.push(element('li', 'まだ依頼はありません。', 'muted empty'));
   const atBottom = els.conversation.scrollHeight - els.conversation.scrollTop - els.conversation.clientHeight < 40;
   els.conversation.replaceChildren(...nodes);
@@ -700,54 +710,263 @@ async function readRuns(response, projectId) {
   }
 }
 
-// 同意の前に断られた送信のときに出す。「同意して送る」で同意し、欄に残っている依頼を送り直す
-function consentBlock(view) {
+// 本物の AI を使う前の同意のカード(ux-redesign.md 6 節)。中身はサーバーが返す(/api/real-ai。src/server/real-ai.js の consentView)。
+// 見える文字は利用者の言葉だけにする(U3)。指示の全文、上限、記録の扱いは「詳しく」の中に置く(開発の言葉を使ってよい)。
+// card があれば「同意して使う」「やめる」を出す。印から開いた中身(place が try か make)は「閉じる」だけ
+const CONSENT_HEADING = '本物の AI を使う前に';
+const REAL_AI_MARK = '本物の AI(あなたの Claude Code)';
+const DECLINED_TEXT = '言葉で直すには、本物の AI を使うことへの同意が要ります。';
+// 開いている「詳しく」(再描画で閉じないよう、card か try か make で覚える)
+const openConsentDetails = new Set();
+
+// 料金の行。使った分だけかかる見込みのときは、上限の文も添える(ふだんは「詳しく」の中だけ)
+function costText(cost) {
+  const paid = ['api-key', 'settings'].includes(cost.kind) || ['api_key', 'third_party'].includes(cost.method);
+  return paid ? `${cost.text}${cost.limits}` : cost.text;
+}
+
+function consentCard(view, { tag = 'div', card = null, place = null } = {}) {
   const { summary } = view;
-  const box = element('li', undefined, 'ai-confirm');
+  const key = card ? 'card' : place;
+  const box = element(tag, undefined, 'consent-card');
+  box.dataset.use = card?.use ?? 'info';
   box.setAttribute('role', 'group');
-  box.setAttribute('aria-label', '本物の AI を使う前に');
+  box.setAttribute('aria-label', card ? CONSENT_HEADING : REAL_AI_MARK);
+  box.append(element('h3', card ? CONSENT_HEADING : REAL_AI_MARK));
+  if (!card && view.consent.agreedAt) {
+    box.append(element('p', `${formatTime(view.consent.agreedAt)}に同意しました。Studio を止めるまで有効です。`, 'muted'));
+  }
+  box.append(element('p', summary.runsOn, 'consent-lead'));
+  const facts = element('dl', undefined, 'consent-facts');
+  const row = (term, value) => {
+    const dd = element('dd');
+    dd.append(value);
+    facts.append(element('dt', term), dd);
+  };
   const sends = element('ul');
   sends.setAttribute('aria-label', '送るもの');
   sends.append(...summary.sends.map((item) => element('li', item)));
-  box.append(
-    element('p', summary.runsOn, 'notice'),
-    element('p', '送るもの:'),
-    sends,
-    element('p', `送らないもの: ${summary.notSent}`),
-    element('p', `送り先: ${summary.to}`),
-    element('p', `料金: ${summary.cost.text}${summary.cost.limits}`),
-    element('p', summary.note, 'muted'),
-  );
-  const ok = element('button', '同意して送る');
-  ok.type = 'button';
-  ok.addEventListener('click', agreeAndSend);
-  const cancel = element('button', 'やめる');
-  cancel.type = 'button';
-  cancel.addEventListener('click', () => {
-    makeConsent = null;
-    makeError = '言葉で直すには、本物の AI を使うことへの同意が要ります。';
-    renderMake(selectedProject());
-  });
-  const buttons = element('div', undefined, 'ai-buttons');
-  buttons.append(ok, cancel);
+  row('送るもの', sends);
+  row('送らないもの', summary.notSent);
+  row('送り先', summary.to);
+  row('料金', costText(summary.cost));
+  box.append(facts, element('p', summary.note, 'consent-note'), consentDetails(view, key));
+  const buttons = element('div', undefined, 'consent-buttons');
+  if (card) {
+    const ok = element('button', '同意して使う', 'primary');
+    ok.type = 'button';
+    ok.disabled = consent.agreeing;
+    ok.addEventListener('click', agreeConsent);
+    const cancel = element('button', 'やめる');
+    cancel.type = 'button';
+    // 同意を送っている間は、やめられない(同意の後に送るか切り替えるかが、押した順とずれないように)
+    cancel.disabled = consent.agreeing;
+    cancel.addEventListener('click', declineConsent);
+    buttons.append(ok, cancel);
+  } else {
+    const close = element('button', '閉じる');
+    close.type = 'button';
+    close.addEventListener('click', () => closeRealAiInfo(place));
+    buttons.append(close);
+  }
   box.append(buttons);
   return box;
 }
 
-// 同意する。同意は Studio を止めるまで、直す AI と試作品の中の AI の両方に効く
-async function agreeToRealAi() {
-  await api('/api/real-ai/consent', { method: 'POST' });
+function labeledList(label, items) {
+  const list = element('ul');
+  list.setAttribute('aria-label', label);
+  list.append(...items.map((item) => element('li', item)));
+  return [element('p', `${label}:`), list];
 }
 
-async function agreeAndSend() {
+function fieldText(field) {
+  if (field.options) return `${field.label}: ${field.options.join('、')}`;
+  const range = Number.isFinite(field.min) || Number.isFinite(field.max) ? ` ${field.min ?? ''}〜${field.max ?? ''}` : '';
+  return `${field.label}: 数${range}${field.unit ? `(${field.unit})` : ''}`;
+}
+
+// 「詳しく」。前の確認(試す欄の「接続を選ぶ」、直す欄の小さな確認)の中身を、ここへ移した
+function consentDetails(view, key) {
+  const { details, summary } = view;
+  const box = element('details', undefined, 'consent-details');
+  box.open = openConsentDetails.has(key);
+  box.addEventListener('toggle', () => (box.open ? openConsentDetails.add(key) : openConsentDetails.delete(key)));
+  box.append(element('summary', '詳しく(AI への指示の全文、1 回の上限、記録の扱い)'));
+  const part = (heading, ...nodes) => {
+    const section = element('section');
+    section.append(element('h4', heading), ...nodes);
+    box.append(section);
+  };
+  if (details.fix) {
+    part(
+      '言葉で直すとき',
+      ...labeledList('言葉で直すときに送るもの', details.fix.items),
+      element('p', details.fix.notSent),
+      element('p', details.fix.tools),
+      element('p', '直す AI に足す指示の全文:'),
+      element('pre', details.fix.systemPrompt),
+    );
+  }
+  const product = details.product;
+  if (product) {
+    part(
+      '試作品の中の AI と話すとき',
+      element('p', product.description),
+      element('p', `送り先: ${product.sends.to}`),
+      ...labeledList('話すときに送るもの', product.sends.items),
+      element('p', product.sends.notSent),
+      ...labeledList('覚える項目と選択肢', product.fields.map(fieldText)),
+      element('p', `今の会話: ${product.conversation.messages} 件(本物の AI に切り替えると、この会話も送ります)`),
+      element('p', `費用: ${product.billing.label}。${product.billing.text}`),
+      element('p', `回数の制限: ${product.limits.text}`),
+      element('p', product.tools),
+      element('p', '送る指示の全文:'),
+      element('pre', product.sends.systemPrompt),
+    );
+  }
+  part('1 回の上限', element('p', summary.cost.limits));
+  part('記録の扱い', ...(details.records ?? []).map((text) => element('p', text)));
+  return box;
+}
+
+// 直す欄で「やめる」を選んだ後。「確かめる」で、もう一度カードを出す(欄の依頼は、送るを押すまで送らない)
+function declinedBlock() {
+  const li = element('li', undefined, 'consent-declined');
+  const button = element('button', '確かめる');
+  button.type = 'button';
+  button.addEventListener('click', () => openConsent('fix', { projectId: selectedId }));
+  li.append(element('p', DECLINED_TEXT), button);
+  return li;
+}
+
+// サーバーの同意の状態を覚える。同意したら「やめる」の後の表示は消す
+function setConsentState(state) {
+  if (!state) return;
+  const changed = consent.agreed !== Boolean(state.agreed);
+  consent.agreed = Boolean(state.agreed);
+  consent.agreedAt = state.agreedAt ?? null;
+  if (consent.agreed) consent.declined = false;
+  if (changed) {
+    renderMake(selectedProject());
+    renderAi();
+  }
+}
+
+// 同意のカードを出す。同意の前に断られた直す欄の送信(send)と、試作品の中の AI を本物にするとき(kind)に呼ぶ。
+// カードは 1 枚だけにする。前のカードは閉じる(直す欄の依頼の文は欄に残る)
+async function openConsent(use, { projectId, kind = null, send = false }) {
+  if (!projectId) return;
+  const seq = ++consent.seq;
+  let view;
   try {
-    await agreeToRealAi();
+    view = await api(`/api/real-ai?project=${encodeURIComponent(projectId)}`);
   } catch (error) {
-    handleError(error);
+    if (seq === consent.seq) handleError(error);
     return;
   }
-  makeConsent = null;
-  await submitRequest();
+  if (seq !== consent.seq || projectId !== selectedId) return;
+  setConsentState(view.consent);
+  // 別のタブで同意していたら、カードは出さない。直す欄の依頼は欄に残っているので、もう一度送れば送られる
+  if (view.consent.agreed) {
+    if (use === 'product') await selectConnection(kind);
+    return;
+  }
+  openConsentDetails.delete('card');
+  consent.card = { use, projectId, kind, send, view };
+  if (use === 'product') setAiMenu(false);
+  renderMake(selectedProject());
+  renderAi();
+}
+
+// カードと、印から開いた中身を閉じる(試作品を切り替えたとき)
+function closeConsent() {
+  consent.seq += 1;
+  consent.card = null;
+  consent.info = null;
+}
+
+// 同意する。同意は Studio を止めるまで、直す AI と試作品の中の AI の両方に効く。
+// 直す欄の送信で出したカードなら欄の依頼を送り、試す欄で出したカードなら本物の AI に切り替える
+async function agreeConsent() {
+  const card = consent.card;
+  if (!card || consent.agreeing) return;
+  consent.agreeing = true;
+  renderMake(selectedProject());
+  renderAi();
+  let agreed = false;
+  // 待つ間に、別のカードに入れ替わったか、試作品を切り替えて閉じたときは、同意だけをして送らない
+  let still = false;
+  try {
+    const view = await api('/api/real-ai/consent', { method: 'POST' });
+    agreed = true;
+    still = consent.card === card;
+    if (still) consent.card = null;
+    setConsentState(view.consent);
+  } catch (error) {
+    handleError(error);
+  } finally {
+    consent.agreeing = false;
+    renderMake(selectedProject());
+    renderAi();
+  }
+  if (!agreed || !still || card.projectId !== selectedId) return;
+  if (card.use === 'product') await selectConnection(card.kind);
+  else if (card.send) await submitRequest();
+}
+
+// やめる。直す欄では、同意が要ることと「確かめる」を出す。試作品の中の AI は、お試しのまま
+function declineConsent() {
+  const card = consent.card;
+  if (consent.agreeing) return;
+  consent.card = null;
+  if (card?.use === 'fix') consent.declined = true;
+  renderMake(selectedProject());
+  renderAi();
+}
+
+// 本物の AI を使っている間の小さな印(試す欄の上と直す欄の上)。押すと、カードの中身をもう一度見られる。
+// 試す欄は試作品の中の AI が本物のとき、直す欄は同意の後で直す AI が Claude Code のとき
+function renderRealAiMarks() {
+  const tryReal = Boolean(ai.session && ai.projectId === selectedId && ai.choices?.options.find((o) => o.kind === ai.session.connection.kind)?.billing);
+  const makeReal = consent.agreed && agent?.kind === 'claude' && agent.ready;
+  renderRealAiMark(els.realAiTry, els.realAiTryInfo, tryReal, 'try');
+  renderRealAiMark(els.realAiMake, els.realAiMakeInfo, makeReal, 'make');
+}
+
+function renderRealAiMark(button, host, shown, place) {
+  if (!shown && consent.info?.place === place) consent.info = null;
+  const open = shown && consent.info?.place === place;
+  button.hidden = !shown;
+  button.setAttribute('aria-expanded', String(open));
+  host.hidden = !open;
+  host.replaceChildren(...(open ? [consentCard(consent.info.view, { place })] : []));
+}
+
+async function toggleRealAiInfo(place) {
+  if (consent.info?.place === place) {
+    closeRealAiInfo(place);
+    return;
+  }
+  const seq = ++consent.seq;
+  const projectId = selectedId;
+  try {
+    const view = await api(`/api/real-ai${projectId ? `?project=${encodeURIComponent(projectId)}` : ''}`);
+    if (seq !== consent.seq || projectId !== selectedId) return;
+    setConsentState(view.consent);
+    openConsentDetails.delete(place);
+    consent.info = { place, view };
+    renderRealAiMarks();
+  } catch (error) {
+    handleError(error);
+  }
+}
+
+function closeRealAiInfo(place) {
+  if (consent.info?.place !== place) return;
+  consent.info = null;
+  renderRealAiMarks();
+  (place === 'try' ? els.realAiTry : els.realAiMake).focus();
 }
 
 async function submitRequest() {
@@ -756,7 +975,7 @@ async function submitRequest() {
   if (!project || !text || sending) return;
   sending = { projectId: project.id };
   makeError = null;
-  makeConsent = null;
+  if (consent.card?.use === 'fix') consent.card = null;
   renderMake(project);
   try {
     const response = await send(`/api/projects/${encodeURIComponent(project.id)}/build-requests`, {
@@ -771,12 +990,8 @@ async function submitRequest() {
     await readRuns(response, project.id);
   } catch (error) {
     if (error instanceof ApiError && error.code === 'consent-required') {
-      // 依頼の文は欄に残す。同意の中身を読んで出す
-      try {
-        makeConsent = { projectId: project.id, view: await api('/api/real-ai') };
-      } catch (readError) {
-        handleError(readError);
-      }
+      // 依頼の文は欄に残す。同意のカードを出し、同意したら送る
+      await openConsent('fix', { projectId: project.id, send: true });
     } else if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) {
       makeError = `送れませんでした: ${error.message}`;
     } else if (error instanceof ApiError) {
@@ -801,8 +1016,6 @@ function formatAiValue(field, value) {
   return field.type === 'number' ? `${Number(value).toLocaleString('ja-JP')}${field.unit ?? ''}` : String(value);
 }
 
-const CONNECTION_CHECK = '架空のデータだけで試します。上のものが送られることと、費用がかかることを確かめました';
-
 function formatSeconds(ms) {
   return `${(ms / 1000).toLocaleString('ja-JP', { maximumFractionDigits: 1 })} 秒`;
 }
@@ -818,54 +1031,6 @@ function lastReplyText(session) {
   return parts.join('、');
 }
 
-// 実モデルへ切り替える前に、送り先、送るもの、送らないもの、費用を出す
-function sendsBlock(option) {
-  const box = element('div', undefined, 'ai-sends');
-  box.append(element('p', `送り先: ${option.sends.to}`));
-  const list = element('ul');
-  list.setAttribute('aria-label', '送るもの');
-  list.append(...option.sends.items.map((item) => element('li', item)));
-  box.append(element('p', '送るもの:'), list, element('p', option.sends.notSent, 'muted'));
-  const billing = element('p', undefined, 'ai-billing');
-  billing.dataset.kind = option.billing.kind;
-  billing.append(element('strong', `費用: ${option.billing.label}`), document.createTextNode(` ${option.billing.text}`));
-  box.append(billing);
-  const prompt = element('details');
-  prompt.append(element('summary', '送る指示の全文を見る'), element('pre', option.sends.systemPrompt));
-  box.append(prompt);
-  return box;
-}
-
-function confirmBlock(option) {
-  const box = element('div', undefined, 'ai-confirm');
-  box.setAttribute('role', 'group');
-  box.setAttribute('aria-label', `${option.label} に切り替える前の確認`);
-  box.append(element('p', `${option.label} に切り替えると、発言のたびに実際の AI モデルを呼びます。`, 'notice'), sendsBlock(option));
-  const label = element('label', undefined, 'ai-check');
-  const check = document.createElement('input');
-  check.type = 'checkbox';
-  check.checked = ai.confirm.checked;
-  label.append(check, document.createTextNode(CONNECTION_CHECK));
-  const ok = element('button', `${option.label} に切り替える`);
-  ok.type = 'button';
-  ok.disabled = !ai.confirm.checked || ai.switching;
-  check.addEventListener('change', () => {
-    ai.confirm.checked = check.checked;
-    ok.disabled = !check.checked || ai.switching;
-  });
-  ok.addEventListener('click', () => selectConnection(option.kind, true));
-  const cancel = element('button', 'やめる');
-  cancel.type = 'button';
-  cancel.addEventListener('click', () => {
-    ai.confirm = null;
-    renderAi();
-  });
-  const buttons = element('div', undefined, 'ai-buttons');
-  buttons.append(ok, cancel);
-  box.append(label, buttons);
-  return box;
-}
-
 // 接続を選ぶ欄。選べない接続は、理由と次の手順を出す
 function connectionPicker(session) {
   const box = element('fieldset', undefined, 'ai-picker');
@@ -876,22 +1041,27 @@ function connectionPicker(session) {
     radio.type = 'radio';
     radio.name = 'ai-connection';
     radio.value = option.kind;
-    radio.checked = ai.confirm ? ai.confirm.kind === option.kind : session.connection.kind === option.kind;
+    radio.checked = session.connection.kind === option.kind;
     radio.disabled = !option.available || waitingFor(ai.projectId) > 0 || ai.switching;
     radio.addEventListener('change', () => {
-      if (option.billing) {
-        ai.confirm = { kind: option.kind, checked: false };
-        renderAi();
-      } else {
-        ai.confirm = null;
-        selectConnection(option.kind, false);
-      }
+      // 本物の AI は、同意の前なら同意のカードを出す。同意の後とモックは、すぐ切り替える
+      if (option.billing && !consent.agreed) openConsent('product', { projectId: ai.projectId, kind: option.kind });
+      else selectConnection(option.kind);
     });
     label.append(radio, document.createTextNode(option.label));
     box.append(label);
-    if (!option.available) box.append(element('p', option.reason, 'hint'));
+    if (!option.available) box.append(...unavailableReason(option));
   }
   return box;
+}
+
+// 選べない接続の理由。Claude Code が見つからないときは、直す欄の使えないときのカード(7-5)と同じ 1 文にし、
+// 場所や環境変数の名前の入った理由は「開発者向け」の中に出す
+function unavailableReason(option) {
+  if (option.code !== 'not-found') return [element('p', option.reason, 'hint')];
+  const dev = element('details', undefined, 'card-dev');
+  dev.append(element('summary', '開発者向け: 確かめた結果'), element('p', option.reason));
+  return [element('p', UNAVAILABLE.missing.lead(), 'hint'), dev];
 }
 
 function viaLabel(kind) {
@@ -953,6 +1123,13 @@ function renderRetry() {
   els.retryBar.replaceChildren(...nodes, button);
 }
 
+// 試作品の中の AI を本物にするときの同意のカード。試す欄の上に出す
+function renderTryConsent() {
+  const card = consent.card?.use === 'product' && consent.card.projectId === ai.projectId ? consent.card : null;
+  els.tryConsent.hidden = !card;
+  els.tryConsent.replaceChildren(...(card ? [consentCard(card.view, { card })] : []));
+}
+
 // 応答を待つ間だけ、試す欄の上に「応答を止める」を出す。開発者向けの詳細を閉じていても止められるように
 function renderAiWaiting() {
   const { session } = ai;
@@ -975,6 +1152,8 @@ function renderAi() {
   renderRetry();
   renderExamples();
   renderAiWaiting();
+  renderTryConsent();
+  renderRealAiMarks();
   els.aiSwitch.hidden = !session;
   if (!session) {
     setAiMenu(false);
@@ -994,15 +1173,8 @@ function renderAi() {
   connection.append(element('strong', `接続: ${session.connection.label}`), document.createTextNode(` ${session.connection.description}`));
   const nodes = [connection];
   // 接続の選び方は、試す欄の上の「AI: … ▾」の中に出す。
-  // 実モデルを選んでいる間は、送り先と費用もそこで見られるようにする(「AI: …」の印そのものは、いつも見える)
-  const menu = [connectionPicker(session)];
-  const current = ai.choices?.options.find((o) => o.kind === session.connection.kind);
-  if (current?.billing && !ai.confirm) menu.push(sendsBlock(current));
-  if (ai.confirm) {
-    const option = ai.choices?.options.find((o) => o.kind === ai.confirm.kind);
-    if (option) menu.push(confirmBlock(option));
-  }
-  els.aiMenu.replaceChildren(...menu);
+  // 本物の AI を選んでいる間の送り先と料金は、試す欄の上の小さな印を押すと見られる(renderRealAiMarks)
+  els.aiMenu.replaceChildren(connectionPicker(session));
   const last = lastReplyText(session);
   if (last) nodes.push(element('p', last, 'muted ai-last'));
   const list = element('dl', undefined, 'ai-state');
@@ -1030,7 +1202,6 @@ async function loadAi(projectId) {
   ai.session = null;
   ai.loaded = false;
   ai.choices = null;
-  ai.confirm = null;
   ai.retry = null;
   renderAi();
   if (!projectId) return;
@@ -1347,27 +1518,28 @@ async function restoreVersion(project, version) {
   }
 }
 
-async function selectConnection(kind, confirmed) {
+async function selectConnection(kind) {
   const projectId = ai.projectId;
   if (!projectId) return;
   ai.switching = true;
   renderAi();
   try {
-    // 切り替える前の確認(送るもの、費用、確かめたことの印)を、本物の AI を使う同意にする(同意のカードの画面 P25 までのつなぎ)
-    if (confirmed) await agreeToRealAi();
     const { session, retry } = await api(`/api/projects/${encodeURIComponent(projectId)}/ai/connection`, {
       method: 'POST',
       json: { kind },
     });
     if (ai.projectId !== projectId) return;
-    ai.confirm = null;
     setAiMenu(false);
     addEvent('info', `プロダクト内 AI の接続を「${session.connection.label}」にしました。会話と状態はそのまま引き継ぎます。`);
     showAiSession(projectId, session, retry);
     // 試作品にも知らせる(studio.ai.onChange)
     if (preview.projectId === projectId) preview.port?.postMessage({ type: 'ai-session', session });
   } catch (error) {
-    if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) {
+    if (error instanceof ApiError && error.code === 'consent-required') {
+      // 画面の覚えている同意が、サーバーと食い違っていた。カードを出す
+      setConsentState({ agreed: false, agreedAt: null });
+      openConsent('product', { projectId, kind });
+    } else if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) {
       addEvent('warning', `接続を切り替えられませんでした: ${error.message}`);
     } else {
       handleError(error);
@@ -1945,6 +2117,9 @@ function setAiMenu(open) {
 els.projectMenuButton.addEventListener('click', () => setProjectMenu(els.projectMenu.hidden));
 
 els.aiSwitch.addEventListener('click', () => setAiMenu(els.aiMenu.hidden));
+
+els.realAiTry.addEventListener('click', () => toggleRealAiInfo('try'));
+els.realAiMake.addEventListener('click', () => toggleRealAiInfo('make'));
 
 // 一覧の外を押したら閉じる。試作品の iframe を押したときは、この画面から焦点が外れるので、それでも閉じる
 document.addEventListener('click', (event) => {

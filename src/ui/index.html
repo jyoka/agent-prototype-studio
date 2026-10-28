@@ -38,9 +38,14 @@
         <button type="button" id="ai-switch" class="ai-switch" aria-expanded="false" aria-controls="ai-menu" hidden>
           <span id="ai-badge">AI</span><span aria-hidden="true"> ▾</span>
         </button>
+        <!-- 本物の AI を使っている間の小さな印。押すと、同意のカードの中身をもう一度見られる(ux-redesign.md 6 節) -->
+        <button type="button" id="real-ai-try" class="real-ai-mark" aria-expanded="false" aria-controls="real-ai-try-info" hidden>本物の AI(あなたの Claude Code)</button>
         <button type="button" id="reset" disabled title="会話と状態を最初に戻して、開き直します">会話を最初から</button>
       </div>
       <div id="ai-menu" class="ai-menu" hidden></div>
+      <div id="real-ai-try-info" class="real-ai-info" hidden></div>
+      <!-- 試作品の中の AI を本物にするときの、同意のカード -->
+      <div id="try-consent" class="try-consent" hidden></div>
       <!-- 試作品の中の AI の応答を待つ間だけ、「応答を止める」を出す -->
       <div id="ai-waiting" class="ai-waiting" role="status" hidden></div>
       <div id="retry-bar" class="retry-bar" role="region" aria-label="試し直す" hidden></div>
@@ -49,7 +54,11 @@
       </div>
     </section>
     <section class="make" aria-labelledby="make-heading">
-      <h2 id="make-heading">言葉で直す</h2>
+      <div class="make-head">
+        <h2 id="make-heading">言葉で直す</h2>
+        <button type="button" id="real-ai-make" class="real-ai-mark" aria-expanded="false" aria-controls="real-ai-make-info" hidden>本物の AI(あなたの Claude Code)</button>
+      </div>
+      <div id="real-ai-make-info" class="real-ai-info" hidden></div>
       <!-- 選んでいる試作品の名前。作る会話は試作品ごとに分かれるので、どの試作品への依頼かを出す(ux-redesign.md の気づいたこと G) -->
       <p id="make-target" class="make-target"></p>
       <p class="muted">気になったところを、ふだんの言葉で頼んでください。直す AI が試作品を直します。</p>

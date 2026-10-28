@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseProject, chooseSample, expect, launchStudio, openAiMenu, openMore, test, writeProject } from './studio.js';
+import { ROOT, SAMPLES, chooseProject, chooseSample, expect, launchStudio, openMore, switchToRealAi, test, writeProject } from './studio.js';
 
 // 本番開発への引き継ぎを、画面の操作で書き出し、別の場所で確かめる。
 // 作る AI は偽接続、プロダクト内 AI はモックと偽の Claude Code で、実モデルは呼ばない。
@@ -72,12 +72,7 @@ async function exportAndCheck(page, home, other, otherHome) {
     await expect(log.last()).toContainText(AFTER_JOB);
     await app.getByLabel('勤務地を直す').selectOption('もみじ台');
     await expect(log.last()).toHaveText('あなたの修正: 勤務地を「もみじ台」に直しました。');
-    await openAiMenu(page);
-    await page.getByRole('radio', { name: 'Claude Code' }).check();
-    const confirm = page.getByRole('group', { name: 'Claude Code に切り替える前の確認' });
-    await confirm.getByRole('checkbox').check();
-    await confirm.getByRole('button', { name: 'Claude Code に切り替える' }).click();
-    await expect(page.locator('#ai-badge')).toHaveText('AI: Claude Code');
+    await switchToRealAi(page);
     await say('雇用は正社員がいいです');
     await expect(log.last()).toContainText('偽の Claude Code です');
 
