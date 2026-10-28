@@ -53,6 +53,8 @@
 | S19 | P | モックと実モデルが同じ harness を通る。違うのは抽出と言い方の中身だけ。抽出の結果が同じなら、決定は接続によらず同じ。実モデルでも、抽出、決定、言い方、検証の 4 つの段を通ったことが記録に残る | (新)`test/unit/harness.test.js`「モックと、同じ抽出を返すテスト用の接続で回し、決定の列が同じ」「偽の CLI の実モデルの接続でも同じ」、実機は jyoka/tasks#314(記録に 4 つの段が残る) | jyoka/tasks#307、jyoka/tasks#308、jyoka/tasks#314 |
 | S20 | P | 成果物の契約: 目録 `app/prototype.json` を、ビルドのたびに検査する。誤りはビルドの失敗として返す(作る AI に戻せる) | (新)`test/unit/manifest.test.js`、(ある)`test/unit/build.test.js` に足す | jyoka/tasks#298 |
 
+エージェントの構成を模擬する基盤の案([agent-simulation.md](agent-simulation.md)、[ADR-0003](../adr/0003-agent-simulation.md))は、S10 と S16 を、構成 B(今の harness)では今のまま、外のエージェントが回す構成では広げる。どう広げるかと、足す基準 S21〜S25 は agent-simulation.md の 5 節に書いた。ADR-0003 が採られるまで、この表は今のまま。
+
 作る AI が自分で描画結果を読み、操作する形(Harbor の "the agent inspects and iterates")は、今回の範囲に入れる(2026-10-28 の決定)。観察の道具の MCP サーバーは jyoka/tasks#311、作る AI への受け渡しは jyoka/tasks#312 で作る。作る AI が観察で何を見ても、通ったかを決めるのは関門で、関門は同じ観察器を決まった手順で回す。
 
 Harbor との差(今は満たさない。記録しておく):
@@ -563,6 +565,7 @@ flowchart LR
 - S1〜S20 は 1.2 のチェックリスト。U1〜U10 は ux-redesign.md の 9 節。T6 は ADR-0001 の脅威。
 - 画面のカード(P20〜P23、P25〜P31)は `src/ui/studio.js` を触るので、1 列に並べた。harness のカードが `src/ui/studio.js` で変えてよいのは、表(`ITEM_LABELS`、`RUN_STATUS`)の行と、開発者向けの記録の表示だけにした。
 - 待ち先のないカードは、jyoka/tasks#297、jyoka/tasks#298、jyoka/tasks#306。並べて進められる。
+- エージェントの構成を模擬する基盤の案([agent-simulation.md](agent-simulation.md) の 8 節)は、P19〜P31 の振り分けと、sim のカードを合わせた順番を決めている。ADR-0003 を採ったら、P24 と P26 は Goal を直してから作り、P29 からの順番はその 8.3 に従う。
 - jyoka/tasks#299、jyoka/tasks#304、jyoka/tasks#312 は、この文書(jyoka/tasks#297)を待つ。2026-10-28 の決定(ブラウザ、直すラウンドの数、観察の道具)を読んでから作るため。
 - jyoka/tasks#314 は、作る AI が観察の道具を使う形(jyoka/tasks#312)の後に置いた。加えて、ADR-0001 の未決事項「`--restricted` と `--safe-mode` が本人のログインで一緒に動くか」を `npm run check:claude -- --run` で確かめてから始める。
 
