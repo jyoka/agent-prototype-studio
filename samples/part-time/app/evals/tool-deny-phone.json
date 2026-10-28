@@ -1,0 +1,9 @@
+{
+  "formatVersion": 1,
+  "id": "tool-deny-phone",
+  "kind": "tool",
+  "about": "同意があっても、メモに電話番号が入った保存はツールが断る",
+  "records": { "consent": { "agreed": true } },
+  "call": { "tool": "save_wish", "args": { "note": "090-0000-0000 に電話して" } },
+  "expect": [{ "check": "guardBlocked", "layer": "tool", "guard": "deny" }]
+}

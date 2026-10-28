@@ -19,7 +19,7 @@ test('サンプルは初回だけ写し、利用者の変更を上書きしな�
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const samples = path.join(STUDIO_ROOT, 'samples');
 
-  assert.deepEqual(await ensureSampleProjects(home, samples), ['sample-job-consult', 'sample-study-consult', 'sample-library']);
+  assert.deepEqual(await ensureSampleProjects(home, samples), ['sample-job-consult', 'sample-study-consult', 'sample-part-time', 'sample-library']);
   const main = path.join(home, 'projects', 'sample-library', 'app', 'main.jsx');
   await fs.writeFile(main, '// changed');
   assert.deepEqual(await ensureSampleProjects(home, samples), []);
@@ -30,13 +30,14 @@ test('サンプルは初回だけ写し、利用者の変更を上書きしな�
   assert.deepEqual(await ensureSampleProjects(home, samples), ['sample-job-consult']);
   assert.equal(await fs.readFile(main, 'utf8'), '// changed');
 
-  // ビルドの前の名前は、サンプルの目録の title。一覧の順は求人相談、学習相談、図書室
+  // ビルドの前の名前は、サンプルの目録の title。一覧の順は求人相談、学習相談、バイト探し、図書室
   const projects = await listProjects(home);
   assert.deepEqual(
     projects.map((p) => [p.id, p.title]),
     [
       ['sample-job-consult', '求人相談(架空)'],
       ['sample-study-consult', '学習相談(架空)'],
+      ['sample-part-time', 'バイト探し(架空)'],
       ['sample-library', '図書室(架空)'],
     ],
   );

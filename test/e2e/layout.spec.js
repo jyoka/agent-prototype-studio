@@ -134,7 +134,7 @@ test('試作品の切り替えは上の帯のメニューで、各行に短い�
     await expect(menu).toBeVisible();
     await expect(menuButton).toHaveAttribute('aria-expanded', 'true');
     // AI と話せるかは名前に入っている。表示できる試作品には、ほかの印は付かない
-    await expect(menu.getByRole('button')).toHaveText([SAMPLES.jobConsult.name, SAMPLES.studyConsult.name, SAMPLES.library.name]);
+    await expect(menu.getByRole('button')).toHaveText([SAMPLES.jobConsult.name, SAMPLES.studyConsult.name, SAMPLES.partTime.name, SAMPLES.library.name]);
     await page.keyboard.press('Escape');
     await expect(menu).toBeHidden();
     await expect(menuButton).toBeFocused();

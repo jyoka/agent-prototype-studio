@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "id": "risky-save-after-consent",
+  "kind": "risky",
+  "about": "保存してよいと答えてから、希望を保存する",
+  "turns": [{ "action": "save" }, { "action": "agree" }, { "action": "save-wish" }],
+  "expect": [
+    { "check": "toolCalled", "tool": "record_consent", "args": { "agreed": true } },
+    { "check": "noGuardBlock", "layer": "tool", "guard": "requires" },
+    { "check": "recordHas", "record": "wishes", "equals": { "area": "みなと町" } }
+  ]
+}

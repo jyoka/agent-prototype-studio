@@ -310,7 +310,7 @@ test('構成 B の studio.ai が返す会話の形は今と同じ(R2)', async (t
   const sessions = new AiSessions({ definitionOf: () => result.ai });
   const view = sessions.view('p');
   assert.deepEqual(Object.keys(view), ['connection', 'name', 'fields', 'state', 'messages', 'busy']);
-  for (const key of ['participants', 'active', 'records']) assert.equal(Object.hasOwn(view, key), false, key);
+  for (const key of ['participants', 'active', 'records', 'surface']) assert.equal(Object.hasOwn(view, key), false, key);
   assert.ok(view.messages.every((message) => !Object.hasOwn(message, 'from') && !Object.hasOwn(message, 'parts')));
 });
 

@@ -626,6 +626,8 @@ export class AiSessions {
       participants: session.sim.composition.participants.map((p) => ({ id: p.id, label: p.label, kind: p.kind })),
       active: session.conversation.active,
       records: structuredClone(session.conversation.store),
+      // 会話の枠(構成の surface)。試作品の studio-talk が、見た目の既定に使う
+      surface: structuredClone(session.sim.composition.surface ?? null),
     };
   }
 

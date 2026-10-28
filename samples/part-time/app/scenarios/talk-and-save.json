@@ -1,0 +1,20 @@
+{
+  "name": "トークで求人を探し、保存してよいと答えてから希望を保存する",
+  "viewport": "desktop",
+  "steps": [
+    { "expect": "visible", "target": { "text": "いまの案内役はお試しの AI です" } },
+    { "do": "type", "target": { "label": "メッセージ" }, "text": "そのまま保存して" },
+    { "do": "click", "target": { "role": "button", "name": "送る" } },
+    { "expect": "text", "target": { "region": "会話" }, "contains": "記録「consent」がありません" },
+    { "do": "type", "target": { "label": "メッセージ" }, "text": "みなと町でバイトを探しています" },
+    { "do": "click", "target": { "role": "button", "name": "送る" } },
+    { "expect": "visible", "target": { "role": "article", "name": "架空の品出し" } },
+    { "do": "click", "target": { "role": "button", "name": "品出しの詳細" } },
+    { "do": "click", "target": { "role": "button", "name": "この求人で希望を保存" } },
+    { "do": "click", "target": { "role": "button", "name": "保存してよい" } },
+    { "do": "click", "target": { "role": "button", "name": "希望を保存する" } },
+    { "expect": "text", "target": { "region": "受け取った記録" }, "contains": "みなと町" },
+    { "expect": "noErrors" },
+    { "do": "screenshot", "name": "希望を保存した" }
+  ]
+}

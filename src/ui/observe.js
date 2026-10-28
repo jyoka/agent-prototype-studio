@@ -30,6 +30,8 @@
   function relayAi(port, data) {
     var request = { id: data.id, op: data.op };
     if (data.op === 'send') request.text = data.text;
+    // ボタンの action(構成のある試作品の会話の枠)。形は観察器(src/observer/observe.js)が確かめる
+    if (data.op === 'send' && data.action !== undefined) request.action = data.action;
     if (data.op === 'correct') request.changes = data.changes;
     var reply = function (result) {
       var message = { type: 'ai-response', id: data.id, ok: result.ok === true };

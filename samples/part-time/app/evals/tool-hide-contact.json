@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "id": "tool-hide-contact",
+  "kind": "tool",
+  "about": "求人を 1 つ見るとき、窓口の項目は結果から除かれる",
+  "call": { "tool": "get_job", "args": { "id": "m1" } },
+  "expect": [{ "check": "guardBlocked", "layer": "tool", "guard": "hideFields" }]
+}

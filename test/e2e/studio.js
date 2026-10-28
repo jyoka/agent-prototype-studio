@@ -172,10 +172,11 @@ export async function expectNoDevWords(locator) {
 }
 
 // サンプルの ID と、試作品の一覧の名前(Studio が目録の title と、試作品の中の AI があるかから作る)。
-// 一覧の順も、この順(求人相談、学習相談、図書室)
+// 一覧の順も、この順(求人相談、学習相談、バイト探し、図書室)
 export const SAMPLES = {
   jobConsult: { id: 'sample-job-consult', name: '求人相談(架空・AI と話せる)' },
   studyConsult: { id: 'sample-study-consult', name: '学習相談(架空・AI と話せる)' },
+  partTime: { id: 'sample-part-time', name: 'バイト探し(架空・AI と話せる)' },
   library: { id: 'sample-library', name: '図書室(架空・AI なし)' },
 };
 

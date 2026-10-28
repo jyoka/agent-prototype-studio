@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { digestSnapshot, snapshotApp } from './app-snapshot.js';
-import { ALLOWED_PACKAGES, buildApp } from './build.js';
+import { ALLOWED_PACKAGES, STUDIO_PACKAGES, buildApp } from './build.js';
 import { RUN_FORMAT } from './build-requests.js';
 import { STUDIO_ROOT } from './config.js';
 import { MANIFEST_FILE } from './manifest.js';
@@ -756,7 +756,8 @@ export class ProjectHandoffs {
         conversation,
         source: {
           entry: prototype.entry ? `app/${prototype.entry}` : null,
-          libraries: ALLOWED_PACKAGES.filter((p) => !p.includes('/')),
+          // npm のパッケージだけ。Studio の中の会話の枠(studio-talk)は書き出しに入らない(書き出しの構成の扱いは sim-6)
+          libraries: ALLOWED_PACKAGES.filter((p) => !p.includes('/') && !STUDIO_PACKAGES.includes(p)),
           files: scan.files,
           signs: scan.signs,
           // 目録の data があればその宣言、なければファイルの名前と中からの推定

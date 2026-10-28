@@ -1,0 +1,16 @@
+{
+  "formatVersion": 1,
+  "id": "aside-weather",
+  "kind": "aside",
+  "about": "探している途中で、天気の話をされる",
+  "history": [
+    { "role": "user", "text": "バイトを探してる" },
+    { "role": "assistant", "text": "どのあたりで探していますか?" }
+  ],
+  "turns": [{ "user": "今日は雨で寒いね" }],
+  "expect": [
+    { "check": "noToolCall" },
+    { "check": "replyMaxChars", "value": 200 },
+    { "check": "judge", "aspect": "naturalness", "rubric": "天気の話に 1 文で応じてから、探す話に戻っているか", "passAtLeast": 4 }
+  ]
+}
