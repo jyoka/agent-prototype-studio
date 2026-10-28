@@ -69,6 +69,20 @@ test('Studio 画面と API の守り(Host、トークン、Origin)', async (t) =
   assert.equal(missing.status, 404);
 });
 
+test('観察用の親ページは、決まったパスに、API を呼べない CSP つきで置く', async (t) => {
+  const { sp, pp, host } = await withStudio(t);
+  for (const pathname of ['/observe.html', '/observe.js']) {
+    const page = await request(sp, { pathname, headers: { host } });
+    assert.equal(page.status, 200, pathname);
+    const csp = page.headers['content-security-policy'];
+    assert.match(csp, /connect-src 'none'/);
+    assert.match(csp, /frame-ancestors 'none'/);
+    assert.ok(csp.includes(`frame-src http://localhost:${pp}`));
+  }
+  // Studio の画面の CSP は変えない
+  assert.match((await request(sp, { headers: { host } })).headers['content-security-policy'], /connect-src 'self'/);
+});
+
 test('プレビューは表示中の版の静的ファイルだけを、CSP つきで返す', async (t) => {
   const { studio, sp, pp } = await withStudio(t);
   const buildId = studio.store.previewBuildId('sample-library');

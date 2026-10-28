@@ -37,9 +37,12 @@ flowchart LR
 要るもの: Node.js 22 以上(`node --version` で確かめる)。偽接続とモックで試すだけなら、Claude Code は要りません。
 
 ```sh
-npm install   # 初回だけ
-npm start     # 既定のブラウザで Studio が開く
+npm install                # 初回だけ
+npm run install:chromium   # 初回だけ。観察器が使う Playwright の Chromium(約 200 MB)を入れる
+npm start                  # 既定のブラウザで Studio が開く
 ```
+
+観察器は、試作品をヘッドレスのブラウザで動かして確かめる部品です。使うのは Playwright の Chromium だけで、利用者の Chrome や Edge は使いません。入れていないと、観察の結果は「未確認」になります([docs/troubleshooting.md](docs/troubleshooting.md))。
 
 ブラウザが開かないときは、ターミナルに出た `http://127.0.0.1:4317/#token=…` を開きます。止めるときは Ctrl+C です。
 

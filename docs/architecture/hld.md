@@ -47,6 +47,11 @@ flowchart TB
         frame["試作品の iframe(sandbox、CSP)<br/>ビルドした app/ と src/runtime/runtime.js"]
     end
 
+    subgraph headless["ヘッドレスの Playwright の Chromium(観察ごとに新しい文脈)"]
+        host["観察用の親ページ<br/>src/ui/observe.html、observe.js"]
+        oframe["試作品の iframe(sandbox、CSP)"]
+    end
+
     subgraph server["Studio のサーバー: src/server/"]
         entry["起動<br/>bin/studio.js → index.js startStudio"]
         api["Studio の API と画面<br/>studio-server.js(127.0.0.1:4317)"]
@@ -61,6 +66,8 @@ flowchart TB
         handoff["引き継ぎの書き出し<br/>handoff.js"]
         redact["伏せる、秘密を探す<br/>redact.js"]
     end
+
+    observer["観察器<br/>src/observer/observe.js、browser.js"]
 
     subgraph local["データの置き場: ~/PrototypeStudio"]
         app[("projects/ID/app/<br/>作る AI が書ける唯一の場所")]
@@ -96,6 +103,13 @@ flowchart TB
     versions -- "会話と状態" --> ai
     handoff -- "書き出す" --> handoffs
     handoff --> redact
+    entry -- "observe()" --> observer
+    observer -- "playwright-core で操作" --> host
+    host -- "MessageChannel" --> oframe
+    host -- "開く" --> api
+    oframe -- "読む" --> preview
+    host -- "エラー、AI の要求<br/>(exposeBinding)" --> observer
+    observer -- "スクリーンショット" --> dotstudio
 ```
 
 | 部品 | ファイル | すること |
@@ -111,6 +125,8 @@ flowchart TB
 | 伏せる | `src/server/redact.js` | 記録と表示の前に、秘密らしい文字列と個人のデータを伏せる。書き出す前に秘密を探す |
 | 偽接続 | `src/agent/fake-claude.js` | `claude -p` と同じ形の出力を出す偽の CLI。モデルを呼ばない |
 | runtime | `src/runtime/runtime.js` | 試作品に配る。試作品のエラーを画面に知らせ、`window.studio.ai` を配る |
+| 観察器 | `src/observer/observe.js`、`src/observer/browser.js` | 表示中のビルドをヘッドレスの Playwright の Chromium で開き、読み込み、エラー、スクリーンショット、合否を report で返す。ブラウザは Studio の中で 1 つ。観察は 1 つずつ、毎回新しい文脈で回す。作る AI、画面、版、会話の実装は import しない。設計は [harness.md の 3](../design/harness.md#3-観察) |
+| 観察用の親ページ | `src/ui/observe.html`、`src/ui/observe.js` | Studio の `/observe.html` に置く静的なページ。試作品を同じ sandbox の iframe に入れ、エラーと AI の要求を `exposeBinding` で観察器に渡す。Studio の API は呼ばない(CSP の `connect-src 'none'`) |
 
 ## 4. データの流れ
 
@@ -132,6 +148,15 @@ flowchart TB
 
 接続の切り替え(`ai/connection`)、応答を止める(`ai/cancel`)、試し直し(`ai/retry`)は、Studio の画面からだけ呼べます。試作品からは呼べません。
 
+### 観察する(ヘッドレスのブラウザで試作品を動かす)
+
+1. 呼ぶ側が `startStudio` の `observe(<id>, { viewports, ai, limits })` を呼ぶ。今は呼ぶ所はまだない(作るループへの組み込みは jyoka/tasks#303)
+2. ビルドに失敗していれば、ブラウザを開かずに `failed` を返す
+3. `ObserverBrowser` が Playwright の Chromium を起動するか、起動したものを使い回す。見つからなければ `unverified` と入れ方を返す
+4. 新しい文脈で `/observe.html` を開き、試作品の URL を iframe で読む。runtime のエラー、`console.error`、処理されない reject は、`MessagePort` から親ページを通って観察器に届く
+5. 15 秒で読み込みが終わらなければ時間切れのエラーにする。終われば、指定した画面幅ごとにスクリーンショットを `.studio/observations/<観察の ID>/` に撮る
+6. エラーがなければ `passed`、あれば `failed` の report を返す。形は [harness.md の 3.1](../design/harness.md#31-観察器の契約studio-の-drydock-に当たる)
+
 ### 版と引き継ぎ
 
 - 保存: `ProjectVersions.save` が `app/` と、`AiSessions.snapshot` の会話と状態を写す
@@ -144,6 +169,7 @@ flowchart TB
 |---|---|---|
 | `projects/<id>/app/` | 試作品のソースと `ai.json` | 作る AI、版の復元 |
 | `projects/<id>/.studio/builds/` | ビルドの結果 | Studio |
+| `projects/<id>/.studio/observations/` | 観察のスクリーンショット | 観察器 |
 | `projects/<id>/.studio/versions/`、`working.json` | 保存した版と、どの版から作業しているか | Studio |
 | `projects/<id>/.studio/handoff-notes.json` | 引き継ぎのメモ | Studio |
 | `handoffs/` | 引き継ぎの書き出し | Studio |
@@ -158,6 +184,7 @@ flowchart TB
 | 偽接続(`src/agent/fake-claude.js`) | 作る AI の既定(`STUDIO_AGENT=fake`) | なし。モデルを呼ばない |
 | モック(`product-ai/mock.js`) | プロダクト内 AI の既定 | なし。モデルを呼ばない |
 | Claude Code の CLI(作る AI) | `STUDIO_AGENT=claude` で起動したとき | 本人のアカウントの枠か API の従量課金。1 回の依頼は 10 分、30 回まで |
+| Playwright の Chromium(観察器) | 観察するとき。`npm run install:chromium` で入れたもの | なし。モデルを呼ばない。AI の要求は、呼ぶ側が渡す関数に渡す |
 | Claude Code の CLI(プロダクト内 AI) | `STUDIO_ALLOW_CLAUDE_CODE=1` で起動し、画面で切り替えたとき | 同上。1 回の応答は 90 秒、$0.1 まで。1 つの会話で 30 回まで |
 
 詳しい決まりは [claude-code.md](../claude-code.md) にあります。テストは偽の CLI(`test/fixtures/fake-claude.js`)を使い、実モデルを呼びません。

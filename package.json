@@ -15,10 +15,12 @@
     "start": "node bin/studio.js",
     "test": "node --test \"test/unit/*.test.js\" \"test/integration/*.test.js\"",
     "test:e2e": "playwright test",
-    "check:claude": "node scripts/check-claude-code.js"
+    "check:claude": "node scripts/check-claude-code.js",
+    "install:chromium": "playwright-core install --only-shell chromium"
   },
   "dependencies": {
     "esbuild": "0.28.2",
+    "playwright-core": "1.63.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },

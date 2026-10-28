@@ -35,6 +35,13 @@ export async function snapshotApp(appDir) {
   return files;
 }
 
+// 指紋の全体を 1 つの値にする。ビルドと観察の report に、どの app/ の中身だったかを残す
+export function digestSnapshot(files) {
+  const hash = crypto.createHash('sha256');
+  for (const key of [...files.keys()].sort()) hash.update(`${key}\0${files.get(key)}\n`);
+  return hash.digest('hex');
+}
+
 export function diffSnapshots(before, after) {
   const changed = [];
   for (const [key, value] of after) {

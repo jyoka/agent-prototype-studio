@@ -67,14 +67,15 @@ src/server/            Studio のサーバー(画面と API、プレビューの
 src/server/product-ai/ プロダクト内 AI。ai.json の検査、モックと Claude Code の接続、プロジェクトごとの会話と状態、実行の記録
 src/server/redact.js   記録と表示の前に、秘密らしい文字列と個人のデータを伏せる。書き出す前に秘密を探す
 src/server/handoff.js  本番開発への引き継ぎの書き出し(docs/handoff.md)
+src/observer/          観察器。表示中のビルドを Playwright の Chromium で開き、エラー、スクリーンショット、合否を report で返す
 src/agent/             偽接続(Claude Code の代わりに、決まった動きをする CLI)
 scripts/               実機の Claude Code で守りを確かめるスクリプト
-src/ui/                Studio の画面
+src/ui/                Studio の画面と、観察用の親ページ(observe.html、observe.js)
 src/runtime/runtime.js 試作品に配る runtime。試作品のエラーを Studio の画面に知らせ、window.studio.ai を配る
 samples/library/app/   固定のサンプル試作品(架空の図書室)
 samples/job-consult/app/ 固定のサンプル試作品(架空の求人相談とモックの AI)
 samples/study-consult/app/ 固定のサンプル試作品(架空の学習相談とモックの AI。求人ではない題材で汎用性を確かめる)
-test/                  unit、integration、e2e。fixtures/ に偽の Claude Code
+test/                  unit、integration、e2e。fixtures/ に偽の Claude Code と、観察器の見本(fixtures/observe/)
 docs/                  使い方、設定、困ったとき、設計(architecture、adr、design)
 ```
 
@@ -85,9 +86,9 @@ docs/                  使い方、設定、困ったとき、設計(architectur
 | コマンド | 中身 | 時間の目安 |
 |---|---|---|
 | `npm test` | 単体と結合のテスト(Node の test runner)。作る欄の API、偽の CLI に渡る引数と stdin、確認スクリプトの空回しを含む | 数秒 |
-| `npm run test:e2e` | ブラウザの E2E(Playwright の Chromium)。起動手順、サンプルの操作、モックの AI との会話と修正とリセット、偽の Claude Code への切り替えと履歴と失敗と中断、AI の実行の記録(正常と失敗、次にすること、伏せる文字列)、失敗の表示、試作品の隔離、作る欄の依頼・変更・反映・拒否・失敗・中断、作る欄で AI の振る舞いを変えて前の発言で試し直すこと、版の保存・変更・復元・起動し直した後の再開、引き継ぎの書き出しと、別の場所での確認(資料を読む、ソースを別の Studio で動かす)と秘密での停止、求人ではない題材(架空の学習相談)での作成・試行・変更・版・引き継ぎの通しと、Studio の画面と書き出しに求人の言葉が出ないことを確かめる | 1 分以内 |
+| `npm run test:e2e` | ブラウザの E2E(Playwright の Chromium)。起動手順、サンプルの操作、モックの AI との会話と修正とリセット、偽の Claude Code への切り替えと履歴と失敗と中断、AI の実行の記録(正常と失敗、次にすること、伏せる文字列)、失敗の表示、試作品の隔離、作る欄の依頼・変更・反映・拒否・失敗・中断、作る欄で AI の振る舞いを変えて前の発言で試し直すこと、版の保存・変更・復元・起動し直した後の再開、引き継ぎの書き出しと、別の場所での確認(資料を読む、ソースを別の Studio で動かす)と秘密での停止、求人ではない題材(架空の学習相談)での作成・試行・変更・版・引き継ぎの通しと、Studio の画面と書き出しに求人の言葉が出ないこと、観察器の report(正常と、壊した見本のエラー、AI の要求の中継)を確かめる | 1 分以内 |
 
-E2E のブラウザがないときは、`npx playwright install chromium` で入れる。どのテストも実モデルと外部の API を呼ばない。作る AI は偽接続(`src/agent/fake-claude.js`)か、それを呼ぶ偽の `claude` に差し替える。プロダクト内 AI の Claude Code は、偽の CLI(`test/fixtures/fake-claude.js`)に差し替える。
+E2E と観察器のブラウザがないときは、`npm run install:chromium` で入れる。どのテストも実モデルと外部の API を呼ばない。作る AI は偽接続(`src/agent/fake-claude.js`)か、それを呼ぶ偽の `claude` に差し替える。プロダクト内 AI の Claude Code は、偽の CLI(`test/fixtures/fake-claude.js`)に差し替える。
 
 - 不具合は、利用者から見た動きを再現する E2E を先に書き、失敗するのを見てから直します
 - 実モデルで守りが効くかは、`npm run check:claude` で確かめます。実モデルを呼ぶので、人が決めたときだけ動かします([docs/claude-code.md の「実機で確かめる」](docs/claude-code.md#実機で確かめる))

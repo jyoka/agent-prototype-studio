@@ -21,6 +21,7 @@ if (nodeMajor < MIN_NODE_MAJOR) {
 
 try {
   await import('esbuild');
+  await import('playwright-core');
 } catch {
   fail([
     'Prototype Studio を起動できません: 必要な部品が入っていません。',

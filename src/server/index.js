@@ -1,7 +1,9 @@
+import crypto from 'node:crypto';
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { connectionView, resolveConnection } from './agent-connection.js';
+import { Observer } from '../observer/observe.js';
 import { BuildRequests } from './build-requests.js';
 import { STUDIO_ROOT } from './config.js';
 import { ProjectHandoffs } from './handoff.js';
@@ -9,7 +11,7 @@ import { createPreviewHandler } from './preview-server.js';
 import { createClaudeCodeConnection } from './product-ai/claude-code.js';
 import { createMockConnection } from './product-ai/mock.js';
 import { AiSessions } from './product-ai/session.js';
-import { ensureSampleProjects, projectsDir } from './projects.js';
+import { ensureSampleProjects, projectPaths, projectsDir } from './projects.js';
 import { createToken } from './security.js';
 import { createStudioHandler } from './studio-server.js';
 import { ProjectStore } from './store.js';
@@ -120,6 +122,9 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
 
   await store.buildAll();
 
+  // 観察器のブラウザは、Studio の中で 1 つだけ。最初の観察のときに起動する
+  const observer = new Observer();
+
   const url = `http://127.0.0.1:${ports.studio}/#token=${token}`;
   return {
     url,
@@ -130,9 +135,29 @@ export async function startStudio(config, { log = () => {}, env = process.env } 
     aiSessions,
     versions,
     handoffs,
+    observer,
+    // 表示中のビルドを観察する。ai は呼ぶ側が渡す。report のスクリーンショットは .studio/observations/<観察の ID>/ に置く
+    async observe(id, { scenarios, viewports, ai, limits } = {}) {
+      await store.requireProject(id);
+      const project = (await store.list()).find((p) => p.id === id);
+      const result = project.lastBuild ?? { ok: false, errors: [{ file: 'app/', text: 'まだビルドしていません' }] };
+      const observationId = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      return observer.observe({
+        build: {
+          result,
+          previewUrl: result.ok ? `http://localhost:${ports.preview}/p/${id}/${project.previewBuildId}/` : null,
+          hostUrl: `http://127.0.0.1:${ports.studio}/observe.html`,
+        },
+        scenarios,
+        viewports,
+        ai,
+        limits,
+        outDir: path.join(projectPaths(config.home, id).studio, 'observations', observationId),
+      });
+    },
     async close() {
-      // 作る AI と、応答を待っているプロダクト内 AI の Claude Code を止め、終わるまで待つ
-      await Promise.all([requests.closeAll(), aiSessions.close()]);
+      // 作る AI と、応答を待っているプロダクト内 AI の Claude Code と、観察器のブラウザを止め、終わるまで待つ
+      await Promise.all([requests.closeAll(), aiSessions.close(), observer.close()]);
       await Promise.all(
         servers.map(
           (server) =>

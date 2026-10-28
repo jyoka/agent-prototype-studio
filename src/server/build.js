@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import * as esbuild from 'esbuild';
+import { digestSnapshot, snapshotApp } from './app-snapshot.js';
 import { STUDIO_ROOT } from './config.js';
 import { inspectApp } from './inspect.js';
 import { readAiDefinition } from './product-ai/definition.js';
@@ -129,7 +130,8 @@ async function findEntry(appDir) {
 // 生成コードはここでは実行しない。成功したら、検査済みの AI の設定(なければ null)を ai で返す。
 export async function buildApp({ appDir, buildsDir }) {
   const started = Date.now();
-  const finish = (fields) => ({ ...fields, durationMs: Date.now() - started, finishedAt: new Date().toISOString() });
+  const appDigest = digestSnapshot(await snapshotApp(appDir));
+  const finish = (fields) => ({ ...fields, appDigest, durationMs: Date.now() - started, finishedAt: new Date().toISOString() });
 
   const problems = await inspectApp(appDir);
   if (problems.length > 0) {
