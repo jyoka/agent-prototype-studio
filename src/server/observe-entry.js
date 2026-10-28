@@ -168,6 +168,9 @@ async function observeWorking({ projectDir, observe }) {
 // outDir:       スクリーンショットを置くフォルダー(作るループは run のラウンドのフォルダー)。
 //               渡さなければ .studio/observations/<obs-id>/ を新しく作り、report.json もそこに書く
 // observer:     使う観察器。Studio はブラウザを 1 つ使い回すので渡す。なければこの観察だけのものを作って閉じる
+// signal:       中断の AbortSignal(観察の道具のサーバーが終わるとき)。中断されたら、ブラウザを開く前なら開かずに
+//               中断の誤りを投げる(観察のフォルダーは残さない)。開いた後なら、この観察だけの観察器のブラウザを待たずに閉じ、
+//               観察は unverified で終わる。渡された observer(Studio のもの)は止めない
 export async function observeProject({
   projectDir,
   mode,
@@ -183,12 +186,14 @@ export async function observeProject({
   limits,
   outDir,
   observer = null,
+  signal = null,
 } = {}) {
   if (typeof projectDir !== 'string' || projectDir === '') throw new TypeError('projectDir を渡してください');
   if (!OBSERVE_MODES.includes(mode)) throw new TypeError(`mode は ${OBSERVE_MODES.join(' か ')} で渡してください`);
   if (mode === 'shown' && (shown === null || typeof shown !== 'object')) throw new TypeError('mode が shown のときは shown を渡してください');
   if (ai != null && aiConnection !== undefined) throw new TypeError('ai と aiConnection は、どちらか 1 つだけ渡してください');
   if (ai != null && typeof ai !== 'function') throw new TypeError('ai は関数で渡してください');
+  signal?.throwIfAborted();
 
   // working の AI は、この観察だけの会話の置き場に、モックの接続だけで作る
   let ownSessions = null;
@@ -209,8 +214,12 @@ export async function observeProject({
   if (!outDir) unfinished.add(dir);
   const appDir = path.join(projectDir, 'app');
   const ownObserver = observer ? null : new Observer();
+  const abortOwn = () => ownObserver?.abort().catch(() => {});
+  signal?.addEventListener('abort', abortOwn, { once: true });
   let observationAi = null;
   const observe = async (build, manifest) => {
+    // ビルドの間に中断されたら、ブラウザを開かない
+    signal?.throwIfAborted();
     definition = build.result?.ok ? (build.result.ai ?? null) : null;
     if (aiConnection !== undefined) observationAi = createObservationAi(sessions, sessionId, { connection: aiConnection });
     const list = scenarios === undefined && build.result?.ok ? await scenariosOf(appDir, manifest) : scenarios;
@@ -240,6 +249,7 @@ export async function observeProject({
     }
     throw error;
   } finally {
+    signal?.removeEventListener('abort', abortOwn);
     observationAi?.close();
     await ownSessions?.close();
     await ownObserver?.close();

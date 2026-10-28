@@ -196,8 +196,9 @@ export class ObserveTools {
     this.projectDir = projectDir;
     this.limits = { ...MCP_LIMITS, ...limits };
     this.session = null;
-    // 終わっていない観察(開いた文脈と run_scenarios)。close() はどれも閉じて待つ。
-    // 開いた文脈は、時間切れで手放したものも入る
+    // 終わっていない観察(開いた文脈と run_scenarios)。close() はどれも止めて待つ。
+    // 開いた文脈は、時間切れで手放したものも入る。stop() は、開いた後なら report を書いて閉じ、
+    // 開く前と run_scenarios は打ち切る(ビルドの後ならブラウザを開かない。開いていればブラウザを待たずに閉じる)
     this.running = new Set();
     this.queue = Promise.resolve();
     this.closed = false;
@@ -237,7 +238,12 @@ export class ObserveTools {
     if (this.closed) throw new ToolError('観察の道具のサーバーは終わるところです');
 
     const ready = deferred();
-    const session = { ops: null, end: deferred(), finished: null, ended: false, seen: 0 };
+    const aborter = new AbortController();
+    const session = { ops: null, end: deferred(), finished: null, ended: false, seen: 0, stop: null };
+    session.stop = () => {
+      session.end.resolve();
+      if (!session.ops) aborter.abort();
+    };
     // 観察器は operate が返るまで文脈を開いたままにする。end を解くと、最後の画面を読んで report を書く
     session.finished = observeProject({
       projectDir: this.projectDir,
@@ -247,13 +253,14 @@ export class ObserveTools {
       viewports: [viewport],
       aiConnection: 'mock',
       limits: { scenarioTimeoutMs: this.limits.sessionMs },
+      signal: aborter.signal,
       operate: (ops) => {
         session.ops = ops;
         ready.resolve();
         return session.end.promise;
       },
     });
-    const running = { end: session.end, work: session.finished };
+    const running = { stop: session.stop, work: session.finished };
     this.running.add(running);
     session.finished
       .catch(() => {})
@@ -346,14 +353,16 @@ export class ObserveTools {
   // 基本のシナリオと app/scenarios/ を、新しいビルドと新しいブラウザで回す。開いた文脈はそのまま
   async runScenarios(args) {
     if (Object.keys(args).length > 0) throw new ToolError('run_scenarios は引数を取りません');
+    const aborter = new AbortController();
     const work = observeProject({
       projectDir: this.projectDir,
       mode: 'working',
       viewports: [],
       aiConnection: 'mock',
       limits: { observeTimeoutMs: this.limits.scenariosTimeoutMs },
+      signal: aborter.signal,
     });
-    const running = { end: null, work };
+    const running = { stop: () => aborter.abort(), work };
     this.running.add(running);
     work.catch(() => {}).finally(() => this.running.delete(running));
     const done = await within(work, this.limits.scenariosTimeoutMs + this.limits.openTimeoutMs);
@@ -384,21 +393,24 @@ export class ObserveTools {
     };
   }
 
-  // 開いた文脈を閉じる。観察器は最後の画面を読み、report を書き、ブラウザと一時フォルダーを片付ける
+  // 開いた文脈を閉じる。観察器は最後の画面を読み、report を書き、ブラウザと一時フォルダーを片付ける。
+  // まだ開いていなければ打ち切る
   async closeSession() {
     const session = this.session;
     this.session = null;
     if (!session) return;
-    session.end.resolve();
-    await within(session.finished, this.limits.shutdownMs);
+    session.stop();
+    // 打ち切った観察は中断の誤りで終わる。閉じる側には関係ない
+    await within(session.finished, this.limits.shutdownMs).catch(() => {});
   }
 
-  // サーバーを終える。片付けが終わらなければ、一時フォルダーと report のない観察のフォルダーを消す
+  // サーバーを終える。開いた文脈は report を書いて閉じ、開く途中の観察と run_scenarios は打ち切る。
+  // 片付けが終わらなければ、一時フォルダーと report のない観察のフォルダーを消す
   async close() {
     if (this.closed) return;
     this.closed = true;
     this.session = null;
-    for (const { end } of this.running) end?.resolve();
+    for (const { stop } of this.running) stop();
     const waits = await Promise.all([...this.running].map(({ work }) => within(work, this.limits.shutdownMs).catch(() => ({ timedOut: false }))));
     if (waits.some((wait) => wait.timedOut)) removeUnfinishedSync();
   }

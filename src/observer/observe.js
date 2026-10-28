@@ -534,4 +534,9 @@ export class Observer {
   close() {
     return this.browser.close();
   }
+
+  // 動いている観察を待たずに止める(ObserverBrowser.abort)
+  abort() {
+    return this.browser.abort();
+  }
 }

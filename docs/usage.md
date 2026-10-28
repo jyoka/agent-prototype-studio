@@ -272,6 +272,7 @@ npm run observe:mcp -- sample-job-consult
 - 標準入力と標準出力で MCP(JSON-RPC)に答える。知らせは標準エラーに出る。
 - 道具は `open`、`read_page`、`inspect`、`click`、`type`、`scroll`、`set_viewport`、`screenshot`、`run_scenarios` の 9 つだけ。どれも `app/` を書き換えない。
 - `--max-seconds`: サーバーの全体の時間の上限(既定は 1800 秒)。超えたら、ブラウザと一時フォルダーを片付けて終わる。
+- 入力が閉じる、時間の上限、Ctrl+C、SIGTERM のどれで終わっても、ブラウザと一時フォルダーを片付ける。強制終了されて残った一時フォルダー(`prototype-studio-observe-mcp-<番号>-…`)は、次の起動で消す。
 - プロダクト内 AI はいつもモック。report とスクリーンショットは CLI と同じ `.studio/observations/<観察の ID>/` に書く。
 
 道具ごとの中身と時間の上限は [hld.md の「観察の道具の MCP サーバー」](architecture/hld.md#観察の道具の-mcp-サーバー) にあります。
