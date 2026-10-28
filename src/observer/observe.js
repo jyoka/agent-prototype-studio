@@ -1,32 +1,32 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { BrowserUnavailableError, ObserverBrowser } from './browser.js';
+import { Operations, StepFailure, VIEWPORTS, VIEWPORT_SETTLE_MS } from './operations.js';
+import { SCENARIO_LIMITS, baseScenarios, checkScenario } from './scenario.js';
 
 // 観察器(docs/design/harness.md の 3.1)。表示中のビルドをヘッドレスの Chromium で開き、
-// 読み込み、エラー、スクリーンショット、合否を report で返す。
+// 読み込み、エラー、スクリーンショット、シナリオ、最後の画面、合否を report で返す。
 // import してよいのは、ビルドの結果、プレビューの配信、ブラウザの部品だけ(S2)。
 // 作る AI、Studio の画面、版、会話の実装には依存しない。AI の要求は、呼ぶ側が渡す ai 関数に渡す。
 
 export const REPORT_FORMAT = 'prototype-studio-observation';
 export const REPORT_FORMAT_VERSION = 1;
 
-export const VIEWPORTS = Object.freeze({
-  mobile: Object.freeze({ width: 390, height: 844 }),
-  tablet: Object.freeze({ width: 820, height: 1180 }),
-  desktop: Object.freeze({ width: 1280, height: 800 }),
-});
+export { VIEWPORTS };
 
 export const DEFAULT_LIMITS = Object.freeze({
   // 読み込みの時間切れ。無限ループなどで読み込みが終わらないときのエラー
   loadTimeoutMs: 15_000,
   // 読み込みの後、描画中の例外と遅れて出るエラーを待つ時間
   settleMs: 500,
+  // シナリオの 1 つの手順(操作と確かめ)にかける時間
+  stepTimeoutMs: 5_000,
+  // シナリオ 1 本にかける時間(harness.md 2.2)
+  scenarioTimeoutMs: 60_000,
 });
 
 const HOST_TIMEOUT_MS = 10_000;
 const SCREENSHOT_TIMEOUT_MS = 5_000;
-// 画面幅を変えた後、iframe の中の描画が追いつくのを待つ時間
-const VIEWPORT_SETTLE_MS = 150;
 // 読み込みの時間切れの他に、観察の全体にかける時間の上限
 const EXTRA_TIMEOUT_MS = 30_000;
 const MAX_ERRORS = 50;
@@ -97,8 +97,9 @@ function emptyReport(build) {
     errors: [],
     // 観察の中のプロダクト内 AI とのやり取り(ai.entries() が返す、AI の実行の記録と同じ形)
     ai: [],
-    // シナリオと最後の画面(jyoka/tasks#302)で埋める
+    // シナリオごとの合否、手順ごとの結果、失敗した手順とそのときのスクリーンショット
     scenarios: [],
+    // 最後の画面の文字と、アクセシビリティの木の要約(operations.js の read)
     page: null,
     screenshots: [],
     verdict: 'unverified',
@@ -176,6 +177,71 @@ async function within(promise, ms, message) {
   return promise;
 }
 
+// observe() に渡されたシナリオを、回す形にそろえる。形の誤りは回さずに、failed の結果にする
+function planOf(item) {
+  const loaded = isPlainObject(item) && Object.hasOwn(item, 'file');
+  const file = loaded ? (item.file ?? null) : null;
+  if (loaded && Array.isArray(item.errors) && item.errors.length > 0) return { base: false, file, scenario: null, errors: item.errors };
+  const checked = checkScenario(loaded ? item.scenario : item, { file });
+  return { base: false, file, scenario: checked.scenario, errors: checked.errors };
+}
+
+const failureText = (error) => (error instanceof StepFailure || error instanceof StepTimeoutError ? error.message : `手順の途中で問題が起きました: ${text(error?.message ?? error, 300)}`);
+
+// シナリオ 1 本を回し、手順ごとの結果を返す。失敗した手順で止め、そのときの画面を撮る
+async function runScenario({ ops, item, index, limit, stop }) {
+  const started = Date.now();
+  const scenario = item.scenario;
+  const entry = {
+    name: scenario?.name ?? item.errors[0]?.scenario ?? item.file ?? `${index + 1} 本目のシナリオ`,
+    base: item.base,
+    file: item.file,
+    viewport: scenario?.viewport ?? null,
+    verdict: 'failed',
+    durationMs: 0,
+    steps: [],
+    failed: null,
+    problems: structuredClone(item.errors),
+  };
+  if (!scenario) {
+    // 形の誤り。どの手順がどう違うかを problems に入れ、回さない
+    entry.failed = { step: item.errors[0]?.step ?? null, message: item.errors.map((e) => e.text).join(' / ').slice(0, MAX_MESSAGE), screenshot: null };
+    return entry;
+  }
+  entry.steps = scenario.steps.map((step, i) => ({ n: i + 1, step: structuredClone(step), status: 'skipped', durationMs: null, result: null, message: null }));
+  const prefix = `scenario-${index + 1}`;
+  let current = null;
+  let cancelled = false;
+  const work = (async () => {
+    await ops.viewport(scenario.viewport);
+    for (const [i, step] of scenario.steps.entries()) {
+      if (stop.stopped || cancelled) return;
+      current = entry.steps[i];
+      const at = Date.now();
+      try {
+        current.result = structuredClone((await ops.step(step, { file: `${prefix}-step-${i + 1}.png` })) ?? null);
+        current.status = 'passed';
+      } finally {
+        current.durationMs = Date.now() - at;
+      }
+    }
+  })();
+  try {
+    await within(work, limit.scenarioTimeoutMs, `シナリオが ${Math.round(limit.scenarioTimeoutMs / 1000)} 秒で終わりませんでした`);
+    entry.verdict = 'passed';
+  } catch (error) {
+    cancelled = true;
+    if (current && current.status !== 'passed') current.status = 'failed';
+    const message = failureText(error);
+    if (current?.status === 'failed') current.message = message;
+    let screenshot = null;
+    if (!stop.stopped) screenshot = await ops.screenshot('失敗したとき', { file: `${prefix}-failed.png` }).catch(() => null);
+    entry.failed = { step: current?.status === 'failed' ? current.n : null, message, screenshot };
+  }
+  entry.durationMs = Date.now() - started;
+  return entry;
+}
+
 export class Observer {
   constructor({ browser = new ObserverBrowser() } = {}) {
     this.browser = browser;
@@ -184,15 +250,21 @@ export class Observer {
   // build:     { result, previewUrl, hostUrl }
   //            result は buildApp() の結果。previewUrl は表示中のビルドの URL(プレビューの配信)、
   //            hostUrl は観察用の親ページの URL(Studio の origin の /observe.html)
-  // scenarios: 回すシナリオ(jyoka/tasks#302 で回す。今は受け取るだけ)
+  // scenarios: 回すシナリオ。シナリオの形(scenario.js)そのものか、readScenarios() が返す
+  //            { file, scenario } か { file, errors }。Studio の基本のシナリオは、渡さなくても先に回す
   // viewports: スクリーンショットを撮る画面幅の名前(mobile、tablet、desktop)
   // ai:        試作品からの AI の要求({ op, text?, changes? })に session を返す関数。なければ断る。
-  //            ai.entries() があれば、観察の中のやり取りとして report の ai に入れる
+  //            ai.entries() があれば、観察の中のやり取りとして report の ai に入れる。
+  //            ai.state() があれば、確かめ aiState でプロダクト内 AI の状態を読む
+  // operate:   シナリオの後に、7 つの操作(Operations)を 1 つずつ呼ぶ関数(ops) => Promise。
+  //            時間の上限はシナリオ 1 本と同じ
   // limits:    時間の上限(DEFAULT_LIMITS)
   // outDir:    スクリーンショットを置くフォルダー
-  async observe({ build, scenarios = [], viewports = ['desktop'], ai = null, limits = {}, outDir = null } = {}) {
+  async observe({ build, scenarios = [], viewports = ['desktop'], ai = null, operate = null, limits = {}, outDir = null } = {}) {
     if (!isPlainObject(build)) throw new TypeError('build を渡してください');
     if (!Array.isArray(scenarios)) throw new TypeError('scenarios は配列で渡してください');
+    if (scenarios.length > SCENARIO_LIMITS.maxScenarios) throw new TypeError(`シナリオは ${SCENARIO_LIMITS.maxScenarios} 本までです`);
+    if (operate !== null && typeof operate !== 'function') throw new TypeError('operate は関数で渡してください');
     const names = checkViewports(viewports);
     const limit = checkLimits(limits);
     const started = Date.now();
@@ -212,15 +284,21 @@ export class Observer {
 
     if (names.length > 0 && !outDir) throw new TypeError('スクリーンショットを置く outDir を渡してください');
     const first = VIEWPORTS[names[0] ?? 'desktop'];
+    // 基本のシナリオは Studio のコードの中にあり、呼ぶ側が渡すシナリオより先に回す
+    const plan = [...baseScenarios({ greeting: build.result.ai?.mock?.greeting }).map((scenario) => ({ base: true, file: null, scenario, errors: [] })), ...scenarios.map(planOf)];
+    const scenarioBudget = (plan.length + (operate ? 1 : 0)) * (limit.scenarioTimeoutMs + SCREENSHOT_TIMEOUT_MS);
     // 時間を超えて返った操作が、返した後の report を書き換えないように、写しに書く
     const draft = structuredClone(report);
+    const stop = { stopped: false };
     try {
       await this.browser.withContext({ viewport: { ...first } }, (context, browser) =>
         within(
-          this.run({ context, browser, build, names, ai, limit, outDir, report: draft }),
-          limit.loadTimeoutMs + limit.settleMs + EXTRA_TIMEOUT_MS,
+          this.run({ context, browser, build, names, plan, ai, operate, limit, outDir, stop, report: draft }),
+          limit.loadTimeoutMs + limit.settleMs + EXTRA_TIMEOUT_MS + scenarioBudget,
           '観察が時間内に終わりませんでした',
-        ),
+        ).finally(() => {
+          stop.stopped = true;
+        }),
       );
     } catch (error) {
       // 時間切れまでに分かったこと(読み込み、エラー)は残す
@@ -234,12 +312,13 @@ export class Observer {
     if (report.reason) {
       report.verdict = 'unverified';
     } else {
-      report.verdict = report.load.done && report.errors.length === 0 ? 'passed' : 'failed';
+      const scenariosPassed = report.scenarios.every((scenario) => scenario.verdict === 'passed');
+      report.verdict = report.load.done && report.errors.length === 0 && scenariosPassed ? 'passed' : 'failed';
     }
     return finish();
   }
 
-  async run({ context, browser, build, names, ai, limit, outDir, report }) {
+  async run({ context, browser, build, names, plan, ai, operate, limit, outDir, stop, report }) {
     report.browser = { name: 'chromium', version: browser.version() };
     report.load.timeoutMs = limit.loadTimeoutMs;
     const page = await context.newPage();
@@ -342,6 +421,20 @@ export class Observer {
       }
       report.screenshots.push({ name, viewport: name, width: size.width, height: size.height, file });
     }
+
+    // シナリオを手順どおりに回す。7 つの操作は、シナリオの手順と operate で同じ関数を使う
+    const ops = new Operations({ page, errors: () => report.errors, ai, outDir, stepTimeoutMs: limit.stepTimeoutMs });
+    ops.viewportName = names.at(-1) ?? 'desktop';
+    for (const [index, item] of plan.entries()) {
+      if (stop.stopped || report.reason) return;
+      report.scenarios.push(await runScenario({ ops, item, index, limit, stop }));
+    }
+    if (operate && !stop.stopped && !report.reason) {
+      await within(Promise.resolve(operate(ops)), limit.scenarioTimeoutMs, 'operate が時間内に終わりませんでした');
+    }
+    // 最後の画面の文字と、アクセシビリティの木の要約。止まった試作品では読めないので空のまま
+    if (stop.stopped || report.reason) return;
+    report.page = await ops.read().catch(() => null);
   }
 
   close() {
