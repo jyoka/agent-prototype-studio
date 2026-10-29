@@ -15,6 +15,9 @@
 //   [数を作る]     言い方で、どこにも出てこない数(987)を書く(守ることの確かめ。やり直しても直らない)
 //   [一度数を作る] 守ることのやり直し(stdin の <前の返事の問題>)でなければ、どこにも出てこない数を書く
 //   [問いを抜く]   言い方で、<言うこと> の聞く問いの原文を返事に入れない
+//   [JSON の文]    言い方の返事(reply)の中に、さらに {"reply": "…"} の JSON の文を入れて返す(jyoka/tasks#365。sim-9 の実モデルで出た形)
+//   [前後に文]     JSON の前後に文を付ける。[文だけ] と一緒なら本文の全体に、そうでなければ言い方の reply の中の JSON の文に付ける
+//   [壊れた JSON] [一度壊れた JSON] 言い方の reply に、閉じていない JSON の文を入れる。「一度」は守ることのやり直しでなければ
 // 言い方の返事は、ふだんは Studio の守ること(数字を作らない、聞く問いの原文を入れる)に合う。
 // FAKE_CLAUDE_EXTRACTIONS があれば、そのファイル(JSON の { 発言: { updates, intent } })に書いた抽出を返す(モックと同じ抽出を返すため)。
 // FAKE_CLAUDE_LOG があれば、受け取った argv、cwd、stdin、関係する環境変数の「名前」を 1 行ずつ書く(値は書かない)。
@@ -133,10 +136,22 @@ function answer(text) {
   if (text.includes(`[${label}が壊れる]`) || (text.includes(`[${label}が一度壊れる]`) && !retrying)) {
     output = kind === 'phrase' ? { reply: '' } : { intent: 'answer' };
   }
+  const textOnly = text.includes('[文だけ]');
+  if (kind === 'phrase' && output.reply) output = { reply: wrapReply(text, output.reply, textOnly) };
   const result = { type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0.0012 };
-  if (text.includes('[文だけ]')) result.result = JSON.stringify(output);
+  if (textOnly) result.result = text.includes('[前後に文]') ? `返事を作りました。\n${JSON.stringify(output)}\n以上です。` : JSON.stringify(output);
   else Object.assign(result, { result: '', structured_output: output });
   process.stdout.write(JSON.stringify(result));
+}
+
+// 言い方の reply を、モデルが形を崩したときの文に変える([JSON の文] [前後に文] [壊れた JSON] [一度壊れた JSON])
+function wrapReply(text, reply, textOnly) {
+  const guardRetry = stdin.includes('<前の返事の問題>');
+  if (text.includes('[壊れた JSON]') || (text.includes('[一度壊れた JSON]') && !guardRetry)) return `{"reply": "${reply}`;
+  const nested = text.includes('[JSON の文]') || (text.includes('[前後に文]') && !textOnly);
+  if (!nested) return reply;
+  const json = JSON.stringify({ reply });
+  return text.includes('[前後に文]') && !textOnly ? `返事はこちらです。\n${json}\nよろしくお願いします。` : json;
 }
 
 function judgeAnswer() {

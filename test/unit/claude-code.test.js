@@ -13,11 +13,13 @@ import {
   extractPrompt,
   extractSchema,
   extractionProblem,
+  jsonObjectIn,
   parseResult,
   phraseInput,
   phrasePrompt,
   phraseSchema,
   replyProblem,
+  unwrapReply,
 } from '../../src/server/product-ai/claude-code.js';
 import { INTENTS, parseAiDefinition } from '../../src/server/product-ai/definition.js';
 import { createTurnMeter } from '../../src/server/product-ai/limits.js';
@@ -183,6 +185,9 @@ test('CLI の結果を読む: 構造化出力、本文の JSON、壊れた出力
   // JSON で返さなかったとき、空のときは、モデルの出力が壊れている(やり直すかは呼ぶ側が決める)
   assert.deepEqual(parseResult(ok({ result: 'JSON ではない返事' })), { output: null, format: 'broken', meta: { costUsd: 0.01, durationMs: null } });
   assert.equal(parseResult(ok({ result: '' })).format, 'broken');
+  // 本文の JSON の前後に文があっても読む(jyoka/tasks#365)
+  const prose = parseResult(ok({ result: '返事を作りました。\n{"reply":"本文 {括弧} \\"引用\\""}\n以上です。' }));
+  assert.deepEqual([prose.output, prose.format], [{ reply: '本文 {括弧} "引用"' }, 'text-json']);
 
   const code = (stdout) => {
     try {
@@ -219,6 +224,24 @@ const decisionAsking = (definition, key) => ({
   intent: 'answer',
   done: false,
   mustInclude: [definition.fields.find((f) => f.key === key).question],
+});
+
+test('文の中の JSON を探し、言い方の reply が {"reply": …} の JSON の文なら中の文を取り出す(jyoka/tasks#365)', () => {
+  assert.deepEqual(jsonObjectIn('{"a":1}'), { a: 1 });
+  assert.deepEqual(jsonObjectIn('前置き {"a":"}"} と {"b":2}'), { a: '}' });
+  assert.deepEqual(jsonObjectIn('{壊れた} {"b":2} 後書き'), { b: 2 });
+  assert.equal(jsonObjectIn('[1, 2]'), null);
+  assert.equal(jsonObjectIn('{"reply": "閉じていない'), null);
+  assert.equal(jsonObjectIn(null), null);
+
+  assert.equal(unwrapReply('{"reply": "みなと町ですね。\\n時給はいくら以上ですか?"}'), 'みなと町ですね。\n時給はいくら以上ですか?');
+  assert.equal(unwrapReply('返事はこちらです。\n{"reply": "みなと町ですね。"}\nよろしく'), 'みなと町ですね。');
+  assert.equal(unwrapReply(JSON.stringify({ reply: JSON.stringify({ reply: '二重' }) })), '二重');
+  // 取り出せない形と、reply のない JSON と、ふつうの文はそのまま(守ることの確かめが見る)
+  for (const text of ['{"reply": "閉じていない', '{"text": "別の形"}', 'ふつうの返事です。{括弧}もあります。']) assert.equal(unwrapReply(text), text);
+  // 中の reply が空なら、出力が壊れていたことにする(形のやり直しに回す)
+  assert.equal(replyProblem({ reply: '{"reply": " "}' }), 'reply が空か、文でなかった');
+  assert.equal(replyProblem({ reply: '{"reply": "文"}' }), null);
 });
 
 test('偽の CLI で抽出と言い方を呼ぶ: 会話の全体を毎回渡し、空の作業フォルダーで動かし、回数と待ち時間を数える', async (t) => {
