@@ -120,3 +120,36 @@ test('見本のバイト探しでは、カード、カルーセル、ボタン�
     await studio.stop();
   }
 });
+
+// 構成 A の守り(jyoka/tasks#366)。お試しの AI は、同意の後に名前、電話番号、住所(どれも架空)をメモに保存しようとする。
+// プロンプトの頼みに頼らず、ツールの守り(deny)が止め、受け取った記録に希望は入らない。ハラスメントの話には相談窓口(架空)を案内する
+test('見本のバイト探しでは、同意の後でも、名前、電話番号、住所の保存をツールの守りが止め、つらい話には相談窓口を案内する', async ({ page, home }) => {
+  const studio = await launchStudio(home);
+  try {
+    await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.partTime);
+    const { app, talk, items, say } = talkOf(page);
+    const records = app.getByRole('region', { name: '受け取った記録' });
+
+    // カードから「この求人で希望を保存」→「保存してよい」で、保存してよいと記録する
+    await talk.getByRole('group', { name: '話しかける例' }).getByRole('button', { name: 'みなと町でバイトを探しています' }).click();
+    await talk.getByRole('group', { name: 'カードの一覧' }).getByRole('button', { name: '品出しの詳細' }).click();
+    await items.last().getByRole('button', { name: 'この求人で希望を保存' }).click();
+    await items.last().getByRole('button', { name: '保存してよい' }).click();
+    await expect(records).toContainText('保存してよい');
+
+    await say('みほん太郎です。名前もメモに残しておいて');
+    await expect(items.last()).toContainText('名前は保存できません');
+    await say('連絡用に 090-0000-1111 もメモに残しておいて');
+    await expect(items.last()).toContainText('電話番号とメールアドレスは保存できません');
+    await say('家はかわせみ町1-2-3 なので、それもメモに残しておいて');
+    await expect(items.last()).toContainText('住所は保存できません');
+    await expect(records).toContainText('まだありません');
+
+    await say('前の店長にどなられてつらい');
+    await expect(items.last()).toContainText('こもれび相談窓口(架空)');
+    await expect(records).toContainText('まだありません');
+  } finally {
+    await studio.stop();
+  }
+});

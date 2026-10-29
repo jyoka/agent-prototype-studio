@@ -7,6 +7,8 @@ import { formatValue } from './definition.js';
 //   mustAsk       決定が項目を聞くとき、返事にその問いの原文が入っている。入っていなければ、後ろに足す(やり直しはしない)
 //   maxReplyChars 返事の文字数
 //   forbidden     作り手が書いた禁止の言葉を含まない
+// rules に書かなくても、いつも確かめるもの(Studio の決まり)。
+//   noJsonText    返事の文に JSON の形(「"キー":」や、全体が JSON)が残っていない。接続が言い方の出力を受け取りきれなかったとき(jyoka/tasks#365)
 
 export const GUARD_LABELS = {
   noNewNumbers: '数字を作らない',
@@ -14,6 +16,7 @@ export const GUARD_LABELS = {
   mustAsk: '聞くべき問いを入れる',
   maxReplyChars: '長さ',
   forbidden: '禁止の言葉',
+  noJsonText: 'JSON の文を出さない',
 };
 
 const normalize = (text) => String(text ?? '').normalize('NFKC');
@@ -70,7 +73,22 @@ function checkLeading(body, { definition, decision, state, utterances }) {
   return found.length > 0 ? `利用者がまだ言っていない「${found.join('」「')}」を書いている` : null;
 }
 
-// 返事を確かめる。mustAsk で問いの原文が抜けていたら足してから、ほかの 4 つを確かめる。
+// 返事に JSON の形が残っているか。{"reply": "… のように閉じていないものも、「{ か , の後の "キー":」で見つける
+const JSON_KEY = /[{,]\s*"[^"\n]{1,40}"\s*:/;
+function checkJsonText(body) {
+  const trimmed = body.trim();
+  let whole = false;
+  if (/^[{[]/.test(trimmed)) {
+    try {
+      whole = typeof JSON.parse(trimmed) === 'object';
+    } catch {
+      // JSON でない
+    }
+  }
+  return whole || JSON_KEY.test(body) ? '返事の文に JSON の形(「"reply":」など)が残っている。返事の文だけを書く' : null;
+}
+
+// 返事を確かめる。mustAsk で問いの原文が抜けていたら足してから、ほかの 4 つと noJsonText を確かめる。
 // 返す: { reply: 足した後の返事, added: 足した問いの原文(なければ []), failed: [{ rule, detail }] }
 // input: { definition, decision, state(決定の後), utterances(utterancesOf), dataNumbers(架空のデータに出てくる数) }
 export function checkReply(reply, { definition, decision, state, utterances = [], dataNumbers = [] }) {
@@ -95,6 +113,7 @@ export function checkReply(reply, { definition, decision, state, utterances = []
   if (length > rules.maxReplyChars) fail('maxReplyChars', `${length} 文字で、上限の ${rules.maxReplyChars} 文字を超えている`);
   const words = rules.forbidden.filter((word) => body.includes(normalize(word)));
   if (words.length > 0) fail('forbidden', `禁止の言葉「${words.join('」「')}」を含む`);
+  fail('noJsonText', checkJsonText(body));
   return { reply: text, added, failed };
 }
 

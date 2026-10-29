@@ -297,8 +297,60 @@ function parseJsonObject(text) {
   }
 }
 
+// text の中の JSON のオブジェクトのうち、最初に読めるものを返す。全体が JSON でなくても、前後に文があっても探す。
+// モデルが本文や reply の中に JSON を、前置きや後書きの文と一緒に書くことがあるため(jyoka/tasks#365)
+const SCAN_LIMIT = 100_000;
+export function jsonObjectIn(text) {
+  const whole = parseJsonObject(text);
+  if (whole || typeof text !== 'string' || text.length > SCAN_LIMIT) return whole;
+  for (let start = text.indexOf('{'); start >= 0; start = text.indexOf('{', start + 1)) {
+    const end = closingBrace(text, start);
+    if (end < 0) continue;
+    try {
+      const value = JSON.parse(text.slice(start, end + 1));
+      if (isPlainObject(value)) return value;
+    } catch {
+      // 次の { から探す
+    }
+  }
+  return null;
+}
+
+// start の { に対応する } の位置。JSON の文字列の中の括弧は数えない。閉じていなければ -1
+function closingBrace(text, start) {
+  let depth = 0;
+  let inString = false;
+  for (let i = start; i < text.length; i += 1) {
+    const char = text[i];
+    if (inString) {
+      if (char === '\\') i += 1;
+      else if (char === '"') inString = false;
+    } else if (char === '"') inString = true;
+    else if (char === '{') depth += 1;
+    else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+// 言い方の reply が、それ自体 {"reply": "…"} の JSON の文なら(前後に文があっても)、中の reply の文を取り出す。
+// sim-9 の実モデルで、構造化出力の reply に JSON の文を入れて返す回があった(jyoka/tasks#365)。
+// 取り出せない形(閉じていない JSON など)はそのまま返し、harness の守ることの確かめ(guards.js の noJsonText)がやり直しに回す
+const MAX_UNWRAP = 3;
+export function unwrapReply(reply) {
+  let text = reply;
+  for (let depth = 0; depth < MAX_UNWRAP && typeof text === 'string'; depth += 1) {
+    const inner = jsonObjectIn(text);
+    if (typeof inner?.reply !== 'string') break;
+    text = inner.reply;
+  }
+  return text;
+}
+
 // --output-format json の結果を、{ output, format, meta } にする。CLI の失敗(上限、ログイン、費用、読めない出力)は投げる。
-// 構造化出力(structured_output)を優先し、なければ本文を JSON として読む(代わりの方法)。
+// 構造化出力(structured_output)を優先し、なければ本文の中の JSON を読む(代わりの方法。前後に文があってもよい)。
 // どちらもなければ output は null(モデルの出力が壊れている。やり直すかは呼ぶ側が決める)
 // format: structured は構造化出力、text-json は本文の JSON、broken は JSON の出力がない
 export function parseResult(stdout) {
@@ -315,7 +367,7 @@ export function parseResult(stdout) {
     durationMs: Number.isFinite(result.duration_ms) ? result.duration_ms : null,
   };
   if (isPlainObject(result.structured_output)) return { output: result.structured_output, format: 'structured', meta };
-  const output = parseJsonObject(result.result);
+  const output = jsonObjectIn(result.result);
   if (output) return { output, format: 'text-json', meta };
   return { output: null, format: 'broken', meta };
 }
@@ -330,7 +382,7 @@ export function extractionProblem(output) {
 
 export function replyProblem(output) {
   if (!output) return 'JSON の出力がなかった';
-  if (typeof output.reply !== 'string' || output.reply.trim() === '') return 'reply が空か、文でなかった';
+  if (typeof output.reply !== 'string' || unwrapReply(output.reply).trim() === '') return 'reply が空か、文でなかった';
   return null;
 }
 
@@ -586,7 +638,9 @@ export function createClaudeCodeConnection({ env = process.env, allowed = false,
         problemOf: replyProblem,
       });
       if (!output) return { reply: null, retry, fallback };
-      return { reply: output.reply, ...(retry ? { retry } : {}) };
+      const reply = unwrapReply(output.reply);
+      const unwrapped = reply !== output.reply ? '返事の文が {"reply": …} の JSON の形だったので、中の reply の文だけを使った' : null;
+      return { reply, ...(retry ? { retry } : {}), ...(unwrapped ? { unwrapped } : {}) };
     },
     // 動いている CLI を止め、終わるまで待ってから作業フォルダーを消す。待つのは SIGKILL の後まで
     async close() {
