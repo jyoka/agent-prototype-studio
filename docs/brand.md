@@ -167,10 +167,10 @@ Studio が何で、何が違うかを 1 文で言い切る。
 - ファイル: [`assets/brand/banner-dark.svg`](../assets/brand/banner-dark.svg)、[`assets/brand/banner-light.svg`](../assets/brand/banner-light.svg)。1280 × 640(GitHub の共有の絵の大きさ)
 - 中身: 名前 `agent-prototype-studio`、1 文(日本語と英語)、分解の絵の 6 層(ガードレールに「止めた」の印)
 - 動きはない。外から読み込むものはない
-- 字は、見る人の OS の字で描かれる。字の形を固定したいとき(GitHub の共有の絵に上げるときなど)は、PNG に書き出す。書き出しは README の絵のカードで行う
+- 字は、見る人の OS の字で描かれる。字の形を固定したいとき(GitHub の共有の絵に上げるときなど)は、PNG に書き出す。書き出しはまだしていない
 - 名前が決まったら、2 つのファイルの名前の文字を差し替える
 
-README で出すときは、ダークとライトを `<picture>` で出し分ける(README の絵のカードで行う)。
+README の一番上で、ダークとライトを `<picture>` で出し分けている(下の形。alt は README を見る)。
 
 ```html
 <picture>

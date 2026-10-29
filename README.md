@@ -1,6 +1,18 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/banner-dark.svg">
+  <img alt="agent-prototype-studio のバナー。左に 1 文「AI エージェントの試作品を、作る前に、構成ごと手元で試して測る。」と英語の同じ文。右にトークの画面、模擬のエージェント、プロンプトの枠、ツール(MCP)、ガードレール、記録の 6 つの層が縦に並び、ガードレールに「止めた」の印が付いている" src="assets/brand/banner-light.svg">
+</picture>
+
 # agent-prototype-studio
 
 **AI エージェントの試作品を、作る前に、構成ごと手元で試して測る。**
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce) and (prefers-color-scheme: dark)" srcset="assets/media/sim-trace-dark.png">
+  <source media="(prefers-reduced-motion: reduce)" srcset="assets/media/sim-trace-light.png">
+  <source type="image/avif" srcset="assets/media/talk-guard.avif">
+  <img alt="架空のバイト探しの試作品で「みなと町でバイトを探しています」と送ると、案内役が求人のカードを出す。「そのまま保存して」と送ると「記録「consent」がありません」と返る。右の記録の画面で、ツール save_wish の呼び出しと、ツールの守り requires が保存を止めたところが赤い字で出る" src="assets/media/talk-guard.gif">
+</picture>
 
 社内の企画担当など、エンジニアでない人のためのローカルのツールです。
 構成とは、誰が会話を回し、誰がどのツールを持ち、守りをどこに置くかです。その構成で、会話、ツールの呼び方、守りがどう効くかが分かります。
@@ -27,6 +39,35 @@ flowchart LR
 - 既定は料金なしです。プロダクト内 AI と場面の回しはモックで動きます。実モデルは、画面で同意したときと、`--real` に費用の上限を付けたときだけです。試作品は `sandbox` の iframe で動き、作る AI が書けるのは `app/` だけです([ADR 0001](docs/adr/0001-local-runtime-and-isolation.md))
 
 ## 特長
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/usage.md#ai-の振る舞いを言葉で直す架空の求人相談"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/try-and-fix-dark.png"><img width="400" alt="左の試す画面で、架空のバイト探しの会話が進んでいる。「そのまま保存して」に「記録「consent」がありません」と返っている。右の言葉で直す欄の依頼に「保存する前に、保存してよいかを必ず聞くようにして」と書いてある" src="assets/media/try-and-fix-light.png"></picture></a><br>
+      <b>言葉で直す欄</b><br>
+      試す画面で話しながら、直したいことを右の欄に言葉で頼む。
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/usage.md#構成と前提を選ぶ"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/sim-choice-dark.png"><img width="400" alt="その他の引き出しの「構成と前提」。構成を選ぶ欄に、相手の会社のエージェントとこちらのツール、自社の harness だけ、受付と相談役と担当者の引き継ぎ、ツールだけを出す構成の 4 つ。前提を選ぶ欄に、カードを使える相手と、文とボタンだけの相手の 2 つ" src="assets/media/sim-choice-light.png"></picture></a><br>
+      <b>構成の模擬</b><br>
+      構成と前提を選ぶと、同じ試作品が別の組み方で話す。
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/usage.md#ai-の実行の記録を見る"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/sim-trace-dark.png"><img width="400" alt="AI の実行の記録。模擬の案内役のプロンプトの部品、ツール save_wish の引数と失敗の結果、ツールの守り schema は通した、requires は止めたと理由が赤い字で並ぶ。最後に出口の確かめ 2 つが通した" src="assets/media/sim-trace-light.png"></picture></a><br>
+      <b>守りの層</b><br>
+      どの層の守りが止めたかと、その理由が記録に出る。
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/usage.md#場面を回すnpm-run-evals"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/evals-compare-dark.png"><img width="400" alt="場面を回した比べる表。構成と前提の組 4 行に、接続(モック)、場面の数、確かめの合格、自然さ、ツールの再現率、誤った呼び出し、ツールが止めた数、止まらなかった数、費用 0 ドルが並ぶ" src="assets/media/evals-compare-light.png"></picture></a><br>
+      <b>場面の比較</b><br>
+      場面を構成と前提ごとに回し、1 つの表で比べる(<code>npm run evals</code>)。
+    </td>
+  </tr>
+</table>
+
+どの画像も、Studio が自分で撮ったものです(`npm run media`。撮り方は [CONTRIBUTING.md](CONTRIBUTING.md#画像と動く画像を撮り直す))。
 
 - **言葉で直す**: 画面も AI の振る舞いも「言葉で直す」欄で変え、同じ発言で試し直して前と後を比べられます
 - **構成を模擬する**: 構成 A(相手の会社のエージェントがこちらのツールを呼ぶ)、B(自社の harness が回す)、C(受付から相談役と担当者へ引き継ぐ)を、同じ試作品で選んで話せます
