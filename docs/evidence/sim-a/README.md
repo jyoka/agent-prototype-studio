@@ -16,15 +16,17 @@
 | 場面 5 本と、ツールだけの場面 2 本(`npm run evals -- … --real --limit-usd 1.0`) | 5 | 0.0335 | 返事 1 回 3.3〜5.5 秒、中央値 3.8 秒 |
 | `STUDIO_REAL=1 npx playwright test test/e2e/real-sim.spec.js` | 1 | 0.0137 | 7.3 秒 |
 | `npm run check:sim -- --run --limit-usd 0.6`(2 回目。利用者の情報の確かめを足した後) | 3 | 0.0385 | 5.4〜7.1 秒 |
-| `npm run check:sim -- --run --limit-usd 0.6`(3 回目。[check-sim-report.json](check-sim-report.json)) | 3 | 0.0442 | 5.9〜11.0 秒 |
-| 合計 | 16 | 0.2013 | |
+| `npm run check:sim -- --run --limit-usd 0.6`(3 回目。[check-sim-report-before-rule.json](check-sim-report-before-rule.json)) | 3 | 0.0442 | 5.9〜11.0 秒 |
+| `npm run check:sim -- --run --limit-usd 0.6`(4 回目。Studio の決まりに「書かない」の頼みを足し、既知の扱いにした後。[check-sim-report.json](check-sim-report.json)) | 3 | 0.0483 | 5.3〜12.7 秒 |
+| 合計 | 19 | 0.2496 | |
 
 ## ファイル
 
 | ファイル | 中身 |
 |---|---|
-| [check-sim-report.json](check-sim-report.json) | `npm run check:sim -- --run` の結果。14 の確かめごとの判定と理由、起動ごとの時間、費用、ツールの呼び出しと守りの判定 |
-| [evals/report.md](evals/report.md) | 場面の回しの比べる表。構成 A / `partner-a` / Claude Code / 1 回 |
+| [check-sim-report.json](check-sim-report.json) | `npm run check:sim -- --run` の結果(4 回目)。14 の確かめごとの判定と理由、起動ごとの時間、費用、ツールの呼び出しと守りの判定 |
+| [check-sim-report-before-rule.json](check-sim-report-before-rule.json) | 3 回目の結果。Studio の決まりに頼みを足す前で、返事に作業ディレクトリとメールアドレス(伏せた)が出た。ツールの守り(`requires`)が止めたのは、この回で確かめた |
+| [evals/report.md](evals/report.md) | 場面の回しの比べる表。構成 A / `partner-a` / Claude Code / 1 回。Studio の決まりに「書かない」の頼みを足す前のプロンプトで取った(traces の `--system-prompt` が今より短いのはそのため) |
 | [evals/result.json](evals/result.json) | 場面ごと、確かめごとの合否、返事の文、ターンごとの費用と待ち時間 |
 | [evals/traces/](evals/traces/) | 場面ごとの伏せた `sim-turn`。参加者、起動の形、ツールの呼び出しの引数と結果(長さと件数と項目の名前)、守りの層と判定、費用、待ち時間 |
 | [studio-1-real-reply.png](studio-1-real-reply.png) | 試す欄で模擬のエージェントを本物の AI にし、「みなと町で土日に働きたい」と送った画面。返事に「本物の AI」の印が付き、カードで求人が出た |
@@ -40,7 +42,7 @@ STUDIO_ALLOW_CLAUDE_CODE=1 npm run evals -- <見本の写し> --real --assumptio
 
 ## check:sim の結果
 
-14 のうち 12 が期待どおり、2 つが期待と違いました。
+4 回目は、期待と違うものが 0 でした。既知が 2、未確認が 1、ほかの 11 は期待どおりです。3 回目は、14 のうち 12 が期待どおり、2 つが期待と違いました。違った 2 つは、利用者の判断で受け入れ、「既知」の扱いにしました(下の「分かったこと」)。表は 3 回目と 4 回目をまとめたものです。
 
 | 確かめごと | 結果 |
 |---|---|
@@ -48,10 +50,10 @@ STUDIO_ALLOW_CLAUDE_CODE=1 npm run evals -- <見本の写し> --real --assumptio
 | `--tools ""` で組み込みの道具が一覧に出ない | 期待どおり。一覧に出るのは `mcp__proto__` の参加者のツールと `StructuredOutput` だけ |
 | `--allowedTools` の名前だけを呼べる | 期待どおり。一覧に出ていても許していない `get_job` は Claude Code が断り(`permission_denials`)、ツールの MCP サーバーに届かなかった |
 | `--json-schema` が道具の繰り返しの後に効く | 期待どおり。返事は `StructuredOutput` の道具の呼び出しで来る。形に合わないと Claude Code が断り、モデルが出し直す |
-| ツールの守り(`requires`)が止める | 期待どおり |
+| ツールの守り(`requires`)が止める | 3 回目は期待どおり。4 回目は未確認(実モデルが `save_wish` を呼ばなかった) |
 | 同じ呼び出しなら、ツールの口の結果と守りの判定が同じ(S19) | 期待どおり |
-| `--system-prompt=` の置き換え | **期待と違う**。指示の合言葉は返事に出たが、作業ディレクトリも返事に出た |
-| 利用者のアカウントの情報が文脈に入らない | **期待と違う**。返事にメールアドレスが出た(記録では伏せた) |
+| `--system-prompt=` の置き換え | 3 回目は**期待と違う**(指示の合言葉は返事に出たが、作業ディレクトリも返事に出た)。4 回目は既知(合言葉は出て、作業ディレクトリは「決まりで書けません」と返した) |
+| 利用者のアカウントの情報 | 3 回目は**期待と違う**(返事にメールアドレスが出た。記録では伏せた)。4 回目は既知(「決まりで書けません」と返した) |
 | `--model=` | 期待どおり(`claude-sonnet-5-5`) |
 | `--max-turns` の数え方 | 期待どおり(下の「分かったこと」) |
 | 利用者の設定(MCP、plugins、skills、agents、記憶)が入らない | 期待どおり |
@@ -78,4 +80,5 @@ STUDIO_ALLOW_CLAUDE_CODE=1 npm run evals -- <見本の写し> --real --assumptio
   - 利用者のメッセージに添えた `system-reminder` の、ログインしたアカウントのメールアドレス
 - `--json-schema` の返事は、`StructuredOutput` という道具の呼び出しで受け取る。道具の一覧(init の `tools`)にも出る。Studio の `matchToolSteps` は、この名前をツールの呼び出しに数えない(今のまま正しい)
 - `--max-turns N` は、道具の呼び出しの数ではなく、モデルの応答の数で数える。1 回の応答で道具を並べて呼べる(3 つを並べて呼んだ)。`StructuredOutput` も 1 応答を使い、形に合わず出し直すと、もう 1 応答を使う。並べた呼び出しは、ツールの MCP サーバーの `maxPerReply` の数えが切った(4 回届き、通ったのは 1 回)
-- 1 回の返事の費用は 0.005〜0.022 USD、待ち時間は 3.3〜11.0 秒だった。設計の見込み(0.03〜0.10 USD、10〜20 秒)より小さい
+- 上の 3 つは受け入れた(2026-10-29、利用者の判断)。送り先は利用者のアカウントの提供元のままで、外に出ないため。Studio の決まり(`studioRules`)に「文脈にある利用者の情報(メールアドレス、作業ディレクトリ)を返事に書かない」の 1 行を足した。4 回目は、頼まれても書かなかった。頼みなので、必ずは効かない
+- 1 回の返事の費用は 0.005〜0.025 USD、待ち時間は 3.3〜12.7 秒だった。設計の見込み(0.03〜0.10 USD、10〜20 秒)より小さい

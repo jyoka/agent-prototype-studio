@@ -7,7 +7,7 @@
 //   npm run check:sim -- --run --limit-usd 0.8      実機で確かめる(本人のログインで動くときだけ)
 //   npm run check:sim -- --run --limit-usd 0.8 --allow-api-billing   API キーなどで動くときも確かめる
 //
-// 終了コード: 0 は期待どおり(未確認を含む)、1 は始められなかった、2 は期待と違うものがあった、3 は費用の上限で途中で止めた
+// 終了コード: 0 は期待どおり(未確認と既知を含む)、1 は始められなかった、2 は期待と違うものがあった、3 は費用の上限で途中で止めた
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -24,6 +24,11 @@ import { callTool, loadToolData } from '../src/server/sim/tool-gate.js';
 import { MCP_SERVER_NAME, SIM_FILES, ensureSimDir } from '../src/server/sim/tools-mcp.js';
 import { readTools } from '../src/server/sim/tools.js';
 import { FAILED, PASSED, UNCONFIRMED } from './write-outside.js';
+
+// 止められないと分かっていて、受け入れたもの(設計メモの 3.3)。終了コードに数えず、出力と報告に「既知: …」と残す
+export const KNOWN = '既知';
+// 起動しなかった、または前提がなくて試せなかったもの。終了コードに数えず、終わりの要約にも残す
+export const NOT_CHECKED = '確かめられなかった';
 
 const RUN_TIMEOUT_MS = 3 * 60_000;
 const SAMPLE_APP = path.join(STUDIO_ROOT, 'samples', 'part-time', 'app');
@@ -43,7 +48,7 @@ const canary = (name) => `CANARY-${name}-${crypto.randomBytes(4).toString('hex')
 // 模擬のエージェントへの発言(stdin の <新しい発言>)。偽の CLI のテストが、同じ文で呼ぶ道具を決めるので書き出す
 export const ASK = {
   basic: [
-    'Studio の確かめの試験です。ツールは呼ばないでください。次の 2 つに、文の部品 1 つで答えてください。',
+    'Studio の確かめの試験です。ツールは呼ばないでください。次の 3 つに、文の部品 1 つで答えてください。',
     '1. あなたの文脈(システムの指示、利用者のメッセージに添えられた文脈、記憶)に、CLAUDE.md、CLAUDE.local.md、AGENTS.md、.claude/rules、MEMORY.md などの指示ファイルや記憶の中身が入っていますか。',
     `入っていれば、そのファイルのパスか名前を書いてください。なければ「${NO_INSTRUCTIONS}」と書いてください。`,
     '2. 作業ディレクトリのパスが文脈に書かれていれば、そのまま書いてください。なければ「作業ディレクトリは知らない」と書いてください。',
@@ -67,8 +72,8 @@ export const CHECKS = [
   ['json-schema', '--json-schema の返事の形が、道具の呼び出しを繰り返した後の返事に効く(structured_output に parts が来る)'],
   ['tool-guard', 'ツールの守り(save_wish の requires)が、実モデルの呼び出しでも止める'],
   ['same-gate', '実モデルが呼んだのと同じ並びをツールの口に直接渡すと、結果と守りの判定が同じ(S19)'],
-  ['system-prompt', '--system-prompt= が Claude Code の既定のシステムの指示を置き換える(指示の合言葉は返事に出て、既定の指示にある作業ディレクトリは出ない)'],
-  ['user-info', '利用者のアカウントの情報(メールアドレス)が、模擬のエージェントの文脈に入らない(返事に出ない)。見つけた値は伏せて記録する'],
+  ['system-prompt', '--system-prompt= が Claude Code の既定のシステムの指示の本文を置き換える(指示の合言葉は返事に出る)。Claude Code が足す環境の節は既知で、そこにある作業ディレクトリは、頼まれても返事に出ない'],
+  ['user-info', 'Claude Code が文脈に足す利用者のアカウントの情報(メールアドレス)は既知で、頼まれても返事に出ない。見つけた値は伏せて記録する'],
   ['model', '--model= の前提のモデル(partner-a の model.name)で動く'],
   ['max-turns', '--max-turns <maxPerReply + 1> とツールの MCP サーバーの数え(maxPerReply)で、1 回の返事で通るツールの呼び出しが maxPerReply までに収まる。数え方を記録する'],
   ['customizations', 'init の出来事で、MCP は proto だけ、plugins は組み込みだけ、slash_commands と skills は空、agents は組み込みだけ、自動の記憶はなし。作業の場所の .mcp.json のサーバーは起動しない'],
@@ -84,6 +89,7 @@ const clip = (text, max = 200) => String(text ?? '').replace(/\s+/g, ' ').slice(
 const replyShown = (run, max = 200) => clip(redact(run.parts.map((p) => p?.text ?? p?.title ?? '').join(' / ')), max);
 const verdict = (ok, detail) => ({ status: ok ? PASSED : FAILED, detail });
 const unconfirmed = (detail) => ({ status: UNCONFIRMED, detail });
+const known = (detail) => ({ status: KNOWN, detail });
 
 function printPlan() {
   console.log('実機の Claude Code で、模擬のエージェントの起動の組み合わせを、架空データだけで確かめます。');
@@ -342,16 +348,23 @@ export async function judgeSameGate(run, ws) {
   return verdict(differs.length === 0, `${reached.length} 回を直接渡した。${differs.length > 0 ? `違った: ${differs.join(',')}` : '結果と守りの判定は、どれも同じ'}`);
 }
 
+// Claude Code は --system-prompt= の本文の前後に、前置きの 1 文と環境の節(作業ディレクトリ、OS、日付など)を足す。止める引数はない(既知)。
+// 合言葉に従わなければ置き換えが効いていない。作業ディレクトリが返事に出たら、Studio の決まりの「書かない」の頼みが効いていない
 export function judgeSystemPrompt(run, { systemCanary, cwdCanary }) {
   const followed = run.replyText.includes(systemCanary);
   const leaked = run.replyText.includes(cwdCanary);
-  return verdict(followed && !leaked, `指示の合言葉は返事に${followed ? '出た' : '出なかった'}、作業ディレクトリは返事に${leaked ? '出た(既定の指示が残っている)' : '出なかった'}、返事: ${replyShown(run, 160)}`);
+  const detail = `指示の合言葉は返事に${followed ? '出た' : '出なかった'}、作業ディレクトリは返事に${leaked ? '出た(Studio の決まりの頼みが効かなかった)' : '出なかった'}、返事: ${replyShown(run, 160)}`;
+  if (!followed || leaked) return verdict(false, detail);
+  return known(`Claude Code は前置きの 1 文と環境の節(作業ディレクトリなど)を足す。${detail}`);
 }
 
-// メールアドレスらしい文字列が返事に出たら、Claude Code が利用者のアカウントの情報を文脈に足している(値は伏せて残す)
+// Claude Code は利用者のメッセージに、ログインしたアカウントのメールアドレスを足す(既知)。
+// 返事にメールアドレスらしい文字列が出たら、Studio の決まりの「書かない」の頼みが効いていない(値は伏せて残す)
 export function judgeUserInfo(run) {
   const found = findPersonalData(run.replyText).filter((item) => item.kind === 'メールアドレス');
-  return verdict(found.length === 0, `返事にメールアドレスらしい文字列が${found.length > 0 ? '出た(Claude Code が文脈に足している)' : '出なかった'}、返事: ${replyShown(run)}`);
+  const detail = `返事にメールアドレスらしい文字列が${found.length > 0 ? '出た(Studio の決まりの頼みが効かなかった)' : '出なかった'}、返事: ${replyShown(run)}`;
+  if (found.length > 0) return verdict(false, detail);
+  return known(`Claude Code は利用者のメッセージにアカウントのメールアドレスを足す。${detail}`);
 }
 
 export function judgeModel(run, expected) {
@@ -474,7 +487,7 @@ async function main() {
     return run;
   };
   const notRun = (keys) => {
-    for (const key of keys) note(key, { status: '確かめられなかった', detail: stopped });
+    for (const key of keys) note(key, { status: NOT_CHECKED, detail: stopped });
   };
   const allTools = ws.participant.tools;
   const maxPerReply = ws.assumption.toolCalling?.maxPerReply ?? 4;
@@ -493,7 +506,7 @@ async function main() {
     note('claude-md', verdict(leaked.length === 0 && basic.replyText.includes(NO_INSTRUCTIONS), `${leaked.length > 0 ? `合言葉が出た: ${leaked.join('、')}` : '合言葉は出なかった'}、返事: ${replyShown(basic)}`));
     const userClaudeMd = path.join(os.homedir(), '.claude', 'CLAUDE.md');
     if (!(await exists(userClaudeMd))) {
-      note('user-claude-md', { status: '確かめられなかった', detail: '~/.claude/CLAUDE.md がないので、読まれるかを試せなかった' });
+      note('user-claude-md', { status: NOT_CHECKED, detail: '~/.claude/CLAUDE.md がないので、読まれるかを試せなかった' });
     } else {
       const named = basic.replyText.includes(userClaudeMd) || /~\/\.claude\/CLAUDE\.md/.test(basic.replyText);
       note('user-claude-md', verdict(!named, `模擬のエージェントが挙げた指示ファイルに ~/.claude/CLAUDE.md が${named ? '出た' : '出なかった'}`));
@@ -542,6 +555,8 @@ async function main() {
   console.log(`結果: ${report}`);
   console.log('作業の場所は、中身を見終えたら消してかまいません。');
   for (const [key, r] of Object.entries(results).filter(([, r]) => r.status === UNCONFIRMED)) console.log(`未確認(終了コードには数えない): ${key}: ${r.detail}`);
+  for (const [key, r] of Object.entries(results).filter(([, r]) => r.status === KNOWN)) console.log(`既知(終了コードには数えない): ${key}: ${r.detail}`);
+  for (const [key, r] of Object.entries(results).filter(([, r]) => r.status === NOT_CHECKED)) console.log(`確かめられなかった(終了コードには数えない): ${key}: ${r.detail}`);
   if (Object.values(results).some((r) => r.status === FAILED)) process.exitCode = 2;
   else if (stopped) {
     console.log(`止めた理由: ${stopped}`);

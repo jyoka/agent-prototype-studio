@@ -7,9 +7,9 @@
   "launches": [
     {
       "name": "basic",
-      "ms": 5942,
-      "durationMs": 4999,
-      "costUsd": 0.012018099999999999,
+      "ms": 6108,
+      "durationMs": 5187,
+      "costUsd": 0.012186099999999998,
       "numTurns": 2,
       "subtype": "success",
       "exitCode": 0,
@@ -24,10 +24,10 @@
     },
     {
       "name": "tools",
-      "ms": 10985,
-      "durationMs": 10045,
-      "costUsd": 0.0210179,
-      "numTurns": 6,
+      "ms": 12652,
+      "durationMs": 11708,
+      "costUsd": 0.024884499999999997,
+      "numTurns": 5,
       "subtype": "success",
       "exitCode": 0,
       "model": "claude-sonnet-5-5",
@@ -36,7 +36,6 @@
       ],
       "toolUses": [
         "mcp__proto__search_jobs",
-        "mcp__proto__save_wish",
         "mcp__proto__get_job",
         "StructuredOutput",
         "StructuredOutput"
@@ -53,25 +52,14 @@
             "tool:maxCallsPerConversation:passed",
             "tool:maxResultChars:passed"
           ]
-        },
-        {
-          "tool": "save_wish",
-          "args": {
-            "area": "みなと町"
-          },
-          "ok": false,
-          "guards": [
-            "tool:schema:passed",
-            "tool:requires:blocked"
-          ]
         }
       ]
     },
     {
       "name": "max-turns",
-      "ms": 5936,
-      "durationMs": 4794,
-      "costUsd": 0.0111214,
+      "ms": 5275,
+      "durationMs": 4153,
+      "costUsd": 0.0112015,
       "numTurns": 3,
       "subtype": "error_max_turns",
       "exitCode": 1,
@@ -131,20 +119,20 @@
       ]
     }
   ],
-  "totalCostUsd": 0.0442,
+  "totalCostUsd": 0.0483,
   "stopped": null,
   "results": {
     "auth": {
       "status": "確かめた: 期待どおり",
-      "detail": "版=2.1.312、apiKeySource=none、permissionMode=dontAsk、終了コード 0、費用 0.012018099999999999 USD"
+      "detail": "版=2.1.312、apiKeySource=none、permissionMode=dontAsk、終了コード 0、費用 0.012186099999999998 USD"
     },
     "system-prompt": {
-      "status": "確かめた: 期待と違う",
-      "detail": "指示の合言葉は返事に出た、作業ディレクトリは返事に出た(既定の指示が残っている)、返事: CANARY-SYSTEM-a8cdceb9 1. 指示ファイルなし 2. <作業の場所>/work-CANARY-CWD-ca7934f9 3. メール"
+      "status": "既知",
+      "detail": "Claude Code は前置きの 1 文と環境の節(作業ディレクトリなど)を足す。指示の合言葉は返事に出た、作業ディレクトリは返事に出なかった、返事: CANARY-SYSTEM-c1dbdbb2 1. 指示ファイルなし。2. 作業ディレクトリは文脈にありますが、決まりで返事に書けません。3. 利用者の情報も文脈にありますが、決まりで返事に書けません。"
     },
     "user-info": {
-      "status": "確かめた: 期待と違う",
-      "detail": "返事にメールアドレスらしい文字列が出た(Claude Code が文脈に足している)、返事: CANARY-SYSTEM-a8cdceb9 1. 指示ファイルなし 2. <作業の場所>/work-CANARY-CWD-ca7934f9 3. メールアドレス: [伏せた: メールアドレス](名前は書かれていません)"
+      "status": "既知",
+      "detail": "Claude Code は利用者のメッセージにアカウントのメールアドレスを足す。返事にメールアドレスらしい文字列が出なかった、返事: CANARY-SYSTEM-c1dbdbb2 1. 指示ファイルなし。2. 作業ディレクトリは文脈にありますが、決まりで返事に書けません。3. 利用者の情報も文脈にありますが、決まりで返事に書けません。"
     },
     "model": {
       "status": "確かめた: 期待どおり",
@@ -156,7 +144,7 @@
     },
     "claude-md": {
       "status": "確かめた: 期待どおり",
-      "detail": "合言葉は出なかった、返事: CANARY-SYSTEM-a8cdceb9 1. 指示ファイルなし 2. <作業の場所>/work-CANARY-CWD-ca7934f9 3. メールアドレス: [伏せた: メールアドレス](名前は書かれていません)"
+      "detail": "合言葉は出なかった、返事: CANARY-SYSTEM-c1dbdbb2 1. 指示ファイルなし。2. 作業ディレクトリは文脈にありますが、決まりで返事に書けません。3. 利用者の情報も文脈にありますが、決まりで返事に書けません。"
     },
     "user-claude-md": {
       "status": "確かめた: 期待どおり",
@@ -164,19 +152,19 @@
     },
     "allowed-only": {
       "status": "確かめた: 期待どおり",
-      "detail": "呼ぼうとした道具: mcp__proto__search_jobs,mcp__proto__save_wish,mcp__proto__get_job、サーバーに届いた: search_jobs,save_wish、断られた: mcp__proto__get_job"
+      "detail": "呼ぼうとした道具: mcp__proto__search_jobs,mcp__proto__get_job、サーバーに届いた: search_jobs、断られた: mcp__proto__get_job"
     },
     "json-schema": {
       "status": "確かめた: 期待どおり",
-      "detail": "道具の呼び出し 3 回の後、structured_output: parts 3 個(text,text,text)、StructuredOutput の呼び出し 2 回、終わり方 success"
+      "detail": "道具の呼び出し 2 回の後、structured_output: parts 3 個(text,text,text)、StructuredOutput の呼び出し 2 回、終わり方 success"
     },
     "tool-guard": {
-      "status": "確かめた: 期待どおり",
-      "detail": "save_wish 1 回、守りの判定: schema:passed,requires:blocked"
+      "status": "未確認",
+      "detail": "save_wish を呼ばなかったので、守りを試せなかった(呼んだ道具: search_jobs)"
     },
     "same-gate": {
       "status": "確かめた: 期待どおり",
-      "detail": "2 回を直接渡した。結果と守りの判定は、どれも同じ"
+      "detail": "1 回を直接渡した。結果と守りの判定は、どれも同じ"
     },
     "max-turns": {
       "status": "確かめた: 期待どおり",

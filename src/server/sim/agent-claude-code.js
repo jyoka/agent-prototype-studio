@@ -43,10 +43,12 @@ export function maxPerReplyOf(assumption) {
   return Number.isInteger(value) && value >= 1 ? Math.min(value, ASSUMPTION_LIMITS.maxPerReply) : DEFAULT_MAX_PER_REPLY;
 }
 
+// 利用者の情報の 1 行は頼みで、必ずは効かない。Claude Code が文脈に足す値を止める引数がないため(設計メモの 3.3)
 const studioRules = (kinds) => [
   '# Studio の決まり(Prototype Studio が付け足しています)',
   'あなたは試作品の中で、構成の参加者の 1 人を演じる AI です。データはすべて架空です。実在の人や会社の情報を求めないでください。',
   '使えるのは、渡された試作品のツールだけです。ツールが断ったときは、返ってきた文を読んで、呼び方を変えるか、利用者に伝えてください。',
+  '文脈にある利用者の情報(メールアドレス、作業ディレクトリ)を、返事に書かないでください。',
   `返事は JSON だけにしてください。形: {"parts": [部品, …]}。使える部品の種類: ${kinds.join('、')}。`,
 ];
 

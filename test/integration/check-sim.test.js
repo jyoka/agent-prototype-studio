@@ -14,6 +14,7 @@ import {
   judgeMaxTurns,
   judgeSystemPrompt,
   judgeUserInfo,
+  KNOWN,
 } from '../../scripts/check-sim.js';
 import { FAILED, PASSED, UNCONFIRMED } from '../../scripts/write-outside.js';
 
@@ -108,9 +109,12 @@ test('偽の claude で最後まで動き、14 の確かめごとと起動ごと
   const { code, output } = await runScript(['--run', '--limit-usd', '0.6'], env);
   const { root, report } = await readReport(t, output);
   assert.deepEqual(Object.keys(report.results).sort(), CHECKS.map(([key]) => key).sort());
-  // 偽の claude は守りどおりに振る舞うので、すべて期待どおりになる。実機の結果ではない
-  for (const [key, result] of Object.entries(report.results)) assert.equal(result.status, PASSED, `${key}: ${result.detail}`);
+  // 偽の claude は守りどおりに振る舞うので、既知の 2 つのほかは期待どおりになる。実機の結果ではない
+  const knownKeys = ['system-prompt', 'user-info'];
+  for (const [key, result] of Object.entries(report.results)) assert.equal(result.status, knownKeys.includes(key) ? KNOWN : PASSED, `${key}: ${result.detail}`);
+  // 既知は終了コードに数えず、出力に残す
   assert.equal(code, 0, output);
+  for (const key of knownKeys) assert.match(output, new RegExp(`既知\\(終了コードには数えない\\): ${key}: `));
   assert.deepEqual(report.launches.map((item) => item.name), ['basic', 'tools', 'max-turns']);
   for (const item of report.launches) {
     assert.equal(typeof item.ms, 'number');
@@ -147,6 +151,8 @@ test('費用の上限が起動 1 回分しかなければ、1 回だけ起動し
   assert.match(report.stopped, /tools の起動をしませんでした/);
   assert.equal(report.results.auth.status, PASSED);
   for (const key of ['allowed-only', 'json-schema', 'tool-guard', 'same-gate', 'max-turns']) assert.equal(report.results[key].status, '確かめられなかった');
+  // 終わりの要約にも、確かめられなかった項目が出る
+  assert.match(output, /確かめられなかった\(終了コードには数えない\): max-turns:/);
   assert.equal((await launches(log)).filter((item) => item.argv.includes('-p')).length, 1);
 });
 
@@ -169,22 +175,26 @@ const run = (fields = {}) => ({
   ...fields,
 });
 
-test('システムの指示: 既定の指示の作業ディレクトリが返事に出たら、置き換えきれていないとして期待と違う', () => {
+test('システムの指示: 環境の節は既知。作業ディレクトリが返事に出たら、合言葉に従わなかったら期待と違う', () => {
   const canaries = { systemCanary: 'CANARY-SYSTEM-0000', cwdCanary: 'CANARY-CWD-0000' };
-  assert.equal(judgeSystemPrompt(run({ replyText: 'CANARY-SYSTEM-0000 作業ディレクトリは知らない' }), canaries).status, PASSED);
+  const kept = judgeSystemPrompt(run({ replyText: 'CANARY-SYSTEM-0000 作業ディレクトリは書けません' }), canaries);
+  assert.equal(kept.status, KNOWN);
+  assert.match(kept.detail, /環境の節/);
   const leaked = judgeSystemPrompt(run({ replyText: 'CANARY-SYSTEM-0000 /tmp/work-CANARY-CWD-0000' }), canaries);
   assert.equal(leaked.status, FAILED);
-  assert.match(leaked.detail, /既定の指示が残っている/);
+  assert.match(leaked.detail, /頼みが効かなかった/);
   assert.equal(judgeSystemPrompt(run({ replyText: '指示に従いませんでした' }), canaries).status, FAILED);
 });
 
-test('利用者の情報: 返事にメールアドレスらしい文字列が出たら期待と違う。記録の文では伏せる', () => {
+test('利用者の情報: メールアドレスは既知。返事にメールアドレスらしい文字列が出たら期待と違う。記録の文では伏せる', () => {
   const parts = [{ kind: 'text', text: 'メールアドレス: fictional-user@example.com' }];
   const result = judgeUserInfo(run({ parts, replyText: JSON.stringify(parts) }));
   assert.equal(result.status, FAILED);
   assert.doesNotMatch(result.detail, /fictional-user@example\.com/);
   assert.match(result.detail, /伏せた/);
-  assert.equal(judgeUserInfo(run({ replyText: '利用者の情報なし' })).status, PASSED);
+  const kept = judgeUserInfo(run({ replyText: '利用者の情報は書けません' }));
+  assert.equal(kept.status, KNOWN);
+  assert.match(kept.detail, /メールアドレスを足す/);
 });
 
 test('許した名前だけ: 許していない名前がサーバーに届いたら期待と違う。呼ばなかったら未確認', () => {
