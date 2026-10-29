@@ -106,6 +106,7 @@ Studio が何で、何が違うかを 1 文で言い切る。
 
 - 見出し: 「1 回のトークを、層ごとに見る。」/「One turn of a talk, layer by layer.」
 - 絵の中身は、Studio が自分で撮った本物の画面にする(試す画面と、実行の記録)。下の例は、見本の「バイト探し(架空)」で、モックのまま出せる
+- 層ごとの画面は `npm run media` が撮り、[`assets/media/layers/`](../assets/media/layers/) に置く(`1-talk` から `6-record` まで、下の表の順。ダークとライト)。撮り方は [CONTRIBUTING.md の「画像と動く画像を撮り直す」](../CONTRIBUTING.md#画像と動く画像を撮り直す)
 
 ### 例の会話(架空)
 
@@ -141,7 +142,7 @@ Studio が何で、何が違うかを 1 文で言い切る。
 決まりは [`assets/brand/tokens.css`](../assets/brand/tokens.css) の CSS の変数に書いた。
 
 - 色: ライトの値は、今の画面の `src/ui/studio.css` の `:root` と同じ。同じ名前の変数は同じ値にする(`test/unit/brand.test.js` が確かめる)。画面で値のまま書いている色(`#eef3fd` など)には名前を付けた
-- ダーク: 今の画面にはまだない。`tokens.css` で値を決めた。どの意味の色も、地との差(コントラスト比)が 4.5 以上
+- ダーク: `tokens.css` で値を決め、画面(`src/ui/studio.css`)も同じ値で切り替わる(`test/unit/brand.test.js` が確かめる)。どの意味の色も、地との差(コントラスト比)が 4.5 以上。試作品(iframe の中)の色は、試作品が決める
 - 切り替え: OS の設定(`prefers-color-scheme`)に従う。`<html data-theme="dark">` か `data-theme="light"` を書くと、OS の設定より優先する
 - 字: OS に入っている字だけを使う(`--font-sans`、`--font-mono`)。リポジトリに入れられる字は入れない。Web フォントは読み込まない
 - 角丸: 4、6、8、12 px と丸(999 px)。画面と見本の会話の枠で使っている値
@@ -155,6 +156,7 @@ Studio が何で、何が違うかを 1 文で言い切る。
 | `--text` | `#1f1f1d` | `#ecece8` | 字 |
 | `--muted` | `#6b6b66` | `#a3a39c` | 添える字 |
 | `--accent` | `#2459c4` | `#7ea6ff` | 押せる所、トークの層 |
+| `--on-accent` | `#ffffff` | `#161614` | 押せる所の色の上の字(「送る」など) |
 | `--ok` | `#1d7a43` | `#4cc184` | 通った、ツールの層 |
 | `--error` | `#b42318` | `#f97066` | 止めた、失敗、ガードレールの層 |
 | `--warn` | `#c77700` | `#f0a53a` | 気をつける所の線、プロンプトの層 |

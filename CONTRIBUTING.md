@@ -56,6 +56,7 @@ README は、初めて来た人が最初の画面で「何か」「なぜ使う�
 | 1 つの決定とその理由 | [docs/adr/](docs/adr/) |
 | 機能ごとの設計 | [docs/design/](docs/design/) |
 | 伝え方(1 文、名前、機能の文、見た目、公開の前に直すもの) | [docs/brand.md](docs/brand.md)、[assets/brand/](assets/brand/) |
+| README と LP の画像と動く画像(`npm run media` で撮る) | [assets/media/](assets/media/)。撮り方は下の「画像と動く画像を撮り直す」 |
 
 関数、ファイルの形式、守る約束を書く `docs/architecture/lld.md` は、harness の作り直し(#293)の後で作ります。
 
@@ -71,6 +72,7 @@ src/server/handoff.js  本番開発への引き継ぎの書き出し(docs/handof
 src/observer/          観察器。表示中のビルドを Playwright の Chromium で開き、7 つの操作でシナリオを回し、エラー、スクリーンショット、合否を report で返す
 src/agent/             偽接続(Claude Code の代わりに、決まった動きをする CLI)
 scripts/               実機の Claude Code で守りを確かめるスクリプト
+scripts/media/         npm run media。README と LP の画像と動く画像を撮る(撮る場面は test/e2e/scenes.js)
 src/ui/                Studio の画面と、観察用の親ページ(observe.html、observe.js)
 src/runtime/runtime.js 試作品に配る runtime。試作品のエラーを Studio の画面に知らせ、window.studio.ai を配る
 samples/library/app/   固定のサンプル試作品(架空の図書室)
@@ -79,6 +81,7 @@ samples/study-consult/app/ 固定のサンプル試作品(架空の学習相談�
 test/                  unit、integration、e2e。fixtures/ に偽の Claude Code と、観察器の見本(fixtures/observe/)
 docs/                  使い方、設定、困ったとき、設計(architecture、adr、design)、伝え方(brand.md)
 assets/brand/          見た目の決まり(tokens.css)とバナー(banner-dark.svg、banner-light.svg)
+assets/media/          npm run media が撮った画像と動く画像(手で直さない)
 ```
 
 隔離の方式は ADR-0001 に従う。Studio の画面は `127.0.0.1:4317`、試作品は別ポートの `localhost:4318` から、`sandbox` 属性つきの iframe と CSP で開く。
@@ -97,3 +100,36 @@ E2E と観察器のブラウザがないときは、`npm run install:chromium` �
 - 場面を実モデルで回す `npm run evals -- <プロジェクト> --real`(`STUDIO_ALLOW_CLAUDE_CODE=1` と `--limit-usd` が要る)も、人が決めたときだけです。テストは偽の `claude` で回します([docs/usage.md の「場面を回す」](docs/usage.md#場面を回すnpm-run-evals))
 - 実モデルで模擬のエージェントの起動が動くかは、`npm run check:sim -- --run --limit-usd <USD>` と `STUDIO_REAL=1 npx playwright test test/e2e/real-sim.spec.js` で確かめます。これも人が決めたときだけです。`npm run test:e2e` では、`real-sim.spec.js` は飛ばされます([docs/claude-code.md の「模擬のエージェントの起動を実機で確かめる」](docs/claude-code.md#模擬のエージェントの起動を実機で確かめる))
 - 実モデルで閉じたループが回るかは、`npm run check:loop -- --real` と `STUDIO_REAL=1 npx playwright test test/e2e/real-loop.spec.js` で確かめます。これも人が決めたときだけです。`npm run test:e2e` では、`real-loop.spec.js` は飛ばされます([docs/claude-code.md の「閉じたループを実機で確かめる」](docs/claude-code.md#閉じたループを実機で確かめる))
+
+## 画像と動く画像を撮り直す
+
+README と LP に使う画像と動く画像は、Studio に自分で撮らせます。画面が変わったら、次の 1 回で撮り直します。
+
+```sh
+npm run media    # 40 秒ほど。assets/media/ を上書きする
+```
+
+- Studio は偽接続(`STUDIO_AGENT=fake`)で、試作品の中の AI はモックで動きます。実モデルは呼ばず、費用はかかりません
+- 要るもの: E2E と同じ Chromium(`npm run install:chromium`)と、動く画像を書く `ffmpeg`(GIF と VP9 を書けるもの。macOS は `brew install ffmpeg`)。`ffmpeg` は npm の依存ではありません。PATH にないときは `STUDIO_MEDIA_FFMPEG` で場所を指します。`ffmpeg` がなくても画像は撮れ、動く画像だけが失敗します
+- 撮るのは見本「バイト探し(架空・AI と話せる)」です。文と会話は架空で、モックなので毎回同じです。記録の時刻(`15:04:05` など)と、かかった時間(`202 ミリ秒` など)だけは、撮るたびに変わります
+- 撮った後に、画面とファイルを見て、変わり方がおかしくないかを確かめてからコミットします
+
+撮るもの(ダークとライトは OS の設定を切り替えて撮ります):
+
+| ファイル | 中身 | 大きさの上限 |
+|---|---|---|
+| `talk-guard.gif`、`talk-guard.webm` | 動く画像(15 秒前後、ライト)。トークで探し、保存を頼み、記録の画面でツールの呼び出しと守りが止めたところまで | GIF 5 MB、WebM 2 MB |
+| `try-and-fix-{light,dark}.png` | 試す画面と、言葉で直す欄(依頼を書いたところ) | 1 枚 1 MB |
+| `sim-choice-{light,dark}.png` | その他 → 開発者向けの詳細の、構成と前提の選び方 | 1 枚 1 MB |
+| `sim-trace-{light,dark}.png` | 模擬の会話の記録(ツール `save_wish` と、守り `requires` が止めたところ) | 1 枚 1 MB |
+| `evals-compare-{light,dark}.png` | 場面を回した比べる表。見本の写しをモックで回し(`npm run evals`)、`scripts/sim-compare.js` で 1 つにした表。毎回変わる待ち時間の列は外す | 1 枚 1 MB |
+| `layers/{1-talk,2-agent,3-prompt,4-tool,5-guard,6-record}-{light,dark}.png` | 分解の絵の素材。[docs/brand.md の 4 節](docs/brand.md#4-分解の絵の台本)の層の順。LP のカードが使うので、2 倍の細かさで撮る | 1 枚 512 KB |
+
+写さないもの。撮るたびに確かめ、見つかったら失敗にします(`scripts/media/privacy.js`):
+
+- 日付、作業ディレクトリ(ホーム、一時フォルダー、このリポジトリの場所)、メールアドレス、利用者の名前
+- 画面の見える文字(Studio の画面と、試作品の iframe の中)を、撮る前に調べます。動く画像は、場面の区切りごとに調べます
+- 書いたファイルの中身(メタデータ)に、今日の日付、上のパス、利用者の名前、git のメールアドレスがないことを調べます。`ffmpeg` には日時と版を書かせません(`-map_metadata -1` と `bitexact`)
+- 偽接続のときだけ出る「開発用: 偽の直す AI」の印は、利用者の画面に出ないので、隠して撮ります
+
+撮る場面(画面の操作)は `test/e2e/scenes.js` にまとめてあります。`npm run test:e2e` の `test/e2e/media.spec.js` が、画像を書かずに同じ場面を通すので、画面が変わって場面が通らなくなると E2E で分かります。画面のスクリーンショットを撮る E2E(P31)も、同じ場面はこの部品を使います。

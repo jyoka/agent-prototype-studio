@@ -9,9 +9,66 @@
   --error: #b42318;
   --warn-bg: #fff4e5;
   --error-bg: #fdecea;
+  --accent-bg: #eef3fd;
+  --on-accent: #ffffff;
+  --ok-bg: #eaf5ee;
+  --warn: #c77700;
+  --warn-text: #8a5300;
+  --violet: #7a3fb4;
+  --violet-text: #5b2c8a;
+  --violet-bg: #f5effb;
+  color-scheme: light;
   font-family: system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", sans-serif;
   color: var(--text);
   background: var(--bg);
+}
+
+/* ダーク(docs/brand.md の「見た目」)。値は assets/brand/tokens.css のダークと同じ(test/unit/brand.test.js が確かめる)。
+   OS の設定に従い、<html data-theme="…"> があればそれを優先する。試作品(iframe の中)の見た目は、試作品が決める */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #161614;
+  --panel: #1f1f1d;
+  --line: #3a3a36;
+  --text: #ecece8;
+  --muted: #a3a39c;
+  --accent: #7ea6ff;
+  --on-accent: #161614;
+  --ok: #4cc184;
+  --error: #f97066;
+  --warn-bg: #3a2a12;
+  --error-bg: #3d1a17;
+  --accent-bg: #1c2740;
+  --ok-bg: #16301f;
+  --warn: #f0a53a;
+  --warn-text: #f0a53a;
+  --violet: #b48ae6;
+  --violet-text: #c9a8f0;
+  --violet-bg: #2a2038;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #161614;
+    --panel: #1f1f1d;
+    --line: #3a3a36;
+    --text: #ecece8;
+    --muted: #a3a39c;
+    --accent: #7ea6ff;
+    --on-accent: #161614;
+    --ok: #4cc184;
+    --error: #f97066;
+    --warn-bg: #3a2a12;
+    --error-bg: #3d1a17;
+    --accent-bg: #1c2740;
+    --ok-bg: #16301f;
+    --warn: #f0a53a;
+    --warn-text: #f0a53a;
+    --violet: #b48ae6;
+    --violet-text: #c9a8f0;
+    --violet-bg: #2a2038;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -59,7 +116,7 @@ button { font: inherit; }
 }
 .save-mark {
   padding: 0.15rem 0.5rem;
-  border: 1px solid #c77700;
+  border: 1px solid var(--warn);
   border-radius: 999px;
   background: var(--warn-bg);
   font-size: 0.8rem;
@@ -101,7 +158,7 @@ button { font: inherit; }
   cursor: pointer;
 }
 .project-menu button:hover { background: var(--bg); }
-.project-menu button[aria-current="true"] { border-color: var(--accent); background: #eef3fd; }
+.project-menu button[aria-current="true"] { border-color: var(--accent); background: var(--accent-bg); }
 .project-menu .state { flex-shrink: 0; font-size: 0.8rem; color: var(--muted); }
 .project-menu .state:empty { display: none; }
 .project-menu .state[data-state="error"] { color: var(--error); }
@@ -125,7 +182,7 @@ button { font: inherit; }
   padding: 0.45rem 0.9rem;
   border: 1px solid var(--accent);
   border-radius: 8px;
-  background: #eef3fd;
+  background: var(--accent-bg);
   font-size: 0.9rem;
 }
 .first-steps[hidden] { display: none; }
@@ -140,7 +197,7 @@ button { font: inherit; }
 .first-steps-list { grid-column: 1; grid-row: 2; }
 .first-steps-hint { margin: 0; grid-column: 2 / 4; grid-row: 2; color: var(--text); }
 .first-steps-hint:empty { display: none; }
-.first-steps-hint[data-tone="warn"] { color: #8a5300; font-weight: 600; }
+.first-steps-hint[data-tone="warn"] { color: var(--warn-text); font-weight: 600; }
 /* 読み上げにだけ出す文字(手順の「済み」) */
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
@@ -174,28 +231,28 @@ button { font: inherit; }
 }
 .frame-host iframe { flex: 1; border: 0; width: 100%; background: #fff; }
 .placeholder { margin: auto; padding: 1rem; color: var(--muted); text-align: center; }
-.retry-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; margin-bottom: 0.6rem; padding: 0.4rem 0.6rem; border: 1px solid #7a3fb4; border-radius: 6px; background: #f5effb; font-size: 0.9rem; }
+.retry-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; margin-bottom: 0.6rem; padding: 0.4rem 0.6rem; border: 1px solid var(--violet); border-radius: 6px; background: var(--violet-bg); font-size: 0.9rem; }
 .retry-bar[hidden] { display: none; }
 .retry-bar h3 { margin: 0; flex: 1 0 100%; font-size: 0.9rem; }
 .retry-bar p { margin: 0; flex: 1 1 20rem; }
 .retry-bar .retry-cost { flex: 0 1 auto; color: var(--error); }
-.retry-bar button { padding: 0.35rem 0.8rem; border: 1px solid #7a3fb4; border-radius: 6px; background: var(--panel); cursor: pointer; }
+.retry-bar button { padding: 0.35rem 0.8rem; border: 1px solid var(--violet); border-radius: 6px; background: var(--panel); cursor: pointer; }
 .retry-bar button:disabled { opacity: 0.5; cursor: default; }
 /* 直す前と後の返事。開く操作の中に置き、長いときは帯の中でスクロールする(試作品を下に押し出しすぎない) */
 .retry-result { flex: 1 0 100%; }
-.retry-result > summary { cursor: pointer; color: #5b2c8a; font-weight: 600; }
+.retry-result > summary { cursor: pointer; color: var(--violet-text); font-weight: 600; }
 .retry-result > section { max-height: 30vh; overflow: auto; margin-top: 0.3rem; padding: 0.4rem 0.6rem; background: var(--panel); border-radius: 4px; }
 .retry-result ol { margin: 0; padding-left: 1.1rem; }
 .retry-result li { margin-bottom: 0.5rem; }
 .retry-result li p { margin: 0.1rem 0; }
 .retry-result li[data-changed="true"] .retry-after { font-weight: 600; }
 .retry-result .retry-before { color: var(--muted); }
-.retry-result .retry-changed { display: inline-block; padding: 0 0.4rem; border-radius: 999px; background: #f5effb; color: #5b2c8a; font-size: 0.8rem; }
-.retry-result .hint { color: #8a5300; }
+.retry-result .retry-changed { display: inline-block; padding: 0 0.4rem; border-radius: 999px; background: var(--violet-bg); color: var(--violet-text); font-size: 0.8rem; }
+.retry-result .hint { color: var(--warn-text); }
 .retry-result .failed { color: var(--error); }
 
 /* 試作品の中の AI の切り替え。押すと、今の接続の選び方が試す欄の上に開く */
-.toolbar .ai-switch { border-color: #c77700; background: var(--warn-bg); white-space: nowrap; }
+.toolbar .ai-switch { border-color: var(--warn); background: var(--warn-bg); white-space: nowrap; }
 .toolbar .ai-switch[data-kind="claude-code"] { border-color: var(--error); background: var(--error-bg); }
 .ai-menu { margin-bottom: 0.6rem; padding: 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font-size: 0.9rem; max-height: 50vh; overflow: auto; }
 .ai-menu[hidden] { display: none; }
@@ -226,9 +283,9 @@ button { font: inherit; }
   background: var(--panel);
   cursor: pointer;
 }
-.consent-buttons button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.consent-buttons button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .consent-buttons button:disabled { opacity: 0.5; cursor: default; }
-.consent-declined { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; padding: 0.4rem 0.6rem; border: 1px solid #c77700; border-radius: 6px; background: var(--warn-bg); }
+.consent-declined { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; padding: 0.4rem 0.6rem; border: 1px solid var(--warn); border-radius: 6px; background: var(--warn-bg); }
 .consent-declined p { margin: 0; flex: 1 1 14rem; }
 /* 本物の AI を使っている間の小さな印。押すと、カードの中身をもう一度見られる */
 .real-ai-mark {
@@ -299,8 +356,8 @@ button { font: inherit; }
 .notice { margin: 0.5rem 0 0; padding: 0.4rem 0.6rem; background: var(--warn-bg); border-radius: 4px; }
 .events { list-style: none; margin: 0; padding: 0; }
 .events li { padding: 0.4rem 0.5rem; border-left: 3px solid var(--error); background: var(--error-bg); margin-bottom: 0.4rem; }
-.events li[data-kind="warning"] { border-left-color: #c77700; background: var(--warn-bg); }
-.events li[data-kind="info"] { border-left-color: var(--accent); background: #eef3fd; }
+.events li[data-kind="warning"] { border-left-color: var(--warn); background: var(--warn-bg); }
+.events li[data-kind="info"] { border-left-color: var(--accent); background: var(--accent-bg); }
 .events time { display: block; font-size: 0.75rem; color: var(--muted); }
 
 
@@ -318,7 +375,7 @@ button { font: inherit; }
 .make-target { margin: -0.3rem 0 0; font-weight: 600; color: var(--accent); }
 .make-target:empty { display: none; }
 /* 直す AI が使えないときのカード(ux-redesign.md 7-5) */
-.agent-unavailable { padding: 0.6rem 0.8rem; border: 1px solid #c77700; border-radius: 6px; background: var(--warn-bg); }
+.agent-unavailable { padding: 0.6rem 0.8rem; border: 1px solid var(--warn); border-radius: 6px; background: var(--warn-bg); }
 .agent-unavailable[hidden] { display: none; }
 .agent-unavailable h3 { margin: 0 0 0.3rem; font-size: 0.95rem; }
 .agent-unavailable p { margin: 0.2rem 0; }
@@ -345,24 +402,24 @@ button { font: inherit; }
 .run .steps li[data-kind="denied"],
 .run .steps li[data-kind="cancelled"],
 .run .steps li[data-kind="hint"],
-.run .steps li[data-kind="scenarios-changed"] { border-left-color: #c77700; background: var(--warn-bg); }
+.run .steps li[data-kind="scenarios-changed"] { border-left-color: var(--warn); background: var(--warn-bg); }
 .run .steps li[data-kind="failed"],
 .run .steps li[data-kind="tool-error"],
 .run .steps li[data-kind="build-failed"],
 .run .steps li[data-kind="gave-up"] { border-left-color: var(--error); background: var(--error-bg); }
 .run .steps li[data-kind="round"] { margin-top: 0.6rem; border-left-color: var(--accent); border-top: 1px dashed var(--line); font-weight: 600; }
-.run .steps li[data-kind="fix-request"] { border-left-color: var(--accent); background: #eef3fd; }
+.run .steps li[data-kind="fix-request"] { border-left-color: var(--accent); background: var(--accent-bg); }
 .run .steps li[data-kind="build-ok"] { border-left-color: var(--ok); }
-.run .steps li[data-kind="ai-settings"] { border-left-color: #7a3fb4; background: #f5effb; }
+.run .steps li[data-kind="ai-settings"] { border-left-color: var(--violet); background: var(--violet-bg); }
 .run .text,
 .run .run-dev li { white-space: pre-wrap; word-break: break-word; }
 .bubble p { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .bubble .who { display: block; font-size: 0.75rem; color: var(--muted); }
-.bubble.user { padding: 0.4rem 0.6rem; background: #eef3fd; border-radius: 6px; }
+.bubble.user { padding: 0.4rem 0.6rem; background: var(--accent-bg); border-radius: 6px; }
 .run .steps li.bubble.agent { border-left-color: var(--accent); }
 .run .steps li.step-short { border-left-color: transparent; padding-top: 0; padding-bottom: 0; color: var(--muted); }
 .run .steps li.step-short::before { content: "・"; }
-.run-updated { margin: 0.3rem 0 0; padding: 0.3rem 0.5rem; border-left: 3px solid var(--ok); background: #eaf5ee; }
+.run-updated { margin: 0.3rem 0 0; padding: 0.3rem 0.5rem; border-left: 3px solid var(--ok); background: var(--ok-bg); }
 .run-status { margin: 0.3rem 0 0; font-size: 0.8rem; color: var(--muted); }
 .run-dev, .evidence-dev { margin-top: 0.2rem; font-size: 0.75rem; color: var(--muted); }
 .run-dev summary, .evidence-dev summary { cursor: pointer; }
@@ -375,7 +432,7 @@ button { font: inherit; }
 .evidence { margin-top: 0.4rem; padding: 0.4rem 0.6rem; border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 6px; background: var(--panel); }
 .evidence[data-status="passed"], .evidence[data-status="fixed"] { border-left-color: var(--ok); }
 .evidence[data-status="failed"] { border-left-color: var(--error); }
-.evidence[data-status="unverified"] { border-left-color: #c77700; }
+.evidence[data-status="unverified"] { border-left-color: var(--warn); }
 .evidence .run-status { margin: 0; font-size: 0.9rem; color: var(--text); }
 .evidence[data-status="failed"] .run-status { color: var(--error); }
 .evidence[data-stale="true"] { background: var(--bg); }
@@ -394,7 +451,7 @@ button { font: inherit; }
 .evidence-gates > li { padding: 0.15rem 0 0.15rem 0.4rem; border-left: 3px solid var(--line); margin: 0.15rem 0; }
 .evidence-gates > li[data-status="passed"] { border-left-color: var(--ok); }
 .evidence-gates > li[data-status="failed"] { border-left-color: var(--error); }
-.evidence-gates > li[data-status="unverified"] { border-left-color: #c77700; }
+.evidence-gates > li[data-status="unverified"] { border-left-color: var(--warn); }
 .evidence-gates .gate-result { font-weight: 600; }
 .evidence-problems { margin: 0.1rem 0 0; padding-left: 1.1rem; word-break: break-word; }
 .evidence-line { display: block; color: var(--muted); }
@@ -431,7 +488,7 @@ button { font: inherit; }
   background: var(--panel);
   cursor: pointer;
 }
-.request-actions button[type="submit"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.request-actions button[type="submit"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .request-actions button:disabled { opacity: 0.5; cursor: default; }
 .request-actions .muted { font-size: 0.75rem; }
 .examples[hidden], #test-requests[hidden] { display: none; }
@@ -466,7 +523,7 @@ button { font: inherit; }
   background: var(--panel);
   cursor: pointer;
 }
-.ai-waiting { padding: 0.4rem 0.6rem; background: #eef3fd; border-radius: 4px; justify-content: space-between; }
+.ai-waiting { padding: 0.4rem 0.6rem; background: var(--accent-bg); border-radius: 4px; justify-content: space-between; }
 .ai-name { font-weight: 600; }
 .ai-state { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.8rem; margin: 0; }
 .ai-state dt { color: var(--muted); }
@@ -477,7 +534,7 @@ button { font: inherit; }
 .trace-entry { margin: 0 0 0.4rem; padding: 0.4rem 0.5rem; border-left: 3px solid var(--line); background: var(--bg); }
 .trace-entry[data-real="true"] { border-left-color: var(--accent); }
 .trace-entry[data-status="failed"] { border-left-color: var(--error); background: var(--error-bg); }
-.trace-entry[data-status="cancelled"], .trace-entry[data-status="running"] { border-left-color: #c77700; background: var(--warn-bg); }
+.trace-entry[data-status="cancelled"], .trace-entry[data-status="running"] { border-left-color: var(--warn); background: var(--warn-bg); }
 .trace-head { display: flex; flex-wrap: wrap; gap: 0 0.5rem; align-items: baseline; }
 .trace-head time, .trace-status { font-size: 0.75rem; color: var(--muted); }
 .trace-entry .failed { color: var(--error); }
@@ -505,13 +562,13 @@ button { font: inherit; }
 .save-form { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
 .save-form label { width: 100%; font-size: 0.8rem; color: var(--muted); }
 .save-form input { flex: 1; min-width: 0; font: inherit; padding: 0.25rem 0.4rem; }
-.versions-message { margin: 0.5rem 0 0; padding: 0.4rem 0.6rem; border-radius: 4px; background: #eaf5ee; }
+.versions-message { margin: 0.5rem 0 0; padding: 0.4rem 0.6rem; border-radius: 4px; background: var(--ok-bg); }
 .versions-message[data-kind="failed"] { background: var(--error-bg); color: var(--error); }
 .handoff-form { display: flex; flex-direction: column; gap: 0.25rem; }
 .handoff-form label { font-size: 0.8rem; color: var(--muted); }
 .handoff-form textarea { font: inherit; padding: 0.25rem 0.4rem; border: 1px solid var(--line); border-radius: 6px; resize: vertical; }
 .handoff-form button { align-self: flex-start; margin-top: 0.2rem; }
-.handoff-result { margin: 0.5rem 0 0; padding: 0.4rem 0.6rem; border-radius: 4px; background: #eaf5ee; }
+.handoff-result { margin: 0.5rem 0 0; padding: 0.4rem 0.6rem; border-radius: 4px; background: var(--ok-bg); }
 .handoff-result[data-kind="failed"] { background: var(--error-bg); color: var(--error); }
 .handoff-result[data-kind="last"] { background: transparent; padding: 0; color: var(--muted); }
 .handoff-result p { margin: 0 0 0.3rem; }

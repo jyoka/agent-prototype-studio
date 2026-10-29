@@ -21,6 +21,7 @@
 
   /* 色: 意味のある色(studio.css と同じ) */
   --accent: #2459c4;
+  --on-accent: #ffffff;
   --ok: #1d7a43;
   --error: #b42318;
   --warn-bg: #fff4e5;
@@ -86,6 +87,7 @@
   --text: #ecece8;
   --muted: #a3a39c;
   --accent: #7ea6ff;
+  --on-accent: #161614;
   --ok: #4cc184;
   --error: #f97066;
   --warn-bg: #3a2a12;
@@ -109,6 +111,7 @@
     --text: #ecece8;
     --muted: #a3a39c;
     --accent: #7ea6ff;
+    --on-accent: #161614;
     --ok: #4cc184;
     --error: #f97066;
     --warn-bg: #3a2a12;

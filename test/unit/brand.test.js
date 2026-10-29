@@ -38,6 +38,31 @@ test('tokens.css のライトの色は、今の画面(studio.css)と同じ名前
   for (const name of shared) assert.equal(tokens[name], studio[name], name);
 });
 
+// セレクターの { … } の中の変数を { 名前: 値 } で返す
+function blockVariables(css, selector) {
+  const at = css.indexOf(`${selector} {`);
+  assert.notEqual(at, -1, `${selector} がありません`);
+  const block = css.slice(at, css.indexOf('}', at));
+  return Object.fromEntries([...block.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
+}
+
+test('画面(studio.css)のダークは、tokens.css のダークと同じ値。OS の設定と data-theme の両方で切り替わる', async () => {
+  const studio = await read('src/ui/studio.css');
+  const tokens = await read('assets/brand/tokens.css');
+  const light = rootVariables(studio);
+  for (const selector of [':root[data-theme="dark"]', ':root:not([data-theme="light"])']) {
+    const dark = blockVariables(studio, selector);
+    const expected = blockVariables(tokens, selector);
+    // ライトで決めた色の変数は、ダークでも全部決める
+    assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).sort(), selector);
+    for (const [name, value] of Object.entries(dark)) assert.equal(value, expected[name], `${selector} ${name}`);
+  }
+  assert.match(studio, /@media \(prefers-color-scheme: dark\)/);
+  // 色は :root の変数で書く。値のまま書いた色は、ダークで変わらない(試作品の iframe の地だけは白のまま)
+  const rules = studio.slice(studio.indexOf('* { box-sizing'));
+  assert.deepEqual(rules.match(/#[0-9a-f]{3,8}\b/gi), ['#fff']);
+});
+
 test('tokens.css はダークと動きを止める設定を持ち、バナーと合わせて外から何も読み込まない', async () => {
   const css = await read('assets/brand/tokens.css');
   assert.match(css, /@media \(prefers-color-scheme: dark\)/);
