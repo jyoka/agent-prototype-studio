@@ -262,7 +262,7 @@
 `composition.json` のある試作品は、`studio.ai` の会話を会話の進め方(`src/server/sim/orchestrator.js`)が回す。決まりは [agent-simulation.md の 3.2 と「sim-4 で決めた細かい振る舞い」](design/agent-simulation.md#32-1-ターンの進め方)にある。
 
 - 誰が話すか、引き継ぎ(辺にあるものだけ、1 ターン 1 回、`limits.maxHandoffs` まで。戻るのも数える)、受け渡す値の検査、`limits.maxTurns` は Studio のコードが決める。模擬のエージェントが決めるのは、返事の中身とツールの選び方だけ
-- 接続は、プロダクト内 AI と同じく「AI: モック」か「AI: Claude Code」。既定はモック(`app/mocks/*.json` の決まりで返す)。Claude Code に切り替えるときも、本物の AI を使う前の同意が要る
+- 接続は、プロダクト内 AI と同じく「AI: お試し」(モック)か「AI: 本物」(Claude Code)。既定はモック(`app/mocks/*.json` の決まりで返す)。Claude Code に切り替えるときも、本物の AI を使う前の同意が要る
 - 前提は、構成の `assumptions.default`。返事の部品は、前提の `messageTypes` にあるものだけ。ないものは文に落とし、記録に残す
 - 返る会話には、構成 B の形(`connection`、`name`、`fields`、`state`、`messages`、`busy`)に加えて、次が入る。ツールの呼び出しの中身は返さない(「AI の実行の記録」にだけ出る)
 
@@ -284,7 +284,7 @@
 場面は、会話の確かめの 1 単位。形は [agent-simulation.md の 4.2](design/agent-simulation.md#42-場面appevalsjson)。回し方は [usage.md の「場面を回す」](usage.md#場面を回すnpm-run-evals)。
 
 - 作る run は、ビルド(G4)が通った後、起動の確認(G5)の前に、関門 GE で場面を回す。既定の構成と既定の前提で、模擬のエージェントも harness もモック。実モデルは呼ばない。場面がなければ「場面なし」で通る
-- 通らなかった確かめは、場面の `id`、確かめ、期待と実際、ツールの呼び出しの要約にして、作る AI に直させる。直すラウンドで場面やガードレールを変えたら、作る会話に「確かめ方が変わりました」「ガードレールが変わりました」と出す
+- 通らなかった確かめは、場面の `id`、確かめ、期待と実際、ツールの呼び出しの要約にして、作る AI に直させる。直すラウンドで場面やガードレールを変えたら、作る会話に「確かめ方が変わりました」「AI の守ることが変わりました」と出す
 - 場面ごとに、新しい会話と新しい記録の店で始める。`records` を書けば、記録の店はその値から始まる。`history` は会話の履歴に入るだけで、harness の状態は変えない
 - 返事の確かめ(`replyContains` など)は、場面の `turns` で返した返事の全部を見る(`history` の発言は見ない)。`replyContains` はどれかの返事にあれば通る。`replyNotContains`、`replyMaxChars`、`partKinds`、`noNewNumbers` は、どの返事も満たせば通る
 - `toolCalled` は、ツールの口まで届いた呼び出し(守りで断ったものも)を数える。`noToolCall` は、呼ぼうとしたもの(許可していない名前も)を全部数える。`args` は書いた引数を含めば通る

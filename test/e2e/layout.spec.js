@@ -112,9 +112,9 @@ test('保存していない変更があるときだけ保存の印が出て、�
     await page.screenshot({ path: path.join(UX_SHOTS, 'P21-talking.png') });
 
     await page.getByRole('banner').getByRole('button', { name: '保存', exact: true }).click();
-    await expect(page.locator('#versions-message')).toHaveText('v1 として保存しました。');
+    await expect(page.locator('#versions-message')).toHaveText('保存しました(保存 1)。');
     await expect(mark).toBeHidden();
-    await expect(page.locator('#working-status')).toHaveText('作業中は保存版 v1 と同じです。');
+    await expect(page.locator('#working-status')).toHaveText('今の状態は保存 1 と同じです。');
   } finally {
     await studio.stop();
   }
@@ -147,10 +147,10 @@ test('試作品の切り替えは上の帯のメニューで、各行に短い�
 
     // AI の切り替えは、今の接続の選び方を試す欄の上に開く
     await chooseSample(page, SAMPLES.jobConsult);
-    await expect(page.locator('#ai-switch')).toHaveText('AI: モック ▾');
+    await expect(page.locator('#ai-switch')).toHaveText('AI: お試し ▾');
     await expect(page.locator('#ai-menu')).toBeHidden();
     await openAiMenu(page);
-    await expect(page.locator('#ai-menu').getByRole('radio', { name: 'モック' })).toBeChecked();
+    await expect(page.locator('#ai-menu').getByRole('radio', { name: 'お試しの AI', exact: true })).toBeChecked();
     await page.keyboard.press('Escape');
     await expect(page.locator('#ai-menu')).toBeHidden();
   } finally {

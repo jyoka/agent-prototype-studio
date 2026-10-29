@@ -200,7 +200,7 @@ flowchart TB
 4. `app/ai.json` が変わってビルドが通ったら、前の設定との違いを会話に出す
 5. ビルドが通ったら、画面が iframe を新しいビルドに切り替える。G5 か G6 で失敗しても切り替える(利用者が失敗を見られるように)。会話には「確かめで失敗あり」と出す
 6. 観察器が使えない(Playwright の Chromium がない)ときは、G5 と G6 を「未確認」にする。通ったとは扱わない。直すラウンドにも進まない
-7. 直すラウンドで `app/scenarios/`(目録のシナリオの置き場所)が変わったら、結果に「確かめ方が変わりました」と出し、`run.json` の `scenariosChanged` に印を残す。作る AI がシナリオを弱めて通すことを、人が見つけられるようにするため。基本のシナリオは `app/` の外にあり、作る AI は変えられない。場面(`app/evals/`)が変わったときも同じく `evalsChanged` に、ガードレール(構成の `guards` と辺、ツールの守り、`ai.json` の `rules`)の中身が変わったときは `guardsChanged` に印を残し、「ガードレールが変わりました」と出す
+7. 直すラウンドで `app/scenarios/`(目録のシナリオの置き場所)が変わったら、結果に「確かめ方が変わりました」と出し、`run.json` の `scenariosChanged` に印を残す。作る AI がシナリオを弱めて通すことを、人が見つけられるようにするため。基本のシナリオは `app/` の外にあり、作る AI は変えられない。場面(`app/evals/`)が変わったときも同じく `evalsChanged` に、ガードレール(構成の `guards` と辺、ツールの守り、`ai.json` の `rules`)の中身が変わったときは `guardsChanged` に印を残し、「AI の守ることが変わりました」と出す
 8. 中断と時間切れは、直すラウンドの作る AI にも同じく効く。止めた run と、作る AI が失敗した run は、直させない。関門を回している間の中断は、今の関門を終えてから止め、次の直すラウンドに進まない
 
 作る会話には、ラウンドの区切り(`round`)、直す依頼の要約(`fix-request`)、GE の結果(`evals-ok`、`evals-failed`)、G6 の結果(`scenarios-ok`、`scenarios-failed`、`scenarios-unverified`)、確かめ方が変わった印(`scenarios-changed`、`evals-changed`)、ガードレールが変わった印(`guards-changed`)、人に返したこと(`gave-up`)、前からの失敗の印(`preexisting`)が項目として出ます。
