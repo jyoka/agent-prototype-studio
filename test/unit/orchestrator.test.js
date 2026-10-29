@@ -292,9 +292,13 @@ test('見本の構成 A の出口の確かめは、返事の連絡先と住所�
   for (const text of ['090-0000-1111 を保存しました', 'taro@example.com に送ります', 'かわせみ町１－２－３ ですね', 'かわせみ町2丁目3番地ですね', '〒000-0000 ですね']) {
     assert.deepEqual(failed(text), ['forbidden'], text);
   }
+  // ツールの断りの文(tools.json の deny の message)は、お試しの AI がそのまま返すので、違反にならない文にする
+  const tools = JSON.parse(await fs.readFile(path.join(STUDIO_ROOT, 'samples', 'part-time', 'app', 'tools.json'), 'utf8'));
+  const denyMessages = tools.tools.flatMap((tool) => tool.guards?.deny ?? []).map((rule) => rule.message);
+  assert.ok(denyMessages.some((message) => message.startsWith('住所は保存できません')));
   for (const text of [
     'みなと町では3件ありました。',
-    '住所は保存できません。保存できるのは、場所のおおまかな希望(駅の近く、町の名前など)、時給の下限、働き方の希望だけです',
+    ...denyMessages,
     '電話番号やメールアドレスは、このトークでは伺いません。希望の条件だけ教えてください。',
     '話してくれてありがとうございます。ひとりで抱えこまないでください。こもれび相談窓口(架空)では、働くときの悩みや体のことを、人が話を聞きます。',
     '土日の 10-18 時の求人を探します',

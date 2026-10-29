@@ -2702,7 +2702,7 @@ function traceSim(entry) {
   if (entry.returned) box.append(labeled('戻り', handoffText(entry.returned, nameOf)));
   if (entry.views) {
     const seen = (list) => (list ?? []).join('、') || 'なし';
-    box.append(labeled('見える記録(前提の logging)', `相手から ${seen(entry.views.partnerSees)}、DIP から ${seen(entry.views.dipSees)}`));
+    box.append(labeled('見える記録(前提の logging)', `相手から ${seen(entry.views.partnerSees)}、こちらから ${seen(entry.views.dipSees)}`));
   }
   return box;
 }

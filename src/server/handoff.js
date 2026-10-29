@@ -25,6 +25,8 @@ export const MAX_NOTE_LENGTH = 4000;
 const NOTE_KEYS = ['purpose', 'decided', 'undecided'];
 const NOTES_FILE = 'handoff-notes.json';
 const MAX_FINDINGS = 20;
+// 引き継ぎで場所を挙げる個人のデータの種類(src/server/redact.js の findPersonalData の種類のうち)
+const CONTACT_KINDS = new Set(['メールアドレス', '電話番号']);
 // 最新の場面の回しの要約に入れる、通らなかった確かめの数
 const MAX_EVAL_FAILURES = 20;
 // 試作品が import する、Studio の中の同梱の部品(書き出しには入らない)
@@ -107,7 +109,8 @@ async function scanFiles(appDir) {
       }
       const text = content.toString('utf8');
       for (const found of findSecrets(text)) secrets.push({ file: shown, ...found });
-      for (const found of findPersonalData(text)) personal.push({ file: shown, ...found });
+      // 住所と氏名の形は、日本語のコメント(「名前は〜」)にも合うので、ここではメールアドレスと電話番号だけを探す
+      for (const found of findPersonalData(text)) if (CONTACT_KINDS.has(found.kind)) personal.push({ file: shown, ...found });
       if (CODE_FILE.test(entry.name)) {
         for (const match of text.matchAll(STUDIO_IMPORT)) {
           const name = match[1] ?? match[2];
