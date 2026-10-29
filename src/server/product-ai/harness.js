@@ -319,6 +319,7 @@ async function runTurn({ connection, definition, progress, state, messages, text
     } else {
       const said = await ask(null);
       if (said?.retry) trace.phrase.retry = said.retry;
+      if (said?.unwrapped) trace.phrase.unwrapped = said.unwrapped;
       if (said?.fallback) fallback = `${said.fallback}ので、mock の型の文に代えた`;
       first = said?.reply;
     }
@@ -336,7 +337,7 @@ async function runTurn({ connection, definition, progress, state, messages, text
           fallback = '守ることに合わず、1 ターンの言い方の呼び出しの上限を使い切っていたので、やり直さずに mock の型の文に代えた';
         } else {
           const again = await ask(describeFailures(checks[0].failed));
-          if (again?.retry || again?.fallback) checks[0].retryCall = [again.retry, again.fallback].filter(Boolean).join('。');
+          if (again?.retry || again?.fallback || again?.unwrapped) checks[0].retryCall = [again.retry, again.fallback, again.unwrapped].filter(Boolean).join('。');
           if (!usable(again?.reply)) {
             fallback = `守ることに合わず、やり直しの返事も${again?.fallback ? `使えなかった(${again.fallback})` : '空か文でなかった'}ので、mock の型の文に代えた`;
           } else {

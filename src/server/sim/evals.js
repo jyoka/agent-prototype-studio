@@ -31,6 +31,7 @@ export const EVAL_KINDS = [
 export const CHECK_KEYS = {
   toolCalled: ['tool', 'args'],
   noToolCall: ['tool'],
+  noToolRun: ['tool'],
   guardBlocked: ['layer', 'guard'],
   noGuardBlock: ['layer', 'guard'],
   replyContains: ['text'],
@@ -40,12 +41,17 @@ export const CHECK_KEYS = {
   partKinds: ['kinds'],
   handoffTo: ['to'],
   recordHas: ['record', 'equals'],
+  noRecord: ['record', 'equals'],
   stateHas: ['field', 'equals'],
   noAskAgain: ['words'],
   noRepeat: ['times'],
   judge: ['aspect', 'rubric', 'passAtLeast'],
 };
 export const CHECKS = Object.keys(CHECK_KEYS);
+// どの確かめにも書ける only: その接続の回しでだけ見る(ほかの接続では n/a)。モックの決まった文を見る確かめを、実モデルの回しから外すため
+export const CHECK_ONLY = ['mock', 'claude-code'];
+// 結果の確かめ: 危ないことが起きなかったかを、どの層が止めたかによらずに見る。危ない場面の「止まったか」は、これと出口の確かめの違反だけで決める(3.7)
+export const RESULT_CHECKS = ['noToolRun', 'noRecord', 'replyNotContains'];
 // 守りの層。permission は、許可していない名前のツールを模擬のエージェントが呼ぼうとしたときの断り(3.6)
 export const GUARD_LAYERS_SEEN = ['tool', 'prompt', 'output', 'permission'];
 
@@ -65,9 +71,10 @@ function checkExpect(problems, where, item, { knownTool }) {
   }
   const check = oneOf(problems, `${where}.check`, item.check, CHECKS, { label: '確かめ' });
   if (!check) return;
-  checkKeys(problems, where, item, ['check', ...CHECK_KEYS[check]]);
-  const required = check === 'toolCalled';
-  if (check === 'toolCalled' || check === 'noToolCall') {
+  checkKeys(problems, where, item, ['check', ...CHECK_KEYS[check], 'only']);
+  if (item.only !== undefined) oneOf(problems, `${where}.only`, item.only, CHECK_ONLY, { label: '接続' });
+  const required = check === 'toolCalled' || check === 'noToolRun';
+  if (check === 'toolCalled' || check === 'noToolCall' || check === 'noToolRun') {
     const tool = toolNameOf(problems, `${where}.tool`, item.tool, { required });
     if (tool) knownTool(`${where}.tool`, tool);
   }
@@ -86,9 +93,9 @@ function checkExpect(problems, where, item, { knownTool }) {
     kinds.forEach((kind, i) => oneOf(problems, `${where}.kinds[${i}]`, kind, PART_KINDS, { label: '部品の種類' }));
   }
   if (check === 'handoffTo') idOf(problems, `${where}.to`, item.to);
-  if (check === 'recordHas') toolNameOf(problems, `${where}.record`, item.record);
+  if (check === 'recordHas' || check === 'noRecord') toolNameOf(problems, `${where}.record`, item.record);
   if (check === 'stateHas') named(problems, `${where}.field`, item.field, KEY_PATTERN, { hint: 'ai.json の項目の key' });
-  if ((check === 'recordHas' || check === 'stateHas') && item.equals !== undefined) jsonValue(problems, `${where}.equals`, item.equals);
+  if ((check === 'recordHas' || check === 'noRecord' || check === 'stateHas') && item.equals !== undefined) jsonValue(problems, `${where}.equals`, item.equals);
   if (check === 'noAskAgain' && item.words !== undefined) texts(problems, `${where}.words`, item.words, { min: 1, max: 20, maxChars: 100 });
   if (check === 'noRepeat') integer(problems, `${where}.times`, item.times, { min: 1, max: 10 });
   if (check === 'judge') {

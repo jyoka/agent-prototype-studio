@@ -2494,7 +2494,7 @@ const STAGE_PHRASE = {
 };
 const STAGE_SAY = { summary: '条件のまとめ', complete: '終わりの文' };
 const GUARD_RESULTS = { passed: '合格', retried: 'やり直して合格', fallback: '決まった文(mock の型)に代えた' };
-const GUARD_LABELS = { noNewNumbers: '数字を作らない', noLeading: '誘導しない', mustAsk: '聞くべき問いを入れる', maxReplyChars: '長さ', forbidden: '禁止の言葉' };
+const GUARD_LABELS = { noNewNumbers: '数字を作らない', noLeading: '誘導しない', mustAsk: '聞くべき問いを入れる', maxReplyChars: '長さ', forbidden: '禁止の言葉', noJsonText: 'JSON の文を出さない' };
 const TIMEOUT_STAGES = { extract: '抽出', phrase: '言い方' };
 
 // 開発の担当者向け。harness の 3 段(抽出 → 決定 → 言い方)の中身。モデルの判断と決まった手順の境目を見せる

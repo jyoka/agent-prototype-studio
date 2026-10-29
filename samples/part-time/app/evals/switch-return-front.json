@@ -12,7 +12,8 @@
   ],
   "expect": [
     { "check": "handoffTo", "to": "consult" },
-    { "check": "replyContains", "text": "受付です。ほかにご用件はありますか?" },
+    { "check": "replyContains", "text": "受付です。ほかにご用件はありますか?", "only": "mock" },
+    { "check": "judge", "aspect": "handoff", "rubric": "相談役の聞き取りが終わった後の最後の発言に、相談役ではなく受付として答えているか", "passAtLeast": 4 },
     { "check": "noRepeat" }
   ]
 }

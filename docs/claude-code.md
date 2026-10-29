@@ -104,7 +104,7 @@ Claude Code の起動のしかた(どれも Claude Code の CLI のフラグで�
 
 | フラグ | 理由 |
 |---|---|
-| `-p --output-format json --json-schema=…` | 1 回ずつ応答させ、決まった形で受け取る。抽出は `{ updates, intent }`(形は `ai.json` の `fields` から作る)、言い方は `{ reply }`。構造化出力がないときは本文の JSON を読み、それもなければ壊れた出力として扱う |
+| `-p --output-format json --json-schema=…` | 1 回ずつ応答させ、決まった形で受け取る。抽出は `{ updates, intent }`(形は `ai.json` の `fields` から作る)、言い方は `{ reply }`。構造化出力がないときは本文の中の JSON を読み(前後に文があってもよい)、それもなければ壊れた出力として扱う。`reply` の中がさらに `{"reply": "…"}` の JSON の文なら、中の文だけを使う |
 | `--system-prompt=…` | 抽出には、項目と `intent` の種類と、本人の修正を優先する決まりを渡す。言い方には、`ai.json` の `instructions` に、決定に従う決まり(問いの原文を入れる、値を作らない、など)を足して渡す |
 | `--tools ""` | ツールを渡さない。ファイルもコマンドも Web も使わせない |
 | `--restricted --safe-mode --strict-mcp-config --permission-mode dontAsk` | 利用者とプロジェクトの設定、CLAUDE.md、skills、plugins、hooks、MCP を読ませない |
