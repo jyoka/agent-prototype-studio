@@ -1,0 +1,85 @@
+# Prototype Studio
+
+> AI エージェントの試作品を、作る前に、構成ごと手元で試して測る。
+> Try and measure an AI agent prototype, whole setup included, on your machine before you build it.
+
+Prototype Studio(リポジトリの名前は agent-prototype-studio)は、手元で動く道具です。
+構成とは、誰が会話を回し、誰がどのツールを持ち、守りをどこに置くかです。
+言葉で試作品を直し、模擬のエージェントと話し、場面を回して比べます。
+試すのはモックで、料金はかかりません。本物の AI は、画面で同意したときと、--real で場面を回すときだけ使います。
+このファイルは LP(site/index.html)の中身を文にしたものです。例のデータは、どれも架空です。
+
+## 1 回のトークを、層ごとに見る
+
+見本「バイト探し(架空)」を、モックのまま回した例です。
+
+1. 利用者が「みなと町でバイトを探しています」と送る。案内役がツール search_jobs で 3 件を出す
+2. 利用者が「そのまま保存して」と送る。案内役は、保存してよいかを聞かずに save_wish を呼ぶ
+3. ツールの守り requires が止める。会話に「記録「consent」がありません」が出る
+
+この 1 回のトークを、6 つの層に分けて見ます。
+
+- 01 トークの画面: 利用者が送り、返事を受け取る所。この例では、「そのまま保存して」に、止めた理由の文が返る
+- 02 模擬のエージェント: 相手の会社のエージェントの役。ツールを自分で選ぶ。この例では、そよかぜの案内役(模擬)が save_wish を選ぶ
+- 03 プロンプトの枠: 相手が書く土台と、こちらが書ける枠。頼みは守られるとは限らない。この例では、土台(前提の hostPrompt)と、こちらの枠 ours-guide
+- 04 ツール(MCP): こちらが出すツール。データで書き、Studio のツールの口が動かす。この例では、save_wish(場所: みなと町)
+- 05 ガードレール: 3 つの層の守り。どの層が止めたかが分かる。この例では、ツールの守り requires が止めた
+- 06 記録: 渡したもの、呼んだツール、守りの判定を残す。この例では、止めた層、持ち主、理由
+
+プロンプトの枠で「保存の前に聞いて」と頼んでも、守るかは相手のエージェントしだいです。
+ツールの守りは、相手によらず必ず効きます。どちらが効いたかは、記録で分かります。
+
+## できること
+
+- 言葉で直す欄: 画面も AI の振る舞い(app/ai.json)も、欄に書いた依頼で変わる。作る AI が書けるのは、試作品の app/ だけ
+- 構成の模擬: 相手のエージェント、こちらのツール、人への引き継ぎを app/composition.json に書く。模擬のエージェントが、ツールを自分で選んで呼ぶ
+- 守りの層: ツールの守り、プロンプトの頼み、出口の確かめの 3 つの層に分けて書く。実行の記録に、どの層が止めたかと理由が出る
+- 場面の比較: app/evals/ の場面を、構成と前提を替えて回す(npm run evals)。自然さ、ツールの呼び方、守り、費用と待ち時間を並べて比べる
+- データだけの流用: 新しい構成は、構成、ツール、前提、プロンプトの JSON と文で足す。Studio のコードは変えない。ツールは探す、取る、記録するなどの決まった処理を組む
+- モックと実モデル: 同じ試作品のまま、モックと Claude Code を切り替える。モックはモデルを呼ばず、料金はかからない。実モデルは同意の後だけ
+- 版と引き継ぎ: app/ のファイルと会話と状態を版として保存し、いつでも戻す。ソース、AI の設定、試した会話、証拠の要約を 1 つのフォルダーに書き出す
+- 作るループの関門: 作る AI が直すたびに、検査、ビルド、場面、起動、シナリオの関門を回す。落ちたら失敗を作る AI に返し、2 回まで直させる
+
+## 3 手で始める
+
+要るものは Node.js 22 以上です。リポジトリを手元に置いたフォルダーで動かします。
+
+1. npm install(初回だけ。部品を入れる)
+2. npm start(既定のブラウザで Studio が開く)
+3. 上の帯の「試作品: … ▾」から見本を選ぶ。「バイト探し(架空・AI と話せる)」で、上の分解の例を試せる
+
+初日に要る操作:
+
+- 試作品と話す: 「試す」の枠の中の欄に書いて送る
+- 画面や AI の振る舞いを変える: 「言葉で直す」欄に頼む。本物の AI は同意の後だけ動き、費用がかかる
+- 料金なしで直す流れを試す: STUDIO_AGENT=fake npm start
+- 今の状態を残す: 上の帯の「保存」
+- ツールと守りの判定を見る: 「その他」→「開発者向けの詳細」の「AI の実行の記録」
+- 場面を回して比べる: npm run evals -- sample-part-time(Studio を一度起動した後)
+- ブラウザが開かない: ターミナルに出た http://127.0.0.1:4317/#token=… を開く
+- 止める: ターミナルで Ctrl+C
+
+## 比べる
+
+言葉で画面の試作品を作る道具(例: GitHub の Replica)と比べました。
+違うのは、試作品の中の AI、エージェントの構成の模擬、場面での評価です。
+
+- 言葉で画面を作る、直す: どちらもする。Studio では言葉で直す欄で、作る AI が書けるのは app/ だけ
+- 試作品の中の AI: Studio は試作品の中の AI と話す。振る舞いは app/ai.json。モックと実モデルを切り替える
+- エージェントの構成の模擬: Studio は相手のエージェント、ツール、引き継ぎ、守りを app/composition.json に書いて模擬する
+- 場面での評価: Studio は npm run evals で場面を構成と前提ごとに回し、1 つの表で比べる
+
+ほかの道具の、試作品の中の AI、構成の模擬、場面での評価は、確かめていないので書いていません。
+
+## Docs
+
+- [README](https://github.com/jyoka/agent-prototype-studio#readme): 何か、はじめる、最初の 1 分
+- [使い方](https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md): 使い方の全部
+- [設定](https://github.com/jyoka/agent-prototype-studio/blob/main/docs/configuration.md): 環境変数、app/ のファイル、データの置き場
+- [実モデル](https://github.com/jyoka/agent-prototype-studio/blob/main/docs/claude-code.md): Claude Code を使う前に確かめること
+- [困ったとき](https://github.com/jyoka/agent-prototype-studio/blob/main/docs/troubleshooting.md)
+- [しくみ](https://github.com/jyoka/agent-prototype-studio/blob/main/docs/architecture/hld.md): 部品とデータの流れ
+- [構成の模擬の設計](https://github.com/jyoka/agent-prototype-studio/blob/main/docs/design/agent-simulation.md)
+- [引き継ぎの形](https://github.com/jyoka/agent-prototype-studio/blob/main/docs/handoff.md)
+
+更新 2026-10-29。版 0.1.0(公開前)。

@@ -21,6 +21,7 @@
     "test": "node --test \"test/unit/*.test.js\" \"test/integration/*.test.js\"",
     "test:e2e": "playwright test",
     "media": "playwright test --config scripts/media/media.config.js",
+    "site": "node scripts/site.js",
     "check:claude": "node scripts/check-claude-code.js",
     "check:sim": "node scripts/check-sim.js",
     "check:loop": "node scripts/check-loop.js",

@@ -59,6 +59,7 @@ README は、初めて来た人が最初の画面で「何か」「なぜ使う�
 | 機能ごとの設計 | [docs/design/](docs/design/) |
 | 伝え方(1 文、名前、機能の文、見た目、公開の前に直すもの) | [docs/brand.md](docs/brand.md)、[assets/brand/](assets/brand/) |
 | README と LP の画像と動く画像(`npm run media` で撮る) | [assets/media/](assets/media/)。撮り方は下の「画像と動く画像を撮り直す」 |
+| LP(1 ページ。公開しない。`npm run site` で開く) | [site/](site/README.md)。公開の手順も site/README.md |
 
 関数、ファイルの形式、守る約束を書く `docs/architecture/lld.md` は、harness の作り直し(#293)の後で作ります。
 
@@ -75,6 +76,8 @@ src/observer/          観察器。表示中のビルドを Playwright の Chrom
 src/agent/             偽接続(Claude Code の代わりに、決まった動きをする CLI)
 scripts/               実機の Claude Code で守りを確かめるスクリプト
 scripts/media/         npm run media。README と LP の画像と動く画像を撮る(撮る場面は test/e2e/scenes.js)
+scripts/site.js        npm run site。LP(site/)を 127.0.0.1 で配る
+site/                  LP(index.html、site.css、site.js、llms.txt)。公開しない
 src/ui/                Studio の画面と、観察用の親ページ(observe.html、observe.js)
 src/runtime/runtime.js 試作品に配る runtime。試作品のエラーを Studio の画面に知らせ、window.studio.ai を配る
 samples/library/app/   固定のサンプル試作品(架空の図書室)
@@ -93,7 +96,7 @@ assets/media/          npm run media が撮った画像と動く画像(手で直
 | コマンド | 中身 | 時間の目安 |
 |---|---|---|
 | `npm test` | 単体と結合のテスト(Node の test runner)。作る欄の API、偽の CLI に渡る引数と stdin、確認スクリプトの空回しを含む | 1 分ほど |
-| `npm run test:e2e` | ブラウザの E2E(Playwright の Chromium)。起動手順、サンプルの操作、モックの AI との会話と修正とリセット、偽の Claude Code への切り替えと履歴と失敗と中断、AI の実行の記録(正常と失敗、次にすること、伏せる文字列)、失敗の表示、試作品の隔離、作る欄の依頼・変更・反映・拒否・失敗・中断、作る欄で AI の振る舞いを変えて前の発言で試し直すこと、版の保存・変更・復元・起動し直した後の再開、引き継ぎの書き出しと、別の場所での確認(資料を読む、ソースを別の Studio で動かす)と秘密での停止、求人ではない題材(架空の学習相談)での作成・試行・変更・版・引き継ぎの通しと、Studio の画面と書き出しに求人の言葉が出ないこと、観察器の report(正常と、壊した見本のエラー、AI の要求の中継、7 つの操作とシナリオ、失敗した手順のスクリーンショット、見本のシナリオ)と、観察器の隔離(悪意のある見本、名前の解決、時間の上限)を確かめる | 全体でおよそ 3 分半(上限は 7 分) |
+| `npm run test:e2e` | ブラウザの E2E(Playwright の Chromium)。起動手順、サンプルの操作、モックの AI との会話と修正とリセット、偽の Claude Code への切り替えと履歴と失敗と中断、AI の実行の記録(正常と失敗、次にすること、伏せる文字列)、失敗の表示、試作品の隔離、作る欄の依頼・変更・反映・拒否・失敗・中断、作る欄で AI の振る舞いを変えて前の発言で試し直すこと、版の保存・変更・復元・起動し直した後の再開、引き継ぎの書き出しと、別の場所での確認(資料を読む、ソースを別の Studio で動かす)と秘密での停止、求人ではない題材(架空の学習相談)での作成・試行・変更・版・引き継ぎの通しと、Studio の画面と書き出しに求人の言葉が出ないこと、観察器の report(正常と、壊した見本のエラー、AI の要求の中継、7 つの操作とシナリオ、失敗した手順のスクリーンショット、見本のシナリオ)と、観察器の隔離(悪意のある見本、名前の解決、時間の上限)と、LP(`test/e2e/site.spec.js`。リンクの先、層のアニメ、動きを止める設定、スマホの幅、外への通信がないこと)を確かめる | 全体でおよそ 3 分半(上限は 7 分) |
 
 E2E と観察器のブラウザがないときは、`npm run install:chromium` で入れる。どのテストも実モデルと外部の API を呼ばない(`STUDIO_REAL=1` を付けた `test/e2e/real-loop.spec.js` だけが例外)。作る AI の既定は自動(手元の Claude Code を使う)なので、テストは `STUDIO_AGENT=fake`(偽接続、`src/agent/fake-claude.js`)か、偽の `claude`(`STUDIO_CLAUDE_BIN`)を必ず明示する。`STUDIO_AGENT` を消すテストは、`STUDIO_CLAUDE_BIN` を偽の `claude` か、ない場所に向ける。E2E の `launchStudio` は、指定がなければ `STUDIO_AGENT=fake` にする。プロダクト内 AI の Claude Code は、偽の CLI(`test/fixtures/fake-claude.js`)に差し替える。
 

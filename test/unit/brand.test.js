@@ -30,6 +30,32 @@ test('1 文は README の太字、package.json の description、バナー、bra
   }
 });
 
+test('LP(site/)の見出しとフッターと llms.txt は、同じ 1 文を使う', async () => {
+  const html = await read('site/index.html');
+  // 見出しの 1 文とフッターの 1 文。日本語と英語の両方
+  for (const sentence of [JA, EN]) {
+    const count = html.split(`<span data-lang="${sentence === JA ? 'ja' : 'en'}">${sentence}</span>`).length - 1;
+    assert.equal(count, 2, sentence);
+  }
+  const llms = await read('site/llms.txt');
+  assert.ok(llms.includes(`> ${JA}`) && llms.includes(`> ${EN}`));
+  // タブの名前(HTML の title と、英語に切り替えたときの site.js の文)
+  assert.ok(html.includes(`<title>Prototype Studio: ${JA}</title>`));
+  const script = await read('site/site.js');
+  assert.ok(script.includes(`'Prototype Studio: ${JA}'`) && script.includes(`'Prototype Studio: ${EN}'`));
+});
+
+test('LP(site/)は外から何も読み込まない', async () => {
+  const html = await read('site/index.html');
+  // 読み込むもの(src、link の href)は、どれもリポジトリの中を指す
+  for (const [, url] of html.matchAll(/\b(?:src|srcset)="([^"]*)"/g)) assert.doesNotMatch(url, /^(https?:)?\/\//, url);
+  for (const [tag] of html.matchAll(/<link\b[^>]*>/g)) assert.doesNotMatch(tag, /href="(https?:)?\/\//, tag);
+  for (const file of ['site/site.css', 'site/site.js', 'site/favicon.svg']) {
+    const text = (await read(file)).replace('xmlns="http://www.w3.org/2000/svg"', '');
+    assert.doesNotMatch(text, /https?:|@import|url\(|fetch\(|XMLHttpRequest|<script/i, file);
+  }
+});
+
 test('tokens.css のライトの色は、今の画面(studio.css)と同じ名前なら同じ値', async () => {
   const studio = rootVariables(await read('src/ui/studio.css'));
   const tokens = rootVariables(await read('assets/brand/tokens.css'));
@@ -77,7 +103,7 @@ test('見本のデータ、画面の文、README に、仕事の POC の名前�
   // dipSees は前提の鍵(コードの名前)なので、このカードでは残す。\b で切れるので当たらない
   const poc = /\b(LINE|DIP|dip|dipAIAG)\b|バイトル/;
   const files = ['README.md'];
-  for (const dir of ['samples', 'src/ui']) {
+  for (const dir of ['samples', 'src/ui', 'site']) {
     for (const entry of await fs.readdir(path.join(STUDIO_ROOT, dir), { recursive: true, withFileTypes: true })) {
       if (entry.isFile()) files.push(path.relative(STUDIO_ROOT, path.join(entry.parentPath, entry.name)));
     }
