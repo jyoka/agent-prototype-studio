@@ -212,7 +212,7 @@ rg -n -e 'LINE' -e 'DIP' -e 'dipAIAG' -e 'バイトル' -e '\bdip\b' -e 'dip-' -
 
 | 場所 | 中身 | 直し方 |
 |---|---|---|
-| `src/server/sim/assumptions.js`(131、133 行)、`src/ui/studio.js`(2673 行) | 前提の `logging` の鍵 `dipSees` | 鍵の名前を変えるコードの変更が要る。古い鍵を読めるようにするかも決める。別のカードにする |
+| `src/server/sim/assumptions.js`(131、133 行)、`src/ui/studio.js`(2690 行) | 前提の `logging` の鍵 `dipSees` | 鍵の名前を変えるコードの変更が要る。古い鍵を読めるようにするかも決める。別のカードにする |
 | `samples/part-time/app/assumptions/*.json`、`samples/part-time/app/callers/*.json` | 上の鍵 `dipSees` を使う値 | 上と同じカードで直す |
 
 ### 残した所: docs と ADR(公開を決めたときに直す)
@@ -222,9 +222,9 @@ rg -n -e 'LINE' -e 'DIP' -e 'dipAIAG' -e 'バイトル' -e '\bdip\b' -e 'dip-' -
 | `docs/prd.md` | 15、57、87 | 「LINE に限定しない」「LINE への展開」「LINE / LIFF 接続」 |
 | `docs/adr/0001-local-runtime-and-isolation.md` | 241 | 「求人、LINE、aica を前提にしない」 |
 | `docs/adr/0003-agent-simulation.md` | 11、12、34 | 仕事の POC の形(LINE のトーク、DIP のツール) |
-| `docs/design/agent-simulation.md` | 30、61、63〜66、113、123、132、163、184、191、218、243、253、268、271、272、282、312、323、327、500、517、521、529、534、550、661、726、740、746、752、757、992 | 持ち主の例 `dip`、「DIP 役のツール」、「LINE の POC」、「LINE 社のエージェント」、枠 `dip-guide`、鍵 `dipSees` |
+| `docs/design/agent-simulation.md` | 30、61、63〜66、113、123、132、163、184、191、218、243、253、268、271、272、282、312、323、327、500、517、521、529、534、550、661、732、746、752、758、763、941、1017、1341 | 持ち主の例 `dip`、「DIP 役のツール」、「LINE の POC」、「LINE 社のエージェント」、枠 `dip-guide`、鍵 `dipSees` |
 | `docs/design/harness.md` | 4 | 読んだもののパス(`dip_mcp/baito/harness.py`) |
-| `docs/evidence/sim-compare/README.md` | 76 | 枠 `dip-guide` |
+| `docs/evidence/sim-compare/README.md` | 83 | 枠 `dip-guide` |
 | `docs/evidence/sim-a/`、`docs/evidence/sim-compare/runs/` の `traces/*.json`(29 ファイル) | 全体 | 回した時の記録。持ち主 `dip`、枠 `dip-guide`、鍵 `dipSees`。直すなら、新しい見本で回し直す |
 
 `docs/design/agent-simulation.md` の構成 A の例は、見本の前の名前(`dip-guide` など)のまま。見本と合わせるのも、公開を決めたときに行う。

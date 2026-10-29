@@ -77,18 +77,18 @@ async function exportAndCheck(page, home, other, otherHome) {
     await expect(log.last()).toContainText('偽の Claude Code です');
 
     await openMore(page);
-    await page.getByLabel('版の名前(なくてもよい)').fill('引き継ぐ版');
-    await page.getByRole('button', { name: '今の作業中を保存' }).click();
-    await expect(page.locator('#working-status')).toHaveText('作業中は保存版 v1「引き継ぐ版」と同じです。');
+    await page.getByLabel('名前(なくてもよい)').fill('引き継ぐ版');
+    await page.locator('#save-version').click();
+    await expect(page.locator('#working-status')).toHaveText('今の状態は保存 1「引き継ぐ版」と同じです。');
 
     // 意図と未決事項を書いて、書き出す
     const handoff = page.getByRole('region', { name: '本番開発へ渡す' });
     await handoff.getByLabel('目的(この試作品で確かめたいこと)').fill('求職者が、AI の理解した条件を直しながら相談を続けられるか確かめる');
     await handoff.getByLabel('決まったこと').fill('条件は 職種、雇用区分、勤務地、時給の下限 の 4 つ');
     await handoff.getByLabel('未決事項').fill('求人の検索を本物の API にするか。問い合わせ先 hanako@example.com');
-    await handoff.getByRole('button', { name: '引き継ぎ用に書き出す' }).click();
+    await handoff.getByRole('button', { name: '渡すフォルダーを作る' }).click();
     const result = page.locator('#handoff-result');
-    await expect(result).toContainText('書き出しました。実機 2 件、モック 3 件、未接続 9 件、未決事項 1 件。');
+    await expect(result).toContainText('渡すフォルダーを作りました。本物につないだもの 2 件、お試しのもの 3 件、つないでいないもの 9 件、未決事項 1 件。');
     const dir = await result.locator('code').textContent();
     expect(path.dirname(dir)).toBe(path.join(home, 'handoffs'));
     await page.screenshot({ path: test.info().outputPath('1-exported.png'), fullPage: true });
@@ -98,7 +98,7 @@ async function exportAndCheck(page, home, other, otherHome) {
     await chooseSample(page, SAMPLES.jobConsult);
     await openMore(page);
     await expect(handoff.getByLabel('決まったこと')).toHaveValue('条件は 職種、雇用区分、勤務地、時給の下限 の 4 つ');
-    await expect(result).toContainText(`前に書き出したもの`);
+    await expect(result).toContainText('前に作ったフォルダー');
     await expect(result).toContainText(dir);
 
     // 開発の担当者に渡す: フォルダーを別の場所に写し、元は消す
@@ -183,7 +183,7 @@ async function exportAndCheck(page, home, other, otherHome) {
       await page.locator('[data-project-id="handed-over"]').click();
       const app = page.frameLocator('iframe[title="試作品"]');
       await expect(app.getByRole('heading', { name: 'うみかぜ求人相談' })).toBeVisible();
-      await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
+      await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
       const message = app.getByLabel('メッセージ');
       await message.fill('カフェで働きたいです');
       await app.getByRole('button', { name: '送る' }).click();
@@ -212,9 +212,9 @@ test('秘密情報らしい文字列があると書き出さず、場所を画�
     await expect(page.frameLocator('iframe[title="試作品"]').locator('#root')).toHaveText('鍵あり');
     await openMore(page);
     const handoff = page.getByRole('region', { name: '本番開発へ渡す' });
-    await handoff.getByRole('button', { name: '引き継ぎ用に書き出す' }).click();
+    await handoff.getByRole('button', { name: '渡すフォルダーを作る' }).click();
     const result = page.locator('#handoff-result');
-    await expect(result).toContainText('書き出せませんでした: 秘密情報らしい文字列があるので、書き出しませんでした。消してから書き出してください(app/config.js:1 API キーらしい文字列)');
+    await expect(result).toContainText('渡すフォルダーを作れませんでした: 秘密情報らしい文字列があるので、書き出しませんでした。消してから書き出してください(app/config.js:1 API キーらしい文字列)');
     await expect(result).not.toContainText('sk-ant-');
     expect(await fs.readdir(path.join(home, 'handoffs')).catch(() => [])).toEqual([]);
   } finally {

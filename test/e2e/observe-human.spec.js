@@ -171,15 +171,15 @@ test('引き出しの「試作品を自動で確かめる」: お試しの AI �
     // 作る run の間は、引き出しのボタンも帯の「もう一度確かめる」も押せない(サーバーも 409 で断る)
     await chooseTestRequest(page, 'ゆっくり進めて');
     await page.getByRole('button', { name: '送る' }).click();
-    await expect(page.getByRole('button', { name: '中断' })).toBeVisible();
+    await expect(page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '止める' })).toBeVisible();
     await expect(checkBand.getByRole('button', { name: AGAIN })).toBeDisabled();
     await openMore(page);
     await expect(checkSection(panel).getByRole('button', { name: CHECK })).toBeDisabled();
     const refused = await studio.post(`/api/projects/${id}/checks`, {});
     expect(refused.status).toBe(409);
     await closeMore(page);
-    await page.getByRole('button', { name: '中断' }).click();
-    await expect(items(page).last().locator('.run-status')).toHaveText('中断しました', { timeout: 15_000 });
+    await page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '止める' }).click();
+    await expect(items(page).last().locator('.run-status')).toHaveText('止めました', { timeout: 15_000 });
     await expect(checkBand.getByRole('button', { name: AGAIN })).toBeEnabled();
   } finally {
     await studio.stop();

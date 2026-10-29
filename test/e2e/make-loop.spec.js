@@ -50,7 +50,7 @@ test('壊れる依頼でも、Studio が失敗を直す依頼にして返し、�
     // 作る会話に、ラウンドの区切りと直す依頼の要約が出る
     await expect(run.locator('[data-kind="build-failed"]')).toContainText('ビルドに失敗しました');
     await expect(run.locator('[data-kind="round"]')).toHaveText(/直すラウンド 1\/2: 作る AI を起動し直します\(起動 2\/3 回目\)。/);
-    await expect(run.locator('[data-kind="round"] .who')).toHaveText('直すラウンド');
+    await expect(run.locator('[data-kind="round"] .who')).toHaveText('もう一度直す');
     await expect(run.locator('[data-kind="fix-request"]')).toContainText('G4 ビルドの失敗(app/App.jsx:2:');
     await expect(run.locator('[data-kind="fix-request"]')).toContainText('添えたのは、元の依頼、失敗の中身、変わったファイルの名前(1 個)だけです');
     await expect(run.locator('.bubble.agent').filter({ hasText: 'Studio の直す依頼を読みました' })).toBeVisible();
@@ -230,7 +230,7 @@ test('シナリオの関門 G6 の失敗を直す依頼にして返し、作る 
 
     // 作る会話に、G6 の失敗、直す依頼、直した後の G6 の結果が出る
     await expect(run.locator('[data-kind="scenarios-failed"]')).toContainText('確かめで失敗あり: シナリオ「見出しが出る」の 1 番目の手順で失敗しました');
-    await expect(run.locator('[data-kind="scenarios-failed"] .who')).toHaveText('シナリオ');
+    await expect(run.locator('[data-kind="scenarios-failed"] .who')).toHaveText('決めた手順で動くか');
     await expect(run.locator('[data-kind="fix-request"]')).toContainText('G6 シナリオの失敗(シナリオ「見出しが出る」(app/scenarios/heading.json)の 1 番目の手順で失敗しました)');
     await expect(run.locator('.bubble.agent').filter({ hasText: '失敗した関門: G6 シナリオ' })).toBeVisible();
     await expect(run.locator('[data-kind="scenarios-ok"]')).toContainText('基本のシナリオ 1 本と、app/ のシナリオ 1 本が、すべて通りました(プロダクト内 AI はモック)');

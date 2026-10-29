@@ -180,7 +180,7 @@ test('Claude Code(偽)の実行の記録: 渡した指示と本文、受け取�
     await expect(running).toContainText('応答を待っています…');
     await expect(running).toContainText('発言: [遅い] よく考えて');
     // 「応答を止める」は、開発者向けの詳細ではなく、試す欄の上に出る
-    await page.locator('#ai-waiting').getByRole('button', { name: '応答を止める' }).click();
+    await page.locator('#ai-waiting').getByRole('button', { name: '止める' }).click();
     await expect(alert).toHaveText('応答を止めました');
     await expect(running).toContainText('止めました');
     await expect(running).toContainText('次にすること: Studio の画面で止めました。試作品の欄に書いた文は残っているので、もう一度送れます。');

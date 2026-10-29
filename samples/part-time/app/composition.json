@@ -22,7 +22,9 @@
     { "id": "no-contact-ask", "layer": "prompt", "owner": "ours", "on": "partner",
       "text": "電話番号やメールアドレスを聞かないでください。教えられても、保存しないでください。" },
     { "id": "facts-from-tools", "layer": "output", "owner": "partner", "on": "partner", "enforce": false,
-      "rules": { "noNewNumbers": true, "forbidden": ["必ず採用", "絶対に受かる"] } }
+      "rules": { "noNewNumbers": true, "forbidden": ["必ず採用", "絶対に受かる"] } },
+    { "id": "no-contact-in-reply", "layer": "output", "owner": "partner", "on": "partner", "enforce": false,
+      "rules": { "forbidden": ["@", "090-", "080-", "070-", "050-", "丁目", "番地", "号室", "〒", "-1-", "-2-", "-3-", "-4-", "-5-", "-6-", "-7-", "-8-", "-9-"] } }
   ],
   "surface": { "kind": "talk", "theme": "talk" },
   "assumptions": { "dir": "assumptions", "default": "partner-a" },
