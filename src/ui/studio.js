@@ -17,7 +17,7 @@ const RUN_STATUS = {
     const what = (RUN_STATUS[`failed:${gate.name}`] ?? (() => `${gateLabel(gate)}で問題が見つかりました`))(gate);
     return `終わりました。${FIX_AI} が直しきれませんでした。${what}`;
   },
-  cancelled: () => '中断しました',
+  cancelled: () => '止めました',
   'timed-out': () => '時間の上限を超えたので止めました',
   // 作るループの結果(harness.md の 2.4)。結果の帯の 1 文になる。U3 の言葉を使わない(ux-redesign.md 4 節)
   passed: () => '終わりました。確かめました。問題は見つかりませんでした',
@@ -38,35 +38,37 @@ const RUN_STATUS = {
   'failed:scenarios': () => '決めた手順で試すと、思ったとおりに動きません',
   'failed:evals': () => 'AI の場面を回すと、思ったとおりに動きません',
 };
+// 作る会話の項目の「誰が」の名前(項目の kind ごと)。作るループの言葉(関門、シナリオ、report、直すラウンド)は、
+// 利用者の言葉にする(ux-redesign.md 4 節の表の「作るループの言葉」)。項目の本文はサーバーの文
 const ITEM_LABELS = {
   tool: '操作',
-  'tool-error': 'ツールの失敗',
-  denied: '断られた操作',
+  'tool-error': '操作の失敗',
+  denied: 'やめた操作',
   failed: '失敗',
-  cancelled: '中断',
+  cancelled: '止めました',
   hint: 'すること',
   changes: '確かめた結果',
   info: 'Studio',
   skipped: 'Studio',
-  'build-ok': 'ビルド',
-  'build-failed': 'ビルド',
-  'ai-settings': 'プロダクト内 AI の設定(Studio が確かめた結果)',
-  'launch-ok': '起動の確認',
-  'launch-failed': '起動の確認',
-  'launch-unverified': '起動の確認',
-  'scenarios-ok': 'シナリオ',
-  'scenarios-failed': 'シナリオ',
-  'scenarios-unverified': 'シナリオ',
+  'build-ok': '表示の準備',
+  'build-failed': '表示の準備',
+  'ai-settings': 'AI の設定(Studio が確かめた結果)',
+  'launch-ok': '開いて表示できるか',
+  'launch-failed': '開いて表示できるか',
+  'launch-unverified': '開いて表示できるか',
+  'scenarios-ok': '決めた手順で動くか',
+  'scenarios-failed': '決めた手順で動くか',
+  'scenarios-unverified': '決めた手順で動くか',
   'scenarios-changed': '確かめ方が変わりました',
-  'evals-ok': '場面',
-  'evals-failed': '場面',
+  'evals-ok': 'AI の場面で動くか',
+  'evals-failed': 'AI の場面で動くか',
   'evals-changed': '確かめ方が変わりました',
-  'guards-changed': 'ガードレールが変わりました',
-  gates: '関門',
+  'guards-changed': 'AI の守ることが変わりました',
+  gates: '自動の確かめ',
   preexisting: '確かめた結果',
-  round: '直すラウンド',
-  'fix-request': '直す依頼(Studio から作る AI へ)',
-  'gave-up': '人に返す',
+  round: 'もう一度直す',
+  'fix-request': `直す依頼(Studio から${FIX_AI} へ)`,
+  'gave-up': 'ここで止めました',
   // 結果の帯の「確かめた中身」に出す、関門の名前(run.gates の name ごと)。U3 の言葉を使わない
   'gate:changes': '変わったところ',
   'gate:inspect': 'ファイルの名前と大きさ',
@@ -93,9 +95,11 @@ const MESSAGES = {
   'no-token':
     'この画面を開くための鍵がありません。npm start を実行したターミナルに表示された URL(#token= を含むもの)を開いてください。',
   token: '鍵が合いません。Studio を起動し直したときは、ターミナルに表示された新しい URL を開いてください。',
+  // つながらないときだけ出す(ux-redesign.md 4 節の「つながっています」の行)
   offline:
-    'Studio のサーバーにつながりません。npm start を実行したターミナルが開いたままか確かめてください。止めたときは、もう一度 npm start を実行して、表示された URL を開いてください。',
+    'Studio が止まっています。直し方: npm start を実行したターミナルが開いたままか確かめてください。閉じていたら、もう一度 npm start を実行して、表示された URL を開いてください。',
 };
+const STOPPED = 'Studio が止まっています';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -286,7 +290,7 @@ function setConnection(state, text) {
 function showBanner(code, fallback) {
   els.banner.hidden = false;
   els.bannerText.textContent = MESSAGES[code] ?? fallback;
-  setConnection('error', code === 'offline' ? 'つながっていません' : '問題があります');
+  setConnection('error', code === 'offline' ? STOPPED : '問題があります');
 }
 
 function clearBanner() {
@@ -364,7 +368,7 @@ function render() {
   if (!project) {
     showPlaceholder('試作品がありません。');
   } else if (!project.previewUrl) {
-    showPlaceholder('表示できる版がありません。「その他」の「開発者向けの詳細」を見てください。');
+    showPlaceholder('表示できる状態がありません。');
   } else if (project.previewUrl !== preview.url) {
     clearEvents();
     showPreview(project.previewUrl, project.id);
@@ -390,13 +394,13 @@ function renderList() {
     const unavailable = !project.running && !project.versioning && !project.building && !project.checking && (failed || !project.previewUrl);
     state.dataset.state = unavailable ? 'error' : 'ok';
     state.textContent = project.running
-      ? '作る AI が作業中'
+      ? `${FIX_AI} が作業中`
       : project.versioning
-        ? '版の保存・復元か書き出しをしています'
+        ? '保存か、戻すか、渡すフォルダーを作っています'
         : project.checking
         ? '自動で確かめています'
         : project.building
-        ? 'ビルド中'
+        ? '表示の準備をしています'
         : unavailable
           ? '表示できません'
           : '';
@@ -1077,8 +1081,14 @@ function evidenceBand(projectId, run, { check = false, again = false } = {}) {
 // 人の「確かめる」(harness.md の 3.1、P27)。その他の引き出しの「試作品を自動で確かめる」と、結果の帯の「もう一度確かめる」から始める。
 // サーバー(src/server/checks.js)が、作るループと同じ観察の入口を、表示中の試作品を見るモードで呼ぶ。
 // 結果は直す欄の会話に、作る run と時刻の順に並べ、同じ形の結果の帯で出す。試す欄の会話は変わらない
-// 試作品の中の AI の接続の、利用者の言葉(確かめるときの AI、試し直しの前と後の返事)
+// 試作品の中の AI の接続の、利用者の言葉(ux-redesign.md 4 節)。接続の名前(モック、Claude Code)は開発者向けの詳細にだけ出す。
+// AI_WORDS は文の中の名前、AI_SHORT は試す欄の上の「AI: … ▾」、AI_DESCRIPTIONS は選ぶときの説明
 const AI_WORDS = { mock: 'お試しの AI', 'claude-code': '本物の AI' };
+const AI_SHORT = { mock: 'お試し', 'claude-code': '本物' };
+const AI_DESCRIPTIONS = {
+  mock: '決まった言葉だけ分かります。無料で、いつも同じ返事です。',
+  'claude-code': '自由な言葉が分かります。あなたの Claude Code で動きます。',
+};
 const CHECK_STATUS = {
   running: () => '試作品を自動で確かめています…',
   passed: () => '確かめました。問題は見つかりませんでした',
@@ -1164,7 +1174,9 @@ function renderCheck(project) {
     if (radio.value === 'claude-code') radio.disabled = !real || real.available === false;
   }
   els.checkAiNote.hidden = !(real && real.available === false);
-  els.checkAiNote.textContent = real && real.available === false ? `本物の AI は選べません: ${real.reason}` : '';
+  // Claude Code が見つからないときは、場所や環境変数の名前の入ったサーバーの理由を出さない(試す欄の選び方と同じ 1 文)
+  const reason = real?.code === 'not-found' ? UNAVAILABLE.missing.lead() : real?.reason;
+  els.checkAiNote.textContent = real && real.available === false ? `本物の AI は選べません: ${reason}` : '';
   const card = consent.card?.use === 'check' && consent.card.projectId === project?.id ? consent.card : null;
   els.checkConsent.hidden = !card;
   els.checkConsent.replaceChildren(...(card ? [consentCard(card.view, { card })] : []));
@@ -1675,10 +1687,10 @@ function lastReplyText(session) {
   return parts.join('、');
 }
 
-// 接続を選ぶ欄。選べない接続は、理由と次の手順を出す
+// 試作品の中の AI を選ぶ欄(ux-redesign.md 7-2)。選べない AI は、理由と次の手順を出す
 function connectionPicker(session) {
   const box = element('fieldset', undefined, 'ai-picker');
-  box.append(element('legend', '接続を選ぶ'));
+  box.append(element('legend', '試作品の中の AI'));
   for (const option of ai.choices?.options ?? []) {
     const label = element('label');
     const radio = document.createElement('input');
@@ -1692,8 +1704,9 @@ function connectionPicker(session) {
       if (option.billing && !consent.agreed) openConsent('product', { projectId: ai.projectId, kind: option.kind });
       else selectConnection(option.kind);
     });
-    label.append(radio, document.createTextNode(option.label));
+    label.append(radio, document.createTextNode(AI_WORDS[option.kind] ?? option.label));
     box.append(label);
+    if (AI_DESCRIPTIONS[option.kind]) box.append(element('p', AI_DESCRIPTIONS[option.kind], 'hint'));
     if (!option.available) box.append(...unavailableReason(option));
   }
   return box;
@@ -1779,7 +1792,7 @@ function renderTryConsent() {
   els.tryConsent.replaceChildren(...(card ? [consentCard(card.view, { card })] : []));
 }
 
-// 応答を待つ間だけ、試す欄の上に「応答を止める」を出す。開発者向けの詳細を閉じていても止められるように
+// 応答を待つ間だけ、試す欄の上に「止める」を出す。開発者向けの詳細を閉じていても止められるように
 function renderAiWaiting() {
   const { session } = ai;
   const waiting = Boolean(session) && waitingFor(ai.projectId) > 0;
@@ -1788,10 +1801,10 @@ function renderAiWaiting() {
     els.aiWaiting.replaceChildren();
     return;
   }
-  const stop = element('button', '応答を止める');
+  const stop = element('button', '止める');
   stop.type = 'button';
   stop.addEventListener('click', cancelAi);
-  els.aiWaiting.replaceChildren(element('span', `${session.connection.label} の応答を待っています…`), stop);
+  els.aiWaiting.replaceChildren(element('span', `${AI_WORDS[session.connection.kind] ?? session.connection.label} の返事を待っています…`), stop);
 }
 
 // プロダクト内 AI の接続(モックか実モデルか)と、AI が理解した状態を出す。
@@ -1818,8 +1831,8 @@ function renderAi() {
     return;
   }
   els.aiSwitch.dataset.kind = session.connection.kind;
-  els.aiBadge.textContent = `AI: ${session.connection.label}`;
-  els.aiSwitch.title = session.connection.description;
+  els.aiBadge.textContent = `AI: ${AI_SHORT[session.connection.kind] ?? session.connection.label}`;
+  els.aiSwitch.title = AI_DESCRIPTIONS[session.connection.kind] ?? session.connection.description;
   const connection = element('p', undefined, 'ai-connection');
   connection.dataset.kind = session.connection.kind;
   connection.append(element('strong', `接続: ${session.connection.label}`), document.createTextNode(` ${session.connection.description}`));
@@ -1978,8 +1991,9 @@ function showAiSession(projectId, session, retry) {
   if (projectId === selectedId) loadVersions();
 }
 
+// 保存の札(ux-redesign.md 4 節の「保存版 v1」の行)。名前を付けたときは、その名前を添える
 function versionLabel(version) {
-  return `v${version.number}${version.name ? `「${version.name}」` : ''}`;
+  return `保存 ${version.number}${version.name ? `「${version.name}」` : ''}`;
 }
 
 // 文の中で、後ろに言葉が続くとき。「」で終わらないときだけ空白を入れる
@@ -1987,7 +2001,7 @@ function versionSubject(version) {
   return version.name ? versionLabel(version) : `${versionLabel(version)} `;
 }
 
-// 作業中(今の app/ と、メモリーにある会話と状態)と、保存した版を分けて見せる
+// 今の状態(今の試作品のファイルと、メモリーにある会話と状態)と、保存したものを分けて見せる
 function workingView(data) {
   const { working } = data;
   const version = data.versions.find((v) => v.id === working.versionId);
@@ -1995,28 +2009,28 @@ function workingView(data) {
   if (working.files === 'none') {
     return {
       state: 'unsaved',
-      text: '作業中: まだ保存した版はありません。良い状態になったら保存してください。',
+      text: '今の状態: まだ保存していません。良い状態になったら保存してください。',
     };
   }
   if (working.files === 'changed' || !version) {
     return {
       state: 'changed',
-      text: `作業中には、保存していない変更があります${base ? `(保存版 ${versionSubject(base)}から)` : ''}。`,
+      text: `今の状態には、保存していない変更があります${base ? `(${versionSubject(base)}から)` : ''}。`,
     };
   }
   if (working.conversation === 'changed') {
     return {
       state: 'partly',
-      text: `作業中のファイルは保存版 ${versionSubject(version)}と同じです。会話と状態は、保存したときから変わっています。`,
+      text: `今の試作品のファイルは${versionSubject(version)}と同じです。会話と状態は、保存したときから変わっています。`,
     };
   }
   if (working.conversation === 'initial') {
     return {
       state: 'partly',
-      text: `作業中のファイルは保存版 ${versionSubject(version)}と同じです。会話と状態は最初のままです。保存したときの会話から続けるには、その版の「復元」を押してください。`,
+      text: `今の試作品のファイルは${versionSubject(version)}と同じです。会話と状態は最初のままです。保存したときの会話から続けるには、その保存の「この状態に戻す」を押してください。`,
     };
   }
-  return { state: 'saved', text: `作業中は保存版 ${versionSubject(version)}と同じです。` };
+  return { state: 'saved', text: `今の状態は${versionSubject(version)}と同じです。` };
 }
 
 // 上の帯の保存の印。保存していない変更があるときだけ出す(ux-redesign.md の気づいたこと A)。
@@ -2037,18 +2051,18 @@ function versionItem(project, version, working, locked) {
   const li = element('li', undefined, 'version');
   li.dataset.versionId = version.id;
   const head = element('p', undefined, 'version-head');
-  head.append(element('strong', `v${version.number}`));
+  head.append(element('strong', `保存 ${version.number}`));
   if (version.name) head.append(element('span', version.name, 'version-name'));
   if (version.kind === 'auto') head.append(element('span', '自動', 'tag'));
-  if (working.files === 'saved' && working.versionId === version.id) head.append(element('span', '作業中と同じ', 'tag current'));
+  if (working.files === 'saved' && working.versionId === version.id) head.append(element('span', '今の状態と同じ', 'tag current'));
   const conversation = version.ai ? `会話: 発言 ${version.ai.userMessages} 件` : '会話は最初のまま';
   const meta = [new Date(version.savedAt).toLocaleString('ja-JP'), `ファイル ${version.fileCount} 個`, conversation];
-  if (!version.builds) meta.push('ビルドできない状態');
-  const button = element('button', '復元');
+  if (!version.builds) meta.push('表示できない状態');
+  const button = element('button', 'この状態に戻す');
   button.type = 'button';
   button.disabled = locked;
-  button.setAttribute('aria-label', `v${version.number} を復元`);
-  button.title = 'この版のファイルと会話に戻します。今の作業中がどの版とも違えば、先に自動で保存します';
+  button.setAttribute('aria-label', `保存 ${version.number} の状態に戻す`);
+  button.title = '保存したときのファイルと会話に戻します。今の状態がどの保存とも違えば、先に自動で保存します';
   button.addEventListener('click', () => restoreVersion(project, version));
   li.append(head, element('p', meta.join('・'), 'muted'), button);
   return li;
@@ -2123,7 +2137,7 @@ async function saveVersion() {
     });
     if (selectedId === project.id) applyVersions(project.id, data);
     els.versionName.value = '';
-    versions.message = { kind: 'ok', text: `${versionSubject(data.version)}として保存しました。` };
+    versions.message = { kind: 'ok', text: `保存しました(${versionLabel(data.version)})。` };
   } catch (error) {
     versionsFailed(error, '保存できませんでした');
   } finally {
@@ -2139,7 +2153,7 @@ function lockHandoff(project) {
     !project || handoff.projectId !== project.id || project.running || project.building || project.versioning || project.checking || versions.busy || handoff.busy;
   for (const field of Object.values(els.handoffNotes)) field.disabled = locked;
   els.handoffExport.disabled = locked;
-  els.handoffExport.textContent = handoff.busy ? '書き出しています…' : '引き継ぎ用に書き出す';
+  els.handoffExport.textContent = handoff.busy ? '作っています…' : '渡すフォルダーを作る';
 }
 
 function renderHandoff(project) {
@@ -2155,7 +2169,7 @@ function renderHandoff(project) {
     const { dir, counts, excluded } = handoff.result;
     box.hidden = false;
     box.dataset.kind = 'ok';
-    const where = element('p', '書き出した場所: ');
+    const where = element('p', 'フォルダーの場所: ');
     where.append(element('code', dir));
     const copy = element('button', '場所をコピー');
     copy.type = 'button';
@@ -2168,7 +2182,10 @@ function renderHandoff(project) {
       }
     });
     const nodes = [
-      element('p', `書き出しました。実機 ${counts.real} 件、モック ${counts.mock} 件、未接続 ${counts.missing} 件、未決事項 ${counts.questions} 件。`),
+      element(
+        'p',
+        `渡すフォルダーを作りました。本物につないだもの ${counts.real} 件、お試しのもの ${counts.mock} 件、つないでいないもの ${counts.missing} 件、未決事項 ${counts.questions} 件。`,
+      ),
       where,
       copy,
       element('p', 'フォルダーの README.md に、区分の一覧、未決事項、試した会話があります。フォルダーごと開発の担当者に渡してください。', 'muted'),
@@ -2180,7 +2197,7 @@ function renderHandoff(project) {
   if (handoff.last) {
     box.hidden = false;
     box.dataset.kind = 'last';
-    const last = element('p', `前に書き出したもの(${new Date(handoff.last.createdAt).toLocaleString('ja-JP')}): `);
+    const last = element('p', `前に作ったフォルダー(${new Date(handoff.last.createdAt).toLocaleString('ja-JP')}): `);
     last.append(element('code', handoff.last.dir));
     box.replaceChildren(last);
     return;
@@ -2206,7 +2223,7 @@ async function loadHandoff(projectId) {
   } catch (error) {
     if (seq !== handoff.seq) return;
     if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
-    handoff.message = `引き継ぎのメモを読めませんでした: ${error.message}`;
+    handoff.message = `渡すときのメモを読めませんでした: ${error.message}`;
   }
   handoff.projectId = projectId;
   renderHandoff(selectedProject());
@@ -2228,7 +2245,7 @@ async function exportHandoff() {
     handoff.last = data.last;
   } catch (error) {
     if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
-    if (handoff.projectId === project.id) handoff.message = `書き出せませんでした: ${error.message}`;
+    if (handoff.projectId === project.id) handoff.message = `渡すフォルダーを作れませんでした: ${error.message}`;
   } finally {
     handoff.busy = false;
     renderHandoff(selectedProject());
@@ -2246,9 +2263,9 @@ async function restoreVersion(project, version) {
     const data = await api(`/api/projects/${encodeURIComponent(project.id)}/versions/${version.id}/restore`, { method: 'POST' });
     if (selectedId === project.id) applyVersions(project.id, data);
     let text = `${versionSubject(data.restored)}に戻しました。`;
-    if (data.autoSaved) text += `戻す前の作業中は v${data.autoSaved.number}(自動)に保存しました。`;
-    if (data.setAside) text += `戻す前の作業中は大きすぎて版にできないので、${data.setAside} に移しました。`;
-    if (!data.build.ok) text += 'ただし、ビルドに失敗しました。試す画面は前の版のままです。「ビルド」の欄を見てください。';
+    if (data.autoSaved) text += `戻す前の状態は、保存 ${data.autoSaved.number}(自動)にしました。`;
+    if (data.setAside) text += `戻す前の状態は大きすぎて保存できないので、${data.setAside} に移しました。`;
+    if (!data.build.ok) text += 'ただし、戻した試作品を表示できません。試す欄は前の状態のままです。';
     else if (data.conversation === 'initial') text += '保存した会話は今の AI の設定に合わないので、会話は最初から始めます。';
     versions.message = { kind: data.build.ok ? 'ok' : 'failed', text };
   } catch (error) {
@@ -2735,7 +2752,7 @@ function renderTrace() {
   const nodes = [
     labeled('今の接続', connectionNote({ label: session.connection.label, real: Boolean(current?.billing) })),
     labeled('AI が使えるツール', current?.tools ?? '不明'),
-    labeled('試作品から AI への操作', '会話を読む、発言を送る、状態を直す。接続の切り替えと「応答を止める」は Studio の画面だけでできます。'),
+    labeled('試作品から AI への操作', '会話を読む、発言を送る、状態を直す。接続の切り替えと応答を「止める」は Studio の画面だけでできます。'),
     element(
       'p',
       '記録は Studio のメモリーにだけ置き、Studio を止めると消えます。メールアドレス、電話番号、鍵らしい文字列は、伏せて記録します(AI に送る中身は変えません)。',

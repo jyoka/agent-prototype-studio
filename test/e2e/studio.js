@@ -162,13 +162,31 @@ export const test = base.extend({
 
 export { expect };
 
-// 開発の言葉(ux-redesign.md 9 節の U3)。利用者の画面の見える文字には出さない(開発者向けの詳細は除く)
+// 開発の言葉(ux-redesign.md 9 節の U3)と、作るループの設計の言葉(harness.md の 7.2)。
+// 利用者の画面の見える文字には出さない(開発者向けの詳細は除く)
 export const U3_WORDS = ['偽接続', 'モック', 'ANTHROPIC_API_KEY', 'Console', 'app/ai.json', 'app/', 'ビルド', 'プロダクト内 AI', '認証の報告', 'STUDIO_', '--'];
+export const HARNESS_WORDS = ['関門', 'シナリオ', 'report', '観察器'];
+export const DEV_WORDS = [...U3_WORDS, ...HARNESS_WORDS];
+
+// 文字の中の開発の言葉を、前後の文字つきで返す(どこに出ているかを、失敗の知らせで分かるように)
+export function devWordsIn(text) {
+  const found = [];
+  for (const word of DEV_WORDS) {
+    for (let at = text.indexOf(word); at !== -1; at = text.indexOf(word, at + word.length)) {
+      found.push(`「${word}」: …${text.slice(Math.max(0, at - 30), at + word.length + 30).replace(/\s+/g, ' ')}…`);
+    }
+  }
+  return found;
+}
 
 // 要素の見える文字(閉じた details の中と hidden の要素は入らない)に、開発の言葉がない
 export async function expectNoDevWords(locator) {
-  const text = await locator.innerText();
-  for (const word of U3_WORDS) expect(text, `「${word}」が見えています`).not.toContain(word);
+  expect(devWordsIn(await locator.innerText())).toEqual([]);
+}
+
+// Studio の画面(iframe の外)の見える文字の全部に、開発の言葉がない(U3)。iframe の中の文字は innerText に入らない
+export async function expectNoDevWordsOnScreen(page) {
+  await expectNoDevWords(page.locator('body'));
 }
 
 // サンプルの ID と、試作品の一覧の名前(Studio が目録の title と、試作品の中の AI があるかから作る)。
@@ -210,12 +228,12 @@ export async function openAiMenu(page) {
 // 同意は直す AI と共通なので、同意の後はカードを出さずに切り替わる(ux-redesign.md 6 節)
 export async function switchToRealAi(page) {
   await openAiMenu(page);
-  await page.getByRole('radio', { name: 'Claude Code', exact: true }).click();
+  await page.getByRole('radio', { name: '本物の AI', exact: true }).click();
   const card = page.getByRole('group', { name: '本物の AI を使う前に' });
   const badge = page.locator('#ai-badge');
-  await expect(card.or(badge.filter({ hasText: 'AI: Claude Code' }))).toBeVisible();
+  await expect(card.or(badge.filter({ hasText: 'AI: 本物' }))).toBeVisible();
   if (await card.isVisible()) await card.getByRole('button', { name: '同意して使う' }).click();
-  await expect(badge).toHaveText('AI: Claude Code');
+  await expect(badge).toHaveText('AI: 本物');
 }
 
 // 上の帯の「その他」を押して、右の引き出しを開く(開いていれば、そのまま)。

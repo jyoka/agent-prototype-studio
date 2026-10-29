@@ -109,7 +109,7 @@
         <textarea id="request-text" rows="3" maxlength="4000" placeholder="例: 見出しの色を落ち着いた青にして" disabled></textarea>
         <div class="request-actions">
           <button type="submit" id="send" disabled>送る</button>
-          <button type="button" id="cancel" hidden>中断</button>
+          <button type="button" id="cancel" hidden>止める</button>
           <span class="muted">Ctrl+Enter(Mac は ⌘+Enter)でも送れます</span>
         </div>
       </form>
@@ -126,13 +126,13 @@
       <h3 id="versions-heading">保存した状態</h3>
       <p id="working-status" class="working-status"></p>
       <form id="save-form" class="save-form">
-        <label for="version-name">版の名前(なくてもよい)</label>
+        <label for="version-name">名前(なくてもよい)</label>
         <input id="version-name" type="text" maxlength="60" autocomplete="off" disabled>
-        <button type="submit" id="save-version" disabled>今の作業中を保存</button>
+        <button type="submit" id="save-version" disabled>保存</button>
       </form>
       <p id="versions-message" class="versions-message" role="status" hidden></p>
-      <ol id="version-list" class="version-list" aria-label="保存した版"></ol>
-      <p class="muted">保存すると、app/ のファイルと、プロダクト内 AI の会話と状態を残します。作業中の会話は Studio を止めると消えますが、保存した版は残ります。</p>
+      <ol id="version-list" class="version-list" aria-label="保存した状態の一覧"></ol>
+      <p class="muted">保存すると、試作品のファイルと、試作品の中の AI との会話と状態を残します。今の会話は Studio を止めると消えますが、保存したものは残ります。</p>
     </section>
     <!-- 人の「確かめる」(harness.md の 3.1、P27)。試す欄の上には置かない(ux-redesign.md の U9)。
          結果は「言葉で直す」の会話に、作る run と同じ結果の帯で出す -->
@@ -152,7 +152,7 @@
     </section>
     <section aria-labelledby="handoff-heading">
       <h3 id="handoff-heading">本番開発へ渡す</h3>
-      <p class="muted">作業中の試作品を、本番開発の担当者に渡すフォルダーに書き出します。ソース、AI の設定、会話と状態、実機・モック・未接続の区別、未決事項が入ります。秘密情報らしい文字列があると書き出しません。</p>
+      <p class="muted">今の試作品を、本番開発の担当者に渡すフォルダーにまとめます。試作品のファイル、AI の設定、会話と状態、本物につないだもの・お試しのもの・つないでいないものの区別、未決事項が入ります。秘密情報らしい文字列があると作りません。</p>
       <form id="handoff-form" class="handoff-form">
         <label for="handoff-purpose">目的(この試作品で確かめたいこと)</label>
         <textarea id="handoff-purpose" rows="2" maxlength="4000" disabled></textarea>
@@ -160,7 +160,7 @@
         <textarea id="handoff-decided" rows="2" maxlength="4000" disabled></textarea>
         <label for="handoff-undecided">未決事項</label>
         <textarea id="handoff-undecided" rows="2" maxlength="4000" disabled></textarea>
-        <button type="submit" id="handoff-export" disabled>引き継ぎ用に書き出す</button>
+        <button type="submit" id="handoff-export" disabled>渡すフォルダーを作る</button>
       </form>
       <div id="handoff-result" class="handoff-result" role="status" hidden></div>
     </section>

@@ -56,7 +56,7 @@ test('作る欄の依頼でプロダクト内 AI の設定が変わり、前の�
     await expect(run).toContainText('変わったファイル: app/ai.json');
     // 変わったかどうかは、作る AI の報告ではなく Studio が設定どうしを比べて出す
     let settings = run.locator('[data-kind="ai-settings"]');
-    await expect(settings).toContainText('プロダクト内 AI の設定(Studio が確かめた結果)');
+    await expect(settings).toContainText('AI の設定(Studio が確かめた結果)');
     await expect(settings).toContainText(`モックの読み取れなかったときの返事: 「${NOT_UNDERSTOOD_FIRST}」 → 「${ASK_BY_EXAMPLE}」`);
     await expect(settings).toContainText('実モデルへの指示(instructions)に足した文: 「読み取れなかったときは、選べる値の例を挙げて聞き返してください。」');
     // 案内するボタンは、試作品の上の試し直しの帯にあるものと同じ名前
@@ -96,7 +96,7 @@ test('作る欄の依頼でプロダクト内 AI の設定が変わり、前の�
     await expect(makeRuns(page)).toHaveCount(1);
     await expect(page.getByRole('list', { name: '作る会話' })).not.toContainText('よろしくお願いします');
     await expect(page.locator('#agent-status')).toContainText('接続: 偽接続');
-    await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
+    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
     expect(studio.output().match(/作る AI に依頼しました/g)).toHaveLength(1);
 
     // 5. もう一度変える。前の設定(1 回目の変更の後)の応答と比べる。引き出しは直す欄に重なるので閉じる

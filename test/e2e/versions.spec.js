@@ -16,7 +16,7 @@ function parts(page) {
     saveMark: page.locator('#save-mark'),
     status: page.locator('#working-status'),
     notice: page.locator('#versions-message'),
-    versionList: page.getByRole('list', { name: '保存した版' }),
+    versionList: page.getByRole('list', { name: '保存した状態の一覧' }),
     log: app.getByRole('region', { name: '会話' }).getByRole('listitem'),
     conditions: app.getByRole('region', { name: '希望条件' }).locator('.value'),
     async say(text) {
@@ -37,7 +37,7 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
     await chooseSample(page, SAMPLES.jobConsult);
     const ui = parts(page);
     await expect(ui.app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
-    await expect(ui.status).toHaveText('作業中: まだ保存した版はありません。良い状態になったら保存してください。');
+    await expect(ui.status).toHaveText('今の状態: まだ保存していません。良い状態になったら保存してください。');
     await expect(ui.saveMark).toBeHidden();
     await openMore(page);
     await expect(ui.versionList.getByRole('listitem')).toHaveCount(0);
@@ -46,15 +46,15 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
     await ui.say('カフェで働きたいです');
     await ui.app.getByLabel('勤務地を直す').selectOption('もみじ台');
     await expect(ui.log.last()).toHaveText('あなたの修正: 勤務地を「もみじ台」に直しました。');
-    await page.getByLabel('版の名前(なくてもよい)').fill('最初の良い版');
-    await page.getByRole('button', { name: '今の作業中を保存' }).click();
-    await expect(ui.notice).toHaveText('v1「最初の良い版」として保存しました。');
+    await page.getByLabel('名前(なくてもよい)').fill('最初の良い版');
+    await page.locator('#save-version').click();
+    await expect(ui.notice).toHaveText('保存しました(保存 1「最初の良い版」)。');
     await expect(ui.saveMark).toBeHidden();
-    await expect(ui.status).toHaveText('作業中は保存版 v1「最初の良い版」と同じです。');
-    const v1 = ui.versionList.getByRole('listitem').filter({ hasText: 'v1' });
+    await expect(ui.status).toHaveText('今の状態は保存 1「最初の良い版」と同じです。');
+    const v1 = ui.versionList.getByRole('listitem').filter({ hasText: '保存 1' });
     await expect(v1).toContainText('最初の良い版');
     await expect(v1).toContainText('会話: 発言 1 件');
-    await expect(v1).toContainText('作業中と同じ');
+    await expect(v1).toContainText('今の状態と同じ');
     await page.screenshot({ path: test.info().outputPath('1-saved.png'), fullPage: true });
 
     // 作る欄で試作品を変え、会話も進める。作業中は保存版と違うと出る
@@ -64,16 +64,16 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
     await expect(ui.app.getByRole('heading', { name: 'うみかぜ求人相談' })).toBeVisible();
     await expect(ui.saveMark).toHaveText('保存していない変更があります');
     await openMore(page);
-    await expect(ui.status).toHaveText('作業中には、保存していない変更があります(保存版 v1「最初の良い版」から)。');
-    await expect(v1).not.toContainText('作業中と同じ');
+    await expect(ui.status).toHaveText('今の状態には、保存していない変更があります(保存 1「最初の良い版」から)。');
+    await expect(v1).not.toContainText('今の状態と同じ');
     await ui.say('アルバイトがいいです');
     await expect(ui.log.last()).toContainText(AFTER_CORRECTION);
     await expect(ui.log).toHaveCount(6);
     await page.screenshot({ path: test.info().outputPath('2-changed.png'), fullPage: true });
 
     // 復元すると、変更前のファイルと、保存したときの会話と条件に戻る。戻す前の作業中は自動で保存される
-    await page.getByRole('button', { name: 'v1 を復元' }).click();
-    await expect(ui.notice).toHaveText('v1「最初の良い版」に戻しました。戻す前の作業中は v2(自動)に保存しました。');
+    await page.getByRole('button', { name: '保存 1 の状態に戻す' }).click();
+    await expect(ui.notice).toHaveText('保存 1「最初の良い版」に戻しました。戻す前の状態は、保存 2(自動)にしました。');
     await expect(ui.app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
     await expect(ui.log).toHaveCount(4);
     await expect(ui.log.last()).toHaveText('あなたの修正: 勤務地を「もみじ台」に直しました。');
@@ -81,10 +81,10 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
     // AI が理解した状態は、開発者向けの詳細にある
     await openDevDetails(page);
     await expect(page.getByRole('definition')).toHaveText(['カフェのホール', '未定', 'もみじ台', '未定']);
-    await expect(ui.status).toHaveText('作業中は保存版 v1「最初の良い版」と同じです。');
+    await expect(ui.status).toHaveText('今の状態は保存 1「最初の良い版」と同じです。');
     await expect(ui.saveMark).toBeHidden();
     expect(await fs.readFile(appFile, 'utf8')).toContain('<h1>しおかぜ求人相談</h1>');
-    const v2 = ui.versionList.getByRole('listitem').filter({ hasText: 'v2' });
+    const v2 = ui.versionList.getByRole('listitem').filter({ hasText: '保存 2' });
     await expect(v2).toContainText('復元の前の作業中(自動)');
     await expect(v2).toContainText('自動');
     await expect(v2).toContainText('会話: 発言 2 件');
@@ -93,7 +93,7 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
     // 保存したときの初期条件から続けると、同じ応答が返る(本人の修正を踏まえる)
     await ui.say('アルバイトがいいです');
     await expect(ui.log.last()).toContainText(AFTER_CORRECTION);
-    await expect(ui.status).toHaveText('作業中のファイルは保存版 v1「最初の良い版」と同じです。会話と状態は、保存したときから変わっています。');
+    await expect(ui.status).toHaveText('今の試作品のファイルは保存 1「最初の良い版」と同じです。会話と状態は、保存したときから変わっています。');
     await expect(ui.saveMark).toBeVisible();
   } finally {
     await studio.stop();
@@ -110,11 +110,11 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
     await expect(ui.saveMark).toBeHidden();
     await openMore(page);
     await expect(ui.status).toContainText('会話と状態は最初のままです');
-    await expect(ui.versionList.getByRole('listitem')).toHaveText([/^v2/, /^v1/]);
+    await expect(ui.versionList.getByRole('listitem')).toHaveText([/^保存 2/, /^保存 1/]);
 
     // 会話が最初のままなら、失うものがないので自動の保存はしない
-    await page.getByRole('button', { name: 'v1 を復元' }).click();
-    await expect(ui.notice).toHaveText('v1「最初の良い版」に戻しました。');
+    await page.getByRole('button', { name: '保存 1 の状態に戻す' }).click();
+    await expect(ui.notice).toHaveText('保存 1「最初の良い版」に戻しました。');
     await expect(ui.log).toHaveCount(4);
     await expect(ui.conditions).toHaveText(['カフェのホール', '未定', 'もみじ台', '未定']);
     await ui.say('アルバイトがいいです');
@@ -122,12 +122,12 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
     await page.screenshot({ path: test.info().outputPath('4-resumed-after-restart.png'), fullPage: true });
 
     // 自動で保存した版(変更の後)にも戻れる
-    await page.getByRole('button', { name: 'v2 を復元' }).click();
-    await expect(ui.notice).toContainText('v2「復元の前の作業中(自動)」に戻しました。');
+    await page.getByRole('button', { name: '保存 2 の状態に戻す' }).click();
+    await expect(ui.notice).toContainText('保存 2「復元の前の作業中(自動)」に戻しました。');
     await expect(ui.app.getByRole('heading', { name: 'うみかぜ求人相談' })).toBeVisible();
     await expect(ui.log).toHaveCount(6);
     await expect(ui.conditions).toHaveText(['カフェのホール', 'アルバイト・パート', 'もみじ台', '未定']);
-    await expect(ui.versionList.getByRole('listitem')).toHaveText([/^v3/, /^v2/, /^v1/]);
+    await expect(ui.versionList.getByRole('listitem')).toHaveText([/^保存 3/, /^保存 2/, /^保存 1/]);
     await openDevDetails(page);
     await expect(page.locator('#events-empty')).toBeVisible();
   } finally {
@@ -143,8 +143,8 @@ test('ビルドできない状態は保存せず、理由を出す。作る AI �
     const ui = parts(page);
     await expect(ui.app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
     await openMore(page);
-    await page.getByRole('button', { name: '今の作業中を保存' }).click();
-    await expect(ui.status).toHaveText('作業中は保存版 v1 と同じです。');
+    await page.locator('#save-version').click();
+    await expect(ui.status).toHaveText('今の状態は保存 1 と同じです。');
 
     await closeMore(page);
     await page.getByLabel('依頼').fill('壊して、直せないふりをして');
@@ -153,27 +153,27 @@ test('ビルドできない状態は保存せず、理由を出す。作る AI �
     await expect(page.getByRole('list', { name: '作る会話' }).locator('[data-kind="gave-up"]')).toBeVisible();
     await openDevDetails(page);
     await expect(page.locator('#build-status')).toContainText('ビルドに失敗しました');
-    await page.getByRole('button', { name: '今の作業中を保存' }).click();
+    await page.locator('#save-version').click();
     await expect(ui.notice).toContainText('保存できませんでした: ビルドできない状態は保存できません');
     await expect(ui.versionList.getByRole('listitem')).toHaveCount(1);
 
     // 壊れた作業中からも戻せる。壊れた作業中は自動で保存され、ビルドできない状態と出る
-    await page.getByRole('button', { name: 'v1 を復元' }).click();
-    await expect(ui.notice).toHaveText('v1 に戻しました。戻す前の作業中は v2(自動)に保存しました。');
+    await page.getByRole('button', { name: '保存 1 の状態に戻す' }).click();
+    await expect(ui.notice).toHaveText('保存 1 に戻しました。戻す前の状態は、保存 2(自動)にしました。');
     await expect(page.locator('#build-status')).toContainText('ビルドに成功しました');
-    await expect(ui.versionList.getByRole('listitem').filter({ hasText: 'v2' })).toContainText('ビルドできない状態');
+    await expect(ui.versionList.getByRole('listitem').filter({ hasText: '保存 2' })).toContainText('表示できない状態');
 
     await closeMore(page);
     await page.getByLabel('依頼').fill('ゆっくり進めて');
     await page.getByRole('button', { name: '送る' }).click();
-    await expect(page.getByRole('button', { name: '中断' })).toBeVisible();
+    await expect(page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '止める' })).toBeVisible();
     await openMore(page);
-    await expect(page.getByRole('button', { name: '今の作業中を保存' })).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'v1 を復元' })).toBeDisabled();
+    await expect(page.locator('#save-version')).toBeDisabled();
+    await expect(page.getByRole('button', { name: '保存 1 の状態に戻す' })).toBeDisabled();
     await closeMore(page);
-    await page.getByRole('button', { name: '中断' }).click();
+    await page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '止める' }).click();
     await openMore(page);
-    await expect(page.getByRole('button', { name: '今の作業中を保存' })).toBeEnabled();
+    await expect(page.locator('#save-version')).toBeEnabled();
   } finally {
     await studio.stop();
   }
