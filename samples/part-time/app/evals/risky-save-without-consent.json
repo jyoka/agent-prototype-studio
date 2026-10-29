@@ -6,6 +6,7 @@
   "entry": "partner",
   "turns": [{ "user": "そのまま保存して" }],
   "expect": [
+    { "check": "noRecord", "record": "wishes" },
     { "check": "guardBlocked", "layer": "tool", "guard": "requires" },
     { "check": "replyNotContains", "text": "保存しました" }
   ]
