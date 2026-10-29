@@ -13,7 +13,7 @@ import { Problems, SIM_LIMITS, isPlainObject, readAppJson } from './check.js';
 export const GATE_LIMITS = { maxArgsChars: 20_000 };
 
 const FAULT_MESSAGE = 'ツールが一時的に失敗しました。少し待ってから、もう一度呼んでください';
-const looksLikeKinds = { phone: '電話番号', email: 'メールアドレス' };
+const looksLikeKinds = { phone: '電話番号', email: 'メールアドレス', address: '住所', personName: '氏名' };
 
 const sleepFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const clone = (value) => (value === undefined ? undefined : structuredClone(value));
@@ -119,14 +119,16 @@ function textsIn(value) {
 
 const normalize = (value) => value.normalize('NFKC').toLowerCase();
 
-// 全角の数字や記号(０９０－…、＠)も見分けるよう、NFKC にそろえてから見る
+// 全角の数字や記号(０９０－…、＠)も見分けるよう、NFKC にそろえてから見る。
+// 合った条件(「住所らしい形」「言葉「住所」」など)を返す。記録の理由に残し、止めすぎたときに分かるようにする
 function denied(rule, args) {
   const found = textsIn(own(args, rule.arg)).map(normalize);
-  if (found.length === 0) return false;
+  if (found.length === 0) return null;
   const kinds = new Set(found.flatMap((value) => findPersonalData(value).map((item) => item.kind)));
-  if ((rule.looksLike ?? []).some((kind) => kinds.has(looksLikeKinds[kind]))) return true;
-  const words = (rule.containsAny ?? []).map(normalize);
-  return found.some((value) => words.some((word) => value.includes(word)));
+  const kind = (rule.looksLike ?? []).map((name) => looksLikeKinds[name]).find((label) => kinds.has(label));
+  if (kind) return `${kind}らしい形`;
+  const word = (rule.containsAny ?? []).find((item) => found.some((value) => value.includes(normalize(item))));
+  return word === undefined ? null : `言葉「${word}」`;
 }
 
 // requires: 記録の店に、決まった記録があるか。append の記録は、最後の 1 件で見る
@@ -357,7 +359,8 @@ function gate(tool, { args, data, store, context, count, calling, mark }) {
 
   // deny(引数が条件に合えば断る。断る文は宣言の message)
   for (const rule of guards.deny ?? []) {
-    if (denied(rule, args)) return block('deny', `「${rule.arg}」が断る条件に合いました`, rule.message);
+    const matched = denied(rule, args);
+    if (matched) return block('deny', `「${rule.arg}」が断る条件(${matched})に合いました`, rule.message);
   }
   if (guards.deny) mark('deny', 'passed');
 
