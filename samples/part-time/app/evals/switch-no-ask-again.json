@@ -14,6 +14,7 @@
     { "check": "noAskAgain" },
     { "check": "replyContains", "text": "働ける曜日は、土日と平日のどちらがいいですか?" },
     { "check": "stateHas", "field": "days", "equals": "土日" },
-    { "check": "replyContains", "text": "受付に戻ります" }
+    { "check": "replyContains", "text": "受付に戻ります", "only": "mock" },
+    { "check": "judge", "aspect": "handoff", "rubric": "相談役が曜日を聞き終えたら、条件をまとめ、受付に戻ることを伝えているか", "passAtLeast": 4 }
   ]
 }
