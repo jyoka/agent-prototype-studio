@@ -219,7 +219,7 @@ export function matchToolSteps(toolUses, entries, by) {
   const queue = [...entries];
   const steps = [];
   for (const use of toolUses) {
-    // 返事の形(--json-schema)を CLI が道具の形で受け取ることがある(未確認。sim-7 で確かめる)。ツールの呼び出しには数えない
+    // 返事の形(--json-schema)は、CLI が StructuredOutput という道具の呼び出しで受け取る(sim-7 で実機で確かめた)。ツールの呼び出しには数えない
     if (use.name === 'StructuredOutput') continue;
     const name = use.name.startsWith(PERMISSION_PREFIX) ? use.name.slice(PERMISSION_PREFIX.length) : null;
     const at = name ? queue.findIndex((entry) => entry.tool === name) : -1;

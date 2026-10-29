@@ -1,0 +1,44 @@
+[
+  {
+    "kind": "tool-call",
+    "entry": {
+      "tool": "get_job",
+      "args": {
+        "id": "m1"
+      },
+      "result": {
+        "ok": true,
+        "chars": 71,
+        "keys": [
+          "id",
+          "title",
+          "area",
+          "wage",
+          "days"
+        ]
+      },
+      "ms": 202,
+      "guards": [
+        {
+          "layer": "tool",
+          "guard": "schema",
+          "effect": "passed",
+          "owner": "dip"
+        },
+        {
+          "layer": "tool",
+          "guard": "hideFields",
+          "effect": "blocked",
+          "owner": "dip",
+          "reason": "結果から contact を除きました"
+        },
+        {
+          "layer": "tool",
+          "guard": "maxResultChars",
+          "effect": "passed",
+          "owner": "dip"
+        }
+      ]
+    }
+  }
+]

@@ -84,7 +84,7 @@ const AGENT_ENV = [
 // env で環境変数を足す。値が undefined の名前は消す。
 // 作る AI は、env で選ばなければ偽接続(STUDIO_AGENT=fake)にする。STUDIO_AGENT を消すか claude にするテストは、
 // STUDIO_CLAUDE_BIN で偽の claude か、ない場所を指す。指さなければ起動しない(手元の本物の Claude Code を呼ばないため)。
-// 本物を呼ぶのは real: true を渡したときだけ(test/e2e/real-loop.spec.js。STUDIO_REAL=1 のときだけ動く)
+// 本物を呼ぶのは real: true を渡したときだけ(test/e2e/real-loop.spec.js と real-sim.spec.js。STUDIO_REAL=1 のときだけ動く)
 export async function launchStudio(home, { useNpm = false, env: extraEnv = {}, real = false } = {}) {
   const command = useNpm ? (process.platform === 'win32' ? 'npm.cmd' : 'npm') : process.execPath;
   const args = useNpm ? ['start'] : ['bin/studio.js'];
