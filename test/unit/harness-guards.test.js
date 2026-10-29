@@ -135,6 +135,19 @@ test('maxReplyChars と forbidden: 長さの上限を超える返事と、禁止
   assert.deepEqual(checkReply('架空の宿です。', base).failed, []);
 });
 
+test('noJsonText: 返事の文に JSON の形が残っていれば、rules に書かなくても合わない(jyoka/tasks#365)', () => {
+  const definition = travel({ noNewNumbers: false, noLeading: false, mustAsk: false });
+  const base = { definition, decision: { ...askingPlace(definition), ask: null, mustInclude: [] }, state: empty, utterances: [] };
+  const rules = (reply) => checkReply(reply, base).failed.map((f) => f.rule);
+  assert.deepEqual(rules('{"reply": "湖の町ですね。"}'), ['noJsonText']);
+  assert.deepEqual(rules('{"reply": "閉じていない'), ['noJsonText']);
+  assert.deepEqual(rules('湖の町ですね。\n{ "reply" : "湖の町"}'), ['noJsonText']);
+  assert.deepEqual(rules('｛＂ｒｅｐｌｙ＂：＂全角＂｝'), ['noJsonText']);
+  assert.deepEqual(rules('["湖の町", "山の村"]'), ['noJsonText']);
+  // 括弧やかぎ括弧のある、ふつうの返事は合う
+  assert.deepEqual(rules('行き先は {湖の町} ですね。「"静か"」な所がお好みですか? [確認]'), []);
+});
+
 test('モックの返事は、見本の題材でいつも守ることに合う', async () => {
   for (const [sample, texts] of [
     ['study-consult', ['プログラミングを学びたい', 'はじめてです', 'こんにちは', '動画で学ぶ', '1日30分くらい', 'ありがとう']],
@@ -193,6 +206,32 @@ test('やり直しで合えば、やり直しの返事を使う', async (t) => {
   assert.match(view.messages.at(-1).text, /^偽の Claude Code です。/);
   assert.ok(view.messages.at(-1).text.endsWith(definition.fields[0].question));
   assert.deepEqual((await calls()).map(kindOf), ['extract', 'phrase', 'phrase']);
+});
+
+test('言い方の reply が JSON の文なら中の文を使い、読めない JSON は守ることのやり直しに回す(jyoka/tasks#365)', async (t) => {
+  const definition = travel();
+  const { sessions, calls } = await fakeSessions(t, definition);
+  const question = definition.fields[0].question;
+
+  let view = await sessions.send('p', '[JSON の文] 旅行の相談です');
+  let [entry] = sessions.trace('p').entries;
+  assert.equal(view.messages.at(-1).text, `偽の Claude Code です。これまでの会話を受け取りました(修正の記録なし)。「[JSON の文] 旅行の相談です」への返事です。${question}`);
+  assert.equal(entry.harness.guards.result, 'passed');
+  assert.match(entry.harness.phrase.unwrapped, /中の reply の文だけを使った/);
+  assert.deepEqual((await calls()).map(kindOf), ['extract', 'phrase']);
+
+  view = await sessions.send('p', '[一度壊れた JSON] 旅行の相談です');
+  [entry] = sessions.trace('p').entries;
+  assert.equal(entry.harness.guards.result, 'retried');
+  assert.deepEqual(entry.harness.guards.failed, ['noJsonText']);
+  assert.match(entry.harness.phrase.retryStdin, /<前の返事の問題>[\s\S]*JSON の文を出さない\(noJsonText\)/);
+  assert.match(view.messages.at(-1).text, /^偽の Claude Code です。/);
+  assert.deepEqual((await calls()).map(kindOf).slice(2), ['extract', 'phrase', 'phrase']);
+
+  view = await sessions.send('p', '[壊れた JSON] 旅行の相談です');
+  [entry] = sessions.trace('p').entries;
+  assert.equal(entry.harness.guards.result, 'fallback');
+  assert.doesNotMatch(view.messages.at(-1).text, /"reply"/);
 });
 
 test('問いの原文が抜けた返事には、やり直さずに原文を足す(S18)', async (t) => {
