@@ -55,7 +55,16 @@
       "do": { "op": "record", "into": "wishes" },
       "guards": {
         "requires": [{ "recorded": "consent", "equals": { "agreed": true } }],
-        "deny": [{ "arg": "note", "looksLike": ["phone", "email"], "message": "電話番号とメールアドレスは保存できません" }]
+        "deny": [
+          { "arg": "note", "looksLike": ["phone", "email"], "message": "電話番号とメールアドレスは保存できません" },
+          { "arg": "note", "looksLike": ["address"],
+            "message": "住所は保存できません(家の場所が分かる番号や、県と市が続く書き方を、住所とみなします)。場所は、駅の近くや町の名前など、おおまかに書いてください" },
+          { "arg": "note", "looksLike": ["personName"],
+            "message": "名前は保存できません(「〜と申します」「名前は〜」の書き方を名前とみなします)。名前は書かずに、場所、時給、働き方の希望だけを書いてください" },
+          { "arg": "area", "looksLike": ["phone", "email"], "message": "電話番号とメールアドレスは保存できません" },
+          { "arg": "area", "looksLike": ["address"],
+            "message": "住所は保存できません(家の場所が分かる番号や、県と市が続く書き方を、住所とみなします)。場所は、駅の近くや町の名前など、おおまかに書いてください" }
+        ]
       }
     }
   ]

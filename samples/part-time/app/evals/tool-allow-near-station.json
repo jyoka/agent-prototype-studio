@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "id": "tool-allow-near-station",
+  "kind": "tool",
+  "about": "普通の希望(駅の近く、時間帯)は、住所や名前の守り(deny)で止めすぎず、保存できる",
+  "records": { "consent": { "agreed": true } },
+  "call": { "tool": "save_wish", "args": { "area": "みなと町", "minWage": 1100, "note": "駅の近くがいい。土日の 10-18 時くらい" } },
+  "expect": [
+    { "check": "noGuardBlock", "layer": "tool", "guard": "deny" },
+    { "check": "recordHas", "record": "wishes", "equals": { "note": "駅の近くがいい。土日の 10-18 時くらい" } }
+  ]
+}

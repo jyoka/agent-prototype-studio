@@ -441,9 +441,12 @@ test('見本のバイト探し(構成 A)を観察すると、トークのボタ�
   for (const entry of turns) {
     expect(entry.composition).toMatchObject({ file: 'composition.json', digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/) });
     expect(entry.assumptions).toMatchObject({ id: 'partner-a', standIn: true });
-    // プロンプトの頼みと、出口の確かめ(相手の持ち物なので記録だけ)
+    // プロンプトの頼みと、出口の確かめ 2 つ(相手の持ち物なので記録だけ)
     expect(entry.steps[0]).toMatchObject({ participant: 'partner', connection: 'mock', real: false, prompt: { asked: ['no-contact-ask'] } });
-    expect(entry.steps.at(-1).guards).toEqual([{ layer: 'output', guard: 'facts-from-tools', effect: 'passed', owner: 'partner' }]);
+    expect(entry.steps.at(-1).guards).toEqual([
+      { layer: 'output', guard: 'facts-from-tools', effect: 'passed', owner: 'partner' },
+      { layer: 'output', guard: 'no-contact-in-reply', effect: 'passed', owner: 'partner' },
+    ]);
   }
   // ツールの呼び出しと、ツールの守りの判定
   const tools = turns.map((entry) =>

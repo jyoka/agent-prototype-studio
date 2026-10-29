@@ -30,7 +30,7 @@ export const TOOL_GUARDS = ['requires', 'deny', 'hideFields', 'maxCallsPerConver
 // search の match で使える比べ方。書かなければ equals
 export const MATCH_KINDS = ['equals', 'atLeast', 'atMost', 'includes', 'contains'];
 // deny の looksLike(src/server/redact.js の見分け方と同じ種類)
-export const LOOKS_LIKE = ['phone', 'email'];
+export const LOOKS_LIKE = ['phone', 'email', 'address', 'personName'];
 
 export const TOOL_LIMITS = {
   maxTools: 30,

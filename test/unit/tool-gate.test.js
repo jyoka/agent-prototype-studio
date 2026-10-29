@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import tls from 'node:tls';
+import { STUDIO_ROOT } from '../../src/server/config.js';
 import { parseTools } from '../../src/server/sim/tools.js';
 import { callTool, loadToolData } from '../../src/server/sim/tool-gate.js';
 
@@ -582,4 +583,120 @@ test('どの op も、ファイルを読み書きせず、外へ通信しない(
   // 止めた口の中でも、5 つの op が動き、守りと失敗も効いた
   assert.deepEqual(outcomes.map((outcome) => outcome.ok), [true, true, true, true, true, true, false, false, true, false]);
   assert.equal(outcomes.at(-1).fault, true);
+});
+
+// 見本のバイト探し(構成 A)の save_wish の守り(jyoka/tasks#366、#373)。プロンプトの頼みに頼らず、ツールの守りで、
+// 電話番号、メールアドレス、住所の形、氏名の形を止める。普通の希望(駅の近く、渋谷あたり、言いよどみ)は止めすぎない。
+// 住所と氏名は looksLike(src/server/redact.js の見分け方)で、形で見分ける。どれも架空
+const sampleDenied = [
+  [{ note: '連絡は 090-0000-1111' }, '電話番号'],
+  [{ note: 'かわせみ町1ｰ12ｰ3(半角の線)' }, '住所'],
+  [{ note: 'みほん一丁目2-3' }, '住所'],
+  [{ note: 'taro@example.com に送って' }, '電話番号'],
+  [{ note: '家はかわせみ町1-2-3' }, '住所'],
+  [{ note: '家はかわせみ町1-12-3' }, '住所'],
+  [{ note: 'かわせみ町１－１２－３' }, '住所'],
+  [{ note: 'かわせみ町1ー12ー3 のあたり' }, '住所'],
+  [{ note: '1丁目12番3号に住んでいる' }, '住所'],
+  [{ note: 'かわせみ町2丁目3番地' }, '住所'],
+  [{ note: 'かわせみ町二丁目' }, '住所'],
+  [{ note: 'かわせみ町12-3' }, '住所'],
+  [{ note: 'みほん荘 101号室' }, '住所'],
+  [{ note: '〒000-0000' }, '住所'],
+  [{ note: '東京都みほん区に住んでいる' }, '住所'],
+  [{ note: '夢見県かわせみ市から通う' }, '住所'],
+  [{ note: '名前はみほん太郎' }, '名前'],
+  [{ note: '名前: みほん花子' }, '名前'],
+  [{ note: '氏名は ミホン タロウ です' }, '名前'],
+  [{ note: 'みほん太郎と申します' }, '名前'],
+  [{ note: 'みほん太郎といいます。よろしく' }, '名前'],
+  [{ note: '私はみほん花子って言います' }, '名前'],
+  [{ note: '私の名前は、みほん太郎です' }, '名前'],
+  [{ note: 'ﾐﾎﾝ ﾀﾛｳと申します' }, '名前'],
+  // 名前の前に言葉がつき、名前が漢字かカタカナの名乗り
+  [{ note: '大学生の山田太郎と申します' }, '名前'],
+  [{ note: 'バイトを探している山田花子と申します' }, '名前'],
+  [{ note: 'フリーターのミホンタロウといいます' }, '名前'],
+  [{ area: 'かわせみ町1-2-3' }, '住所'],
+  [{ area: 'かわせみ町2丁目' }, '住所'],
+  [{ area: '東京都みほん区' }, '住所'],
+];
+const sampleAllowed = [
+  { area: 'みなと町', note: '駅の近くがいい' },
+  { area: '渋谷あたり' },
+  { area: '駅の近く', minWage: 1100 },
+  { area: 'かわべ市', note: 'かわべ市の駅前だとうれしい' },
+  { note: '駅の近くといいますか、歩いて行けるところ' },
+  { note: '品出しといいますか、裏方の仕事がいい' },
+  { note: '家から近いところといいますか、通いやすいところ' },
+  { note: 'みなと町といいます、海の近くの町がいい' },
+  { note: '土日の 10-18 時くらい。家から近いところ' },
+  { note: '人と話す仕事がしたい。1-2 か月だけでもよい' },
+  { note: '2026-11-01 から働きたい。9-17 時' },
+  { note: '週 3 日、1 日 4 時間。時給は 1,100 円以上' },
+  { note: '2 番線のホームに近い店。1番大事なのは時給' },
+  { note: '東京都内で探したい' },
+  { note: '名前は聞かないでほしい' },
+  { note: '家の住所から近い店がいい。本名は出したくない' },
+  { note: 'フリーターといいます。1-2-3 月だけ働きたい' },
+  { area: '新宿三丁目駅の近く' },
+  { area: '東京都みほん区あたり' },
+  { note: '店の名前はみほん屋がいい。時給は 1000-1200 円' },
+  { note: 'シフトの早番といいます、朝の時間がいい' },
+  { note: '店長が厳しいといいます。優しい店がいい' },
+  { note: '人気のカフェといいますか、おしゃれな店' },
+];
+
+test('見本の save_wish は、連絡先、住所の形、氏名の形を断り、普通の希望は保存する(架空)', async () => {
+  const appDir = path.join(STUDIO_ROOT, 'samples', 'part-time', 'app');
+  const raw = JSON.parse(await fs.readFile(path.join(appDir, 'tools.json'), 'utf8'));
+  const { toolset, errors } = await parseTools(raw, { file: 'tools.json', appDir });
+  assert.deepEqual(errors, []);
+  const save = (args) => callTool({ tools: toolset, store: { consent: { agreed: true } }, name: 'save_wish', args });
+  assert.ok(sampleDenied.length >= 10 && sampleAllowed.length >= 10);
+  for (const [args, about] of sampleDenied) {
+    const outcome = await save(args);
+    assert.equal(outcome.ok, false, JSON.stringify(args));
+    assert.ok(outcome.guards.some((g) => g.guard === 'deny' && g.effect === 'blocked'), JSON.stringify(args));
+    assert.equal(outcome.store.wishes, undefined, JSON.stringify(args));
+    // 止めた値は、記録には伏せて残す(守りと伏せる処理は同じ見分け方)
+    assert.match(JSON.stringify(outcome.entry.args), /伏せた: /, JSON.stringify(args));
+    // 断りの文は、何を断ったかと、どう書けば保存できるかを伝える(止めすぎたときに、利用者が書き直せるように)
+    const kind = about === '電話番号' ? /電話番号とメールアドレス/ : new RegExp(`${about}は保存できません\\(.+とみなします\\)。`);
+    assert.match(outcome.error, kind, JSON.stringify(args));
+  }
+  for (const args of sampleAllowed) {
+    const outcome = await save(args);
+    assert.equal(outcome.ok, true, `${JSON.stringify(args)}: ${outcome.error}`);
+    assert.deepEqual(outcome.store.wishes, args);
+  }
+});
+
+test('deny の looksLike の address と personName は、形で見分け、記録の理由に合った形を残して値を伏せる', async (t) => {
+  const { tools } = await setup(t, {
+    formatVersion: 1,
+    tools: [{
+      name: 'save_note',
+      description: 'メモを保存する',
+      inputSchema: { type: 'object', properties: { note: { type: 'string' } } },
+      do: { op: 'record', into: 'notes' },
+      guards: { deny: [{ arg: 'note', looksLike: ['address', 'personName'], message: '住所と名前は保存できません' }] },
+    }],
+  });
+  const address = await callTool({ tools, name: 'save_note', args: { note: '家はかわせみ町1-12-3' } });
+  assert.equal(address.ok, false);
+  assert.equal(address.error, '住所と名前は保存できません');
+  const recorded = JSON.stringify(address.entry);
+  assert.equal(recorded.includes('1-12-3'), false, recorded);
+  assert.match(recorded, /「note」が断る条件\(住所らしい形\)に合いました/);
+  assert.match(recorded, /伏せた: 住所/);
+
+  const name = await callTool({ tools, name: 'save_note', args: { note: 'みほん太郎と申します' } });
+  assert.equal(name.ok, false);
+  assert.equal(JSON.stringify(name.entry).includes('みほん太郎'), false);
+  assert.match(JSON.stringify(name.entry), /断る条件\(氏名らしい形\)/);
+
+  // 言いよどみの「といいますか」と、場所だけの希望は止めない
+  const ok = await callTool({ tools, name: 'save_note', args: { note: '駅の近くといいますか、渋谷あたり' } });
+  assert.equal(ok.ok, true, ok.error);
 });

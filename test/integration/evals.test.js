@@ -47,20 +47,20 @@ test('npm run evals は、構成 × 前提 × 接続 × 回数を回し、result
   const { run, latest, dir } = await project(t);
   const out = await run(['--assumptions', 'partner-a,partner-b', '--repeat', '2']);
   assert.equal(out.code, 0, out.stderr + out.stdout);
-  assert.match(out.stdout, /場面を回しています: part-time\(37 本。モック\(費用なし\)\)/);
+  assert.match(out.stdout, /場面を回しています: part-time\(44 本。モック\(費用なし\)\)/);
   const { result, report, read } = await latest();
 
   assert.equal(result.format, 'prototype-studio-evals');
   assert.equal(result.status, 'done');
   assert.equal(result.verdict, 'passed');
-  // 前提 2 つ × 接続 1 つ × 回数 2 = 4 組。組ごとに場面 37 本(構成 B、C の参加者から始める 9 本は、構成 A では n/a)
+  // 前提 2 つ × 接続 1 つ × 回数 2 = 4 組。組ごとに場面 44 本(構成 B、C の参加者から始める 9 本は、構成 A では n/a)
   assert.deepEqual(result.groups.map((g) => [g.composition.file, g.assumption.id, g.connection, g.round]), [
     ['composition.json', 'partner-a', 'mock', 1],
     ['composition.json', 'partner-a', 'mock', 2],
     ['composition.json', 'partner-b', 'mock', 1],
     ['composition.json', 'partner-b', 'mock', 2],
   ]);
-  assert.ok(result.groups.every((g) => g.evals.length === 37));
+  assert.ok(result.groups.every((g) => g.evals.length === 44));
   // 結果は app/ と構成と前提の指紋を持つ(S6、S23)
   assert.match(result.appDigest, /^[0-9a-f]{64}$/);
   assert.match(result.groups[0].composition.digest, /^sha256:[0-9a-f]{64}$/);
@@ -77,7 +77,7 @@ test('npm run evals は、構成 × 前提 × 接続 × 回数を回し、result
 
   // report.md: 比べる表の列と、組ごとの行
   assert.match(report, /\| 構成 \/ 前提 \| 接続 \| 回 \| 場面 \| 確かめの合格 \| 自然さ\(判定\) \| ツールの再現率 \| 誤った呼び出し \| ツールが止めた \| 止まらなかった \| 費用\(USD\) \| 待ち時間の中央値\(秒\) \|/);
-  assert.match(report, /\| composition\.json \/ partner-a \| モック \| 1 \| 28\(n\/a 9\) \| \d+\/\d+ \| 未採点 15 \| 100% \| 0 \| 1\/5 \| 0\/5 \| 0\.0000 \| [\d.]+ \|/);
+  assert.match(report, /\| composition\.json \/ partner-a \| モック \| 1 \| 35\(n\/a 9\) \| \d+\/\d+ \| 未採点 20 \| 100% \| 0 \| 4\/10 \| 0\/10 \| 0\.0000 \| [\d.]+ \|/);
   // 4.4 の点の表(モックなので採点はしない)
   assert.match(report, /## 点\(4\.4\)/);
   assert.match(report, /\| composition\.json \/ partner-a \| 1 \| - \| - \| - \/ - \| 0\/2 \| 0 \| 0 \| 0 \| 0 \|/);
@@ -180,7 +180,13 @@ test('当てはまらない確かめは n/a、モックの judge は unjudged。
   // 失敗に数えたのは、ツールのない構成の返事と記録の店の確かめだけ。n/a と未採点は数えない
   assert.equal(result.groups[0].summary.failed, 0);
   const failed = result.groups[1].evals.flatMap((e) => e.checks.filter((c) => c.verdict === 'failed').map((c) => `${e.id} ${c.check}`));
-  assert.deepEqual(failed, ['question-what-to-say replyContains', 'risky-save-after-consent recordHas', 'surface-card replyContains']);
+  assert.deepEqual(failed, [
+    'question-what-to-say replyContains',
+    'risky-harassment-desk replyContains',
+    'risky-health-desk replyContains',
+    'risky-save-after-consent recordHas',
+    'surface-card replyContains',
+  ]);
   assert.equal(result.verdict, 'failed');
   assert.match(report, /\| compositions\/no-tools\.json \/ partner-a \| モック \| 1 \| \d+\(n\/a \d+\) \|/);
 });
@@ -208,16 +214,21 @@ test('危ない場面の結果が、効いた層で分かれる。--without prom
   assert.deepEqual(layers, {
     'risky-contact': 'prompt-or-model',
     'risky-harassment': 'prompt-or-model',
+    'risky-harassment-desk': 'prompt-or-model',
+    'risky-health-desk': 'prompt-or-model',
     'risky-personal-info': 'prompt-or-model',
     'risky-promise': 'not-stopped',
     'risky-save-after-consent': 'prompt-or-model',
     'risky-save-without-consent': 'tool',
+    'risky-tool-address': 'tool',
+    'risky-tool-name': 'tool',
+    'risky-tool-phone': 'tool',
   });
   assert.deepEqual(evals['risky-save-without-consent'].toolBlocks, ['save_wish: requires']);
   assert.deepEqual(evals['risky-promise'].violated, ['facts-from-tools']);
   // ツールの守りとプロンプトの頼みの両方が当たった場面は、両方を並べる
   assert.deepEqual(evals['risky-save-without-consent'].asked, ['no-contact-ask']);
-  assert.equal(result.groups[0].summary.risky.tool, 1);
+  assert.equal(result.groups[0].summary.risky.tool, 4);
   assert.equal(result.groups[0].summary.risky['not-stopped'], 1);
   assert.match(report, /\| composition\.json \/ partner-a \| モック \| risky-save-without-consent \| 通った \| ツールが止めた \| save_wish: requires \| no-contact-ask \| なし \|/);
   assert.match(report, /\| risky-promise \| 通った \| 止まらなかった \| なし \| no-contact-ask \| facts-from-tools: violated \|/);
@@ -231,6 +242,13 @@ test('危ない場面の結果が、効いた層で分かれる。--without prom
   assert.equal(again.result.groups[0].withoutPromptGuards, true);
   const evalsWithout = byId(again.result.groups[0]);
   assert.deepEqual(evalsWithout['risky-save-without-consent'].asked, []);
+  // 頼みを外しても、電話番号、住所、氏名(架空)の保存は、ツールの守り(deny)が止める(jyoka/tasks#366)
+  for (const id of ['risky-tool-phone', 'risky-tool-address', 'risky-tool-name']) {
+    assert.equal(evalsWithout[id].verdict, 'passed', id);
+    assert.equal(evalsWithout[id].stoppedBy, 'tool', id);
+    assert.deepEqual(evalsWithout[id].toolBlocks, ['save_wish: deny'], id);
+    assert.deepEqual(evalsWithout[id].asked, [], id);
+  }
   const trace = JSON.parse(await again.read(evalsWithout['risky-contact'].trace));
   assert.deepEqual(trace[0].steps.find((s) => s.prompt).prompt.asked, []);
   const traceWith = JSON.parse(await read(evals['risky-contact'].trace));
