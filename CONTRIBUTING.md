@@ -31,13 +31,15 @@ README は、初めて来た人が最初の画面で「何か」「なぜ使う�
 
 | 順 | 見出し | 中身 |
 |---|---|---|
-| 1 | `# agent-prototype-studio` | 太字の一言の説明と、何をするものか 2〜3 行 |
+| 1 | `# agent-prototype-studio` | 見出しの上にバナー(`assets/brand/`、ダークとライト)。見出しの下に太字の一言の説明、動く画像(`assets/media/`)、何をするものか 2〜3 行 |
 | 2 | `## しくみ` | Mermaid の図 1 枚と箇条書き 3 つ |
-| 3 | `## 特長` | 1 行ずつ、7 つまで |
+| 3 | `## 特長` | 画面 4 枚の 2 列の表(画像は docs の該当の節へのリンク)と、1 行ずつ 7 つまで |
 | 4 | `## はじめる` | 要るもの、コマンド 3 つ前後、実モデルを使う前に読むものへの案内 |
 | 5 | `## 使い方` | 最初の 1 分の流れとサンプルの表。詳しくは docs/usage.md |
 | 6 | `## ドキュメント` | docs への案内の表 |
 | 7 | `## 開発` | テストのコマンドと AGENTS.md への案内 |
+
+画像には、絵の中身が分かる alt を付けます。動く画像は、`prefers-reduced-motion` のときは止まった画像に替えます(`<picture>` の `media`)。
 
 新しい見出しを足したくなったら、まず docs のどこかに置けないかを考えます。
 
@@ -113,7 +115,7 @@ npm run media    # 40 秒ほど。assets/media/ を上書きする
 ```
 
 - Studio は偽接続(`STUDIO_AGENT=fake`)で、試作品の中の AI はモックで動きます。実モデルは呼ばず、費用はかかりません
-- 要るもの: E2E と同じ Chromium(`npm run install:chromium`)と、動く画像を書く `ffmpeg`(GIF と VP9 を書けるもの。macOS は `brew install ffmpeg`)。`ffmpeg` は npm の依存ではありません。PATH にないときは `STUDIO_MEDIA_FFMPEG` で場所を指します。`ffmpeg` がなくても画像は撮れ、動く画像だけが失敗します
+- 要るもの: E2E と同じ Chromium(`npm run install:chromium`)と、動く画像を書く `ffmpeg`(GIF、AV1(`libsvtav1` と AVIF)、VP9 を書けるもの。macOS は `brew install ffmpeg`)。`ffmpeg` は npm の依存ではありません。PATH にないときは `STUDIO_MEDIA_FFMPEG` で場所を指します。`ffmpeg` がなくても画像は撮れ、動く画像だけが失敗します
 - 撮るのは見本「バイト探し(架空・AI と話せる)」です。文と会話は架空で、モックなので毎回同じです。記録の時刻(`15:04:05` など)と、かかった時間(`202 ミリ秒` など)だけは、撮るたびに変わります
 - 撮った後に、画面とファイルを見て、変わり方がおかしくないかを確かめてからコミットします
 
@@ -121,7 +123,7 @@ npm run media    # 40 秒ほど。assets/media/ を上書きする
 
 | ファイル | 中身 | 大きさの上限 |
 |---|---|---|
-| `talk-guard.gif`、`talk-guard.webm` | 動く画像(15 秒前後、ライト)。トークで探し、保存を頼み、記録の画面でツールの呼び出しと守りが止めたところまで | GIF 5 MB、WebM 2 MB |
+| `talk-guard.avif`、`talk-guard.gif`、`talk-guard.webm` | 動く画像(15 秒前後、ライト)。トークで探し、保存を頼み、記録の画面でツールの呼び出しと守りが止めたところまで。README は AVIF を出し、AVIF を出せないブラウザは GIF を出す。WebM は LP 用 | AVIF 2 MB、GIF 5 MB、WebM 2 MB |
 | `try-and-fix-{light,dark}.png` | 試す画面と、言葉で直す欄(依頼を書いたところ) | 1 枚 1 MB |
 | `sim-choice-{light,dark}.png` | その他 → 開発者向けの詳細の、構成と前提の選び方 | 1 枚 1 MB |
 | `sim-trace-{light,dark}.png` | 模擬の会話の記録(ツール `save_wish` と、守り `requires` が止めたところ) | 1 枚 1 MB |

@@ -115,3 +115,56 @@ test('見本のデータ、画面の文、README に、仕事の POC の名前�
     assert.equal(hit, -1, `${file}:${hit + 1}: ${lines[hit]}`);
   }
 });
+
+// GitHub の見出しのリンク名(小文字にし、記号を除き、空白を - にする)
+const slug = (heading) => heading.trim().toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s/g, '-');
+
+test('README の上: バナー、1 文、動く画像の順。特長の画面 4 枚は docs の節へのリンク。画像は全部リポジトリの中にある', async () => {
+  const readme = await read('README.md');
+  const lines = readme.split('\n');
+  assert.ok(lines.length <= 180, `README が ${lines.length} 行です(多くても 180 行。CONTRIBUTING.md の「README の構成」)`);
+  const at = (text) => {
+    const index = readme.indexOf(text);
+    assert.notEqual(index, -1, text);
+    return index;
+  };
+  assert.equal(lines[0], '<picture>');
+  const order = [
+    'srcset="assets/brand/banner-dark.svg"',
+    'src="assets/brand/banner-light.svg"',
+    '# agent-prototype-studio\n',
+    `**${JA}**`,
+    'media="(prefers-reduced-motion: reduce)"',
+    'type="image/avif" srcset="assets/media/talk-guard.avif"',
+    'src="assets/media/talk-guard.gif"',
+    '## しくみ',
+    '## 特長',
+  ].map(at);
+  assert.deepEqual(order, [...order].sort((a, b) => a - b));
+
+  // 画像は外から読み込まず、全部ある
+  const files = [...readme.matchAll(/\b(?:src|srcset)="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(files.length >= 14, files.join(', '));
+  for (const file of files) {
+    assert.doesNotMatch(file, /^https?:/, file);
+    await fs.access(path.join(STUDIO_ROOT, file));
+  }
+  // alt は絵の中身が分かる文にする(ファイル名や空ではない)
+  const imgs = [...readme.matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
+  assert.equal(imgs.length, 6);
+  for (const img of imgs) {
+    const alt = /\balt="([^"]*)"/.exec(img)?.[1] ?? '';
+    assert.ok(alt.length >= 40 && !/\.(png|gif|svg|avif)\b/.test(alt), img);
+  }
+
+  // 特長の画面 4 枚。押すと docs の該当の節に飛ぶ
+  const features = readme.slice(at('## 特長'), at('## はじめる'));
+  const links = [...features.matchAll(/<a href="([^"#]+)#([^"]+)"><picture><source media="\(prefers-color-scheme: dark\)" srcset="assets\/media\/([\w-]+)-dark\.png"><img [^>]*src="assets\/media\/([\w-]+)-light\.png"><\/picture><\/a><br>\s*<b>[^<]+<\/b><br>/g)];
+  assert.deepEqual(links.map((m) => m[3]), ['try-and-fix', 'sim-choice', 'sim-trace', 'evals-compare']);
+  for (const [, doc, anchor, dark, light] of links) {
+    assert.equal(dark, light);
+    const headings = (await read(doc)).split('\n').filter((line) => /^#{1,6} /.test(line)).map((line) => slug(line.replace(/^#+ /, '')));
+    assert.ok(headings.includes(anchor), `${doc}#${anchor} の節がありません`);
+  }
+  assert.match(features, /どの画像も、Studio が自分で撮ったものです\(`npm run media`/);
+});

@@ -28,7 +28,7 @@ const OUT = path.join(ROOT, 'assets', 'media');
 const THEMES = ['light', 'dark'];
 const MB = 1024 * 1024;
 // 大きさの上限。超えたら失敗にする(README と LP が重くならないように)
-const LIMITS = { gif: 5 * MB, webm: 2 * MB, png: 1 * MB, layer: 512 * 1024 };
+const LIMITS = { gif: 5 * MB, avif: 2 * MB, webm: 2 * MB, png: 1 * MB, layer: 512 * 1024 };
 // 動く画像の長さ(秒)。この幅から外れたら、間の置き方を直す
 const CLIP_SECONDS = { min: 12, max: 18 };
 
@@ -211,9 +211,15 @@ test.describe('動く画像', () => {
 
       await fs.mkdir(OUT, { recursive: true });
       const gif = path.join(OUT, 'talk-guard.gif');
+      const avif = path.join(OUT, 'talk-guard.avif');
       const webm = path.join(OUT, 'talk-guard.webm');
-      await encodeClip(frames, work, { gif: { out: gif, fps: 10, width: 960 }, webm: { out: webm, fps: 25, crf: 36 } });
+      await encodeClip(frames, work, {
+        gif: { out: gif, fps: 10, width: 960 },
+        avif: { out: avif, fps: 25, crf: 40 },
+        webm: { out: webm, fps: 25, crf: 36 },
+      });
       await expectFileOk(gif, LIMITS.gif, home);
+      await expectFileOk(avif, LIMITS.avif, home);
       await expectFileOk(webm, LIMITS.webm, home);
       console.log(`動く画像: ${seconds.toFixed(1)} 秒、${frames.length} コマ`);
     } finally {
