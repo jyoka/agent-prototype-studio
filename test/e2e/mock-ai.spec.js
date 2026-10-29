@@ -16,7 +16,7 @@ test('モックの AI と話し、理解された希望条件を直すと、次�
     // 架空のデータとモックであることを、Studio と試作品の両方で示す。
     // Studio の側の接続と AI が理解した状態は、その他 → 開発者向けの詳細にある(引き出しは左の試作品に重ならない)
     await openDevDetails(page);
-    await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
+    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
     await expect(details).toContainText('接続: モック');
     await expect(details).toContainText('実際の AI モデルは呼びません');
     await expect(details).toContainText('架空のデータで試してください');
@@ -181,7 +181,7 @@ test('別の題材でも同じ仕組みで動き、AI のない試作品と連�
 
     await chooseProject(page, /架空の旅の相談/);
     await openDevDetails(page);
-    await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
+    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
     await expect(app.locator('output')).toHaveText('旅の相談です。');
     await app.getByLabel('発言').fill('湖に行きたい');
     await app.getByRole('button', { name: '送る' }).click();

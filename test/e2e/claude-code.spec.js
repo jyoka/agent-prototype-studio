@@ -59,14 +59,14 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     };
 
     // 既定はモック
-    await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
+    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
     await say('カフェで働きたいです');
     await expect(log.last()).toContainText(AFTER_JOB);
     await expect(log.last()).toContainText('お試しの AI');
 
     // 切り替える前に、同意のカードで送るもの、送り先、料金を出す。前の確認の中身(送り先の詳しい文、費用、指示の全文)は「詳しく」の中にある
     await openAiMenu(page);
-    await page.getByRole('radio', { name: 'Claude Code', exact: true }).check();
+    await page.getByRole('radio', { name: '本物の AI', exact: true }).check();
     const confirm = page.getByRole('group', { name: '本物の AI を使う前に' });
     await expect(confirm).toContainText('AI は、あなたの Claude Code で動きます。');
     await confirm.getByText('詳しく(AI への指示の全文、1 回の上限、記録の扱い)').click();
@@ -82,7 +82,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     await confirm.getByRole('button', { name: 'やめる' }).click();
     await expect(confirm).toBeHidden();
     await openAiMenu(page);
-    await expect(page.getByRole('radio', { name: 'モック' })).toBeChecked();
+    await expect(page.getByRole('radio', { name: 'お試しの AI', exact: true })).toBeChecked();
     expect(await readCalls(env.FAKE_CLAUDE_LOG)).toEqual([]);
     expect((await studio.api('/api/real-ai')).consent.agreed).toBe(false);
     // 同意の前は、画面を通らずに切り替えようとしても断る(理由のコードつき)
@@ -91,9 +91,9 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     expect(JSON.parse(refused.text).error.code).toBe('consent-required');
 
     // 「同意して使う」で、本物の AI を使う同意になり、切り替わる
-    await page.getByRole('radio', { name: 'Claude Code', exact: true }).check();
+    await page.getByRole('radio', { name: '本物の AI', exact: true }).check();
     await confirm.getByRole('button', { name: '同意して使う' }).click();
-    await expect(page.locator('#ai-badge')).toHaveText('AI: Claude Code');
+    await expect(page.locator('#ai-badge')).toHaveText('AI: 本物');
     expect((await studio.api('/api/real-ai')).consent.agreed).toBe(true);
     await expect(page.locator('#events')).toContainText('接続を「Claude Code」にしました');
     await expect(app.locator('.note')).toContainText('案内役の AI は Claude Code(実際の AI モデル)です');
@@ -146,13 +146,13 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     // 中断: Studio の画面から止めると、CLI が終わり、会話は変わらない
     await type('[遅い] よく考えて');
     await expect(app.getByRole('status')).toHaveText('案内役が考えています…');
-    await expect(waiting).toContainText('Claude Code の応答を待っています');
+    await expect(waiting).toContainText('本物の AI の返事を待っています');
     await openAiMenu(page);
-    await expect(page.getByRole('radio', { name: 'モック' })).toBeDisabled();
+    await expect(page.getByRole('radio', { name: 'お試しの AI', exact: true })).toBeDisabled();
     await expect.poll(async () => (await readCalls(env.FAKE_CLAUDE_LOG)).some((c) => c.stdin.includes('[遅い] よく考えて'))).toBe(true);
     const slow = (await readCalls(env.FAKE_CLAUDE_LOG)).find((c) => c.stdin.includes('[遅い] よく考えて'));
     expect(alive(slow.pid)).toBe(true);
-    await waiting.getByRole('button', { name: '応答を止める' }).click();
+    await waiting.getByRole('button', { name: '止める' }).click();
     await expect(alert).toHaveText('応答を止めました');
     await expect(app.getByRole('status')).toBeHidden();
     await expect(waiting).toBeHidden();
@@ -162,14 +162,14 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     // 画面を読み込み直しても(開き直す)、会話と接続はそのまま
     await page.getByRole('button', { name: '画面を読み込み直す' }).click();
     await expect(log).toHaveCount(8);
-    await expect(page.locator('#ai-badge')).toHaveText('AI: Claude Code');
+    await expect(page.locator('#ai-badge')).toHaveText('AI: 本物');
 
     // モックに戻すのに確認は要らない。会話は続く
     // 選ぶと切り替わり、AI の切り替えは閉じる
     await openAiMenu(page);
-    await page.getByRole('radio', { name: 'モック' }).click();
+    await page.getByRole('radio', { name: 'お試しの AI', exact: true }).click();
     await expect(page.locator('#ai-menu')).toBeHidden();
-    await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
+    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
     await expect(page.locator('#real-ai-try')).toBeHidden();
     await say('やっぱりアルバイトがいいです');
     await expect(log.last()).toContainText('雇用区分「アルバイト・パート」と理解しました。');
@@ -225,10 +225,10 @@ test('応答を待つ間に開き直しても作り直しても、止められ�
     await expect(waiting).toBeVisible();
     await page.getByRole('button', { name: 'ファイルから作り直す' }).click();
     await expect(page.locator('#build-status')).toContainText('ビルドに成功しました');
-    await waiting.getByRole('button', { name: '応答を止める' }).click();
+    await waiting.getByRole('button', { name: '止める' }).click();
     await expect(waiting).toBeHidden();
     await openAiMenu(page);
-    await expect(page.getByRole('radio', { name: 'モック' })).toBeEnabled();
+    await expect(page.getByRole('radio', { name: 'お試しの AI', exact: true })).toBeEnabled();
     const slow = (await readCalls(env.FAKE_CLAUDE_LOG)).find((c) => c.stdin.includes('[遅い] 考えて'));
     await expect.poll(() => alive(slow.pid)).toBe(false);
     await expect(log).toHaveCount(3);
@@ -297,9 +297,9 @@ test('実モデルは STUDIO_ALLOW_CLAUDE_CODE=0 では選べず、理由を出�
     await page.goto(blocked.url);
     await chooseSample(page, SAMPLES.jobConsult);
     await openAiMenu(page);
-    await expect(page.getByRole('radio', { name: 'Claude Code', exact: true })).toBeDisabled();
+    await expect(page.getByRole('radio', { name: '本物の AI', exact: true })).toBeDisabled();
     await expect(page.locator('#ai-menu')).toContainText('本物の AI は、使わない設定で起動されています');
-    await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
+    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
   } finally {
     await blocked.stop();
   }
@@ -309,7 +309,7 @@ test('実モデルは STUDIO_ALLOW_CLAUDE_CODE=0 では選べず、理由を出�
     await page.goto(paid.url);
     await chooseSample(page, SAMPLES.jobConsult);
     await openAiMenu(page);
-    await page.getByRole('radio', { name: 'Claude Code', exact: true }).check();
+    await page.getByRole('radio', { name: '本物の AI', exact: true }).check();
     const confirm = page.getByRole('group', { name: '本物の AI を使う前に' });
     // 使った分だけかかるときは、料金の行に上限も出す
     await expect(confirm).toContainText('API キーの設定があるので、使った分だけ料金がかかります。');

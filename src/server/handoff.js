@@ -12,7 +12,7 @@ import { extractPrompt, extractSchema, phrasePrompt, phraseSchema } from './prod
 import { formatValue } from './product-ai/definition.js';
 import { findPersonalData, findSecrets, redact, redactDeep } from './redact.js';
 import { BusyError } from './store.js';
-import { EVAL_RUN_FORMAT, failuresOf } from './sim/eval-run.js';
+import { EVAL_RUN_FORMAT, failuresOf, outcomeOf, riskyText } from './sim/eval-run.js';
 import { digestOf } from './sim/orchestrator.js';
 
 // 本番開発への引き継ぎ(#280、#313)。試作品のソース、意図、AI の設定、モックと状態、未接続と未決事項、
@@ -285,8 +285,11 @@ async function latestEvalRun(paths, appDigest) {
       real: Boolean(group.real),
       round: group.round,
       summary: group.summary ?? null,
-      // 危ない場面で効いた層(ツールの守り、出口の確かめ、プロンプトかモデル、止まらなかった)
-      risky: (group.evals ?? []).filter((e) => e.kind === 'risky').map((e) => ({ id: e.id, verdict: e.verdict, stoppedBy: e.stoppedBy ?? null, toolBlocks: e.toolBlocks ?? [], asked: e.asked ?? [] })),
+      // 危ない場面が止まったか(結果の確かめで決める)と、止めた層(ツールの守り、出口の確かめ、プロンプトかモデル)
+      risky: (group.evals ?? []).filter((e) => e.kind === 'risky').map((e) => {
+        const outcome = outcomeOf(e);
+        return { id: e.id, verdict: e.verdict, outcome, stoppedBy: outcome === 'stopped' ? e.stoppedBy ?? null : null, toolBlocks: e.toolBlocks ?? [], asked: e.asked ?? [] };
+      }),
     })),
     failures: failuresOf(found).slice(0, MAX_EVAL_FAILURES).map(({ eval: id, file, check, expected, actual }) => ({ eval: id, file, check, expected, actual })),
   };
@@ -606,7 +609,6 @@ function evidenceLines(evidence) {
 }
 
 const EVAL_VERDICT_LABELS = { passed: '通った', failed: '失敗', stopped: '途中で止めた' };
-const LAYER_LABELS = { tool: 'ツールが止めた', output: '出口の確かめが止めた', 'prompt-or-model': 'プロンプトかモデルが止めた', 'not-stopped': '止まらなかった' };
 
 function simulationLines(simulation) {
   const lines = [];
@@ -683,9 +685,11 @@ function simulationLines(simulation) {
     lines.push(
       '危ない場面で効いた層:',
       '',
+      '止まったかは、結果の確かめ(ツールが動いたか、記録に入ったか、返事に出たか)と出口の確かめの違反だけで決めます。',
+      '',
       '| 構成 / 前提 | 場面 | 効いた層 | ツールの守り | プロンプトの頼み |',
       '|---|---|---|---|---|',
-      ...risky.map(({ g, r }) => `| ${cell(`${g.composition}${g.assumption ? ` / ${g.assumption}` : ''}`)} | ${cell(r.id)} | ${LAYER_LABELS[r.stoppedBy] ?? '-'} | ${cell(r.toolBlocks.join('、') || 'なし')} | ${cell(r.asked.join('、') || 'なし')} |`),
+      ...risky.map(({ g, r }) => `| ${cell(`${g.composition}${g.assumption ? ` / ${g.assumption}` : ''}`)} | ${cell(r.id)} | ${r.verdict === 'n/a' ? 'n/a' : riskyText(r)} | ${cell(r.toolBlocks.join('、') || 'なし')} | ${cell(r.asked.join('、') || 'なし')} |`),
       '',
     );
   }

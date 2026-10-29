@@ -102,7 +102,7 @@ async function runFlow(page, home, other, otherHome) {
     const ui = parts(page);
     await expect(ui.app.getByRole('heading', { name: 'あおぞら学習相談' })).toBeVisible();
     await expect(ui.log.first()).toContainText(GREETING);
-    await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
+    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
     await expect(page.locator('dl.ai-state dt')).toHaveText(['学びたいこと', 'いまの段階', '学び方', '1日に使える時間']);
     // 直す欄の例も、試験用の依頼も、この試作品の項目から作る(求人の項目の名前は出ない)
     await expect(page.locator('#example-list')).toContainText('1日に使える時間を先に聞くようにして');
@@ -127,9 +127,9 @@ async function runFlow(page, home, other, otherHome) {
     await page.screenshot({ path: test.info().outputPath('1-tried-with-mock.png'), fullPage: true });
 
     // 3. 版: 良いところで保存する
-    await page.getByLabel('版の名前(なくてもよい)').fill('学習相談の最初の版');
-    await page.getByRole('button', { name: '今の作業中を保存' }).click();
-    await expect(page.locator('#working-status')).toHaveText('作業中は保存版 v1「学習相談の最初の版」と同じです。');
+    await page.getByLabel('名前(なくてもよい)').fill('学習相談の最初の版');
+    await page.locator('#save-version').click();
+    await expect(page.locator('#working-status')).toHaveText('今の状態は保存 1「学習相談の最初の版」と同じです。');
 
     // 4. 変更(画面): 作る欄で見出しを変え、試す画面に反映する
     let run = await ui.request('見出しを「そよかぜ学習相談」にして');
@@ -188,16 +188,16 @@ async function runFlow(page, home, other, otherHome) {
     const handoff = page.getByRole('region', { name: '本番開発へ渡す' });
     await handoff.getByLabel('目的(この試作品で確かめたいこと)').fill('学ぶ人が、AI の理解した学習プランを直しながら相談を続けられるか確かめる');
     await handoff.getByLabel('未決事項').fill('講座の一覧を本物のデータにするか');
-    await handoff.getByRole('button', { name: '引き継ぎ用に書き出す' }).click();
+    await handoff.getByRole('button', { name: '渡すフォルダーを作る' }).click();
     const result = page.locator('#handoff-result');
     // 未決事項は、書いた 1 件と、保存版と違う作業中から書き出したことを Studio が足した 1 件。未接続には、目録の未実装 3 つと制約が入る
-    await expect(result).toContainText('書き出しました。実機 2 件、モック 3 件、未接続 9 件、未決事項 2 件。');
+    await expect(result).toContainText('渡すフォルダーを作りました。本物につないだもの 2 件、お試しのもの 3 件、つないでいないもの 9 件、未決事項 2 件。');
     exported = await result.locator('code').textContent();
     await fs.cp(exported, other, { recursive: true });
 
     // 8. 版: 保存した版に戻すと、変更前の画面と AI の設定、保存したときの会話に戻る
-    await page.getByRole('button', { name: 'v1 を復元' }).click();
-    await expect(page.locator('#versions-message')).toHaveText('v1「学習相談の最初の版」に戻しました。戻す前の作業中は v2(自動)に保存しました。');
+    await page.getByRole('button', { name: '保存 1 の状態に戻す' }).click();
+    await expect(page.locator('#versions-message')).toHaveText('保存 1「学習相談の最初の版」に戻しました。戻す前の状態は、保存 2(自動)にしました。');
     await expect(ui.app.getByRole('heading', { name: 'あおぞら学習相談' })).toBeVisible();
     await expect(ui.plan.locator('dt')).toHaveText(['学びたいこと', 'いまの段階', '学び方', '1日に使える時間']);
     await expect(ui.values).toHaveText(['英会話', 'はじめて', '動画で学ぶ', '30分']);

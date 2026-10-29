@@ -10,17 +10,17 @@
       "owner": "partner",
       "prompt": [
         { "from": "assumptions", "key": "hostPrompt", "owner": "partner" },
-        { "slot": "dip-front", "owner": "dip", "file": "prompts/front.md" }
+        { "slot": "ours-front", "owner": "ours", "file": "prompts/front.md" }
       ],
       "tools": ["handoff_to_consult", "handoff_to_staff"],
       "mock": "mocks/front.json"
     },
-    { "id": "consult", "kind": "harness", "label": "相談役", "owner": "dip", "ai": "consult.json", "returnTo": "front" },
+    { "id": "consult", "kind": "harness", "label": "相談役", "owner": "ours", "ai": "consult.json", "returnTo": "front" },
     {
       "id": "staff",
       "kind": "human",
       "label": "担当者(模擬)",
-      "owner": "dip",
+      "owner": "ours",
       "mock": { "reply": "担当の者です。お話を伺います。急ぎのときは、ひとりで抱えずに近くの人にも伝えてください。(模擬の返事)" }
     }
   ],
@@ -31,7 +31,7 @@
     { "from": "consult", "to": "front" }
   ],
   "guards": [
-    { "id": "risky-to-staff", "layer": "prompt", "owner": "dip", "on": "front",
+    { "id": "risky-to-staff", "layer": "prompt", "owner": "ours", "on": "front",
       "text": "体調やハラスメントの話をされたら、handoff_to_staff を呼んでください。" }
   ],
   "surface": { "kind": "talk", "theme": "talk" },

@@ -123,7 +123,7 @@
 | `latestRun.status`、`verdict`、`stopReason` | `done` か `stopped`(上限か中断で止めた)と、その理由。`verdict` は `passed`、`failed`、`stopped` |
 | `latestRun.appDigest`、`stale` | 回した `app/` の指紋と、古いか(`evidence.run.stale` と同じ決まり) |
 | `latestRun.real`、`withoutPromptGuards`、`totals` | 実モデルで回したか、プロンプトの頼みを外したか、場面の数の合計 |
-| `latestRun.groups[]` | 組ごと。`composition`、`compositionDigest`、`assumption`、`assumptionDigest`、`connection`、`real`、`round`、`summary`(比べる表の 1 行の値)、`risky[]`(危ない場面の `id`、`verdict`、`stoppedBy`(効いた層)、`toolBlocks`、`asked`) |
+| `latestRun.groups[]` | 組ごと。`composition`、`compositionDigest`、`assumption`、`assumptionDigest`、`connection`、`real`、`round`、`summary`(比べる表の 1 行の値)、`risky[]`(危ない場面の `id`、`verdict`、`outcome`(止まったか。`stopped`、`not-stopped`、決まらなければ `null`)、`stoppedBy`(止めた層。`tool`、`output`、`prompt-or-model`。止まったときだけ)、`toolBlocks`、`asked`) |
 | `latestRun.failures[]` | 通らなかった確かめ(20 件まで)。`eval`、`file`、`check`、`expected`、`actual` |
 
 場面があるのに回した結果がないとき、最新の回しが古いとき、モックでだけ回したとき、途中で止まったとき、前提(推測)があるときは、Studio が `openQuestions` にも書く。

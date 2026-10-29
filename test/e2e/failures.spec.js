@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseProject, chooseSample, closeMore, expect, expectNoDevWords, launchStudio, openDevDetails, test, writeProject } from './studio.js';
+import { ROOT, SAMPLES, chooseProject, chooseSample, closeMore, expect, expectNoDevWords, expectNoDevWordsOnScreen, launchStudio, openDevDetails, test, writeProject } from './studio.js';
 
 // 「分かるか」の確かめ(ux-redesign.md 9 節)のスクリーンショットの置き場。test-results/ は git が無視する
 const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
@@ -52,7 +52,7 @@ test('ビルドに失敗した試作品は、場所と直し方を出し、直�
     await expect(status.getByRole('list', { name: 'ビルドの問題' })).toContainText('app/main.jsx(1 行');
     await expect(status).toContainText('直し方: app/ の中のファイルを直してから「ファイルから作り直す」を押してください。');
     await expect(status).toContainText(appDir);
-    await expect(page.locator('#frame-host')).toContainText('表示できる版がありません');
+    await expect(page.locator('#frame-host')).toContainText('表示できる状態がありません');
 
     await chooseProject(page, /使えないライブラリ/);
     await expect(status).toContainText('「lodash」は使えません');
@@ -177,12 +177,22 @@ test('試作品の実行時エラーを、中身つきで開発者向けの詳�
   }
 });
 
-test('Studio のサーバーが止まったら、つながらないことと次の手順を出す', async ({ page, home }) => {
+test('Studio のサーバーが止まったときだけ、「Studio が止まっています」と直し方を出す', async ({ page, home }) => {
   const studio = await launchStudio(home);
   await page.goto(studio.url);
+  await expect(page.frameLocator('iframe[title="試作品"]').getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
+  // 問題がないときは、つながっていることも、止まっていることも出さない(一覧の読み直しを 1 回待ってから見る)
+  await page.waitForTimeout(3500);
   await expect(page.locator('#connection')).toBeHidden();
+  await expect(page.getByRole('alert')).toBeHidden();
+  await expect(page.getByText('Studio が止まっています')).toHaveCount(0);
+  await expect(page.getByText('つながっています')).toHaveCount(0);
+
   await studio.stop();
-  await expect(page.getByRole('alert')).toContainText('Studio のサーバーにつながりません', { timeout: 10_000 });
-  await expect(page.getByRole('alert')).toContainText('npm start');
-  await expect(page.locator('#connection')).toHaveText('つながっていません');
+  const alert = page.getByRole('alert');
+  await expect(alert).toContainText('Studio が止まっています。', { timeout: 10_000 });
+  await expect(alert).toContainText('直し方: npm start を実行したターミナルが開いたままか確かめてください。');
+  await expect(alert).toContainText('もう一度 npm start を実行して、表示された URL を開いてください。');
+  await expect(page.locator('#connection')).toHaveText('Studio が止まっています');
+  await expectNoDevWordsOnScreen(page);
 });

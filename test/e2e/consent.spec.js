@@ -94,7 +94,7 @@ test('直す欄の初回の送信でカードが出る。やめると送らず�
     await expect(request).toHaveValue('時給の下限を先に聞くようにして');
     expect(await runsOf(studio)).toEqual([]);
     expect(await agreed(studio)).toBe(false);
-    await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
+    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
     await expect(page.getByRole('button', { name: MARK })).toHaveCount(0);
 
     // 「確かめる」でカードをもう一度見られる。同意しても、送るを押すまで送らない
@@ -142,8 +142,8 @@ test('直す欄の初回の送信でカードが出る。やめると送らず�
 
     // 直す欄で同意した後は、「AI: 本物」を選んでもカードが出ず、すぐ切り替わる。試す欄の上にも印が出る
     await openAiMenu(page);
-    await page.getByRole('radio', { name: 'Claude Code', exact: true }).click();
-    await expect(page.locator('#ai-badge')).toHaveText('AI: Claude Code');
+    await page.getByRole('radio', { name: '本物の AI', exact: true }).click();
+    await expect(page.locator('#ai-badge')).toHaveText('AI: 本物');
     await expect(card).toHaveCount(0);
     const tryMark = page.locator('#try-toolbar').getByRole('button', { name: MARK });
     await expect(tryMark).toBeVisible();
@@ -172,12 +172,12 @@ test('「AI: 本物」を選ぶとカードが出る。やめるとお試しの�
     const card = page.getByRole('group', { name: CARD });
 
     await openAiMenu(page);
-    await page.getByRole('radio', { name: 'Claude Code', exact: true }).check();
+    await page.getByRole('radio', { name: '本物の AI', exact: true }).check();
     // カードは試す欄の上に 1 枚だけ出る。AI の切り替えは閉じる
     await expect(page.getByRole('region', { name: '試す' }).getByRole('group', { name: CARD })).toBeVisible();
     await expect(card).toHaveCount(1);
     await expect(page.locator('#ai-menu')).toBeHidden();
-    await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
+    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
     await expectNoDevWords(card);
     // 前の確認(印を付けて切り替える)は出ない
     await expect(page.getByRole('checkbox')).toHaveCount(0);
@@ -185,7 +185,7 @@ test('「AI: 本物」を選ぶとカードが出る。やめるとお試しの�
     // やめると、お試しのまま。同意もしない。直す欄に同意が要るとは出さない
     await card.getByRole('button', { name: 'やめる' }).click();
     await expect(card).toHaveCount(0);
-    await expect(page.locator('#ai-badge')).toHaveText('AI: モック');
+    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
     expect(await agreed(studio)).toBe(false);
     await expect(make).not.toContainText(DECLINED);
 
@@ -194,14 +194,14 @@ test('「AI: 本物」を選ぶとカードが出る。やめるとお試しの�
     await make.getByRole('button', { name: '送る' }).click();
     await expect(make.getByRole('group', { name: CARD })).toBeVisible();
     await openAiMenu(page);
-    await page.getByRole('radio', { name: 'Claude Code', exact: true }).check();
+    await page.getByRole('radio', { name: '本物の AI', exact: true }).check();
     await expect(page.getByRole('region', { name: '試す' }).getByRole('group', { name: CARD })).toBeVisible();
     await expect(card).toHaveCount(1);
     await expect(page.getByLabel('依頼')).toHaveValue('時給の下限を先に聞くようにして');
 
     // 同意すると切り替わる
     await card.getByRole('button', { name: '同意して使う' }).click();
-    await expect(page.locator('#ai-badge')).toHaveText('AI: Claude Code');
+    await expect(page.locator('#ai-badge')).toHaveText('AI: 本物');
     await expect(card).toHaveCount(0);
     expect(await agreed(studio)).toBe(true);
     await expect(page.locator('#try-toolbar').getByRole('button', { name: MARK })).toBeVisible();
@@ -225,7 +225,7 @@ test('Claude Code が見つからないときは、「AI: 本物」を選べな�
     await chooseSample(page, SAMPLES.jobConsult);
     await openAiMenu(page);
     const menu = page.locator('#ai-menu');
-    await expect(page.getByRole('radio', { name: 'Claude Code', exact: true })).toBeDisabled();
+    await expect(page.getByRole('radio', { name: '本物の AI', exact: true })).toBeDisabled();
     await expect(menu).toContainText('この PC で Claude Code が見つかりません。');
     for (const word of ['STUDIO_', missing]) expect(await menu.innerText()).not.toContain(word);
     await menu.getByText('開発者向け: 確かめた結果').click();

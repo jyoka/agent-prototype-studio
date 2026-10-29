@@ -204,12 +204,12 @@ test('作業中は中断でき、その間はほかの依頼と作り直しを�
     await page.reload();
     await chooseSample(page, SAMPLES.library);
     const menu = page.getByRole('navigation', { name: '試作品の一覧', includeHidden: true });
-    await expect(menu.getByRole('button', { name: SAMPLES.library.name, includeHidden: true })).toContainText('作る AI が作業中');
+    await expect(menu.getByRole('button', { name: SAMPLES.library.name, includeHidden: true })).toContainText('直す AI が作業中');
     await expect(lastRun(page).locator('.run-status')).toContainText('直す AI が作業しています');
-    await page.getByRole('button', { name: '中断' }).click();
+    await page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '止める' }).click();
     await expect(lastRun(page).locator('[data-kind="cancelled"]')).toContainText('中断しました');
-    await expect(lastRun(page).locator('.run-status')).toContainText('中断しました');
-    await expect(page.getByRole('button', { name: '中断' })).toBeHidden();
+    await expect(lastRun(page).locator('.run-status')).toContainText('止めました');
+    await expect(page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '止める' })).toBeHidden();
     await expect(page.getByRole('button', { name: '送る' })).toBeEnabled();
     const steps = await lastRun(page).locator('li').count();
     // 中断の後は、もう進まない

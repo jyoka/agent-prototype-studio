@@ -3,7 +3,7 @@
   "name": "自社の harness だけ(構成 B、架空)",
   "driver": "consult",
   "participants": [
-    { "id": "consult", "kind": "harness", "label": "相談役", "owner": "dip", "ai": "consult.json" }
+    { "id": "consult", "kind": "harness", "label": "相談役", "owner": "ours", "ai": "consult.json" }
   ],
   "handoffs": [],
   "surface": { "kind": "talk", "theme": "talk" },
