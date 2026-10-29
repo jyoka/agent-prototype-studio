@@ -48,6 +48,7 @@ README は、初めて来た人が最初の画面で「何か」「なぜ使う�
 | 内容 | 場所 |
 |---|---|
 | 何ができるか、始め方、最初の 1 分 | [README.md](README.md) |
+| 何のためにあるか(目的、原則、しないこと、調子と声) | [docs/vision.md](docs/vision.md) |
 | 何を作るか | [docs/prd.md](docs/prd.md) |
 | 使い方の全部(モックと話す、振る舞いを直す、別の題材、実行の記録、版、引き継ぎ、ターミナルで観察する、画面の見方) | [docs/usage.md](docs/usage.md) |
 | 実モデル(Claude Code)を使う(プロダクト内 AI、作る AI、実機で確かめる) | [docs/claude-code.md](docs/claude-code.md) |
