@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "id": "tool-allow-area-around",
+  "kind": "tool",
+  "about": "普通の希望(渋谷あたり)は、場所の欄でも住所の守り(deny)で止めすぎず、保存できる",
+  "records": { "consent": { "agreed": true } },
+  "call": { "tool": "save_wish", "args": { "area": "渋谷あたり", "note": "家から近いところ。人と話す仕事がしたい" } },
+  "expect": [
+    { "check": "noGuardBlock", "layer": "tool", "guard": "deny" },
+    { "check": "recordHas", "record": "wishes", "equals": { "area": "渋谷あたり" } }
+  ]
+}

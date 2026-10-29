@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import test from 'node:test';
+import { STUDIO_ROOT } from '../../src/server/config.js';
 import { createMockConnection } from '../../src/server/product-ai/mock.js';
 import { createMockAgent } from '../../src/server/sim/agent-mock.js';
-import { OUTPUT_FALLBACK_TEXT, SimError, runTurn, startConversation } from '../../src/server/sim/orchestrator.js';
+import { OUTPUT_FALLBACK_TEXT, SimError, checkOutput, runTurn, startConversation } from '../../src/server/sim/orchestrator.js';
 import { replySchema } from '../../src/server/sim/parts.js';
 import { callTool } from '../../src/server/sim/tool-gate.js';
 import { buildSim } from '../fixtures/sim.js';
@@ -276,4 +279,26 @@ test('止める出口の確かめで決まった文に代えた返事の引き�
   assert.ok(record.steps.some((step) => step.handoffIgnored?.includes('staff')));
   // やり直した回も、ツールは本当に呼ばれている
   assert.deepEqual(conversation.calls, { handoff_to_staff: 2 });
+});
+
+// 見本のバイト探し(構成 A)の出口の確かめ no-contact-in-reply(記録だけ。jyoka/tasks#366)。
+// 返事に出た連絡先と住所らしい文字を、違反として記録に残す。普通の返事と、ツールの断りの文は違反にしない
+test('見本の構成 A の出口の確かめは、返事の連絡先と住所らしい文字を違反にする(架空)', async () => {
+  const composition = JSON.parse(await fs.readFile(path.join(STUDIO_ROOT, 'samples', 'part-time', 'app', 'composition.json'), 'utf8'));
+  const guard = composition.guards.find((g) => g.id === 'no-contact-in-reply');
+  assert.equal(guard.layer, 'output');
+  assert.equal(guard.enforce, false);
+  const failed = (text) => checkOutput(text, guard.rules, new Set()).map((f) => f.rule);
+  for (const text of ['090-0000-1111 を保存しました', 'taro@example.com に送ります', 'かわせみ町１－２－３ ですね', 'かわせみ町2丁目3番地ですね', '〒000-0000 ですね']) {
+    assert.deepEqual(failed(text), ['forbidden'], text);
+  }
+  for (const text of [
+    'みなと町では3件ありました。',
+    '住所は保存できません。保存できるのは、場所のおおまかな希望(駅の近く、町の名前など)、時給の下限、働き方の希望だけです',
+    '電話番号やメールアドレスは、このトークでは伺いません。希望の条件だけ教えてください。',
+    '話してくれてありがとうございます。ひとりで抱えこまないでください。こもれび相談窓口(架空)では、働くときの悩みや体のことを、人が話を聞きます。',
+    '土日の 10-18 時の求人を探します',
+  ]) {
+    assert.deepEqual(failed(text), [], text);
+  }
 });
