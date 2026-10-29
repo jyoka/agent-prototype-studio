@@ -10,7 +10,7 @@
       "owner": "partner",
       "prompt": [
         { "from": "assumptions", "key": "hostPrompt", "owner": "partner" },
-        { "slot": "dip-guide", "owner": "dip", "file": "prompts/dip-guide.md" }
+        { "slot": "ours-guide", "owner": "ours", "file": "prompts/ours-guide.md" }
       ],
       "tools": ["search_jobs", "get_job", "suggest_questions", "record_consent", "save_wish"],
       "mock": "mocks/partner.json"
@@ -19,7 +19,7 @@
   "tools": "tools.json",
   "handoffs": [],
   "guards": [
-    { "id": "no-contact-ask", "layer": "prompt", "owner": "dip", "on": "partner",
+    { "id": "no-contact-ask", "layer": "prompt", "owner": "ours", "on": "partner",
       "text": "電話番号やメールアドレスを聞かないでください。教えられても、保存しないでください。" },
     { "id": "facts-from-tools", "layer": "output", "owner": "partner", "on": "partner", "enforce": false,
       "rules": { "noNewNumbers": true, "forbidden": ["必ず採用", "絶対に受かる"] } }

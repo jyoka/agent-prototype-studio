@@ -1,0 +1,132 @@
+/*
+ * Prototype Studio の見た目の決まり(docs/brand.md の「見た目」)。
+ * ライトの値は、今の Studio の画面(src/ui/studio.css)の :root と同じ。同じ名前の変数は同じ値にする
+ * (test/unit/brand.test.js が確かめる)。ダークは、この表で足した値。
+ * 外から読み込むもの(Web フォント、CDN)は使わない。字は、利用者の OS に入っている字を使う。
+ *
+ * 使い方: <link rel="stylesheet" href="assets/brand/tokens.css"> を読み、var(--bg) などで使う。
+ * ダークとライトは OS の設定(prefers-color-scheme)に従う。<html data-theme="dark"> か
+ * data-theme="light" を書くと、OS の設定より優先する。
+ */
+
+:root {
+  color-scheme: light;
+
+  /* 色: 地と線と字(studio.css と同じ) */
+  --bg: #f6f6f4;
+  --panel: #ffffff;
+  --line: #d9d9d4;
+  --text: #1f1f1d;
+  --muted: #6b6b66;
+
+  /* 色: 意味のある色(studio.css と同じ) */
+  --accent: #2459c4;
+  --ok: #1d7a43;
+  --error: #b42318;
+  --warn-bg: #fff4e5;
+  --error-bg: #fdecea;
+
+  /* 色: studio.css では値で書いている色に、名前を付けたもの */
+  --accent-bg: #eef3fd;
+  --ok-bg: #eaf5ee;
+  --warn: #c77700;
+  --warn-text: #8a5300;
+  --violet: #7a3fb4;
+  --violet-text: #5b2c8a;
+  --violet-bg: #f5effb;
+
+  /* 分解の絵の層の色(docs/brand.md の「分解の絵の台本」)。止めた層は --layer-guard で示す */
+  --layer-talk: var(--accent);
+  --layer-agent: var(--violet);
+  --layer-prompt: var(--warn);
+  --layer-tool: var(--ok);
+  --layer-guard: var(--error);
+  --layer-record: var(--muted);
+
+  /* 字: OS に入っている字だけ。Web フォントは読み込まない */
+  --font-sans: system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --text-xs: 0.8rem;
+  --text-sm: 0.9rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: clamp(1.5rem, 4vw, 2.5rem);
+  --leading: 1.6;
+
+  /* 角丸(studio.css と見本の会話の枠で使っている値) */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-pill: 999px;
+
+  /* 間 */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2.5rem;
+
+  /* 線と影。影は浮いた部品(開く一覧、ダイアログ)だけに使う */
+  --border: 1px solid var(--line);
+  --shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+
+  /* 動き。prefers-reduced-motion のときは 0 にする(下) */
+  --motion-fast: 150ms;
+  --motion-slow: 400ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ダーク。地は黒に寄せすぎず、字との差(コントラスト比)はどの意味の色も 4.5 以上 */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #161614;
+  --panel: #1f1f1d;
+  --line: #3a3a36;
+  --text: #ecece8;
+  --muted: #a3a39c;
+  --accent: #7ea6ff;
+  --ok: #4cc184;
+  --error: #f97066;
+  --warn-bg: #3a2a12;
+  --error-bg: #3d1a17;
+  --accent-bg: #1c2740;
+  --ok-bg: #16301f;
+  --warn: #f0a53a;
+  --warn-text: #f0a53a;
+  --violet: #b48ae6;
+  --violet-text: #c9a8f0;
+  --violet-bg: #2a2038;
+  --shadow: 0 4px 16px rgb(0 0 0 / 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #161614;
+    --panel: #1f1f1d;
+    --line: #3a3a36;
+    --text: #ecece8;
+    --muted: #a3a39c;
+    --accent: #7ea6ff;
+    --ok: #4cc184;
+    --error: #f97066;
+    --warn-bg: #3a2a12;
+    --error-bg: #3d1a17;
+    --accent-bg: #1c2740;
+    --ok-bg: #16301f;
+    --warn: #f0a53a;
+    --warn-text: #f0a53a;
+    --violet: #b48ae6;
+    --violet-text: #c9a8f0;
+    --violet-bg: #2a2038;
+    --shadow: 0 4px 16px rgb(0 0 0 / 0.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-slow: 0ms;
+  }
+}

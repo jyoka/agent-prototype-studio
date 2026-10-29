@@ -55,6 +55,7 @@ README は、初めて来た人が最初の画面で「何か」「なぜ使う�
 | 部品とデータの流れ | [docs/architecture/hld.md](docs/architecture/hld.md) |
 | 1 つの決定とその理由 | [docs/adr/](docs/adr/) |
 | 機能ごとの設計 | [docs/design/](docs/design/) |
+| 伝え方(1 文、名前、機能の文、見た目、公開の前に直すもの) | [docs/brand.md](docs/brand.md)、[assets/brand/](assets/brand/) |
 
 関数、ファイルの形式、守る約束を書く `docs/architecture/lld.md` は、harness の作り直し(#293)の後で作ります。
 
@@ -76,7 +77,8 @@ samples/library/app/   固定のサンプル試作品(架空の図書室)
 samples/job-consult/app/ 固定のサンプル試作品(架空の求人相談とモックの AI)
 samples/study-consult/app/ 固定のサンプル試作品(架空の学習相談とモックの AI。求人ではない題材で汎用性を確かめる)
 test/                  unit、integration、e2e。fixtures/ に偽の Claude Code と、観察器の見本(fixtures/observe/)
-docs/                  使い方、設定、困ったとき、設計(architecture、adr、design)
+docs/                  使い方、設定、困ったとき、設計(architecture、adr、design)、伝え方(brand.md)
+assets/brand/          見た目の決まり(tokens.css)とバナー(banner-dark.svg、banner-light.svg)
 ```
 
 隔離の方式は ADR-0001 に従う。Studio の画面は `127.0.0.1:4317`、試作品は別ポートの `localhost:4318` から、`sandbox` 属性つきの iframe と CSP で開く。

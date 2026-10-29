@@ -1,6 +1,6 @@
 # agent-prototype-studio
 
-**AI プロダクトの試作品を言葉で作り、ブラウザで触って、モックと実モデルの両方で試す。**
+**AI エージェントの試作品を、作る前に、構成ごと手元で試して測る。**
 
 社内の企画担当など、エンジニアでない人のためのローカルのツールです。
 試作品の画面も、試作品の中の AI の振る舞いも、「言葉で直す」欄に頼んで直せます。
@@ -80,7 +80,7 @@ npm start                  # 既定のブラウザで Studio が開く
 | [usage.md](docs/usage.md) 使い方の全部 | [configuration.md](docs/configuration.md) 環境変数、`app/prototype.json`、`app/ai.json`、`app/composition.json`、データの置き場 | [architecture/hld.md](docs/architecture/hld.md) 部品とデータの流れ | [AGENTS.md](AGENTS.md) エージェント向けの入口 |
 | [claude-code.md](docs/claude-code.md) 実モデル(Claude Code)を使う | [troubleshooting.md](docs/troubleshooting.md) うまくいかないとき | [prd.md](docs/prd.md) 何を作るか | [CONTRIBUTING.md](CONTRIBUTING.md) 書き方、置き場所、テスト |
 | [handoff.md](docs/handoff.md) 引き継ぎの形(形式 2、仮) | | [ADR 0001](docs/adr/0001-local-runtime-and-isolation.md) ローカル実行と隔離の方式(仮採用) | |
-| | | [design/ux-redesign.md](docs/design/ux-redesign.md) 初見で分かる画面の設計(設計。実装は別のカード) | |
+| | | [design/ux-redesign.md](docs/design/ux-redesign.md) 初見で分かる画面の設計(設計。実装は別のカード) | [brand.md](docs/brand.md) 伝え方(1 文、名前、機能の文、見た目) |
 
 ## 開発
 

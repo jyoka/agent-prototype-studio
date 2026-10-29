@@ -439,7 +439,7 @@ test('構成、ツール、前提、プロンプトの枠、場面と最新の�
   const [partner] = simulation.compositions[0].participants;
   assert.deepEqual([partner.id, partner.kind, partner.owner, partner.mock], ['partner', 'agent', 'partner', 'app/mocks/partner.json']);
   assert.deepEqual(partner.tools, ['search_jobs', 'get_job', 'suggest_questions', 'record_consent', 'save_wish']);
-  assert.deepEqual(simulation.compositions[0].guards.map((g) => [g.id, g.layer, g.owner]), [['no-contact-ask', 'prompt', 'dip'], ['facts-from-tools', 'output', 'partner']]);
+  assert.deepEqual(simulation.compositions[0].guards.map((g) => [g.id, g.layer, g.owner]), [['no-contact-ask', 'prompt', 'ours'], ['facts-from-tools', 'output', 'partner']]);
   // ツール: 宣言と守り(本番の API の仕様の見本)
   assert.deepEqual(simulation.tools.map((t) => t.file).sort(), ['app/front-tools.json', 'app/tools.json']);
   const save = simulation.tools.find((t) => t.file === 'app/tools.json').tools.find((tool) => tool.name === 'save_wish');
@@ -448,7 +448,7 @@ test('構成、ツール、前提、プロンプトの枠、場面と最新の�
   // 前提(推測)と、プロンプトの枠と、場面
   assert.deepEqual(simulation.assumptions.filter((a) => a.file.startsWith('app/assumptions/')).map((a) => [a.file, a.id, a.model.name]), [['app/assumptions/partner-a.json', 'partner-a', 'claude-sonnet-5-5'], ['app/assumptions/partner-b.json', 'partner-b', 'claude-haiku-5-5']]);
   assert.match(simulation.assumptions[0].digest, /^sha256:/);
-  assert.deepEqual(simulation.prompts.map((p) => p.file).sort(), ['app/prompts/dip-guide.md', 'app/prompts/front.md']);
+  assert.deepEqual(simulation.prompts.map((p) => p.file).sort(), ['app/prompts/front.md', 'app/prompts/ours-guide.md']);
   // 4.2 の種類を全部入れた 37 本(sim-9)
   assert.equal(simulation.evals.length, 37);
   assert.deepEqual(simulation.evals.find((e) => e.id === 'tool-deny-phone'), { file: 'app/evals/tool-deny-phone.json', id: 'tool-deny-phone', kind: 'tool', about: '同意があっても、メモに電話番号が入った保存はツールが断る', checks: ['guardBlocked'] });
@@ -477,7 +477,7 @@ test('構成、ツール、前提、プロンプトの枠、場面と最新の�
   assert.ok(!manifest.source.libraries.includes('studio-talk'));
 
   // README: 構成とツール、前提、場面、最新の回し
-  assert.match(readme, /## 構成とツール\(模擬\)\n[\s\S]*\| `app\/composition\.json`\(既定\) \| 相手の会社のエージェントと、こちらのツール\(架空\) \| partner \| partner\(agent、partner\) \| no-contact-ask\(prompt、dip\)、facts-from-tools\(output、partner、記録だけ\) \|/);
+  assert.match(readme, /## 構成とツール\(模擬\)\n[\s\S]*\| `app\/composition\.json`\(既定\) \| 相手の会社のエージェントと、こちらのツール\(架空\) \| partner \| partner\(agent、partner\) \| no-contact-ask\(prompt、ours\)、facts-from-tools\(output、partner、記録だけ\) \|/);
   assert.match(readme, /\| `app\/tools\.json` \| `save_wish` \| record \| requires、deny \|/);
   assert.match(readme, /\| `app\/assumptions\/partner-b\.json` \| partner-b \|/);
   assert.match(readme, /## 場面\(確かめ方\)と最新の回し\n[\s\S]*\| `app\/evals\/risky-contact\.json` \| risky-contact \| risky \|/);
@@ -487,7 +487,7 @@ test('構成、ツール、前提、プロンプトの枠、場面と最新の�
   assert.match(readme, /- Studio の中の部品: studio-talk/);
 
   // 回した後に app/ が変わったら、最新の回しは古い
-  await fs.appendFile(path.join(home, 'projects', PART_TIME, 'app', 'prompts', 'dip-guide.md'), '\n(架空の追記)\n');
+  await fs.appendFile(path.join(home, 'projects', PART_TIME, 'app', 'prompts', 'ours-guide.md'), '\n(架空の追記)\n');
   await store.build(PART_TIME);
   const after = await readHandoff(await handoffs.export(PART_TIME, {}));
   assert.equal(after.manifest.simulation.latestRun.stale, true);
