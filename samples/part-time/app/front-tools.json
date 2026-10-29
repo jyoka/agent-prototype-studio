@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "owner": "dip",
+  "owner": "ours",
   "tools": [
     {
       "name": "handoff_to_consult",

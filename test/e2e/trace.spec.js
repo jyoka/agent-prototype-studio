@@ -326,7 +326,7 @@ test('構成のある見本(バイト探し)の記録: 模擬の会話の参加�
     const agent = steps.filter({ hasText: '参加者 そよかぜの案内役(模擬)(partner)(模擬のエージェント)' });
     await expect(agent).toContainText('接続 mock(AI モデルは呼んでいません)');
     await expect(agent).toContainText('プロンプトの部品: 前提の hostPrompt(持ち主 partner、');
-    await expect(agent).toContainText('枠 dip-guide(持ち主 dip、');
+    await expect(agent).toContainText('枠 ours-guide(持ち主 ours、');
     await expect(agent.getByRole('list', { name: '守りの層と判定' })).toHaveText(['プロンプトの頼み「no-contact-ask」: 頼んだ']);
     // ツールの呼び出し: 引数と結果と、ツールの守りの判定(止めた層と理由)
     const tool = steps.filter({ hasText: 'ツール save_wish' });
@@ -334,13 +334,13 @@ test('構成のある見本(バイト探し)の記録: 模擬の会話の参加�
     await expect(tool).toContainText('引数: {"area":"みなと町"}');
     await expect(tool).toContainText('結果: 失敗: 記録「consent」がありません');
     await expect(tool.getByRole('list', { name: '守りの層と判定' }).locator('li[data-effect="blocked"]')).toHaveText(
-      'ツールの守り「requires」: 止めた、持ち主 dip、理由 記録「consent」がありません',
+      'ツールの守り「requires」: 止めた、持ち主 ours、理由 記録「consent」がありません',
     );
     // 返事の部品と、出口の確かめ(記録だけの確かめ)
     const output = steps.filter({ hasText: 'の返事の部品(1 回目)' });
     await expect(output).toContainText('そよかぜの案内役(模擬)(partner) の返事の部品(1 回目): 文');
     await expect(output.getByRole('list', { name: '守りの層と判定' })).toContainText('出口の確かめ「facts-from-tools」: 通した、持ち主 partner');
-    await expect(blocked).toContainText('見える記録(前提の logging): 相手から');
+    await expect(blocked).toContainText('見える記録(前提の logging): 相手から messages、toolCalls、こちらから toolCalls');
 
     // 前のターンのツールは、成功して結果の長さと項目の名前が出る(全文は出さない)。結果の守り(hideFields)が除いた項目も分かる
     const earlier = entries.nth(1);
@@ -349,9 +349,9 @@ test('構成のある見本(バイト探し)の記録: 模擬の会話の参加�
     await expect(get).toContainText('引数: {"id":"m1"}');
     await expect(get).toContainText(/結果: 成功、\d+ 字、項目 id、title、area、wage、days/);
     await expect(get.getByRole('list', { name: '守りの層と判定' }).getByRole('listitem')).toHaveText([
-      'ツールの守り「schema」: 通した、持ち主 dip',
-      'ツールの守り「hideFields」: 止めた、持ち主 dip、理由 結果から contact を除きました',
-      'ツールの守り「maxResultChars」: 通した、持ち主 dip',
+      'ツールの守り「schema」: 通した、持ち主 ours',
+      'ツールの守り「hideFields」: 止めた、持ち主 ours、理由 結果から contact を除きました',
+      'ツールの守り「maxResultChars」: 通した、持ち主 ours',
     ]);
     await expect(earlier).toContainText('の返事の部品(1 回目): カード');
   } finally {

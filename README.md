@@ -1,6 +1,6 @@
 # agent-prototype-studio
 
-**AI プロダクトの試作品を言葉で作り、中の AI の構成を模擬して、効果を場面の一覧で確かめる。**
+**AI エージェントの試作品を、作る前に、構成ごと手元で試して測る。**
 
 社内の企画担当など、エンジニアでない人のためのローカルのツールです。
 構成とは、誰が会話を回し、誰がどのツールを持ち、守りをどこに置くかです。その構成で、会話、ツールの呼び方、守りがどう効くかが分かります。
@@ -101,7 +101,7 @@ npm run evals -- sample-part-time --composition composition.json,compositions/b.
 | [handoff.md](docs/handoff.md) 引き継ぎの形(形式 3、仮) | [evidence/sim-a](docs/evidence/sim-a/README.md) 構成 A を実モデルで 1 回通した記録 | [design/agent-simulation.md](docs/design/agent-simulation.md) エージェントの構成を模擬して効果を見る基盤の設計(案) | |
 | | [evidence/sim-compare](docs/evidence/sim-compare/README.md) 場面の一覧を構成ごとに実モデルで回して比べた記録 | [ADR 0001](docs/adr/0001-local-runtime-and-isolation.md) ローカル実行と隔離の方式(仮採用) | |
 | | [evidence/](docs/evidence/) ほかの実機の記録 | [ADR 0003](docs/adr/0003-agent-simulation.md) エージェントの構成を模擬する基盤(案) | |
-| | | [design/ux-redesign.md](docs/design/ux-redesign.md) 初見で分かる画面の設計(設計。実装は別のカード) | |
+| | | [design/ux-redesign.md](docs/design/ux-redesign.md) 初見で分かる画面の設計(設計。実装は別のカード) | [brand.md](docs/brand.md) 伝え方(1 文、名前、機能の文、見た目) |
 
 ## 開発
 
