@@ -240,7 +240,7 @@ test('目録が指すシナリオの形の誤りは、contract の段の失敗�
   assert.equal((await buildApp({ appDir: fine.appDir, buildsDir: fine.buildsDir })).ok, true);
 });
 
-test('見本のバイト探し(構成 A)は、ツール 5 つ、前提 2 つ、モックの決まり、構成 A の場面 17 本、シナリオ 1 本を持ち、会話の枠を使ってビルドできる(R1)', async (t) => {
+test('見本のバイト探し(構成 A)は、ツール 5 つ、前提 2 つ、モックの決まり、構成 A の場面 24 本、シナリオ 1 本を持ち、会話の枠を使ってビルドできる(R1)', async (t) => {
   const { buildsDir } = await makeApp(t, {});
   const appDir = path.join(STUDIO_ROOT, 'samples', 'part-time', 'app');
   const result = await buildApp({ appDir, buildsDir });
@@ -266,11 +266,11 @@ test('見本のバイト探し(構成 A)は、ツール 5 つ、前提 2 つ、�
   assert.ok(own[0].assumption.messageTypes.includes('card'));
   assert.ok(!own[1].assumption.messageTypes.includes('card'));
   assert.ok(mocks.some((m) => m.file === 'mocks/partner.json'));
-  // 構成 A だけの場面は 17 本(entry が partner の会話の場面と、構成 A のツールだけの場面)。
+  // 構成 A だけの場面は 24 本(entry が partner の会話の場面と、構成 A のツールだけの場面)。
   // entry のない場面はどの構成の回し手からも始め、entry が front、consult の場面は構成 B、C の場面
   const names = new Set(tools['tools.json'].tools.map((tool) => tool.name));
   const forA = evals.filter((e) => (e.scenario.kind === 'tool' ? names.has(e.scenario.call.tool) : e.scenario.entry === 'partner'));
-  assert.equal(forA.length, 17);
+  assert.equal(forA.length, 24);
   // 場面は 30 本以上で、4.2 の種類を全部持つ(sim-9)
   assert.ok(evals.length >= 30, String(evals.length));
   assert.deepEqual([...new Set(evals.map((e) => e.scenario.kind))].sort(), [...EVAL_KINDS].sort());

@@ -208,7 +208,7 @@ test('回しを並べた比べる表: 組を 1 つの表にし、頼みを外し
   const [{ result: withGuards }, { result: without }] = [await run(false), await run(true)];
   const text = renderComparison([withGuards, without], { title: '架空の比べる表' });
   assert.match(text, /^# 架空の比べる表/);
-  assert.match(text, /\| composition\.json \/ partner-a \| モック \| 28\(n\/a 9\) \|/);
+  assert.match(text, /\| composition\.json \/ partner-a \| モック \| 35\(n\/a 9\) \|/);
   assert.match(text, /\| compositions\/b\.json \| モック \| \d+\(n\/a \d+\) \|/);
   assert.match(text, /\| composition\.json \/ partner-a\(頼みなし\) \| モック \|/);
   assert.match(text, /## 点\(4\.4\)/);

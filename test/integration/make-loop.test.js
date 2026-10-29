@@ -283,7 +283,7 @@ test('関門 GE: 場面を G4 の後、G5 の前にモックで回し、通ら�
 
   // 失敗の中身: 場面の id、通らなかった確かめ、期待と実際、ツールの呼び出しの要約
   const ge = record.rounds[0].gates.find((gate) => gate.id === 'GE');
-  assert.equal(ge.evalCount, 38);
+  assert.equal(ge.evalCount, 45);
   assert.equal(ge.failedCount, 1);
   const [failure] = ge.failures;
   assert.deepEqual(
@@ -315,8 +315,8 @@ test('関門 GE: 場面を G4 の後、G5 の前にモックで回し、通ら�
   assert.deepEqual(first.options.connections, ['mock']);
   assert.match(await fs.readFile(path.join(root, `.studio/runs/${run.id}/rounds/1/evals/report.md`), 'utf8'), /\| broken-reply \| no-tool \| 失敗 \|/);
   const second = record.gates.find((gate) => gate.id === 'GE');
-  assert.deepEqual([second.status, second.evalCount, second.failedCount], ['passed', 38, 0]);
-  assert.ok(run.items.find((item) => item.kind === 'evals-ok').text.startsWith('場面を確かめました。38 本のうち 29 本が通り'));
+  assert.deepEqual([second.status, second.evalCount, second.failedCount], ['passed', 45, 0]);
+  assert.ok(run.items.find((item) => item.kind === 'evals-ok').text.startsWith('場面を確かめました。45 本のうち 36 本が通り'));
 
   // 直すラウンドで場面とツールの守りが変わった印
   assert.deepEqual(record.evalsChanged, [{ round: 2, files: [{ file: 'app/evals/broken-reply.json', change: 'modified' }] }]);
