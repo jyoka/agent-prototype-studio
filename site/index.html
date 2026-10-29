@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 外から読み込むものはない。GitHub Pages でも効くように、守りは meta で書く -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; media-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Prototype Studio: AI エージェントの試作品を、作る前に、構成ごと手元で試して測る。</title>
+<meta name="description" content="AI エージェントの試作品を、作る前に、構成ごと手元で試して測る。">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/brand/tokens.css">
+<link rel="stylesheet" href="site.css">
+<script src="site.js"></script>
+</head>
+<body>
+<a class="skip" href="#main"><span data-lang="ja">本文へ</span><span data-lang="en">Skip to content</span></a>
+
+<header class="bar">
+  <a class="bar-name" href="#top">Prototype Studio</a>
+  <nav class="bar-nav" aria-label="ページの中" data-en-aria-label="On this page">
+    <a href="#layers"><span data-lang="ja">分解</span><span data-lang="en">Layers</span></a>
+    <a href="#features"><span data-lang="ja">できること</span><span data-lang="en">Features</span></a>
+    <a href="#start"><span data-lang="ja">始める</span><span data-lang="en">Start</span></a>
+    <a href="#compare"><span data-lang="ja">比べる</span><span data-lang="en">Compare</span></a>
+  </nav>
+  <div class="bar-tools">
+    <button type="button" id="lang-toggle" class="chip" lang="en">English</button>
+    <button type="button" id="theme-toggle" class="chip" title="見た目を切り替える" data-en-title="Switch the theme"><span class="theme-to-dark"><span data-lang="ja">ダーク</span><span data-lang="en">Dark</span></span><span class="theme-to-light"><span data-lang="ja">ライト</span><span data-lang="en">Light</span></span></button>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- 1. 見出し -->
+<section class="hero" id="top">
+  <p class="hero-repo">agent-prototype-studio</p>
+  <h1 class="hero-name">Prototype Studio</h1>
+  <p class="hero-line" id="sentence"><span data-lang="ja">AI エージェントの試作品を、作る前に、構成ごと手元で試して測る。</span><span data-lang="en">Try and measure an AI agent prototype, whole setup included, on your machine before you build it.</span></p>
+  <div class="hero-text">
+    <p><span data-lang="ja">構成とは、誰が会話を回し、誰がどのツールを持ち、守りをどこに置くかです。</span><span data-lang="en">A setup is who runs the conversation, who owns which tools, and where the guardrails sit.</span></p>
+    <p><span data-lang="ja">言葉で試作品を直し、模擬のエージェントと話し、場面を回して比べます。</span><span data-lang="en">Edit the prototype in plain words, talk to a simulated agent, and run evals to compare setups.</span></p>
+    <p><span data-lang="ja">試すのはモックで、料金はかかりません。本物の AI は、画面で同意したときと、<code>--real</code> で場面を回すときだけ使います。</span><span data-lang="en">Trying runs on a mock and costs nothing. The real model runs only when you consent on screen, or when you run evals with <code>--real</code>.</span></p>
+  </div>
+  <div class="hero-actions">
+    <a class="button primary" data-cta="start" href="https://github.com/jyoka/agent-prototype-studio#はじめる"><span data-lang="ja">始める</span><span data-lang="en">Get started</span></a>
+    <a class="button" data-cta="demo" href="assets/media/talk-guard.webm"><span data-lang="ja">動きを見る</span><span data-lang="en">Watch it run</span></a>
+    <a class="button" data-cta="github" href="https://github.com/jyoka/agent-prototype-studio">GitHub</a>
+  </div>
+  <a class="hero-shot shot" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md">
+    <img class="on-light" src="assets/media/try-and-fix-light.png" width="1280" height="800" alt="Studio の画面。左の「試す」で見本のバイト探しと話し、右の「言葉で直す」欄に依頼を書いたところ" data-en-alt="The Studio screen. Talking to the part-time job sample in Try on the left, with a request typed in the plain-word edit box on the right">
+    <img class="on-dark" src="assets/media/try-and-fix-dark.png" width="1280" height="800" alt="Studio の画面。左の「試す」で見本のバイト探しと話し、右の「言葉で直す」欄に依頼を書いたところ" data-en-alt="The Studio screen. Talking to the part-time job sample in Try on the left, with a request typed in the plain-word edit box on the right">
+  </a>
+</section>
+
+<!-- 2. 分解のアニメ(docs/brand.md の 4 節)。動かすのは site.js。prefers-reduced-motion のときは止まった絵を並べる -->
+<section class="layers" id="layers" aria-labelledby="layers-title">
+  <div class="section-head">
+    <h2 id="layers-title"><span data-lang="ja">1 回のトークを、層ごとに見る。</span><span data-lang="en">One turn of a talk, layer by layer.</span></h2>
+    <p><span class="when-motion"><span data-lang="ja">スクロールすると、トークの画面が 6 つの層に分かれます。</span><span data-lang="en">Scroll to split the talk screen into six layers.</span></span><span class="when-still"><span data-lang="ja">トークの画面を、6 つの層に分けて並べました。</span><span data-lang="en">The talk screen, split into six layers.</span></span> <span data-lang="ja">例は見本「バイト探し(架空)」を、モックのまま回したものです。</span><span data-lang="en">The example is the "part-time job (fictional)" sample, run on the mock.</span></p>
+  </div>
+  <div class="layers-track">
+    <div class="layers-stage">
+      <div class="layers-side">
+        <div class="layers-readout" aria-live="polite">
+          <p class="layer-count"><span class="layer-now">01</span> / 06</p>
+          <div class="layer-text"></div>
+        </div>
+        <ol class="talk-example" aria-label="例の会話(架空)" data-en-aria-label="Example conversation (fictional)">
+          <li><span class="who"><span data-lang="ja">あなた</span><span data-lang="en">You</span></span> <span data-lang="ja">「みなと町でバイトを探しています」。案内役が <code>search_jobs</code> で 3 件を出す</span><span data-lang="en">"I'm looking for a part-time job in Minato-machi." The guide calls <code>search_jobs</code> and shows 3 jobs</span></li>
+          <li><span class="who"><span data-lang="ja">あなた</span><span data-lang="en">You</span></span> <span data-lang="ja">「そのまま保存して」。案内役は聞かずに <code>save_wish</code> を呼ぶ</span><span data-lang="en">"Save it as is." The guide calls <code>save_wish</code> without asking</span></li>
+          <li class="talk-stop"><span class="who"><span data-lang="ja">守り</span><span data-lang="en">Guardrail</span></span> <span data-lang="ja">ツールの守り <code>requires</code> が止める。「記録「consent」がありません」</span><span data-lang="en">The tool guard <code>requires</code> stops it: no "consent" record</span></li>
+        </ol>
+      </div>
+      <div class="layers-scene">
+        <ol class="layers-stack">
+          <li class="layer" data-layer="1">
+            <figure>
+              <div class="layer-shot shot">
+                <img class="on-light" src="assets/media/layers/1-talk-light.png" width="812" height="278" loading="lazy" alt="トークの画面。「そのまま保存して」に「記録「consent」がありません」と返る" data-en-alt="The talk screen. &quot;Save it as is&quot; gets the reply: no &quot;consent&quot; record">
+                <img class="on-dark" src="assets/media/layers/1-talk-dark.png" width="812" height="278" loading="lazy" alt="トークの画面。「そのまま保存して」に「記録「consent」がありません」と返る" data-en-alt="The talk screen. &quot;Save it as is&quot; gets the reply: no &quot;consent&quot; record">
+              </div>
+              <figcaption>
+                <span class="layer-num">01 / 06</span>
+                <strong class="layer-name"><span data-lang="ja">トークの画面</span><span data-lang="en">Talk screen</span></strong>
+                <span class="layer-line"><span data-lang="ja">利用者が送り、返事を受け取る所。</span><span data-lang="en">Where the user sends a message and gets a reply.</span></span>
+                <span class="layer-line"><span data-lang="ja">この例: 「そのまま保存して」に、止めた理由の文が返る。</span><span data-lang="en">Here: "Save it as is" gets back the reason it was stopped.</span></span>
+              </figcaption>
+            </figure>
+          </li>
+          <li class="layer" data-layer="2">
+            <figure>
+              <div class="layer-shot shot">
+                <img class="on-light" src="assets/media/layers/2-agent-light.png" width="906" height="224" loading="lazy" alt="記録の参加者の行。そよかぜの案内役(模擬)、接続はモック" data-en-alt="The participant line in the trace: the simulated guide, on the mock">
+                <img class="on-dark" src="assets/media/layers/2-agent-dark.png" width="906" height="224" loading="lazy" alt="記録の参加者の行。そよかぜの案内役(模擬)、接続はモック" data-en-alt="The participant line in the trace: the simulated guide, on the mock">
+              </div>
+              <figcaption>
+                <span class="layer-num">02 / 06</span>
+                <strong class="layer-name"><span data-lang="ja">模擬のエージェント</span><span data-lang="en">Simulated agent</span></strong>
+                <span class="layer-line"><span data-lang="ja">相手の会社のエージェントの役。ツールを自分で選ぶ。</span><span data-lang="en">Plays the partner's agent and picks tools itself.</span></span>
+                <span class="layer-line"><span data-lang="ja">この例: そよかぜの案内役(模擬)が <code>save_wish</code> を選ぶ。</span><span data-lang="en">Here: the simulated guide picks <code>save_wish</code>.</span></span>
+              </figcaption>
+            </figure>
+          </li>
+          <li class="layer" data-layer="3">
+            <figure>
+              <div class="layer-shot shot">
+                <img class="on-light" src="assets/media/layers/3-prompt-light.png" width="906" height="136" loading="lazy" alt="プロンプトの部品。前提の hostPrompt と、枠 ours-guide" data-en-alt="Prompt parts: the assumption's hostPrompt and the ours-guide slot">
+                <img class="on-dark" src="assets/media/layers/3-prompt-dark.png" width="906" height="136" loading="lazy" alt="プロンプトの部品。前提の hostPrompt と、枠 ours-guide" data-en-alt="Prompt parts: the assumption's hostPrompt and the ours-guide slot">
+              </div>
+              <figcaption>
+                <span class="layer-num">03 / 06</span>
+                <strong class="layer-name"><span data-lang="ja">プロンプトの枠</span><span data-lang="en">Prompt slot</span></strong>
+                <span class="layer-line"><span data-lang="ja">相手が書く土台と、こちらが書ける枠。頼みは守られるとは限らない。</span><span data-lang="en">The partner's base prompt plus the slot you can write. An ask is not a guarantee.</span></span>
+                <span class="layer-line"><span data-lang="ja">この例: 土台(前提の <code>hostPrompt</code>)と、こちらの枠 <code>ours-guide</code>。</span><span data-lang="en">Here: the base (the assumption's <code>hostPrompt</code>) and your slot <code>ours-guide</code>.</span></span>
+              </figcaption>
+            </figure>
+          </li>
+          <li class="layer" data-layer="4">
+            <figure>
+              <div class="layer-shot shot">
+                <img class="on-light" src="assets/media/layers/4-tool-light.png" width="906" height="182" loading="lazy" alt="ツール save_wish の呼び出し。引数は場所がみなと町、結果は失敗" data-en-alt="The save_wish tool call. The argument is the area Minato-machi, and the result is a failure">
+                <img class="on-dark" src="assets/media/layers/4-tool-dark.png" width="906" height="182" loading="lazy" alt="ツール save_wish の呼び出し。引数は場所がみなと町、結果は失敗" data-en-alt="The save_wish tool call. The argument is the area Minato-machi, and the result is a failure">
+              </div>
+              <figcaption>
+                <span class="layer-num">04 / 06</span>
+                <strong class="layer-name"><span data-lang="ja">ツール(MCP)</span><span data-lang="en">Tools (MCP)</span></strong>
+                <span class="layer-line"><span data-lang="ja">こちらが出すツール。データで書き、Studio のツールの口が動かす。</span><span data-lang="en">Your tools, written as data and run by Studio's tool gate.</span></span>
+                <span class="layer-line"><span data-lang="ja">この例: <code>save_wish</code>(場所: みなと町)。</span><span data-lang="en">Here: <code>save_wish</code> (area: Minato-machi).</span></span>
+              </figcaption>
+            </figure>
+          </li>
+          <li class="layer layer-guard" data-layer="5">
+            <figure>
+              <div class="layer-shot shot">
+                <img class="on-light" src="assets/media/layers/5-guard-light.png" width="906" height="126" loading="lazy" alt="ツールの守り。schema は通した。requires は止めた、理由は記録「consent」がない" data-en-alt="Tool guards: schema passed, requires stopped the call because there is no consent record">
+                <img class="on-dark" src="assets/media/layers/5-guard-dark.png" width="906" height="126" loading="lazy" alt="ツールの守り。schema は通した。requires は止めた、理由は記録「consent」がない" data-en-alt="Tool guards: schema passed, requires stopped the call because there is no consent record">
+                <span class="stop-mark"><span data-lang="ja">止めた</span><span data-lang="en">Stopped</span></span>
+              </div>
+              <figcaption>
+                <span class="layer-num">05 / 06</span>
+                <strong class="layer-name"><span data-lang="ja">ガードレール</span><span data-lang="en">Guardrails</span></strong>
+                <span class="layer-line"><span data-lang="ja">3 つの層の守り。どの層が止めたかが分かる。</span><span data-lang="en">Guardrails in three layers. You see which one stopped the turn.</span></span>
+                <span class="layer-line"><span data-lang="ja">この例: ツールの守り <code>requires</code> が止めた。</span><span data-lang="en">Here: the tool guard <code>requires</code> stopped it.</span></span>
+              </figcaption>
+            </figure>
+          </li>
+          <li class="layer" data-layer="6">
+            <figure>
+              <div class="layer-shot shot">
+                <img class="on-light" src="assets/media/layers/6-record-light.png" width="952" height="198" loading="lazy" alt="実行の記録。発言はそのまま保存して、返事は記録「consent」がありません" data-en-alt="The trace: the message and the reply that says there is no consent record">
+                <img class="on-dark" src="assets/media/layers/6-record-dark.png" width="952" height="198" loading="lazy" alt="実行の記録。発言はそのまま保存して、返事は記録「consent」がありません" data-en-alt="The trace: the message and the reply that says there is no consent record">
+              </div>
+              <figcaption>
+                <span class="layer-num">06 / 06</span>
+                <strong class="layer-name"><span data-lang="ja">記録</span><span data-lang="en">Trace</span></strong>
+                <span class="layer-line"><span data-lang="ja">渡したもの、呼んだツール、守りの判定を残す。</span><span data-lang="en">Keeps what was sent, which tools ran, and each guardrail verdict.</span></span>
+                <span class="layer-line"><span data-lang="ja">この例: 止めた層、持ち主、理由。</span><span data-lang="en">Here: the layer that stopped it, its owner, and the reason.</span></span>
+              </figcaption>
+            </figure>
+          </li>
+        </ol>
+      </div>
+    </div>
+  </div>
+  <p class="section-foot"><span data-lang="ja">プロンプトの枠で「保存の前に聞いて」と頼んでも、守るかは相手のエージェントしだいです。ツールの守りは、相手によらず必ず効きます。どちらが効いたかは、記録で分かります。</span><span data-lang="en">Asking "check before you save" in the prompt slot depends on the partner's agent. The tool guard always applies, whoever the partner is. The trace shows which one worked.</span></p>
+</section>
+
+<!-- 3. できること(docs/brand.md の 3 節。カード 8 枚) -->
+<section class="features" id="features" aria-labelledby="features-title">
+  <div class="section-head">
+    <h2 id="features-title"><span data-lang="ja">できること</span><span data-lang="en">What it does</span></h2>
+    <p><span data-lang="ja">絵は Studio が自分で撮った画面です。押すと、その機能の docs が開きます。</span><span data-lang="en">The images are screens Studio took of itself. Click one to open the docs for that feature.</span></p>
+  </div>
+  <ul class="cards">
+    <li class="card">
+      <a class="card-shot shot crop crop-try" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md">
+        <img class="on-light" src="assets/media/try-and-fix-light.png" width="1280" height="800" loading="lazy" alt="言葉で直す欄に依頼を書いたところ" data-en-alt="A request typed in the plain-word edit box">
+        <img class="on-dark" src="assets/media/try-and-fix-dark.png" width="1280" height="800" loading="lazy" alt="言葉で直す欄に依頼を書いたところ" data-en-alt="A request typed in the plain-word edit box">
+      </a>
+      <h3><span data-lang="ja">言葉で直す欄</span><span data-lang="en">Plain-word edits</span></h3>
+      <p><span data-lang="ja">画面も AI の振る舞い(<code>app/ai.json</code>)も、欄に書いた依頼で変わる。</span><span data-lang="en">Type a request to change the screens or the AI's behavior (<code>app/ai.json</code>).</span></p>
+      <p><span data-lang="ja">作る AI が書けるのは、試作品の <code>app/</code> だけ。</span><span data-lang="en">The maker AI can write only to the prototype's <code>app/</code>.</span></p>
+    </li>
+    <li class="card">
+      <a class="card-shot shot crop crop-choice" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/design/agent-simulation.md">
+        <img class="on-light" src="assets/media/sim-choice-light.png" width="1280" height="800" loading="lazy" alt="構成と前提を選ぶ欄" data-en-alt="Choosing the setup and the assumptions">
+        <img class="on-dark" src="assets/media/sim-choice-dark.png" width="1280" height="800" loading="lazy" alt="構成と前提を選ぶ欄" data-en-alt="Choosing the setup and the assumptions">
+      </a>
+      <h3><span data-lang="ja">構成の模擬</span><span data-lang="en">Simulated setups</span></h3>
+      <p><span data-lang="ja">相手のエージェント、こちらのツール、人への引き継ぎを <code>app/composition.json</code> に書く。</span><span data-lang="en">Write the partner's agent, your tools, and handoffs to people in <code>app/composition.json</code>.</span></p>
+      <p><span data-lang="ja">模擬のエージェントが、ツールを自分で選んで呼ぶ。</span><span data-lang="en">A simulated agent picks and calls the tools itself.</span></p>
+    </li>
+    <li class="card">
+      <a class="card-shot shot crop crop-trace" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/design/agent-simulation.md">
+        <img class="on-light" src="assets/media/sim-trace-light.png" width="1280" height="800" loading="lazy" alt="模擬の会話の記録。ツールの守り requires が止めたところ" data-en-alt="The simulated conversation trace, where the tool guard requires stopped the call">
+        <img class="on-dark" src="assets/media/sim-trace-dark.png" width="1280" height="800" loading="lazy" alt="模擬の会話の記録。ツールの守り requires が止めたところ" data-en-alt="The simulated conversation trace, where the tool guard requires stopped the call">
+      </a>
+      <h3><span data-lang="ja">守りの層</span><span data-lang="en">Guardrail layers</span></h3>
+      <p><span data-lang="ja">ツールの守り、プロンプトの頼み、出口の確かめの 3 つの層に分けて書く。</span><span data-lang="en">Write guardrails in three layers: tool guards, prompt asks, and output checks.</span></p>
+      <p><span data-lang="ja">実行の記録に、どの層が止めたかと理由が出る。</span><span data-lang="en">The trace shows which layer stopped a turn, and why.</span></p>
+    </li>
+    <li class="card">
+      <a class="card-shot shot crop crop-evals" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md#場面を回すnpm-run-evals">
+        <img class="on-light" src="assets/media/evals-compare-light.png" width="1280" height="427" loading="lazy" alt="場面を構成ごとに回して比べた表" data-en-alt="A table comparing evals run across setups">
+        <img class="on-dark" src="assets/media/evals-compare-dark.png" width="1280" height="427" loading="lazy" alt="場面を構成ごとに回して比べた表" data-en-alt="A table comparing evals run across setups">
+      </a>
+      <h3><span data-lang="ja">場面の比較</span><span data-lang="en">Eval runs</span></h3>
+      <p><span data-lang="ja"><code>app/evals/</code> の場面を、構成と前提を替えて回す(<code>npm run evals</code>)。</span><span data-lang="en">Run the evals in <code>app/evals/</code> across setups and assumptions (<code>npm run evals</code>).</span></p>
+      <p><span data-lang="ja">自然さ、ツールの呼び方、守り、費用と待ち時間を並べて比べる。</span><span data-lang="en">Compare naturalness, tool use, guardrails, and cost and latency side by side.</span></p>
+    </li>
+    <li class="card">
+      <a class="card-shot shot pos-fit" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/configuration.md">
+        <img class="on-light" src="assets/media/layers/4-tool-light.png" width="906" height="182" loading="lazy" alt="データで書いたツール save_wish の呼び出し" data-en-alt="A call to save_wish, a tool written as data">
+        <img class="on-dark" src="assets/media/layers/4-tool-dark.png" width="906" height="182" loading="lazy" alt="データで書いたツール save_wish の呼び出し" data-en-alt="A call to save_wish, a tool written as data">
+      </a>
+      <h3><span data-lang="ja">データだけの流用</span><span data-lang="en">Data-only setups</span></h3>
+      <p><span data-lang="ja">新しい構成は、構成、ツール、前提、プロンプトの JSON と文で足す。</span><span data-lang="en">Add a setup with JSON and text files: composition, tools, assumptions, prompts.</span></p>
+      <p><span data-lang="ja">Studio のコードは変えない。ツールは探す、取る、記録するなどの決まった処理を組む。</span><span data-lang="en">Studio's code stays the same. Tools combine fixed steps such as search, get, and record.</span></p>
+    </li>
+    <li class="card">
+      <a class="card-shot shot pos-fit" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/claude-code.md">
+        <img class="on-light" src="assets/media/layers/6-record-light.png" width="952" height="198" loading="lazy" alt="記録の見出し。モック(AI モデルは呼んでいません)" data-en-alt="A trace heading: mock, no AI model called">
+        <img class="on-dark" src="assets/media/layers/6-record-dark.png" width="952" height="198" loading="lazy" alt="記録の見出し。モック(AI モデルは呼んでいません)" data-en-alt="A trace heading: mock, no AI model called">
+      </a>
+      <h3><span data-lang="ja">モックと実モデル</span><span data-lang="en">Mock and real model</span></h3>
+      <p><span data-lang="ja">同じ試作品のまま、モックと Claude Code を切り替える。</span><span data-lang="en">Switch the same prototype between a mock and Claude Code.</span></p>
+      <p><span data-lang="ja">モックはモデルを呼ばず、料金はかからない。実モデルは同意の後だけ。</span><span data-lang="en">The mock calls no model and costs nothing. The real model runs only after you consent.</span></p>
+    </li>
+    <li class="card">
+      <a class="card-shot card-type" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/handoff.md" aria-label="引き継ぎの docs" data-en-aria-label="Handoff docs">
+        <code>app/ → <span data-lang="ja">版</span><span data-lang="en">version</span> → handoffs/</code>
+      </a>
+      <h3><span data-lang="ja">版と引き継ぎ</span><span data-lang="en">Versions and handoff</span></h3>
+      <p><span data-lang="ja"><code>app/</code> のファイルと会話と状態を版として保存し、いつでも戻す。</span><span data-lang="en">Save <code>app/</code>, conversations, and state as a version, and restore any of them.</span></p>
+      <p><span data-lang="ja">ソース、AI の設定、試した会話、証拠の要約を 1 つのフォルダーに書き出す。</span><span data-lang="en">Export source, AI settings, tried conversations, and an evidence summary to one folder.</span></p>
+    </li>
+    <li class="card">
+      <a class="card-shot card-type" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/architecture/hld.md" aria-label="部品とデータの流れの docs" data-en-aria-label="Architecture docs">
+        <code><span data-lang="ja">検査 → ビルド → 場面 → 起動 → シナリオ</span><span data-lang="en">checks → build → evals → launch → scenarios</span></code>
+      </a>
+      <h3><span data-lang="ja">作るループの関門</span><span data-lang="en">Build-loop gates</span></h3>
+      <p><span data-lang="ja">作る AI が直すたびに、検査、ビルド、場面、起動、シナリオの関門を回す。</span><span data-lang="en">After each edit by the maker AI, Studio runs gates: checks, build, evals, launch, and scenarios.</span></p>
+      <p><span data-lang="ja">落ちたら失敗を作る AI に返し、2 回まで直させる。</span><span data-lang="en">On failure, it sends the result back to the maker AI for up to two fix rounds.</span></p>
+    </li>
+  </ul>
+</section>
+
+<!-- 4. 3 手で始める(README の「はじめる」と「使い方」) -->
+<section class="start" id="start" aria-labelledby="start-title">
+  <div class="section-head">
+    <h2 id="start-title"><span data-lang="ja">3 手で始める</span><span data-lang="en">Start in three steps</span></h2>
+    <p><span data-lang="ja">要るものは Node.js 22 以上です。リポジトリを手元に置いたフォルダーで動かします。</span><span data-lang="en">You need Node.js 22 or later. Run these in the folder where you put the repository.</span></p>
+  </div>
+  <ol class="steps">
+    <li>
+      <span class="step-num">1</span>
+      <pre><code>npm install</code></pre>
+      <p><span data-lang="ja">初回だけ。部品を入れる。</span><span data-lang="en">First time only. Installs the parts.</span></p>
+    </li>
+    <li>
+      <span class="step-num">2</span>
+      <pre><code>npm start</code></pre>
+      <p><span data-lang="ja">既定のブラウザで Studio が開く。</span><span data-lang="en">Studio opens in your default browser.</span></p>
+    </li>
+    <li>
+      <span class="step-num">3</span>
+      <pre><code>試作品: … ▾</code></pre>
+      <p><span data-lang="ja">上の帯から見本を選ぶ。「バイト探し(架空・AI と話せる)」で、上の分解の例を試せる。</span><span data-lang="en">Pick a sample in the top bar. 「バイト探し(架空・AI と話せる)」 (part-time job) runs the example above. Studio's screens are in Japanese.</span></p>
+    </li>
+  </ol>
+  <h3 class="table-title"><span data-lang="ja">初日に要る操作</span><span data-lang="en">What you need on day one</span></h3>
+  <div class="table-wrap">
+    <table class="ops">
+      <thead>
+        <tr><th scope="col"><span data-lang="ja">したいこと</span><span data-lang="en">To do this</span></th><th scope="col"><span data-lang="ja">操作</span><span data-lang="en">Do this</span></th></tr>
+      </thead>
+      <tbody>
+        <tr><td><span data-lang="ja">試作品と話す</span><span data-lang="en">Talk to the prototype</span></td><td><span data-lang="ja">「試す」の枠の中の欄に書いて送る</span><span data-lang="en">Type in the box inside "試す" (Try) and send</span></td></tr>
+        <tr><td><span data-lang="ja">画面や AI の振る舞いを変える</span><span data-lang="en">Change the screens or the AI's behavior</span></td><td><span data-lang="ja">「言葉で直す」欄に頼む。本物の AI は同意の後だけ動き、費用がかかる</span><span data-lang="en">Ask in the "言葉で直す" (plain-word edit) box. The real model runs only after you consent, and it costs money</span></td></tr>
+        <tr><td><span data-lang="ja">料金なしで直す流れを試す</span><span data-lang="en">Try the edit flow at no cost</span></td><td><code>STUDIO_AGENT=fake npm start</code></td></tr>
+        <tr><td><span data-lang="ja">今の状態を残す</span><span data-lang="en">Keep the current state</span></td><td><span data-lang="ja">上の帯の「保存」</span><span data-lang="en">"保存" (Save) in the top bar</span></td></tr>
+        <tr><td><span data-lang="ja">ツールと守りの判定を見る</span><span data-lang="en">See tool calls and guardrail verdicts</span></td><td><span data-lang="ja">「その他」→「開発者向けの詳細」の「AI の実行の記録」</span><span data-lang="en">「その他」(More) → 「開発者向けの詳細」(developer details) → 「AI の実行の記録」(AI trace)</span></td></tr>
+        <tr><td><span data-lang="ja">場面を回して比べる</span><span data-lang="en">Run the evals and compare</span></td><td><code>npm run evals -- sample-part-time</code><span data-lang="ja">(Studio を一度起動した後)</span><span data-lang="en"> (after Studio has started once)</span></td></tr>
+        <tr><td><span data-lang="ja">ブラウザが開かない</span><span data-lang="en">The browser does not open</span></td><td><span data-lang="ja">ターミナルに出た <code>http://127.0.0.1:4317/#token=…</code> を開く</span><span data-lang="en">Open the <code>http://127.0.0.1:4317/#token=…</code> shown in the terminal</span></td></tr>
+        <tr><td><span data-lang="ja">止める</span><span data-lang="en">Stop</span></td><td><span data-lang="ja">ターミナルで Ctrl+C</span><span data-lang="en">Ctrl+C in the terminal</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="section-foot"><span data-lang="ja">詳しくは <a href="https://github.com/jyoka/agent-prototype-studio#はじめる">README の「はじめる」</a>と <a href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md">docs/usage.md</a> にあります。</span><span data-lang="en">More in the <a href="https://github.com/jyoka/agent-prototype-studio#はじめる">README's getting started</a> and <a href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md">docs/usage.md</a> (in Japanese).</span></p>
+</section>
+
+<!-- 5. 比べる。ほかの道具の欄は、道具の種類で決まることだけを書く。確かめていない所は「-」 -->
+<section class="compare" id="compare" aria-labelledby="compare-title">
+  <div class="section-head">
+    <h2 id="compare-title"><span data-lang="ja">比べる</span><span data-lang="en">Compare</span></h2>
+    <p><span data-lang="ja">言葉で画面の試作品を作る道具と比べました。違うのは、試作品の中の AI、エージェントの構成の模擬、場面での評価です。</span><span data-lang="en">Compared with tools that build screen prototypes from plain words. The differences: the AI inside the prototype, simulated agent setups, and evals.</span></p>
+  </div>
+  <div class="table-wrap">
+    <table class="vs">
+      <thead>
+        <tr>
+          <th scope="col"></th>
+          <th scope="col"><span data-lang="ja">言葉で画面の試作品を作る道具(例: GitHub の Replica)</span><span data-lang="en">Tools that build screen prototypes from plain words (e.g. GitHub's Replica)</span></th>
+          <th scope="col">Prototype Studio</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row"><span data-lang="ja">言葉で画面を作る、直す</span><span data-lang="en">Build and edit screens in plain words</span></th>
+          <td data-label="言葉で作る道具" data-label-en="Plain-word builders"><span data-lang="ja">する(道具の目的)</span><span data-lang="en">Yes (the tool's purpose)</span></td>
+          <td data-label="Prototype Studio" data-label-en="Prototype Studio"><span data-lang="ja">する。言葉で直す欄。作る AI が書けるのは <code>app/</code> だけ</span><span data-lang="en">Yes. The plain-word edit box. The maker AI writes only to <code>app/</code></span></td>
+        </tr>
+        <tr>
+          <th scope="row"><span data-lang="ja">試作品の中の AI</span><span data-lang="en">AI inside the prototype</span></th>
+          <td class="unknown" data-label="言葉で作る道具" data-label-en="Plain-word builders">-</td>
+          <td data-label="Prototype Studio" data-label-en="Prototype Studio"><span data-lang="ja">試作品の中の AI と話す。振る舞いは <code>app/ai.json</code>。モックと実モデルを切り替える</span><span data-lang="en">Talk to the AI inside the prototype. Its behavior is in <code>app/ai.json</code>. Switch between a mock and the real model</span></td>
+        </tr>
+        <tr>
+          <th scope="row"><span data-lang="ja">エージェントの構成の模擬</span><span data-lang="en">Simulated agent setups</span></th>
+          <td class="unknown" data-label="言葉で作る道具" data-label-en="Plain-word builders">-</td>
+          <td data-label="Prototype Studio" data-label-en="Prototype Studio"><span data-lang="ja">相手のエージェント、ツール、引き継ぎ、守りを <code>app/composition.json</code> に書いて模擬する</span><span data-lang="en">Simulate the partner's agent, tools, handoffs, and guardrails from <code>app/composition.json</code></span></td>
+        </tr>
+        <tr>
+          <th scope="row"><span data-lang="ja">場面での評価</span><span data-lang="en">Evals</span></th>
+          <td class="unknown" data-label="言葉で作る道具" data-label-en="Plain-word builders">-</td>
+          <td data-label="Prototype Studio" data-label-en="Prototype Studio"><span data-lang="ja"><code>npm run evals</code> で場面を構成と前提ごとに回し、1 つの表で比べる</span><span data-lang="en">Run evals per setup and assumption with <code>npm run evals</code>, and compare them in one table</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="section-foot"><span data-lang="ja">「-」は、確かめていないので書いていない所です。ほかの道具の細かい機能は、その道具の docs を見てください。</span><span data-lang="en">"-" marks what we have not checked, so we leave it blank. See each tool's own docs for its details.</span></p>
+</section>
+
+</main>
+
+<!-- 6. フッター -->
+<footer class="foot">
+  <p class="foot-line"><span data-lang="ja">AI エージェントの試作品を、作る前に、構成ごと手元で試して測る。</span><span data-lang="en">Try and measure an AI agent prototype, whole setup included, on your machine before you build it.</span></p>
+  <nav class="foot-links" aria-label="docs">
+    <a href="https://github.com/jyoka/agent-prototype-studio#readme">README</a>
+    <a href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md"><span data-lang="ja">使い方</span><span data-lang="en">Usage</span></a>
+    <a href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/configuration.md"><span data-lang="ja">設定</span><span data-lang="en">Configuration</span></a>
+    <a href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/claude-code.md"><span data-lang="ja">実モデル</span><span data-lang="en">Real model</span></a>
+    <a href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/troubleshooting.md"><span data-lang="ja">困ったとき</span><span data-lang="en">Troubleshooting</span></a>
+    <a href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/architecture/hld.md"><span data-lang="ja">しくみ</span><span data-lang="en">Architecture</span></a>
+    <a href="llms.txt">llms.txt</a>
+  </nav>
+  <p class="foot-meta"><span data-lang="ja">更新 2026-10-29 · 版 0.1.0(公開前) · 例のデータは、どれも架空です。</span><span data-lang="en">Updated 2026-10-29 · version 0.1.0 (not yet released) · All example data is fictional.</span></p>
+</footer>
+</body>
+</html>
