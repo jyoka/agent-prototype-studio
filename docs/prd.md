@@ -107,6 +107,8 @@ StripeのHarbor、Drydock、Minions、Kaiは単なる参考事例ではなく、
 | 2026-10-27 | ローカル実行と隔離方式は ADR 0001 で仮に決めた | [docs/adr/0001-local-runtime-and-isolation.md](adr/0001-local-runtime-and-isolation.md) |
 | 2026-10-28 | 実モデルは、利用者の個人アカウント(Claude Code にログインしている本人のアカウント)で試してよい。会社の Commercial Terms は、正式に社内で使う段階になったら見直す。今はまず試す | jyoka/tasks#269 のコメント |
 | 2026-10-28 | harness の観察器のブラウザは Playwright の Chromium だけにする。作る AI が観察器を自分で使う形を今回入れる。直すラウンドは 2 回まで(作る AI の起動は 1 つの依頼で 3 回まで) | [docs/design/harness.md の「決めたこと」](design/harness.md#決めたこと)、jyoka/tasks#297 |
+| 2026-10-29 | 目的の正は [docs/vision.md](vision.md) にする。この PRD は本文を直さず、vision.md の下に置き、「最初の段の要件」と読む | [vision.md の 8 節](vision.md#8-prd-との関係)、jyoka/tasks#381 |
+| 2026-10-29 | 何人もで使う形は、まず 1 台の PC でみんなで使う形(コメント、反応、承認、直した記録)にする。お客さんの話は同意の後に扱い、記録(個人情報、取引の実データ)は入れない。本文の「スコープ外・未決定」の「複数人コメント、共有公開」のうち、1 台の PC の中のコメントだけを範囲に入れる。共有の場は範囲外のまま | [ADR 0004](adr/0004-shared-session-and-customer-data.md) の段 1、jyoka/tasks#381 |
 
 ## 子タスク
 

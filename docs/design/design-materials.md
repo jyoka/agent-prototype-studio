@@ -2,7 +2,7 @@
 
 試作品の見た目と使いやすさを、誰でも少しの「良い味」から始められるようにする作戦です。既定の素材の候補とライセンス、自分の素材をつなぐ形、取り込みの案内を書きます。
 
-- 状態: 案(task 378)。書いた日: 2026-10-29。実装は [user-journey.md の 6 節](user-journey.md#6-実装のカードの分け方)の J3〜J5
+- 状態: 案(task 378)。書いた日: 2026-10-29。既定の素材(3 節)は、運営者が 2026-10-29 に決めた(task 381)。実装は [user-journey.md の 6 節](user-journey.md#6-実装のカードの分け方)の J3〜J5
 - 前提: [vision.md](../vision.md) の原則 6「素材を流用できる」、[ADR 0001](../adr/0001-local-runtime-and-isolation.md)。隔離は弱めない
 - 出典はどれも 2026-10-29 に読んだ。ライセンスは一次資料(リポジトリの LICENSE、公式の規約、npm の登録)で確かめた。確かめられなかったものは「未確認」と書いた
 - ライセンスの読み方は、法律の助言ではない。同梱を決める前に、運営者が原文を読む
@@ -11,7 +11,8 @@
 
 - 素材とは、部品(コード)、トークン(色、字、間隔などの値)、アイコン、字、指針の文のこと
 - Apple の素材(Apple Design Resources、SF Pro、SF Symbols)は使えない。Apple のプラットフォームの画面の下書きにしか使えず、ほかのソフトに埋め込めないため(2 節)
-- 既定の部品のおすすめは Radix Themes(MIT)。ほかに Material 3(Material Web、Apache-2.0)を選べる素材として足す。アイコンは Lucide(ISC)、字は OS の字(3 節)
+- 既定の素材は、Radix Themes + Radix Colors(MIT)、Lucide(ISC)、OS の字に決めた(3 節)
+- Material 3 は「Google の見た目」として選べる素材にする。Material Web は既定にしない。同梱の前に、運営者がライセンスの原文を読む(J3 で止まって確かめる)
 - 自分の素材は、つなぎやすい順に、トークン、指針の文、Storybook、npm のパッケージ、Figma にする(4 節)
 - 作る AI は `app/` の外を読めず、MCP は Studio の観察の道具だけ。だから素材は Studio が受け取り、検査し、作る AI に渡す。作る AI に外の Figma や Storybook を直接つながない(4 節)
 - 取り込みの案内は、聞く、確かめる、見本で試す、有効にするの 4 歩(5 節)
@@ -72,7 +73,9 @@ Apple の見た目を求める人には、次の代わりを使います。ど�
 | HIG の考え方(明快さ、余白、触れる大きさなど) | 文を写さず、Studio の質の見直しの項目として自分の言葉で書く。項目ごとに、測り方(字と地の差、触れる所の大きさなど)を決める |
 | iPhone の画面の枠 | 試作品の幅を端末の幅にする表示(Studio の機能として作る。Apple の絵は使わない) |
 
-## 3. 既定の素材のおすすめ
+## 3. 既定の素材
+
+運営者が 2026-10-29 に決めた。決めたことは、この節の最後の「決めたこと」にある。
 
 ### 選ぶ基準
 
@@ -89,19 +92,20 @@ Apple の見た目を求める人には、次の代わりを使います。ど�
 
 | 候補 | ライセンス | React 19 | 外への通信なし | 手入れ | 中立 | 見立て |
 |---|---|---|---|---|---|---|
-| Radix Themes + Radix Colors + Lucide(おすすめ) | MIT、ISC | React の部品 | 字は OS の字で済む見込み(推測) | 続いている見込み(Themes 3.3.0。頻度は確かめていない) | 中立 | 既定にする |
+| Radix Themes + Radix Colors + Lucide(決めた) | MIT、ISC | React の部品 | 字は OS の字で済む見込み(推測) | 続いている見込み(Themes 3.3.0。頻度は確かめていない) | 中立 | 既定にする |
 | Material Web + Material Symbols + Roboto | Apache-2.0、OFL-1.1 | Web Components。React 19 は custom elements を扱えるが、Studio では確かめていない | 字とアイコンの同梱が要る | maintenance mode | Google の見た目 | 「Google の見た目」を選べる素材として足す。既定にはしない |
 | Fluent UI React v9 + Fluent System Icons | MIT | React の部品 | Segoe を同梱できない。OS の字に落とす | 続いている(9.75.0) | Microsoft の見た目 | 第 3 の候補。Replica と比べるときの見本にもなる |
 | shadcn/ui | MIT | React の部品 | Tailwind の CSS を作る手順が要る | 続いている | 中立 | 今のビルドに Tailwind がないので、後にする |
 
-### おすすめ
+### 決めたこと
 
-- 既定の部品: Radix Themes。色は Radix Colors。アイコンは Lucide。字は OS の字(`assets/brand/tokens.css` と同じ決まり)
-- 選べる素材: 「Google の見た目」(Material Web、Material Symbols、Roboto、色は material-color-utilities)。maintenance mode なので、画面に「手入れが止まっている素材です」と出す
+運営者が 2026-10-29 に、おすすめのとおりに決めた(task 381)。
+
+- 既定の素材: 部品は Radix Themes。色は Radix Colors。アイコンは Lucide。字は OS の字(`assets/brand/tokens.css` と同じ決まり)
+- 選べる素材: Material 3 を「Google の見た目」(Material Web、Material Symbols、Roboto、色は material-color-utilities)として足す。Material Web は既定にしない。maintenance mode なので、画面に「手入れが止まっている素材です」と出す
+- ライセンスの確かめ: 同梱の前に、運営者がライセンスの原文を読む。J3 は同梱の前で止まり、運営者が読み終えてから同梱に進む
 - 作る AI への指針: 素材ごとに 1 枚の指針の要約(部品の選び方、色の役割、字の大きさ、間隔、アクセシビリティ)を Studio が持つ。ライセンスが確かめられない指針の文は写さず、自分の言葉で書く
 - 同梱の大きさと、ビルドの時間への影響は測っていない(不明)。J3 で測る
-
-どれを既定にするかは、運営者が決めます。
 
 ## 4. 自分の素材をつなぐ形
 
@@ -151,7 +155,7 @@ GitHub の Replica は、GitHub Design が作った、AI で試作品を作る�
 | 誰が素材を入れるか | チームが、`/setup-skills` で「承認された出典」(製品の文書、デザインシステムの文書、部品やトークンのパッケージ)を渡す。Copilot が出典を見て、試作品を作る指示を下書きする(https://github.com/github/replica/blob/main/docs/local-prototyping.md) | 利用者本人かデザイナーが、取り込みの案内で渡す。検査は Studio が決まった手順で行い、AI に任せない |
 | 指針の置き場所 | リポジトリのファイル。見本(starters/coreai)では `.agents/context/` に `DESIGN-SYSTEM.md`、`ACCESSIBILITY.md`、`BROWSER-VALIDATION.md` など、`.agents/skills/` に部品ごとの skill がある | `app/design/` の写しと、Studio が持つ素材。写しが変わっていないかを関門で確かめる |
 | 部品のパッケージ | Copilot がパッケージを入れる前に許可を聞く | 作る AI はパッケージを入れられない。Studio が検査して、import を許す |
-| 既定の素材 | 見本が 2 つ。Minimal(自分のデザインシステムに合わせる小さな例)と CoreAI Sandbox(できあいの配置と部品。skill の名前から Fluent UI React を使う) | Radix Themes(おすすめ)と、選べる Material 3 |
+| 既定の素材 | 見本が 2 つ。Minimal(自分のデザインシステムに合わせる小さな例)と CoreAI Sandbox(できあいの配置と部品。skill の名前から Fluent UI React を使う) | Radix Themes(既定)と、選べる Material 3 |
 | 隔離 | 確かめていない(不明) | ADR 0001 のまま。試作品は外へ通信しない |
 | 質の確かめ | ブラウザで確かめる指針のファイルがある。中身は読んでいない(不明) | 関門、観察器、質の見直し(J6)で数を出す |
 
@@ -166,9 +170,17 @@ Studio が違えること:
 - 素材に合っているかを、見直しで数として出す(原則 4)
 - 素材より前に、目的の聞き出しと設計の案内がある(原則 1)
 
-## 6. 決めていないこと、確かめていないこと
+## 6. 決めたこと、決めていないこと、確かめていないこと
 
-- 既定の素材をどれにするか: 運営者が決める。おすすめは 3 節
+### 決めたこと
+
+| 日付 | 決めたこと | 書いた所 |
+|---|---|---|
+| 2026-10-29 | 既定の素材は Radix Themes + Radix Colors + Lucide + OS の字。Material 3 は「Google の見た目」として選べる素材にする。Material Web は既定にしない | 3 節 |
+| 2026-10-29 | 同梱の前に、運営者がライセンスの原文を読む。J3 は止まって確かめる | 3 節 |
+
+### 決めていないこと、確かめていないこと
+
 - Material 3 の指針の文のライセンス: 未確認。確かめるまでは写さない
 - SF Pro と SF Symbols の契約の全文: 未確認。どちらにしても同梱しない
 - 同梱の大きさと、ビルドの時間: 測っていない。J3 で測る
