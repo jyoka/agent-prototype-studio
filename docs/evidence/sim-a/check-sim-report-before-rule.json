@@ -1,0 +1,194 @@
+{
+  "version": "2.1.312",
+  "billing": "login",
+  "assumption": "partner-a",
+  "model": "claude-sonnet-5-5",
+  "limitUsd": 0.6,
+  "launches": [
+    {
+      "name": "basic",
+      "ms": 5942,
+      "durationMs": 4999,
+      "costUsd": 0.012018099999999999,
+      "numTurns": 2,
+      "subtype": "success",
+      "exitCode": 0,
+      "model": "claude-sonnet-5-5",
+      "modelUsage": [
+        "claude-sonnet-5-5"
+      ],
+      "toolUses": [
+        "StructuredOutput"
+      ],
+      "toolCalls": []
+    },
+    {
+      "name": "tools",
+      "ms": 10985,
+      "durationMs": 10045,
+      "costUsd": 0.0210179,
+      "numTurns": 6,
+      "subtype": "success",
+      "exitCode": 0,
+      "model": "claude-sonnet-5-5",
+      "modelUsage": [
+        "claude-sonnet-5-5"
+      ],
+      "toolUses": [
+        "mcp__proto__search_jobs",
+        "mcp__proto__save_wish",
+        "mcp__proto__get_job",
+        "StructuredOutput",
+        "StructuredOutput"
+      ],
+      "toolCalls": [
+        {
+          "tool": "search_jobs",
+          "args": {
+            "area": "みなと町"
+          },
+          "ok": true,
+          "guards": [
+            "tool:schema:passed",
+            "tool:maxCallsPerConversation:passed",
+            "tool:maxResultChars:passed"
+          ]
+        },
+        {
+          "tool": "save_wish",
+          "args": {
+            "area": "みなと町"
+          },
+          "ok": false,
+          "guards": [
+            "tool:schema:passed",
+            "tool:requires:blocked"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "max-turns",
+      "ms": 5936,
+      "durationMs": 4794,
+      "costUsd": 0.0111214,
+      "numTurns": 3,
+      "subtype": "error_max_turns",
+      "exitCode": 1,
+      "model": "claude-sonnet-5-5",
+      "modelUsage": [
+        "claude-sonnet-5-5"
+      ],
+      "toolUses": [
+        "mcp__proto__search_jobs",
+        "mcp__proto__search_jobs",
+        "mcp__proto__search_jobs",
+        "mcp__proto__search_jobs"
+      ],
+      "toolCalls": [
+        {
+          "tool": "search_jobs",
+          "args": {
+            "area": "みなと町"
+          },
+          "ok": true,
+          "guards": [
+            "tool:schema:passed",
+            "tool:maxCallsPerConversation:passed",
+            "tool:maxResultChars:passed"
+          ]
+        },
+        {
+          "tool": "search_jobs",
+          "args": {
+            "area": "もり台"
+          },
+          "ok": false,
+          "guards": [
+            "tool:maxPerReply:blocked"
+          ]
+        },
+        {
+          "tool": "search_jobs",
+          "args": {
+            "area": "かわべ市"
+          },
+          "ok": false,
+          "guards": [
+            "tool:maxPerReply:blocked"
+          ]
+        },
+        {
+          "tool": "search_jobs",
+          "args": {
+            "area": "もり台"
+          },
+          "ok": false,
+          "guards": [
+            "tool:maxPerReply:blocked"
+          ]
+        }
+      ]
+    }
+  ],
+  "totalCostUsd": 0.0442,
+  "stopped": null,
+  "results": {
+    "auth": {
+      "status": "確かめた: 期待どおり",
+      "detail": "版=2.1.312、apiKeySource=none、permissionMode=dontAsk、終了コード 0、費用 0.012018099999999999 USD"
+    },
+    "system-prompt": {
+      "status": "確かめた: 期待と違う",
+      "detail": "指示の合言葉は返事に出た、作業ディレクトリは返事に出た(既定の指示が残っている)、返事: CANARY-SYSTEM-a8cdceb9 1. 指示ファイルなし 2. <作業の場所>/work-CANARY-CWD-ca7934f9 3. メール"
+    },
+    "user-info": {
+      "status": "確かめた: 期待と違う",
+      "detail": "返事にメールアドレスらしい文字列が出た(Claude Code が文脈に足している)、返事: CANARY-SYSTEM-a8cdceb9 1. 指示ファイルなし 2. <作業の場所>/work-CANARY-CWD-ca7934f9 3. メールアドレス: [伏せた: メールアドレス](名前は書かれていません)"
+    },
+    "model": {
+      "status": "確かめた: 期待どおり",
+      "detail": "前提のモデル claude-sonnet-5-5、init の model claude-sonnet-5-5、modelUsage claude-sonnet-5-5"
+    },
+    "customizations": {
+      "status": "確かめた: 期待どおり",
+      "detail": "mcp_servers=proto、plugins=cc-plugin-agents-md@builtin,cc-plugin-telemetry@builtin,cc-plugin-plugin-authoring@builtin、slash_commands=0 個、skills=0 個、agents=claude,Explore,general-purpose,Plan,statusline-setup、memory_paths=なし"
+    },
+    "claude-md": {
+      "status": "確かめた: 期待どおり",
+      "detail": "合言葉は出なかった、返事: CANARY-SYSTEM-a8cdceb9 1. 指示ファイルなし 2. <作業の場所>/work-CANARY-CWD-ca7934f9 3. メールアドレス: [伏せた: メールアドレス](名前は書かれていません)"
+    },
+    "user-claude-md": {
+      "status": "確かめた: 期待どおり",
+      "detail": "模擬のエージェントが挙げた指示ファイルに ~/.claude/CLAUDE.md が出なかった"
+    },
+    "allowed-only": {
+      "status": "確かめた: 期待どおり",
+      "detail": "呼ぼうとした道具: mcp__proto__search_jobs,mcp__proto__save_wish,mcp__proto__get_job、サーバーに届いた: search_jobs,save_wish、断られた: mcp__proto__get_job"
+    },
+    "json-schema": {
+      "status": "確かめた: 期待どおり",
+      "detail": "道具の呼び出し 3 回の後、structured_output: parts 3 個(text,text,text)、StructuredOutput の呼び出し 2 回、終わり方 success"
+    },
+    "tool-guard": {
+      "status": "確かめた: 期待どおり",
+      "detail": "save_wish 1 回、守りの判定: schema:passed,requires:blocked"
+    },
+    "same-gate": {
+      "status": "確かめた: 期待どおり",
+      "detail": "2 回を直接渡した。結果と守りの判定は、どれも同じ"
+    },
+    "max-turns": {
+      "status": "確かめた: 期待どおり",
+      "detail": "maxPerReply 1(--max-turns 2)、道具の呼び出し 4 回(道具を呼んだ応答 4 回)、サーバーに届いた 4 回、通った 1 回、maxPerReply で断った 3 回、num_turns 3、終わり方 error_max_turns、終了コード 1"
+    },
+    "builtin-tools": {
+      "status": "確かめた: 期待どおり",
+      "detail": "道具の一覧: basic=StructuredOutput,mcp__proto__get_job,mcp__proto__record_consent,mcp__proto__save_wish,mcp__proto__search_jobs,mcp__proto__suggest_questions; tools=StructuredOutput,mcp__proto__get_job,mcp__proto__save_wish,mcp__proto__search_jobs; max-turns=StructuredOutput,mcp__proto__search_jobs"
+    },
+    "hooks": {
+      "status": "確かめた: 期待どおり",
+      "detail": "hooks は動かなかった"
+    }
+  }
+}

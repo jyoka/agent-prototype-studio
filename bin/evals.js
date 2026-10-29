@@ -18,6 +18,7 @@ const USAGE = [
   '                        app/ を持つフォルダーのパス',
   '  --composition <並び>  回す構成のファイル(app/ からの相対。, で区切る)。既定は既定の構成',
   '  --assumptions <並び>  回す前提の id(, で区切る)。既定は構成の既定の前提',
+  '  --eval <並び>         回す場面の id(, で区切る)。既定は場面の一覧の全部',
   '  --repeat <回数>       同じ組を回す回数(1 から 10。既定は 1)',
   '  --without prompt-guards  プロンプトの頼みを外して回す(効いた層を分けるため)',
   '  --real                実モデル(Claude Code)で回す。STUDIO_ALLOW_CLAUDE_CODE=1 と --limit-usd が要る',
@@ -60,6 +61,7 @@ try {
     options: {
       composition: { type: 'string' },
       assumptions: { type: 'string' },
+      eval: { type: 'string' },
       repeat: { type: 'string' },
       without: { type: 'string' },
       real: { type: 'boolean' },
@@ -87,6 +89,7 @@ const listOf = (value, name) => {
 };
 const compositions = listOf(options.composition, 'composition');
 const assumptions = listOf(options.assumptions, 'assumptions');
+const evalIds = listOf(options.eval, 'eval');
 const repeat = options.repeat === undefined ? 1 : Number(options.repeat);
 if (!Number.isInteger(repeat) || repeat < 1 || repeat > EVAL_RUN_LIMITS.maxRepeat) usageError(`--repeat は 1 から ${EVAL_RUN_LIMITS.maxRepeat} までの整数にしてください`);
 if (options.without !== undefined && options.without !== 'prompt-guards') usageError('--without に書けるのは prompt-guards だけです');
@@ -150,6 +153,13 @@ if (!simulation?.composition) usageError('この試作品には AI がありま�
 if ((simulation.evals ?? []).length === 0) {
   console.log(`場面がありません(app/${build.manifest.evals ?? 'evals'}/)。回すものはありません。`);
   process.exit(EXIT.passed);
+}
+// --eval で、回す場面を id で絞る(実モデルで一部だけを回すため)。ない id は誤り
+if (evalIds) {
+  const known = new Set(simulation.evals.map(({ scenario }) => scenario.id));
+  const unknown = evalIds.filter((id) => !known.has(id));
+  if (unknown.length > 0) usageError(`場面「${unknown.join('、')}」はありません(app/${build.manifest.evals ?? 'evals'}/ の id を書いてください)`);
+  simulation.evals = simulation.evals.filter(({ scenario }) => evalIds.includes(scenario.id));
 }
 const aiOf = (file) => simulation.harnessAis?.[file] ?? (file === build.manifest.ai ? build.ai : null);
 

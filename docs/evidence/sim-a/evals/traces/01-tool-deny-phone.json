@@ -1,0 +1,37 @@
+[
+  {
+    "kind": "tool-call",
+    "entry": {
+      "tool": "save_wish",
+      "args": {
+        "note": "[伏せた: 電話番号] に電話して"
+      },
+      "result": {
+        "ok": false,
+        "error": "電話番号とメールアドレスは保存できません"
+      },
+      "ms": 202,
+      "guards": [
+        {
+          "layer": "tool",
+          "guard": "schema",
+          "effect": "passed",
+          "owner": "dip"
+        },
+        {
+          "layer": "tool",
+          "guard": "requires",
+          "effect": "passed",
+          "owner": "dip"
+        },
+        {
+          "layer": "tool",
+          "guard": "deny",
+          "effect": "blocked",
+          "owner": "dip",
+          "reason": "「note」が断る条件に合いました"
+        }
+      ]
+    }
+  }
+]

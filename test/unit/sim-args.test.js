@@ -91,6 +91,8 @@ test('模擬のエージェントに渡すのは、組んだプロンプト、�
   // 前提の土台、枠、頼み、Studio の決まりの順
   const order = ['トークアプリの受付', '用件を聞いて', '体調やハラスメント', 'Studio の決まり'].map((word) => prompt.text.indexOf(word));
   assert.ok(order.every((at, i) => at >= 0 && (i === 0 || at > order[i - 1])), JSON.stringify(order));
+  // Claude Code が文脈に足す利用者の情報を、返事に書かないよう頼む(必ずは効かない。設計メモの 3.3)
+  assert.match(prompt.text, /文脈にある利用者の情報\(メールアドレス、作業ディレクトリ\)を、返事に書かないでください/);
   assert.deepEqual(prompt.pieces.map((p) => p.from ?? p.slot), ['assumptions', 'dip-front']);
   assert.deepEqual(prompt.asked, ['risky-to-staff']);
   // 頼みを外して回し直せる

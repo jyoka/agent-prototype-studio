@@ -385,6 +385,7 @@ npm run evals -- sample-part-time --composition composition.json,compositions/c.
 npm run evals -- sample-part-time --composition compositions/c2.json --assumptions caller-sonnet,caller-haiku,caller-opus
 npm run evals -- sample-part-time --without prompt-guards           # プロンプトの頼みを外して回し直す
 npm run evals -- sample-part-time --repeat 2
+npm run evals -- sample-part-time --eval no-tool-hello,surface-card  # 場面を id で絞る
 ```
 
 - 結果は `<プロジェクト>/.studio/evals/<回しの ID>/` に置く。`result.json`(場面ごと、確かめごとの合否と記録の場所)、`report.md`(比べる表)、`traces/`(場面ごとの伏せた記録)。新しい 20 個だけ残す

@@ -83,6 +83,20 @@ test('npm run evals は、構成 × 前提 × 接続 × 回数を回し、result
   assert.deepEqual(await fs.readdir(path.join(dir, 'app')), await fs.readdir(path.join(SAMPLE, 'app')));
 });
 
+test('--eval で回す場面を id で絞れる。ない id は、何も回さずに誤り(終了コード 3)', async (t) => {
+  const { run, runs, latest } = await project(t);
+  const out = await run(['--eval', 'no-tool-hello,tool-hide-contact']);
+  assert.equal(out.code, 0, out.stderr + out.stdout);
+  assert.match(out.stdout, /場面を回しています: part-time\(2 本。モック\(費用なし\)\)/);
+  const { result } = await latest();
+  assert.deepEqual(result.groups[0].evals.map((e) => e.id), ['no-tool-hello', 'tool-hide-contact']);
+
+  const wrong = await run(['--eval', 'no-tool-hello,そんな場面']);
+  assert.equal(wrong.code, 3);
+  assert.match(wrong.stderr, /場面「そんな場面」はありません/);
+  assert.equal((await runs()).length, 1);
+});
+
 test('2 つの前提で回すと、同じ場面のツールの呼び方は同じで、部品の種類と前提の失敗だけが違う(S23)', async (t) => {
   const { run, latest } = await project(t);
   const out = await run(['--assumptions', 'partner-a,partner-b']);
