@@ -53,15 +53,15 @@ test('作る欄の依頼でプロダクト内 AI の設定が変わり、前の�
     await expect(run.getByText('AI の設定を書きました')).toBeVisible();
     await expect(run.locator('.run-dev')).toContainText('書く: app/ai.json');
     await expect(run.locator('.run-updated')).toHaveText('AI の設定を変えました。試作品は新しくなっています。');
-    await expect(run).toContainText('変わったファイル: app/ai.json');
+    await expect(run.locator('.run-dev')).toContainText('変わったファイル: app/ai.json');
     // 変わったかどうかは、作る AI の報告ではなく Studio が設定どうしを比べて出す
     let settings = run.locator('[data-kind="ai-settings"]');
     await expect(settings).toContainText('AI の設定(Studio が確かめた結果)');
-    await expect(settings).toContainText(`モックの読み取れなかったときの返事: 「${NOT_UNDERSTOOD_FIRST}」 → 「${ASK_BY_EXAMPLE}」`);
-    await expect(settings).toContainText('実モデルへの指示(instructions)に足した文: 「読み取れなかったときは、選べる値の例を挙げて聞き返してください。」');
+    await expect(settings).toContainText(`お試しの AI の読み取れなかったときの返事: 「${NOT_UNDERSTOOD_FIRST}」 → 「${ASK_BY_EXAMPLE}」`);
+    await expect(settings).toContainText('本物の AI への指示に足した文: 「読み取れなかったときは、選べる値の例を挙げて聞き返してください。」');
     // 案内するボタンは、試作品の上の試し直しの帯にあるものと同じ名前
     await expect(settings).toContainText('試作品の上の「同じ発言で試し直す」で、同じ発言を新しい設定に送り直せます。');
-    await expect(run).toContainText('ビルドに成功しました。試す画面に反映しました。');
+    await expect(run).toContainText('試作品に反映しました。');
 
     // 3. 設定が反映され、会話は新しい設定で最初から。前の会話は試し直せる
     await expect(log).toHaveCount(1);
@@ -140,8 +140,8 @@ test('AI を使わない試作品では、振る舞いの依頼は作る会話�
     await sendRequest(page, '案内役が「時給の下限」を先に聞くようにして');
     const run = makeRuns(page).last();
     await expect(run.locator('.run-status')).toContainText('終わりました');
-    await expect(run.locator('.bubble.agent')).toContainText('この試作品には app/ai.json がないので、プロダクト内 AI の振る舞いは変えられません');
-    await expect(run).toContainText('app/ のファイルは変わっていません。');
+    await expect(run.locator('.bubble.agent')).toContainText('この試作品には AI の設定がないので、試作品の中の AI の振る舞いは変えられません');
+    await expect(run).toContainText('試作品のファイルは変わっていません。');
     await expect(run.locator('[data-kind="ai-settings"]')).toHaveCount(0);
     await expect(page.getByRole('region', { name: '試し直す' })).toBeHidden();
   } finally {

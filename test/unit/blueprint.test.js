@@ -141,9 +141,17 @@ test('作る run は節の並びで動き、通った節の列と関門の結果
 
   // 作る会話には、関門の結果を短く出す
   assert.ok(run.items.some((item) => item.kind === 'launch-ok'));
-  assert.equal(run.items.find((item) => item.kind === 'scenarios-ok').text, 'シナリオを確かめました。基本のシナリオ 1 本と、app/ のシナリオ 0 本が、すべて通りました(プロダクト内 AI はモック)。');
+  assert.equal(
+    run.items.find((item) => item.kind === 'scenarios-ok').text,
+    '決めた手順で試しました。Studio がいつも確かめる手順 1 本と、この試作品の手順 0 本が、すべて思ったとおりに動きました(試作品の中の AI は、お試しの AI で試しました)。',
+  );
   const gates = run.items.find((item) => item.kind === 'gates');
-  assert.equal(gates.text, 'Studio が確かめた結果: G1 変更の確認: 通った、G2 検査: 通った、G3 契約: 通った、G4 ビルド: 通った、GE 場面: 通った(場面なし)、G5 起動の確認: 通った、G6 シナリオ: 通った');
+  // 本文は利用者の言葉(結果の帯と同じ名前)、関門の名前は開発者向け(detail)
+  assert.equal(
+    gates.text,
+    'Studio が確かめた結果: 変わったところ: 問題なし、ファイルの名前と大きさ: 問題なし、AI の設定と確かめ方の形: 問題なし、表示の準備: 問題なし、AI の場面で動くか: 問題なし(確かめる場面なし)、開いて表示できるか: 問題なし、決めた手順で動くか: 問題なし',
+  );
+  assert.equal(gates.detail, '関門の結果: G1 変更の確認: 通った、G2 検査: 通った、G3 契約: 通った、G4 ビルド: 通った、GE 場面: 通った(場面なし)、G5 起動の確認: 通った、G6 シナリオ: 通った');
 });
 
 test('関門の並びは安い順で、場面の関門 GE はビルド(G4)の後、ブラウザを使う起動の確認(G5)の前(S11)', () => {
@@ -207,7 +215,7 @@ test('ビルドが失敗したら、起動の確認を行わず、失敗した�
   const g4 = record.gates.find((gate) => gate.id === 'G4');
   assert.equal(g4.errors[0].file, 'app/App.jsx');
   assert.equal(g4.errors[0].line, 2);
-  assert.ok(run.items.some((item) => item.kind === 'gates' && item.text.includes('G4 ビルド: 失敗')));
+  assert.ok(run.items.some((item) => item.kind === 'gates' && item.detail.includes('G4 ビルド: 失敗')));
 });
 
 test('契約の誤りは G3 で止まり、ビルドと起動の確認を行わない', async (t) => {
@@ -250,8 +258,8 @@ test('ビルドが通って起動の確認で失敗したら、試す画面は�
   assert.notEqual(store.previewBuildId(PROJECT), before);
   assert.equal(run.build.buildId, store.previewBuildId(PROJECT));
   const item = run.items.find((i) => i.kind === 'launch-failed');
-  assert.match(item.text, /^確かめで失敗あり: 起動の確認で実行時のエラーがありました\(架空の在庫表が読めません\)/);
-  assert.match(item.text, /試す画面は新しいビルドにした/);
+  assert.equal(item.text, '試作品を開くと、誤りが出ました。試す欄は新しい状態にしたので、そこで動きを確かめられます。');
+  assert.match(item.detail, /^G5 起動の確認: 起動の確認で実行時のエラーがありました\(架空の在庫表が読めません\)/);
   const record = await readRun(run);
   assert.deepEqual(gateStatus(record.rounds[0]), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', GE: 'passed', G5: 'failed', G6: 'skipped' });
   // 起動の確認が失敗した版では、シナリオの関門は行わない
@@ -265,7 +273,7 @@ test('エラーがなくても、画面が空なら起動の確認は失敗', as
   const { send, readRun } = await setup(t, { observe: () => ({ ...passedReport(), page: { text: '', empty: true } }) });
   const run = await send('見出しを「空の図書室」にして');
   assert.equal(run.status, 'failed');
-  assert.ok(run.items.some((item) => item.kind === 'launch-failed' && item.text.includes('画面に何も描かれていませんでした')));
+  assert.ok(run.items.some((item) => item.kind === 'launch-failed' && item.text.startsWith('試作品を開くと、画面に何も出ませんでした') && item.detail.includes('画面に何も描かれていませんでした')));
   assert.equal(gateStatus(await readRun(run)).G5, 'failed');
 });
 
@@ -295,11 +303,15 @@ test('観察器が使えない(Chromium がない)ときは、起動の確認を
   assert.equal(run.status, 'unverified');
   const record = await env.readRun(run);
   assert.deepEqual(gateStatus(record), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', GE: 'passed', G5: 'unverified', G6: 'unverified' });
-  assert.equal(record.gates.find((gate) => gate.id === 'G6').reason, '起動の確認が未確認なので、シナリオは回していません');
+  assert.equal(record.gates.find((gate) => gate.id === 'G6').reason, '開いて表示できるかを確かめられなかったので、決めた手順では試していません');
   const g5 = record.gates.find((gate) => gate.id === 'G5');
   assert.match(g5.reason, /Playwright の Chromium が見つかりません/);
   assert.match(g5.reason, /npm run install:chromium/);
-  assert.ok(run.items.some((item) => item.kind === 'launch-unverified' && item.text.startsWith('起動は確かめていません(未確認)')));
+  // 本文は最初の 1 文だけ(利用者の言葉)。Chromium の名前と入れ方は開発者向けの detail に置く
+  const item = run.items.find((entry) => entry.kind === 'launch-unverified');
+  assert.equal(item.text, '試作品を開いて確かめることはできませんでした。この PC には、試作品を開いて確かめるためのブラウザーが入っていません。試す欄で、動きを確かめてください。');
+  assert.match(item.detail, /^G5 起動の確認: 未確認。/);
+  assert.match(item.detail, /npm run install:chromium/);
 });
 
 test('観察器を渡さない Studio でも、起動の確認は未確認で、通ったとは扱わない', async (t) => {
@@ -332,12 +344,14 @@ test('作る AI が失敗したら agent-failed。起動の回数と結果は ru
 
 test('起動の確認が通っても、シナリオの関門で観察器が使えなければ、G6 を未確認にし、結果を unverified にする', async (t) => {
   const { send, readRun } = await setup(t, {
-    scenarios: () => ({ ...passedReport(), verdict: 'unverified', reason: '観察の途中で問題が起きました: ブラウザが落ちました', scenarios: [] }),
+    scenarios: () => ({ ...passedReport(), verdict: 'unverified', reason: '試作品を開いて確かめる途中で問題が起きました。ブラウザが落ちました', scenarios: [] }),
   });
   const run = await send('見出しを「シナリオ未確認の図書室」にして');
   assert.equal(run.status, 'unverified');
   const record = await readRun(run);
   assert.equal(gateStatus(record).G5, 'passed');
   assert.equal(gateStatus(record).G6, 'unverified');
-  assert.ok(run.items.some((item) => item.kind === 'scenarios-unverified' && item.text === 'シナリオは確かめていません(未確認): 観察の途中で問題が起きました: ブラウザが落ちました'));
+  const item = run.items.find((entry) => entry.kind === 'scenarios-unverified');
+  assert.equal(item.text, '決めた手順で試すことはできませんでした。試作品を開いて確かめる途中で問題が起きました。試す欄で、動きを確かめてください。');
+  assert.equal(item.detail, 'G6 シナリオ: 未確認。試作品を開いて確かめる途中で問題が起きました。ブラウザが落ちました');
 });

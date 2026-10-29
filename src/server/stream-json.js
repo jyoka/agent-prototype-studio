@@ -155,7 +155,8 @@ export function readMessage(message, appDirs) {
   if (message.type === 'user' && Array.isArray(content)) {
     for (const part of content) {
       if (part?.type === 'tool_result' && part.is_error) {
-        out.items.push({ kind: 'tool-error', text: clip(toolResultText(part.content) || 'ツールが失敗しました') });
+        // 道具の返した誤りの文は、ファイルの場所や道具の名前を含むので、開発者向け(detail)にだけ出す
+        out.items.push({ kind: 'tool-error', text: '直す AI の操作が、うまくいきませんでした。', detail: clip(toolResultText(part.content) || 'ツールが失敗しました') });
       }
     }
     return out;

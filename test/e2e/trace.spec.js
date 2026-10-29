@@ -162,14 +162,14 @@ test('Claude Code(偽)の実行の記録: 渡した指示と本文、受け取�
     await expect(alert).toContainText('利用の上限');
     const limit = entries.first();
     await expect(limit).toContainText('失敗しました');
-    await expect(limit).toContainText('理由: Claude Code の利用の上限に当たりました');
-    await expect(limit).toContainText('次にすること: 時間をおいてから送り直すか、「試す」の上の「AI」でモックに戻してください。会話はそのままです。');
+    await expect(limit).toContainText('理由: 本物の AI の利用の上限に当たりました');
+    await expect(limit).toContainText('次にすること: 時間をおいてから送り直すか、「試す」の上の「AI」でお試しの AI に戻してください。会話はそのままです。');
     await expect(page.locator('#events')).toContainText('次にすること: 時間をおいてから送り直すか');
 
     // 失敗: CLI のエラーに鍵らしい文字列があっても、画面にも記録にも出さない
     await type('[鍵を出す]');
-    await expect(alert).toContainText('Claude Code にログインできていません');
-    await expect(entries.first()).toContainText('理由: Claude Code にログインできていません(Invalid API key: [伏せた: API キーらしい文字列]');
+    await expect(alert).toContainText('Claude Code にログインしていません。ターミナルで claude を起動してログインしてから、もう一度試してください');
+    await expect(entries.first()).toContainText('理由: Claude Code にログインしていません。ターミナルで claude を起動してログインしてから、もう一度試してください(Invalid API key: [伏せた: API キーらしい文字列]');
     await expect(entries.first()).toContainText('次にすること: ターミナルで claude を起動し、ログインしてから');
     await expect(alert).not.toContainText('FAKEKEY');
     expect(await page.content()).not.toContain('FAKEKEY');
@@ -228,7 +228,7 @@ test('試作品のコードが決まりに合わない要求を送ったら、�
     await expect(entries.first()).toContainText('状態の修正(試作品から)');
     await expect(entries.first()).toContainText('直そうとした値: place「海の町」');
     await expect(entries.first()).toContainText('理由: 行き先に「海の町」は使えません');
-    await expect(entries.first()).toContainText('次にすること: 選べる値に直してください。試作品の画面が選べない値を送っているときは、「言葉で直す」欄で直す依頼をするか');
+    await expect(entries.first()).toContainText('次にすること: 選べる値に直してください。試作品の画面が選べない値を送っているときは、「言葉で直す」欄で直す依頼をしてください。');
 
     await app.getByRole('button', { name: '空で送る' }).click();
     await expect(entries.first()).toContainText('発言: (空)');

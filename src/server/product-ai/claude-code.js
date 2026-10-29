@@ -269,18 +269,22 @@ export function buildArgs(definition, kind = 'extract') {
   return args;
 }
 
+// Claude Code が見つからないとき。場所の指定(STUDIO_CLAUDE_BIN)は開発者向けなので、ここでは言わない(選べるかの理由 availability に書く)
+const NOT_FOUND = 'この PC で Claude Code が見つかりません。Claude Code を入れてから、Studio を起動し直してください';
 const LIMIT_PATTERN = /usage limit|rate.?limit|hit your limit|limit reached|too many requests|\b429\b/i;
 const AUTH_PATTERN = /not logged in|please run .*login|invalid api key|authentication|unauthorized|\b401\b/i;
 
+// 失敗の文は試作品の画面に出るので、利用者の言葉で書く(ux-redesign.md 4 節。Claude Code(実モデル) → 本物の AI、モック → お試しの AI)。
+// CLI の出力(detail)は、原因を追えるように最後の括弧に残す
 export function failure(text, fallback) {
   // CLI の出力は画面と記録に出るので、秘密らしい文字列を伏せる
   // 先に伏せてから短くする。切った端に、鍵の一部が残らないように
   const detail = redact(String(text ?? '').trim().slice(0, 4000)).slice(0, 300);
   if (LIMIT_PATTERN.test(detail)) {
-    return new ConnectionError('limit', `Claude Code の利用の上限に当たりました(${detail})。時間をおいて試すか、接続をモックに戻してください`);
+    return new ConnectionError('limit', `本物の AI の利用の上限に当たりました。時間をおいて試すか、試す欄の上の「AI」でお試しの AI に戻してください(${detail})`);
   }
   if (AUTH_PATTERN.test(detail)) {
-    return new ConnectionError('auth', `Claude Code にログインできていません(${detail})。ターミナルで claude を起動してログインしてから、もう一度試してください`);
+    return new ConnectionError('auth', `Claude Code にログインしていません。ターミナルで claude を起動してログインしてから、もう一度試してください(${detail})`);
   }
   return new ConnectionError('failed', `${fallback}${detail ? `(${detail})` : ''}`);
 }
@@ -355,12 +359,12 @@ export function unwrapReply(reply) {
 // format: structured は構造化出力、text-json は本文の JSON、broken は JSON の出力がない
 export function parseResult(stdout) {
   const result = parseJsonObject(stdout);
-  if (!result) throw failure(stdout, 'Claude Code の出力を読めませんでした');
+  if (!result) throw failure(stdout, '本物の AI の返事を読めませんでした。もう一度送ってください');
   if (result.is_error || (typeof result.subtype === 'string' && result.subtype !== 'success')) {
     if (result.subtype === 'error_max_budget_usd') {
       throw new ConnectionError('budget', `1 回の呼び出しの費用の上限($${CLAUDE_CODE_LIMITS.maxBudgetUsd})に当たったので止めました`);
     }
-    throw failure(result.result ?? result.subtype, 'Claude Code がエラーを返しました');
+    throw failure(result.result ?? result.subtype, '本物の AI が失敗しました。もう一度送ってください');
   }
   const meta = {
     costUsd: Number.isFinite(result.total_cost_usd) ? result.total_cost_usd : null,
@@ -476,7 +480,7 @@ export function runCli({ bin, args, input, cwd, env, signal, limits, running, pa
     };
     child.once('error', (error) => {
       if (error.code === 'ENOENT') {
-        finish(new ConnectionError('not-found', `Claude Code が見つかりません(${bin})。Claude Code を入れるか、STUDIO_CLAUDE_BIN で場所を指定してください`));
+        finish(new ConnectionError('not-found', NOT_FOUND));
       } else {
         finish(new ConnectionError('failed', `Claude Code を起動できませんでした(${error.code ?? error.message})`));
       }
@@ -484,9 +488,9 @@ export function runCli({ bin, args, input, cwd, env, signal, limits, running, pa
     child.once('close', (code, signalName) => {
       if (stopReason === 'cancelled') return finish(new ConnectionError('cancelled', '応答を止めました'));
       if (stopReason === 'timeout') {
-        return finish(new ConnectionError('timeout', `Claude Code が ${Math.round(limits.timeoutMs / 1000)} 秒で応答しなかったので止めました`));
+        return finish(new ConnectionError('timeout', `本物の AI が ${Math.round(limits.timeoutMs / 1000)} 秒で返事をしなかったので止めました`));
       }
-      if (stopReason === 'too-large') return finish(new ConnectionError('failed', 'Claude Code の出力が大きすぎるので止めました'));
+      if (stopReason === 'too-large') return finish(new ConnectionError('failed', '本物の AI の返事が大きすぎるので止めました'));
       if (code !== 0) {
         // 失敗でも JSON の結果を出すことがある(上限、ログインなど)
         try {
@@ -496,7 +500,7 @@ export function runCli({ bin, args, input, cwd, env, signal, limits, running, pa
         } catch (error) {
           if (error instanceof ConnectionError && error.code !== 'failed') return finish(error);
         }
-        return finish(failure(stderr || stdout, `Claude Code が終了コード ${code ?? signalName} で止まりました`));
+        return finish(failure(stderr || stdout, `本物の AI が途中で止まりました(終了コード ${code ?? signalName})。もう一度送ってください`));
       }
       try {
         finish(null, parse(stdout));
@@ -584,7 +588,7 @@ export function createClaudeCodeConnection({ env = process.env, allowed = false,
     // CLI を 1 回起動する。起動する前に上限を数え(meter。上限なら投げてモデルを呼ばない)、待ち時間と結果を残す
     async call(kind, { definition, input, signal, meter }) {
       const bin = findExecutable(binName, env);
-      if (!bin) throw new ConnectionError('not-found', this.availability().reason);
+      if (!bin) throw new ConnectionError('not-found', NOT_FOUND);
       // 止められた後と、作業フォルダーを作れないときは、数えずに終える
       if (signal?.aborted) throw new ConnectionError('cancelled', '応答を止めました');
       if (!workDir || !fs.existsSync(workDir)) workDir = emptyWorkDir();

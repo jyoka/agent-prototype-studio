@@ -528,11 +528,12 @@ const quote = (value) => {
 };
 
 // 前と後の設定を比べ、プロダクト内 AI の振る舞いのどこが変わったかを、利用者向けの文で返す。
+// 作る会話にそのまま出すので、モック、プロダクト内 AI などの開発の言葉は使わない(ux-redesign.md 4 節)。
 // 作る AI の報告ではなく、Studio がビルドできた設定どうしを比べる(決まった手順)。
 export function describeDefinitionChanges(before, after) {
   if (!before && !after) return [];
-  if (!before) return [`プロダクト内 AI の設定ができました(${after.name})`];
-  if (!after) return ['プロダクト内 AI の設定がなくなりました'];
+  if (!before) return [`試作品の中の AI の設定ができました(${after.name})`];
+  if (!after) return ['試作品の中の AI の設定がなくなりました'];
   const lines = [];
   if (before.name !== after.name) lines.push(`名前: ${quote(before.name)} → ${quote(after.name)}`);
   if (before.instructions !== after.instructions) {
@@ -541,8 +542,8 @@ export function describeDefinitionChanges(before, after) {
       : '';
     lines.push(
       added
-        ? `実モデルへの指示(instructions)に足した文: ${quote(added)}`
-        : `実モデルへの指示(instructions)を書き換えました(${before.instructions.length} 文字 → ${after.instructions.length} 文字)`,
+        ? `本物の AI への指示に足した文: ${quote(added)}`
+        : `本物の AI への指示を書き換えました(${before.instructions.length} 文字 → ${after.instructions.length} 文字)`,
     );
   }
   const keysBefore = before.fields.map((field) => field.key);
@@ -574,11 +575,11 @@ export function describeDefinitionChanges(before, after) {
   if (initialChanged) lines.push('項目の最初の値を変えました');
   lines.push(...describeFlowChanges(before, after, labelOf), ...describeRuleChanges(before.rules, after.rules));
   for (const [key, label] of Object.entries(MOCK_LABELS)) {
-    if (before.mock[key] !== after.mock[key]) lines.push(`モックの${label}: ${quote(before.mock[key])} → ${quote(after.mock[key])}`);
+    if (before.mock[key] !== after.mock[key]) lines.push(`お試しの AI の${label}: ${quote(before.mock[key])} → ${quote(after.mock[key])}`);
   }
   for (const intent of INTENTS) {
     const words = (definition) => (definition.mock.intents[intent] ?? []).map((word) => `「${word}」`).join('、') || 'なし';
-    if (words(before) !== words(after)) lines.push(`モックが ${intent} と読む言葉: ${words(before)} → ${words(after)}`);
+    if (words(before) !== words(after)) lines.push(`お試しの AI が ${intent} と読む言葉: ${words(before)} → ${words(after)}`);
   }
   return lines;
 }

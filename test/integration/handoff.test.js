@@ -229,7 +229,7 @@ test('ビルドできない状態は書き出さない。AI のない試作品�
   await fs.writeFile(path.join(app, 'main.js'), 'const = ;\n');
   const error = await handoffs.export('travel', {}).catch((e) => e);
   assert.equal(error.code, 'build');
-  assert.match(error.message, /ビルドできない状態は書き出せません/);
+  assert.match(error.message, /表示できない状態は、本番開発へ渡せません/);
 
   await fs.writeFile(path.join(app, 'main.js'), "document.getElementById('root').textContent = 'AI なし';\n");
   await fs.rm(path.join(app, 'ai.json'));

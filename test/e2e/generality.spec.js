@@ -133,7 +133,7 @@ async function runFlow(page, home, other, otherHome) {
 
     // 4. 変更(画面): 作る欄で見出しを変え、試す画面に反映する
     let run = await ui.request('見出しを「そよかぜ学習相談」にして');
-    await expect(run).toContainText('変わったファイル: app/App.jsx');
+    await expect(run.locator('.run-dev')).toContainText('変わったファイル: app/App.jsx');
     await expect(ui.app.getByRole('heading', { name: 'そよかぜ学習相談' })).toBeVisible();
 
     // 5. 変更(AI の振る舞い): 直す欄の例を押して聞く順を変え、前の発言で試し直して比べる。引き出しは直す欄に重なるので閉じる

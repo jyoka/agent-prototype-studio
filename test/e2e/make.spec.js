@@ -78,8 +78,11 @@ test('作る欄の依頼で試作品のファイルが変わり、試す画面�
     await expect(run.getByText('試作品のファイルを書き換えました')).toBeVisible();
     await expect(run.locator('.bubble.agent .who').first()).toHaveText('直す AI');
     await expect(run.locator('.bubble.agent')).toContainText('見出しを「ひだまり図書室」に変えました');
-    await expect(run).toContainText('変わったファイル: app/App.jsx');
-    await expect(run).toContainText('ビルドに成功しました。試す画面に反映しました。');
+    // 作る会話の項目の本文は利用者の言葉。ファイルの名前は開発者向けにだけ出す(ux-redesign.md 4 節)
+    await expect(run.locator('.steps')).toContainText('試作品のファイルが 1 個変わりました。');
+    await expect(run.locator('.steps')).not.toContainText('app/App.jsx');
+    await expect(run.locator('.run-dev')).toContainText('確かめた結果: 変わったファイル: app/App.jsx');
+    await expect(run).toContainText('試作品に反映しました。');
     await expect(run.locator('.run-updated')).toHaveText('試作品のファイルを変えました。試作品は新しくなっています。');
     await expect(run.locator('.run-status')).toContainText('終わりました');
     await expect(run.locator('.run-status')).not.toContainText('認証の報告');
@@ -105,7 +108,7 @@ test('作る欄の依頼で試作品のファイルが変わり、試す画面�
     // 再読み込みしても、作る会話は残る
     await page.reload();
     await chooseSample(page, SAMPLES.library);
-    await expect(lastRun(page)).toContainText('ビルドに成功しました。試す画面に反映しました。');
+    await expect(lastRun(page)).toContainText('試作品に反映しました。');
 
     // ターミナルには依頼の文を出さない
     expect(studio.output()).toContain('作る AI に依頼しました: sample-library(偽接続)');
@@ -128,10 +131,16 @@ test('権限の確認で断られた操作と、作る AI の失敗を会話に�
     // 偽接続の拒否なので、確かめているのは「断られたことの出し方」。実機の閉じ込めは npm run check:claude で確かめる
     await sendTestRequest(page, 'app/ の外にメモを書いて');
     let run = lastRun(page);
-    await expect(run.locator('[data-kind="denied"]')).toContainText('権限の確認で断られました: 書く:');
-    await expect(run.locator('[data-kind="denied"]')).toContainText('outside-note.txt(app/ の外)');
-    await expect(run.locator('[data-kind="tool-error"]')).toContainText('許可されていません');
-    await expect(run).toContainText('app/ のファイルは変わっていません。');
+    // 画面には利用者の言葉で、何をやめたかを出す(ux-redesign.md 4 節)。断られた操作と場所は、開発者向けにだけ出す
+    await expect(run.locator('[data-kind="denied"]')).toHaveText(/試作品のフォルダーの外は触れないので、やめました/);
+    await expect(run.locator('[data-kind="denied"]')).not.toContainText('app/');
+    const dev = run.locator('.run-dev');
+    await dev.locator('summary').click();
+    await expect(dev.locator('[data-dev-kind="denied"]')).toContainText('権限の確認で断られました: 書く:');
+    await expect(dev.locator('[data-dev-kind="denied"]')).toContainText('outside-note.txt(app/ の外)');
+    await expect(run.locator('[data-kind="tool-error"]')).toContainText('直す AI の操作が、うまくいきませんでした。');
+    await expect(dev.locator('[data-dev-kind="tool-error"]')).toContainText('許可されていません');
+    await expect(run).toContainText('試作品のファイルは変わっていません。');
     // 断られた書き込みを、書いたとは言わない
     await expect(run.locator('.step-short').filter({ hasText: '試作品のフォルダーの外のファイルに書こうとしました' })).toHaveCount(1);
     await expect(run).not.toContainText('外のファイルを書きました');
@@ -143,7 +152,8 @@ test('権限の確認で断られた操作と、作る AI の失敗を会話に�
     await chooseTestRequest(page, '失敗して');
     await page.getByLabel('依頼').press('Control+Enter');
     run = lastRun(page);
-    await expect(run.locator('[data-kind="failed"]')).toContainText('偽接続 が失敗しました: 偽接続: 依頼どおりに失敗しました');
+    await expect(run.locator('[data-kind="failed"]')).toHaveText(/直す AI が途中で失敗しました。もう一度送ってください。/);
+    await expect(run.locator('.run-dev [data-dev-kind="failed"]')).toContainText('偽接続 が失敗しました: 偽接続: 依頼どおりに失敗しました');
     await expect(run.locator('.run-status')).toContainText('失敗しました');
 
     // ログインしていないときは、利用者がすることを出す
@@ -158,17 +168,18 @@ test('権限の確認で断られた操作と、作る AI の失敗を会話に�
     // 作る AI が直すラウンドでも直せないときの形(直せたときは make-loop.spec.js)
     await sendTestRequest(page, '壊して、直せないふりをして');
     run = lastRun(page);
-    await expect(run.locator('[data-kind="gave-up"]')).toContainText('直すラウンドを 2 回行いましたが、G4 ビルドで失敗したままです');
-    await expect(run).toContainText('変わったファイル: app/App.jsx');
+    await expect(run.locator('[data-kind="gave-up"]')).toContainText('直す AI が 2 回直そうとしましたが、「表示の準備」の問題が残っています');
+    await expect(run.locator('.run-dev [data-dev-kind="gave-up"]')).toContainText('直すラウンドを 2 回行ったが、G4 ビルドで失敗したまま。');
+    await expect(run.locator('.run-dev')).toContainText('変わったファイル: app/App.jsx');
     await expect(run.locator('[data-kind="build-failed"]')).toHaveCount(3);
-    await expect(run.locator('[data-kind="build-failed"]').first()).toContainText('前にビルドできた版のままです');
+    await expect(run.locator('[data-kind="build-failed"]').first()).toContainText('試作品を表示できません。試す欄には、前に表示できた状態を出しています。');
     await expect(page.locator('#build-status')).toContainText('ビルドに失敗しました');
     await expect(page.locator('#build-status')).toContainText('app/App.jsx(2 行');
     await expect(page.locator('#build-status')).toContainText('「試す」には、前にビルドできた版を表示しています');
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
 
     await sendTestRequest(page, '直して');
-    await expect(lastRun(page)).toContainText('ビルドに成功しました。試す画面に反映しました。');
+    await expect(lastRun(page)).toContainText('試作品に反映しました。');
     await expect(page.locator('#build-status')).toContainText('ビルドに成功しました');
     await expect(app.getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
   } finally {
@@ -207,7 +218,7 @@ test('作業中は中断でき、その間はほかの依頼と作り直しを�
     await expect(menu.getByRole('button', { name: SAMPLES.library.name, includeHidden: true })).toContainText('直す AI が作業中');
     await expect(lastRun(page).locator('.run-status')).toContainText('直す AI が作業しています');
     await page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '止める' }).click();
-    await expect(lastRun(page).locator('[data-kind="cancelled"]')).toContainText('中断しました');
+    await expect(lastRun(page).locator('[data-kind="cancelled"]')).toContainText('止めました。途中まで書き換えた試作品のファイルは、そのまま残っています。');
     await expect(lastRun(page).locator('.run-status')).toContainText('止めました');
     await expect(page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '止める' })).toBeHidden();
     await expect(page.getByRole('button', { name: '送る' })).toBeEnabled();
@@ -262,7 +273,7 @@ test('Claude Code に切り替えると、版と認証の見込みを送る前�
     await expect(consent).toBeHidden();
     const run = lastRun(page);
     await expect(run.locator('.bubble.agent .who').first()).toHaveText('直す AI');
-    await expect(run).toContainText('ビルドに成功しました。試す画面に反映しました。');
+    await expect(run).toContainText('試作品に反映しました。');
     await expect(run.locator('.run-dev')).toContainText('接続: Claude Code');
     await expect(run.locator('.run-dev')).toContainText('認証の報告: ANTHROPIC_API_KEY');
     await expect(page.frameLocator('iframe[title="試作品"]').getByRole('heading', { name: '本番の形で' })).toBeVisible();

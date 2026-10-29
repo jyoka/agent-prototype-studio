@@ -354,7 +354,8 @@ button { font: inherit; }
 .run .steps li[data-kind="fix-request"] { border-left-color: var(--accent); background: #eef3fd; }
 .run .steps li[data-kind="build-ok"] { border-left-color: var(--ok); }
 .run .steps li[data-kind="ai-settings"] { border-left-color: #7a3fb4; background: #f5effb; }
-.run .text { white-space: pre-wrap; word-break: break-word; }
+.run .text,
+.run .run-dev li { white-space: pre-wrap; word-break: break-word; }
 .bubble p { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .bubble .who { display: block; font-size: 0.75rem; color: var(--muted); }
 .bubble.user { padding: 0.4rem 0.6rem; background: #eef3fd; border-radius: 6px; }

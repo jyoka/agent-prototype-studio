@@ -69,7 +69,8 @@ const ITEM_LABELS = {
   round: 'もう一度直す',
   'fix-request': `直す依頼(Studio から${FIX_AI} へ)`,
   'gave-up': 'ここで止めました',
-  // 結果の帯の「確かめた中身」に出す、関門の名前(run.gates の name ごと)。U3 の言葉を使わない
+  // 結果の帯の「確かめた中身」に出す、関門の名前(run.gates の name ごと)。U3 の言葉を使わない。
+  // 作る会話の項目の本文も同じ名前を使う(src/server/build-requests.js の GATE_WORDS)
   'gate:changes': '変わったところ',
   'gate:inspect': 'ファイルの名前と大きさ',
   'gate:contract': 'AI の設定と確かめ方の形',
@@ -790,17 +791,25 @@ function updatedText(run) {
 // 開いている、実行ごとの「開発者向け」(再描画で閉じないよう、実行の ID で覚える)
 const openRunDetails = new Set();
 
-// 実行ごとの「開発者向け」。操作の詳細(ファイルの名前、道具の名前)、接続の名前、認証の報告を出す
+// 実行ごとの「開発者向け」。操作の詳細(ファイルの名前、道具の名前)、項目の開発者向けの文(サーバーの detail。
+// 変わったファイル、関門の名前、直す AI の返した誤り)、接続の名前、認証の報告を出す
 function runDevDetails(run) {
   const box = element('details', undefined, 'run-dev');
   box.open = openRunDetails.has(run.id);
   box.addEventListener('toggle', () => (box.open ? openRunDetails.add(run.id) : openRunDetails.delete(run.id)));
   box.append(element('summary', '開発者向け: 操作の詳細'));
-  const tools = run.items.filter((item) => item.kind === 'tool');
-  if (tools.length > 0) {
+  const entries = run.items.filter((item) => item.kind === 'tool' || item.detail);
+  if (entries.length > 0) {
     const list = element('ul');
     list.setAttribute('aria-label', '操作の詳細');
-    list.append(...tools.map((item) => element('li', `${ITEM_LABELS.tool}: ${item.text}`)));
+    list.append(
+      ...entries.map((item) => {
+        const li = element('li', `${ITEM_LABELS[item.kind] ?? item.kind}: ${item.kind === 'tool' ? item.text : item.detail}`);
+        // 作る会話の項目(data-kind)と取り違えないよう、別の名前にする
+        li.dataset.devKind = item.kind;
+        return li;
+      }),
+    );
     box.append(list);
   }
   box.append(element('p', `接続: ${run.agent}`, 'muted'));
@@ -927,7 +936,8 @@ function openShot(projectId, file, caption) {
 
 function gateProblems(gate) {
   const list = element('ul', undefined, 'evidence-problems');
-  if (gate.reason) list.append(element('li', `理由: ${gate.reason}`));
+  // 理由は最初の 1 文だけ(利用者の言葉)。全文は「開発者向け」に出す
+  if (gate.reason) list.append(element('li', `理由: ${firstSentence(gate.reason)}`));
   if (gate.summary && !gate.errors?.length && !gate.failures?.length) list.append(element('li', gate.summary));
   for (const failure of gate.failures ?? []) {
     // 関門 GE(場面)の失敗は、シナリオの代わりに場面の id と確かめを持つ
@@ -1012,6 +1022,7 @@ function evidenceDev(run) {
   gates.setAttribute('aria-label', '関門');
   for (const gate of run.gates ?? []) {
     const li = element('li', `${gate.id} ${gate.label}(${gate.name}): ${gate.status}`);
+    if (gate.reason) li.append(element('span', `理由: ${gate.reason}`, 'evidence-line'));
     for (const error of gate.errors ?? []) {
       if (error.file) li.append(element('span', `${error.file}${error.line ? `:${error.line}${error.column ? `:${error.column}` : ''}` : ''} ${error.text ?? ''}`, 'evidence-line'));
     }
@@ -1138,7 +1149,11 @@ function checkDev(check) {
   box.append(files);
   const gates = element('ul');
   gates.setAttribute('aria-label', '関門');
-  for (const gate of check.gates ?? []) gates.append(element('li', `${gate.id} ${gate.label}(${gate.name}): ${gate.status}`));
+  for (const gate of check.gates ?? []) {
+    const li = element('li', `${gate.id} ${gate.label}(${gate.name}): ${gate.status}`);
+    if (gate.reason) li.append(element('span', `理由: ${gate.reason}`, 'evidence-line'));
+    gates.append(li);
+  }
   box.append(gates);
   box.append(element('p', `試作品の中の AI の接続: ${check.connection}。AI のやり取り: ${check.aiEntries ?? 0} 件(report の ai)`, 'muted'));
   if (check.appDigest) box.append(element('p', `確かめた app/ の指紋: ${check.appDigest.slice(0, 12)}`, 'muted'));

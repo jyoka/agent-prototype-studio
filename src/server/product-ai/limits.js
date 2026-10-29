@@ -54,7 +54,7 @@ export class ProjectCallWindow {
       const minutes = Math.max(1, Math.ceil((freedBy + this.windowMs - this.now()) / 60_000));
       throw new ConnectionError(
         'project-limit',
-        `この試作品で実際の AI モデルを呼べるのは、観察も含めて ${Math.round(this.windowMs / 60_000)} 分に ${this.limit} 回までです。上限に当たったので、呼ばずに止めました。あと約 ${minutes} 分で呼べるようになります`,
+        `この試作品で本物の AI を呼べるのは、自動の確かめも含めて ${Math.round(this.windowMs / 60_000)} 分に ${this.limit} 回までです。上限に当たったので、呼ばずに止めました。あと約 ${minutes} 分で呼べるようになります`,
       );
     }
   }
@@ -71,7 +71,7 @@ export function createTurnMeter({ perTurn = CALL_LIMITS.perTurn, take = () => {}
         const each = Object.entries(perTurn).map(([k, n]) => `${KIND_LABELS[k] ?? k} ${n} 回`).join('、');
         throw new ConnectionError(
           'turn-limit',
-          `1 ターンで実際の AI モデルを呼べるのは ${perTurnTotal(perTurn)} 回まで(${each})です。上限に当たったので、${KIND_LABELS[kind] ?? kind}を呼ばずに止めました`,
+          `1 回の発言で本物の AI を呼べるのは ${perTurnTotal(perTurn)} 回まで(${each})です。上限に当たったので、${KIND_LABELS[kind] ?? kind}を呼ばずに止めました`,
         );
       }
       take();

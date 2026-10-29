@@ -16,10 +16,14 @@ export class BrowserUnavailableError extends Error {}
 export function unavailableReason(error) {
   const detail = String(error?.message ?? error).split('\n')[0].slice(0, 300);
   const missing = /Executable doesn't exist|Failed to launch|ENOENT/i.test(detail);
+  // 最初の 1 文は利用者の画面(作る会話と結果の帯)に出るので、4 節の言葉で書く。2 文目からは開発者向けの詳細にだけ出る
+  const lead = missing
+    ? 'この PC には、試作品を開いて確かめるためのブラウザーが入っていません。'
+    : '試作品を開いて確かめるためのブラウザーを起動できませんでした。';
   const head = missing
     ? '観察に使う Playwright の Chromium が見つかりません。'
     : '観察に使う Playwright の Chromium を起動できませんでした。';
-  return `${head}Studio のフォルダーで \`${INSTALL_COMMAND}\` を実行して入れてから、もう一度試してください(${detail})`;
+  return `${lead}${head}Studio のフォルダーで \`${INSTALL_COMMAND}\` を実行して入れてから、もう一度試してください(${detail})`;
 }
 
 // 起動の引数。観察の文脈の context.route(observe.js)は、ページの要求しか断てない。
@@ -90,7 +94,7 @@ export class ObserverBrowser {
   // work(context, browser) を、新しい文脈の中で 1 つずつ回す
   withContext(options, work) {
     const run = this.queue.then(async () => {
-      if (this.closed) throw new BrowserUnavailableError('観察器はもう止まっています');
+      if (this.closed) throw new BrowserUnavailableError('試作品を開いて確かめる仕組みは、もう止まっています');
       const browser = await this.ensureBrowser();
       const opening = browser.newContext(options);
       const context = await withTimeout(opening, this.stepTimeoutMs);

@@ -906,7 +906,7 @@ export class ProjectHandoffs {
     if (await fs.lstat(path.join(this.dir, name)).catch(() => null)) name = `${name}-${crypto.randomBytes(2).toString('hex')}`;
     const tmp = path.join(this.dir, `.${name}.tmp`);
     try {
-      if (this.aiSessions.isBusy(id)) throw new BusyError('プロダクト内 AI が応答しているところです。終わってから書き出してください');
+      if (this.aiSessions.isBusy(id)) throw new BusyError('試作品の中の AI が返事をしているところです。終わってから渡すフォルダーを作ってください');
       // 前に書いたメモは、次に開いたときに出す。書き出しに失敗しても残す
       await fs.mkdir(paths.studio, { recursive: true });
       await fs.writeFile(this.notesFile(paths), `${JSON.stringify(notes, null, 2)}\n`);
@@ -922,7 +922,7 @@ export class ProjectHandoffs {
           },
         });
       } catch (error) {
-        if (error instanceof VersionError) throw new HandoffError(error.status, error.code, error.message.replace('版にできません', '書き出せません'));
+        if (error instanceof VersionError) throw new HandoffError(error.status, error.code, error.message.replace('保存できません', '本番開発へ渡せません'));
         throw error;
       }
       // 写しをビルドして確かめる。写しの AI の設定を、書き出す設定にする
@@ -933,7 +933,8 @@ export class ProjectHandoffs {
       await fs.rm(path.join(tmp, 'builds'), { recursive: true, force: true });
       if (!build.ok) {
         const first = build.errors[0];
-        throw new HandoffError(422, 'build', `ビルドできない状態は書き出せません。直してから書き出してください(${first ? `${first.file}: ${first.text}` : '理由はわかりません'})`);
+        this.log(`書き出しませんでした(ビルドできない状態): ${id}(${first ? `${first.file}: ${first.text}` : '理由はわかりません'})`);
+        throw new HandoffError(422, 'build', '表示できない状態は、本番開発へ渡せません。「言葉で直す」で直してもらってから、渡すフォルダーを作ってください');
       }
       const scan = await scanFiles(appCopy);
       if (scan.secrets.length > 0) {

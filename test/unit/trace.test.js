@@ -176,7 +176,7 @@ test('失敗は理由と次にすることを記録し、決まりに合わな�
   const [badCorrection, badText, failed] = sessions.trace('p').entries;
   assert.equal(failed.status, 'failed');
   assert.match(failed.error.message, /つながらない/);
-  assert.match(failed.error.next, /モックに戻して試し、この記録を開発の担当者に見せてください/);
+  assert.match(failed.error.next, /お試しの AI に戻して試し、この記録を開発の担当者に見せてください/);
   assert.equal(badText.error.code, 'invalid');
   assert.match(badText.error.next, /500 文字までの文/);
   assert.equal(badText.input, undefined);
@@ -293,7 +293,7 @@ test('Claude Code を起動できなかったときは、渡すはずだった�
   await assert.rejects(sessions.send('p', '湖'), { code: 'not-found' });
   const [entry] = sessions.trace('p').entries;
   assert.equal(entry.input.notSent, true);
-  assert.match(entry.error.next, /Claude Code を入れてください/);
+  assert.match(entry.error.next, /Claude Code を入れてから、Studio を起動し直してください/);
 
   // 発言の決まりの誤りは、API の応答にも記録と同じ次にすることを付ける
   await assert.rejects(sessions.send('p', ''), (error) => {

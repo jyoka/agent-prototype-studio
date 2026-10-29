@@ -7,7 +7,7 @@ export class BusyError extends Error {}
 const BUSY = {
   running: 'このプロジェクトでは今、作る AI が作業中です。終わるか中断するまで待ってください',
   building: 'このプロジェクトは今ビルド中です。終わるまで待ってください',
-  versioning: 'このプロジェクトは今、版の保存か復元、または引き継ぎの書き出しをしているところです。終わるまで待ってください',
+  versioning: 'この試作品は今、保存か、保存した状態に戻すか、本番開発へ渡すフォルダーを作っているところです。終わるまで待ってください',
   checking: 'このプロジェクトは今、試作品を自動で確かめているところです。終わるまで待ってください',
 };
 export class NotFoundError extends Error {}

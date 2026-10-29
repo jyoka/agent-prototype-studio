@@ -358,7 +358,7 @@ test('作る欄でプロダクト内 AI の設定を変えると、変化を作�
   const settings = run.items.find((item) => item.kind === 'ai-settings');
   assert.ok(settings, JSON.stringify(run.items));
   assert.match(settings.text, /聞く順と項目の並び: 職種、雇用区分、勤務地、時給の下限 → 時給の下限、職種、雇用区分、勤務地/);
-  assert.match(settings.text, /実モデルへの指示\(instructions\)に足した文: 「足りない項目は、「時給の下限」から先に聞いてください。」/);
+  assert.match(settings.text, /本物の AI への指示に足した文: 「足りない項目は、「時給の下限」から先に聞いてください。」/);
   // 案内するボタンの名前は、画面の試し直しの帯のボタンと同じ
   assert.match(settings.text, /試作品の上の「同じ発言で試し直す」で、同じ発言を新しい設定に送り直せます。/);
   assert.deepEqual(studio.store.aiDefinition('sample-job-consult').fields.map((f) => f.key), ['wage', 'jobType', 'employmentType', 'area']);
@@ -393,7 +393,7 @@ test('AI の設定がない試作品では、振る舞いの依頼を断り、�
   const run = JSON.parse(response.body.trim().split('\n').at(-1)).run;
   assert.equal(run.status, 'unchanged');
   assert.deepEqual(run.changedFiles, []);
-  assert.ok(run.items.some((item) => item.kind === 'assistant' && /app\/ai\.json がない/.test(item.text)));
+  assert.ok(run.items.some((item) => item.kind === 'assistant' && /AI の設定がない/.test(item.text)));
   assert.ok(!run.items.some((item) => item.kind === 'ai-settings'));
   assert.equal((await post('/api/projects/sample-library/ai/retry')).status, 404);
 });

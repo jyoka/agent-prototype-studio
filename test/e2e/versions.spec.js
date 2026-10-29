@@ -85,7 +85,7 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
     await expect(ui.saveMark).toBeHidden();
     expect(await fs.readFile(appFile, 'utf8')).toContain('<h1>しおかぜ求人相談</h1>');
     const v2 = ui.versionList.getByRole('listitem').filter({ hasText: '保存 2' });
-    await expect(v2).toContainText('復元の前の作業中(自動)');
+    await expect(v2).toContainText('戻す前の状態(自動)');
     await expect(v2).toContainText('自動');
     await expect(v2).toContainText('会話: 発言 2 件');
     await page.screenshot({ path: test.info().outputPath('3-restored.png'), fullPage: true });
@@ -123,7 +123,7 @@ test('保存した版に戻すと、ファイルと会話と状態が戻る。St
 
     // 自動で保存した版(変更の後)にも戻れる
     await page.getByRole('button', { name: '保存 2 の状態に戻す' }).click();
-    await expect(ui.notice).toContainText('保存 2「復元の前の作業中(自動)」に戻しました。');
+    await expect(ui.notice).toContainText('保存 2「戻す前の状態(自動)」に戻しました。');
     await expect(ui.app.getByRole('heading', { name: 'うみかぜ求人相談' })).toBeVisible();
     await expect(ui.log).toHaveCount(6);
     await expect(ui.conditions).toHaveText(['カフェのホール', 'アルバイト・パート', 'もみじ台', '未定']);
@@ -154,7 +154,8 @@ test('ビルドできない状態は保存せず、理由を出す。作る AI �
     await openDevDetails(page);
     await expect(page.locator('#build-status')).toContainText('ビルドに失敗しました');
     await page.locator('#save-version').click();
-    await expect(ui.notice).toContainText('保存できませんでした: ビルドできない状態は保存できません');
+    await expect(ui.notice).toContainText('保存できませんでした: 表示できない状態は保存できません。「言葉で直す」で直してもらってから保存してください');
+    await expect(ui.notice).not.toContainText('app/');
     await expect(ui.versionList.getByRole('listitem')).toHaveCount(1);
 
     // 壊れた作業中からも戻せる。壊れた作業中は自動で保存され、ビルドできない状態と出る

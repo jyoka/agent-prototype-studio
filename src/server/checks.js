@@ -132,7 +132,7 @@ export class ProjectChecks {
       this.log(`確かめました: ${id}(${check.status}、${check.report})`);
     } catch (error) {
       check.status = 'unverified';
-      check.reason = `確かめる途中で問題が起きました: ${String(error?.message ?? error).slice(0, MAX_REASON)}`;
+      check.reason = `確かめる途中で問題が起きました。${String(error?.message ?? error).slice(0, MAX_REASON)}`;
       check.gates = [{ id: 'G5', name: 'launch', label: '起動の確認', status: 'unverified', reason: check.reason }];
       this.log(`確かめられませんでした: ${id}(${check.reason})`);
     } finally {

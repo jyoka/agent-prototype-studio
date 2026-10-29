@@ -63,8 +63,36 @@ const NODES = new Map(BLUEPRINT.map((node) => [node.name, node]));
 const GATES = BLUEPRINT.filter((node) => node.gate);
 const BUILD_GATES = ['inspect', 'contract', 'compile'];
 const GATE_STATUS_TEXT = { passed: '通った', failed: '失敗', unverified: '未確認', unchanged: '変更なし', skipped: '行わない' };
+// 作る会話の項目の本文(text)は、利用者の画面の言葉で書く(ux-redesign.md 4 節)。関門、シナリオ、ビルド、app/ などの
+// 開発の言葉と、ファイルの名前、関門の名前は detail に書き、画面は開発者向けの詳細にだけ出す。
+// 関門の利用者の言葉の名前と結果は、画面の結果の帯(src/ui/studio.js の ITEM_LABELS の gate: と GATE_RESULT)と同じ
+const GATE_WORDS = {
+  changes: '変わったところ',
+  inspect: 'ファイルの名前と大きさ',
+  contract: 'AI の設定と確かめ方の形',
+  compile: '表示の準備',
+  evals: 'AI の場面で動くか',
+  launch: '開いて表示できるか',
+  scenarios: '決めた手順で動くか',
+};
+const GATE_RESULT_WORDS = { passed: '問題なし', failed: '問題あり', unverified: '確かめられませんでした', unchanged: '変わっていません', skipped: '行っていません' };
+const FIX_AI = '直す AI';
+const gateWords = (gate) => `「${GATE_WORDS[gate.name] ?? gate.label}」`;
+const gateName = (gate) => `${gate.id} ${gate.label}`;
+// 試作品を開くと出た誤りの種類(利用者の言葉)。ERROR_KIND_TEXT(直す依頼の文)とは別に持つ
+const ERROR_KIND_WORDS = { runtime: '誤り', 'console-error': '誤りの知らせ', 'unhandled-rejection': '誤り', timeout: '時間切れ' };
+const TRY_NEW = '試す欄は新しい状態にしたので、そこで動きを確かめられます。';
+const LOOK_AND_ASK = '下の「確かめた中身を見る」で問題を確かめ、直したいことを言葉で送ってください。';
 
 const clip = (value, max = MAX_GATE_TEXT) => String(value ?? '').slice(0, max);
+// 未確認の理由(gate.reason)。結果の帯の 1 文に出るので、利用者の言葉で書く。最初の 1 文の後ろに、開発者向けの中身を続けてよい
+const NO_REASON = '確かめる仕組みが理由を返しませんでした';
+const NO_OBSERVER = 'この Studio では、試作品を開いて確かめる仕組みを使えません';
+const observeTrouble = (error) => `試作品を開いて確かめる途中で問題が起きました。${clip(error?.message ?? error, 300)}`;
+// 未確認の項目の本文。理由は最初の 1 文だけを出し、全文(Chromium の場所や例外の文)は開発者向けの detail に置く
+const leadSentence = (text) => String(text ?? '').split('。')[0].trim();
+const TRY_YOURSELF = '試す欄で、動きを確かめてください。';
+const unverifiedText = (what, reason) => `${what}。${leadSentence(reason) || NO_REASON}。${TRY_YOURSELF}`;
 const GATE_TIMEOUT = Symbol('gate-timeout');
 const freshGates = () => GATES.map((node) => ({ id: node.gate, name: node.name, label: node.label, status: 'skipped' }));
 // ビルドの誤りを、関門の結果に残す形にする
@@ -85,7 +113,7 @@ export function launchGate(report, reason) {
   if (!report) return { status: 'unverified', reason };
   const errors = (report.errors ?? []).slice(0, MAX_GATE_ERRORS).map((e) => ({ kind: e.kind, message: clip(e.message) }));
   const base = { verdict: report.verdict, loadMs: report.load?.durationMs ?? null, errorCount: report.errors?.length ?? 0, errors };
-  if (report.verdict === 'unverified') return { ...base, status: 'unverified', reason: report.reason ?? '観察器が理由を返しませんでした' };
+  if (report.verdict === 'unverified') return { ...base, status: 'unverified', reason: report.reason ?? NO_REASON };
   if (report.verdict === 'failed') {
     const first = errors[0];
     const summary = first ? `起動の確認で${ERROR_KIND_TEXT[first.kind] ?? first.kind}がありました(${clip(first.message, 200)})` : '起動の確認で失敗しました';
@@ -136,9 +164,9 @@ export function scenarioGate(report, reason) {
     errorCount: report.errors?.length ?? 0,
     errors,
   };
-  if (report.verdict === 'unverified') return { ...base, status: 'unverified', reason: report.reason ?? '観察器が理由を返しませんでした' };
+  if (report.verdict === 'unverified') return { ...base, status: 'unverified', reason: report.reason ?? NO_REASON };
   if (report.verdict !== 'failed' && scenarios.length > 0) return { ...base, status: 'passed' };
-  if (report.verdict !== 'failed') return { ...base, status: 'unverified', reason: 'シナリオを回せませんでした' };
+  if (report.verdict !== 'failed') return { ...base, status: 'unverified', reason: '決めた手順で試せませんでした' };
   const first = failures[0];
   let summary;
   if (first) {
@@ -273,7 +301,7 @@ export class BuildRequests {
   addItem(id, run, kind, text, extra = {}) {
     if (AGENT_ITEM_KINDS.has(kind) && run.items.filter((item) => AGENT_ITEM_KINDS.has(item.kind)).length >= MAX_ITEMS_PER_RUN) {
       if (!run.items.some((item) => item.kind === 'skipped')) {
-        run.items.push({ kind: 'skipped', text: '作る AI の知らせが多すぎるので、ここから先は省きます。', at: new Date().toISOString() });
+        run.items.push({ kind: 'skipped', text: `${FIX_AI} の知らせが多すぎるので、ここから先は省きます。`, at: new Date().toISOString() });
         this.touch(id, run);
       }
       return;
@@ -360,7 +388,9 @@ export class BuildRequests {
       .catch(async (error) => {
         this.log(`作る AI の実行で問題が起きました: ${id}(${error.message})`);
         run.status = 'failed';
-        this.addItem(id, run, 'failed', `Studio の中で問題が起きました: ${error.message}`);
+        this.addItem(id, run, 'failed', 'Studio の中で問題が起きました。もう一度送ってください。続くときは、開発の担当者に知らせてください。', {
+          detail: `Studio の中で問題が起きました: ${error.message}`,
+        });
         if (!run.evidence) await this.evidence(id, paths, run).catch(() => {});
       })
       .finally(() => {
@@ -432,7 +462,9 @@ export class BuildRequests {
     gate.preexisting = true;
     if (state.preexistingNoted) return;
     state.preexistingNoted = true;
-    this.addItem(state.id, state.run, 'preexisting', `${gate.id} ${gate.label}の失敗は、依頼の前のビルドでも同じ形で出ていました(依頼の前から壊れていました)。`);
+    this.addItem(state.id, state.run, 'preexisting', `${gateWords(gate)}の問題は、依頼の前から同じ形で出ていました。`, {
+      detail: `${gateName(gate)}の失敗は、依頼の前のビルドでも同じ形で出ていました(依頼の前から壊れていました)。`,
+    });
   }
 
   // 節 agent(model): 作る AI を起動し、終わるまで待つ。ここだけが作る AI の接続に触れる。
@@ -449,7 +481,7 @@ export class BuildRequests {
 
     if (active.cancelRequested) {
       run.status = 'cancelled';
-      this.addItem(id, run, 'cancelled', '起動する前に中断しました。');
+      this.addItem(id, run, 'cancelled', '始める前に止めました。');
       this.keepPreviousGates(state);
       return { next: 'evidence', outcome: 'cancelled' };
     }
@@ -483,7 +515,7 @@ export class BuildRequests {
     } catch (error) {
       run.status = 'agent-failed';
       run.launches.push({ round: run.round, startedAt: new Date(launchedAt).toISOString(), durationMs: Date.now() - launchedAt, outcome: 'spawn-error' });
-      this.addItem(id, run, 'failed', `${run.agent} を起動できませんでした(${error.code ?? error.message})`);
+      this.addItem(id, run, 'failed', this.spawnFailureText(), { detail: `${run.agent} を起動できませんでした(${error.code ?? error.message})` });
       this.keepPreviousGates(state);
       return { next: 'evidence', outcome: 'failed' };
     }
@@ -498,7 +530,7 @@ export class BuildRequests {
     if (exit.stopReason === 'cancel') {
       run.status = 'cancelled';
       outcome = 'cancelled';
-      this.addItem(id, run, 'cancelled', '中断しました。途中まで書かれたファイルは、そのまま残っています。');
+      this.addItem(id, run, 'cancelled', '止めました。途中まで書き換えた試作品のファイルは、そのまま残っています。');
     } else if (exit.stopReason === 'timeout') {
       run.status = 'timed-out';
       outcome = 'timed-out';
@@ -506,13 +538,14 @@ export class BuildRequests {
     } else if (exit.spawnError) {
       run.status = 'agent-failed';
       outcome = 'failed';
-      this.addItem(id, run, 'failed', `${run.agent} を起動できませんでした(${exit.spawnError.code ?? exit.spawnError.message})`);
+      this.addItem(id, run, 'failed', this.spawnFailureText(), { detail: `${run.agent} を起動できませんでした(${exit.spawnError.code ?? exit.spawnError.message})` });
     } else if (result?.ok && exit.code === 0) {
       outcome = 'passed';
     } else {
       run.status = 'agent-failed';
       outcome = 'failed';
-      this.addItem(id, run, 'failed', this.failureText(result, exit));
+      const failure = this.failureText(result, exit);
+      this.addItem(id, run, 'failed', failure.text, failure.detail ? { detail: failure.detail } : {});
     }
     run.launches.push({
       round: run.round,
@@ -527,7 +560,10 @@ export class BuildRequests {
     });
 
     for (const denial of result?.denials ?? []) {
-      this.addItem(id, run, 'denied', `権限の確認で断られました: ${denial}`);
+      // 1 文目は ux-redesign.md 4 節の言葉。次にすることを続ける(5 秒の確かめで「次に何をすればよいか分からない」と出たため。P30)
+      this.addItem(id, run, 'denied', '試作品のフォルダーの外は触れないので、やめました。試作品の中で済む依頼に言い換えて、もう一度送ってください。', {
+        detail: `権限の確認で断られました: ${denial}`,
+      });
     }
     const loginText = `${result?.text ?? ''}\n${exit.stderrTail}`;
     if (run.status === 'agent-failed' && LOGIN_PATTERN.test(loginText)) {
@@ -574,19 +610,23 @@ export class BuildRequests {
     run.appDigest = digestSnapshot(after);
     const fixing = run.round > 1;
     if (roundBefore.size >= MAX_SNAPSHOT_ENTRIES || after.size >= MAX_SNAPSHOT_ENTRIES) {
-      this.addItem(id, run, 'info', `app/ のファイルが ${MAX_SNAPSHOT_ENTRIES} 個を超えているので、変わったファイルを確かめきれません。ビルドし直します。`);
+      this.addItem(id, run, 'info', `試作品のファイルが ${MAX_SNAPSHOT_ENTRIES} 個を超えているので、変わったファイルを確かめきれません。表示の準備をし直します。`, {
+        detail: `app/ のファイルが ${MAX_SNAPSHOT_ENTRIES} 個を超えているので、G1 は確かめずに通し、ビルドし直します。`,
+      });
       this.setGate(run, 'changes', { status: 'passed', changedFiles: changed.length, detail: '数が多いので確かめきれません' });
       return { next: 'inspect', outcome: 'passed' };
     }
     if (changed.length === 0 && fixing) return this.unchangedFix(state);
     if (changed.length === 0) {
-      this.addItem(id, run, 'info', 'app/ のファイルは変わっていません。');
+      this.addItem(id, run, 'info', '試作品のファイルは変わっていません。');
       this.setGate(run, 'changes', { status: 'unchanged', changedFiles: 0 });
       return { next: 'evidence', outcome: 'unchanged' };
     }
     if (fixing) this.noteScenarioChanges(state, changed);
     const names = `${changed.slice(0, 50).map((c) => c.file).join('、')}${changed.length > 50 ? ` ほか ${changed.length - 50} 個` : ''}`;
-    this.addItem(id, run, 'changes', `${fixing ? '直すラウンドで変わったファイル' : '変わったファイル'}: ${names}`);
+    this.addItem(id, run, 'changes', `${fixing ? 'もう一度直して、' : ''}試作品のファイルが ${changed.length} 個変わりました。`, {
+      detail: `${fixing ? '直すラウンドで変わったファイル' : '変わったファイル'}: ${names}`,
+    });
     this.setGate(run, 'changes', { status: 'passed', changedFiles: changed.length });
     return { next: 'inspect', outcome: 'passed' };
   }
@@ -653,7 +693,8 @@ export class BuildRequests {
         id,
         run,
         'gave-up',
-        `直すラウンドで app/ が変わらなかったので、ここで止めました。前のラウンドの失敗(${failed.id} ${failed.label})は直っていません。失敗と証拠を返します。詳細の欄で場所を確かめ、直す依頼を送ってください。`,
+        `${FIX_AI} がもう一度直そうとしましたが、試作品のファイルが変わらなかったので、ここで止めました。${gateWords(failed)}の問題は直っていません。${LOOK_AND_ASK}`,
+        { detail: `直すラウンドで app/ が変わらなかったので止めました。前のラウンドの失敗(${gateName(failed)})は直っていません。` },
       );
     }
     return { next: 'evidence', outcome: 'unchanged' };
@@ -677,9 +718,14 @@ export class BuildRequests {
       }
     }
     if (build.ok) {
-      this.addItem(id, run, 'build-ok', 'ビルドに成功しました。試す画面に反映しました。');
+      this.addItem(id, run, 'build-ok', '試作品に反映しました。', { detail: 'ビルドに成功しました(G2〜G4 通過)。' });
     } else {
-      this.addItem(id, run, 'build-failed', 'ビルドに失敗しました。試す画面は、前にビルドできた版のままです。詳細の欄で場所を確かめられます。');
+      const failed = run.gates.find((gate) => gate.name === failedAt);
+      const first = failed.errors?.[0];
+      const where = first ? `。最初の誤り: ${first.file}${first.line ? `:${first.line}` : ''} ${first.text}` : '';
+      this.addItem(id, run, 'build-failed', '試作品を表示できません。試す欄には、前に表示できた状態を出しています。', {
+        detail: `ビルドに失敗しました(${gateName(failed)}${failed.errorCount ? `、誤り ${failed.errorCount} 件` : ''})${clip(where, 300)}`,
+      });
       this.markPreexisting(state, run.gates.find((gate) => gate.name === failedAt));
     }
     this.reportAiChanges(id, run, { ai: state.aiBefore, simulation: state.simulationBefore }, build.ok);
@@ -742,11 +788,14 @@ export class BuildRequests {
     }
     this.setGate(run, 'evals', gate);
     if (gate.status === 'passed') {
-      const rest = [gate.notApplicableCount ? `n/a ${gate.notApplicableCount} 本` : '', gate.unjudgedCount ? `採点だけの ${gate.unjudgedCount} 本` : ''].filter(Boolean).join('、');
-      this.addItem(id, run, 'evals-ok', `場面を確かめました。${gate.evalCount} 本のうち ${gate.passedCount} 本が通り、通らない場面はありませんでした${rest ? `(ほかに ${rest})` : ''}。模擬のエージェントと harness はモックです。`);
+      const rest = [gate.notApplicableCount ? `当てはまらない ${gate.notApplicableCount} 本` : '', gate.unjudgedCount ? `点を付けるだけの ${gate.unjudgedCount} 本` : ''].filter(Boolean).join('、');
+      const restDev = [gate.notApplicableCount ? `n/a ${gate.notApplicableCount} 本` : '', gate.unjudgedCount ? `採点だけの ${gate.unjudgedCount} 本` : ''].filter(Boolean).join('、');
+      this.addItem(id, run, 'evals-ok', `AI の場面を確かめました。${gate.evalCount} 本のうち ${gate.passedCount} 本が思ったとおりに動き、動かない場面はありませんでした${rest ? `(ほかに ${rest})` : ''}。`, {
+        detail: `GE 場面: ${gate.evalCount} 本のうち ${gate.passedCount} 本が通った${restDev ? `(ほかに ${restDev})` : ''}。模擬のエージェントと harness はモック。`,
+      });
       return { next: 'launch', outcome: 'passed' };
     }
-    this.addItem(id, run, 'evals-failed', `確かめで失敗あり: ${gate.summary}。試す画面は新しいビルドにしたので、そこで動きを確かめられます。`);
+    this.addItem(id, run, 'evals-failed', `AI の場面で、思ったとおりに動かないところがありました。${TRY_NEW}`, { detail: `GE 場面: ${gate.summary}` });
     // 依頼の前のビルドでも同じ場面が通っていなかったら、印を付ける(起動の確認とシナリオの失敗と同じ扱い)
     const failed = run.gates.find((g) => g.name === 'evals');
     this.markPreexisting(state, failed);
@@ -769,12 +818,12 @@ export class BuildRequests {
     let report = null;
     let reason = null;
     if (typeof this.observe !== 'function') {
-      reason = 'この Studio では観察器を使えません';
+      reason = NO_OBSERVER;
     } else {
       try {
         report = await this.observe(id, { gate: 'launch', viewports: LAUNCH_VIEWPORTS, outDir: roundDir });
       } catch (error) {
-        reason = `観察の途中で問題が起きました: ${clip(error?.message ?? error, 300)}`;
+        reason = observeTrouble(error);
       }
     }
     if (report) {
@@ -791,16 +840,20 @@ export class BuildRequests {
     const launched = run.gates.find((g) => g.name === 'launch');
     if (gate.status === 'passed') {
       this.launchFailures.delete(id);
-      this.addItem(id, run, 'launch-ok', '起動を確かめました。描画が終わり、エラーはなく、画面は空ではありません。');
+      this.addItem(id, run, 'launch-ok', '試作品を開いて確かめました。表示が終わり、誤りはなく、画面は空ではありません。');
     } else if (gate.status === 'failed') {
-      this.addItem(id, run, 'launch-failed', `確かめで失敗あり: ${gate.summary}。試す画面は新しいビルドにしたので、そこで動きを確かめられます。`);
+      const kind = gate.errors?.[0]?.kind;
+      const what = gate.errors?.length ? `試作品を開くと、${ERROR_KIND_WORDS[kind] ?? '誤り'}が出ました` : '試作品を開くと、画面に何も出ませんでした';
+      this.addItem(id, run, 'launch-failed', `${what}。${TRY_NEW}`, { detail: `G5 起動の確認: ${gate.summary}` });
       this.markPreexisting(state, launched);
       this.launchFailures.set(id, { buildId: run.build?.buildId ?? null, signature: failureSignature(launched) });
     } else {
       this.launchFailures.delete(id);
-      this.addItem(id, run, 'launch-unverified', `起動は確かめていません(未確認): ${gate.reason}`);
+      this.addItem(id, run, 'launch-unverified', unverifiedText('試作品を開いて確かめることはできませんでした', gate.reason), {
+        detail: `G5 起動の確認: 未確認。${gate.reason ?? NO_REASON}`,
+      });
       // 起動を確かめていない版では、シナリオも回さない。通ったとは扱わない
-      this.setGate(run, 'scenarios', { status: 'unverified', reason: '起動の確認が未確認なので、シナリオは回していません' });
+      this.setGate(run, 'scenarios', { status: 'unverified', reason: '開いて表示できるかを確かめられなかったので、決めた手順では試していません' });
     }
     const next = { passed: 'scenarios', failed: 'fix' }[gate.status] ?? 'evidence';
     return { next, outcome: gate.status };
@@ -820,7 +873,7 @@ export class BuildRequests {
     if (active.cancelRequested) {
       run.status = 'cancelled';
       this.setGate(run, 'scenarios', { status: 'skipped', reason: '中断したので、シナリオは回していません' });
-      this.addItem(id, run, 'cancelled', '中断しました。G6 シナリオの確かめは行いません。');
+      this.addItem(id, run, 'cancelled', '止めました。決めた手順で試すことはしません。');
       return { next: 'evidence', outcome: 'cancelled' };
     }
     const { scenarioTimeoutMs, gateTimeoutMs } = this.scenarioLimits;
@@ -831,7 +884,7 @@ export class BuildRequests {
     let reason = null;
     let timedOut = false;
     if (typeof this.observe !== 'function') {
-      reason = 'この Studio では観察器を使えません';
+      reason = NO_OBSERVER;
     } else {
       const started = Date.now();
       let timer;
@@ -846,7 +899,7 @@ export class BuildRequests {
         if (result === GATE_TIMEOUT || (result?.verdict === 'unverified' && Date.now() - started >= gateTimeoutMs)) timedOut = true;
         else report = result;
       } catch (error) {
-        reason = `観察の途中で問題が起きました: ${clip(error?.message ?? error, 300)}`;
+        reason = observeTrouble(error);
       } finally {
         clearTimeout(timer);
       }
@@ -865,14 +918,26 @@ export class BuildRequests {
     if (gate.status === 'passed') {
       this.launchFailures.delete(id);
       const own = gate.scenarioCount - gate.baseCount;
-      this.addItem(id, run, 'scenarios-ok', `シナリオを確かめました。基本のシナリオ ${gate.baseCount} 本と、app/ のシナリオ ${own} 本が、すべて通りました(プロダクト内 AI はモック)。`);
+      this.addItem(
+        id,
+        run,
+        'scenarios-ok',
+        `決めた手順で試しました。Studio がいつも確かめる手順 ${gate.baseCount} 本と、この試作品の手順 ${own} 本が、すべて思ったとおりに動きました(試作品の中の AI は、お試しの AI で試しました)。`,
+        { detail: `G6 シナリオ: 基本のシナリオ ${gate.baseCount} 本と、app/ のシナリオ ${own} 本が通った(プロダクト内 AI はモック)。` },
+      );
     } else if (gate.status === 'failed') {
-      this.addItem(id, run, 'scenarios-failed', `確かめで失敗あり: ${gate.summary}。試す画面は新しいビルドにしたので、そこで動きを確かめられます。`);
+      const first = gate.failures?.[0];
+      const what = first
+        ? `決めた手順「${first.scenario}」${first.step ? `の ${first.step} 番目` : ''}で、思ったとおりに動きませんでした${gate.failedCount > 1 ? `(ほか ${gate.failedCount - 1} 本)` : ''}`
+        : '決めた手順で試すと、思ったとおりに動きませんでした';
+      this.addItem(id, run, 'scenarios-failed', `${what}。${TRY_NEW}`, { detail: `G6 シナリオ: ${gate.summary}` });
       this.markPreexisting(state, checked);
       this.launchFailures.set(id, { buildId: run.build?.buildId ?? null, signature: failureSignature(checked) });
     } else {
       this.launchFailures.delete(id);
-      this.addItem(id, run, 'scenarios-unverified', `シナリオは確かめていません(未確認): ${gate.reason}`);
+      this.addItem(id, run, 'scenarios-unverified', unverifiedText('決めた手順で試すことはできませんでした', gate.reason), {
+        detail: `G6 シナリオ: 未確認。${gate.reason ?? NO_REASON}`,
+      });
     }
     return { next: gate.status === 'failed' ? 'fix' : 'evidence', outcome: gate.status };
   }
@@ -886,12 +951,14 @@ export class BuildRequests {
     // 止めた run と、作る AI が失敗した run は直させない(中断と時間切れの決まりは今のまま)
     if (run.status !== 'running') return { next: 'evidence', outcome: 'skipped' };
     if (this.closing) {
-      this.addItem(id, run, 'info', 'Studio を止めているので、直すラウンドは行いません。');
+      this.addItem(id, run, 'info', 'Studio を止めているので、もう一度直すことはしません。');
       return { next: 'evidence', outcome: 'skipped' };
     }
     if (state.active.cancelRequested) {
       run.status = 'cancelled';
-      this.addItem(id, run, 'cancelled', `中断しました。直すラウンドは行いません。${failed.id} ${failed.label}の失敗は直っていません。`);
+      this.addItem(id, run, 'cancelled', `止めました。もう一度直すことはしません。${gateWords(failed)}の問題は直っていません。`, {
+        detail: `直すラウンドは行わない。${gateName(failed)}の失敗は直っていない。`,
+      });
       return { next: 'evidence', outcome: 'cancelled' };
     }
     if (run.round > MAX_FIX_ROUNDS) {
@@ -899,7 +966,8 @@ export class BuildRequests {
         id,
         run,
         'gave-up',
-        `直すラウンドを ${MAX_FIX_ROUNDS} 回行いましたが、${failed.id} ${failed.label}で失敗したままです。ここで止めて、失敗と証拠を返します。詳細の欄で場所を確かめ、直す依頼を送ってください。`,
+        `${FIX_AI} が ${MAX_FIX_ROUNDS} 回直そうとしましたが、${gateWords(failed)}の問題が残っています。ここで止めました。${LOOK_AND_ASK}`,
+        { detail: `直すラウンドを ${MAX_FIX_ROUNDS} 回行ったが、${gateName(failed)}で失敗したまま。` },
       );
       return { next: 'evidence', outcome: 'gave-up' };
     }
@@ -922,13 +990,16 @@ export class BuildRequests {
     };
     run.rounds.push(state.currentRound);
     const fixRound = run.round - 1;
-    this.addItem(id, run, 'round', `直すラウンド ${fixRound}/${MAX_FIX_ROUNDS}: 作る AI を起動し直します(起動 ${run.round}/${MAX_FIX_ROUNDS + 1} 回目)。`);
+    this.addItem(id, run, 'round', `確かめると${gateWords(failed)}で問題が見つかったので、${FIX_AI} にもう一度直してもらいます(${fixRound} 回目。${MAX_FIX_ROUNDS} 回まで)。`, {
+      detail: `直すラウンド ${fixRound}/${MAX_FIX_ROUNDS}: 作る AI を起動し直す(起動 ${run.round}/${MAX_FIX_ROUNDS + 1} 回目)。`,
+    });
     const first = clip(describeFailure(failed).split('\n')[0], 200);
     this.addItem(
       id,
       run,
       'fix-request',
-      `${failed.id} ${failed.label}の失敗(${first})を作る AI に返しました。添えたのは、元の依頼、失敗の中身、変わったファイルの名前(${run.changedFiles.length} 個)だけです。`,
+      `見つかった問題を${FIX_AI} に伝えました。伝えたのは、あなたの依頼、問題の中身、変わったファイルの名前だけです。`,
+      { detail: `${gateName(failed)}の失敗(${first})を作る AI に返した。添えたのは、元の依頼、失敗の中身、変わったファイルの名前(${run.changedFiles.length} 個)だけ。` },
     );
     return { next: 'agent', outcome: 'fix' };
   }
@@ -938,11 +1009,13 @@ export class BuildRequests {
     const { id, run } = state;
     if (run.status === 'running') run.status = finalStatus(run.gates, run.round);
     if (run.gates.some((gate) => gate.status !== 'skipped')) {
-      const parts = run.gates
-        .filter((gate) => gate.status !== 'skipped')
-        .map((gate) => `${gate.id} ${gate.label}: ${GATE_STATUS_TEXT[gate.status] ?? gate.status}${gate.evalCount === 0 && gate.status === 'passed' ? '(場面なし)' : ''}`);
-      const when = run.round > 1 ? `(直すラウンド ${run.round - 1} の後)` : '';
-      this.addItem(id, run, 'gates', `Studio が確かめた結果${when}: ${parts.join('、')}`);
+      const checked = run.gates.filter((gate) => gate.status !== 'skipped');
+      const none = (gate) => gate.evalCount === 0 && gate.status === 'passed';
+      const words = checked.map((gate) => `${GATE_WORDS[gate.name] ?? gate.label}: ${GATE_RESULT_WORDS[gate.status] ?? gate.status}${none(gate) ? '(確かめる場面なし)' : ''}`);
+      const parts = checked.map((gate) => `${gate.id} ${gate.label}: ${GATE_STATUS_TEXT[gate.status] ?? gate.status}${none(gate) ? '(場面なし)' : ''}`);
+      const when = run.round > 1 ? `(${FIX_AI} が ${run.round - 1} 回直した後)` : '';
+      const whenDev = run.round > 1 ? `(直すラウンド ${run.round - 1} の後)` : '';
+      this.addItem(id, run, 'gates', `Studio が確かめた結果${when}: ${words.join('、')}`, { detail: `関門の結果${whenDev}: ${parts.join('、')}` });
     }
     if (run.scenariosChanged.length > 0) {
       const files = [...new Set(run.scenariosChanged.flatMap((change) => change.files.map((file) => file.file)))];
@@ -951,7 +1024,8 @@ export class BuildRequests {
         id,
         run,
         'scenarios-changed',
-        `確かめ方が変わりました: 直すラウンド ${rounds} で、作る AI がシナリオを変えました(${files.join('、')})。シナリオを弱めたり消したりして通していないか、変わったシナリオを確かめてください。`,
+        `${FIX_AI} が直すときに、決めた手順を変えました(${rounds} 回目)。手順を弱めたり消したりして通していないか、確かめてください。`,
+        { detail: `確かめ方が変わった: 直すラウンド ${rounds} で、作る AI がシナリオを変えた(${files.join('、')})。` },
       );
     }
     this.noteChangedChecks(id, run);
@@ -968,7 +1042,8 @@ export class BuildRequests {
         id,
         run,
         'evals-changed',
-        `確かめ方が変わりました: 直すラウンド ${roundsOf(run.evalsChanged)} で、作る AI が場面を変えました(${filesOf(run.evalsChanged).join('、')})。場面を弱めたり消したりして通していないか、変わった場面を確かめてください。`,
+        `${FIX_AI} が直すときに、AI の場面を変えました(${roundsOf(run.evalsChanged)} 回目)。場面を弱めたり消したりして通していないか、確かめてください。`,
+        { detail: `確かめ方が変わった: 直すラウンド ${roundsOf(run.evalsChanged)} で、作る AI が場面を変えた(${filesOf(run.evalsChanged).join('、')})。` },
       );
     }
     if (run.guardsChanged.length > 0) {
@@ -977,7 +1052,10 @@ export class BuildRequests {
         id,
         run,
         'guards-changed',
-        `ガードレールが変わりました: 直すラウンド ${roundsOf(run.guardsChanged)} で、作る AI が守り(構成の guards と引き継ぎの辺、tools.json の守り、ai.json の rules)を変えました${files.length > 0 ? `(${files.join('、')})` : ''}。ガードレールを弱めて通していないか、確かめてください。`,
+        `${FIX_AI} が直すときに、試作品の中の AI の守ることを変えました(${roundsOf(run.guardsChanged)} 回目)。守ることを弱めて通していないか、確かめてください。`,
+        {
+          detail: `ガードレールが変わった: 直すラウンド ${roundsOf(run.guardsChanged)} で、作る AI が守り(構成の guards と引き継ぎの辺、tools.json の守り、ai.json の rules)を変えた${files.length > 0 ? `(${files.join('、')})` : ''}。`,
+        },
       );
     }
   }
@@ -1056,7 +1134,8 @@ export class BuildRequests {
 
   // 決まった手順: プロダクト内 AI の設定と構成(構成、ツール、ガードレール)が変わったかを、Studio がビルドしたものどうしで確かめて出す。
   // 作る AI が書いたのは設定(app/ai.json、app/composition.json など)で、試す画面で応答するのはプロダクト内 AI。
-  // 2 つを混ぜないよう、作る会話には設定の変化だけを出す。ガードレールが減ったときは、先頭に目立つ印を付ける
+  // 2 つを混ぜないよう、作る会話には設定の変化だけを出す。ガードレールが減ったときは、先頭に目立つ印を付ける。
+  // 構成とガードレールの変化の行は、ファイルの名前や設定の名前を含むので、本文には数だけを出し、行は detail に置く
   reportAiChanges(id, run, before, buildOk) {
     const touched = run.changedFiles.some((change) => change.file === `app/${AI_FILE}`);
     // 置き場所の決まったファイルと、前の構成が指していたファイル(ツールのデータ、プロンプトの枠など)。目録の ai は上の文で出す
@@ -1065,9 +1144,15 @@ export class BuildRequests {
       .filter((change) => isSimulationFile(change.file) || referenced.includes(change.file))
       .map((change) => change.file);
     if (!buildOk) {
-      if (touched) this.addItem(id, run, 'ai-settings', `app/${AI_FILE} が変わりましたが、ビルドに失敗したので、プロダクト内 AI は前の設定のままです。`);
+      if (touched) {
+        this.addItem(id, run, 'ai-settings', 'AI の設定が変わりましたが、試作品を表示できないので、試作品の中の AI は前の設定のままです。', {
+          detail: `app/${AI_FILE} が変わったが、ビルドに失敗したので、プロダクト内 AI は前の設定のまま。`,
+        });
+      }
       if (touchedSimulation.length > 0) {
-        this.addItem(id, run, 'ai-settings', `${touchedSimulation.slice(0, 5).join('、')} が変わりましたが、ビルドに失敗したので、構成は前のままです。`);
+        this.addItem(id, run, 'ai-settings', '試作品の中の AI の組み立てが変わりましたが、試作品を表示できないので、前のままです。', {
+          detail: `${touchedSimulation.slice(0, 5).join('、')} が変わったが、ビルドに失敗したので、構成は前のまま。`,
+        });
       }
       return;
     }
@@ -1076,7 +1161,7 @@ export class BuildRequests {
     const simulation = describeSimulationChanges(before.simulation, this.store.simulation(id));
     const weakened = [...weakenedAiRules(before.ai, aiAfter), ...simulation.weakened];
     if (lines.length === 0 && simulation.lines.length === 0 && weakened.length === 0) {
-      if (touched) this.addItem(id, run, 'ai-settings', `app/${AI_FILE} は変わりましたが、プロダクト内 AI の振る舞いに関わるところは変わっていません。`);
+      if (touched) this.addItem(id, run, 'ai-settings', 'AI の設定は変わりましたが、試作品の中の AI の振る舞いに関わるところは変わっていません。');
       return;
     }
     const after = lines.length > 0 && aiAfter
@@ -1084,27 +1169,35 @@ export class BuildRequests {
       : '';
     const text = [
       ...(weakened.length > 0
-        ? ['【ガードレールが減りました】意図した変更かを確かめてください。場面やガードレールを弱めて通すための変更なら、元に戻す依頼を送ってください:', ...weakened.map((line) => `- ${line}`)]
+        ? [`【AI の守ることが減りました】${weakened.length} か所です。意図した変更かを確かめてください。確かめを通すために守ることを弱めたのなら、元に戻す依頼を送ってください。`]
         : []),
-      ...(lines.length > 0 ? [`プロダクト内 AI の設定(app/${AI_FILE})が変わりました。Studio が前の設定と比べた結果:`, ...lines.map((line) => `- ${line}`)] : []),
-      ...(simulation.lines.length > 0
-        ? ['構成、ツール、ガードレールが変わりました。Studio が前と比べた結果:', ...simulation.lines.map((line) => `- ${line}`)]
-        : []),
+      ...(lines.length > 0 ? ['AI の設定が変わりました。Studio が前の設定と比べた結果:', ...lines.map((line) => `- ${line}`)] : []),
+      ...(simulation.lines.length > 0 ? [`試作品の中の AI の組み立て、道具、守ることが ${simulation.lines.length} か所変わりました。`] : []),
       after,
     ];
-    this.addItem(id, run, 'ai-settings', text.filter(Boolean).join('\n'));
+    const detail = [
+      ...(weakened.length > 0 ? ['ガードレールが減った:', ...weakened.map((line) => `- ${line}`)] : []),
+      ...(simulation.lines.length > 0 ? ['構成、ツール、ガードレールの変化:', ...simulation.lines.map((line) => `- ${line}`)] : []),
+    ];
+    this.addItem(id, run, 'ai-settings', text.filter(Boolean).join('\n'), detail.length > 0 ? { detail: detail.join('\n') } : {});
   }
 
+  // 直す AI が失敗したときの、利用者の文(text)と、開発者向けの文(detail。接続の名前、Claude Code の返した文、終了コード)
   failureText(result, exit) {
     const label = this.agentLabel;
+    const again = 'もう一度送ってください。続くときは、依頼を小さく分けて送ってください。';
     if (result && !result.ok) {
-      if (result.subtype === 'error_max_turns') return `やりとりの回数の上限(${MAX_TURNS} 回)に達して止まりました。依頼を小さく分けて送ってください。`;
-      if (result.subtype === 'error_max_budget_usd') return `費用の上限(${this.maxBudgetUsd} ドル)に達して止まりました。`;
-      return `${label} が失敗しました: ${result.text || result.subtype || '理由はわかりません'}`;
+      if (result.subtype === 'error_max_turns') return { text: `やりとりの回数の上限(${MAX_TURNS} 回)に達して止まりました。依頼を小さく分けて送ってください。` };
+      if (result.subtype === 'error_max_budget_usd') return { text: `1 回の依頼の費用の上限(${this.maxBudgetUsd} ドル)に達して止まりました。依頼を小さく分けて送ってください。` };
+      return { text: `${FIX_AI} が途中で失敗しました。${again}`, detail: `${label} が失敗しました: ${result.text || result.subtype || '理由はわかりません'}` };
     }
     const how = exit.signal ? `シグナル ${exit.signal}` : `終了コード ${exit.code}`;
-    const detail = exit.stderrTail ? `\n${exit.stderrTail.slice(-1000)}` : '';
-    return `${label} が途中で終わりました(${how})。${detail}`;
+    const tail = exit.stderrTail ? `\n${exit.stderrTail.slice(-1000)}` : '';
+    return { text: `${FIX_AI} が途中で終わりました。${again}`, detail: `${label} が途中で終わりました(${how})。${tail}` };
+  }
+
+  spawnFailureText() {
+    return `${FIX_AI} を始められませんでした。この PC で Claude Code が動くか確かめてから、Studio を起動し直してください。`;
   }
 
   // 作る AI が終わった後(関門を回している間)も、直すラウンドがまだ残っていれば中断を受ける。
@@ -1116,9 +1209,9 @@ export class BuildRequests {
     if (!active.cancelRequested) {
       active.cancelRequested = true;
       if (active.exited) {
-        this.addItem(id, active.run, 'info', '中断しています…(今の確かめが終わったら止め、直すラウンドは行いません)');
+        this.addItem(id, active.run, 'info', '止めています…(今の確かめが終わったら止め、もう一度直すことはしません)');
       } else {
-        this.addItem(id, active.run, 'info', '中断しています…');
+        this.addItem(id, active.run, 'info', '止めています…');
         active.handle?.stop('cancel');
       }
     }

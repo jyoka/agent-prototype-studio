@@ -145,27 +145,28 @@ export class AiError extends Error {
   }
 }
 
-// 失敗ごとの、次にすること。画面の言葉で書く。type は発言(reply)か修正(correction)か
+// 失敗ごとの、次にすること。画面の言葉で書く(ux-redesign.md 4 節。モック → お試しの AI、app/ai.json → AI の設定、
+// 応答を止める → 止める。STUDIO_ の名前は書かない)。type は発言(reply)か修正(correction)か
 const NEXT_ACTIONS = {
   cancelled: 'Studio の画面で止めました。試作品の欄に書いた文は残っているので、もう一度送れます。',
-  reset: '応答を待つ間に会話を最初に戻したので、届いた応答は捨てました。もう一度送ってください。',
-  limit: '時間をおいてから送り直すか、「試す」の上の「AI」でモックに戻してください。会話はそのままです。',
-  budget: '「会話を最初から」で会話を短くしてから送るか、「試す」の上の「AI」でモックに戻してください。',
-  timeout: 'もう一度送ってください。続くときは、「試す」の上の「AI」でモックに戻してください。',
+  reset: '返事を待つ間に会話を最初に戻したので、届いた返事は捨てました。もう一度送ってください。',
+  limit: '時間をおいてから送り直すか、「試す」の上の「AI」でお試しの AI に戻してください。会話はそのままです。',
+  budget: '「会話を最初から」で会話を短くしてから送るか、「試す」の上の「AI」でお試しの AI に戻してください。',
+  timeout: 'もう一度送ってください。続くときは、「試す」の上の「AI」でお試しの AI に戻してください。',
   auth: 'ターミナルで claude を起動し、ログインしてから、もう一度送ってください。Studio はログインの情報を扱いません。',
-  'not-found': 'Claude Code を入れてください。別の場所にあるときは、STUDIO_CLAUDE_BIN にその場所を書いて Studio を起動し直してください。',
-  'paid-limit': '「会話を最初から」でやり直すか、「試す」の上の「AI」でモックに戻してください。',
-  'turn-limit': 'もう一度送ってください。続くときは、「試す」の上の「AI」でモックに戻して試し、この記録を開発の担当者に見せてください。',
-  'project-limit': '時間をおいてから送るか、「試す」の上の「AI」でモックに戻してください。会話はそのままです。',
+  'not-found': 'Claude Code を入れてから、Studio を起動し直してください。',
+  'paid-limit': '「会話を最初から」でやり直すか、「試す」の上の「AI」でお試しの AI に戻してください。',
+  'turn-limit': 'もう一度送ってください。続くときは、「試す」の上の「AI」でお試しの AI に戻して試し、この記録を開発の担当者に見せてください。',
+  'project-limit': '時間をおいてから送るか、「試す」の上の「AI」でお試しの AI に戻してください。会話はそのままです。',
   'too-long': '「会話を最初から」を押して、やり直してください。',
-  'no-mock': '模擬のエージェントのモックの決まり(app/mocks/ と構成の mock)を足すよう、「言葉で直す」欄で頼んでください。',
-  'not-supported': '構成(app/composition.json)のある試作品では、状態は試作品の会話の中で直してください。',
-  busy: '前の応答が届くまで待ってください。急ぐときは、「試す」の上の「応答を止める」を押してください。',
+  'no-mock': '相手役の AI の決まった返事を足すよう、「言葉で直す」欄で頼んでください。',
+  'not-supported': 'この試作品では、条件は試作品の会話の中で直してください。',
+  busy: '前の返事が届くまで待ってください。急ぐときは、「試す」の上の「止める」を押してください。',
   'reply:invalid': `空でない、${SESSION_LIMITS.maxTextLength} 文字までの文を送ってください。`,
   'correction:invalid':
-    '選べる値に直してください。試作品の画面が選べない値を送っているときは、「言葉で直す」欄で直す依頼をするか、app/ai.json の選択肢を確かめてください。',
+    '選べる値に直してください。試作品の画面が選べない値を送っているときは、「言葉で直す」欄で直す依頼をしてください。',
 };
-const GENERIC_NEXT = 'もう一度送ってください。続くときは、「試す」の上の「AI」でモックに戻して試し、この記録を開発の担当者に見せてください。';
+const GENERIC_NEXT = 'もう一度送ってください。続くときは、「試す」の上の「AI」でお試しの AI に戻して試し、この記録を開発の担当者に見せてください。';
 
 export function nextAction(code, type = 'reply') {
   return NEXT_ACTIONS[`${type}:${code}`] ?? NEXT_ACTIONS[code] ?? GENERIC_NEXT;
@@ -488,7 +489,7 @@ export class AiSessions {
   definition(projectId) {
     const definition = this.definitionOf(projectId);
     if (!definition && !this.simulationFor(projectId)) {
-      throw new AiError(404, 'no-ai', 'この試作品はプロダクト内 AI を使っていません(app/ai.json がありません)');
+      throw new AiError(404, 'no-ai', 'この試作品には、話せる AI がありません');
     }
     return definition;
   }
@@ -787,7 +788,7 @@ export class AiSessions {
       throw new AiError(
         429,
         'paid-limit',
-        `${connection.label} への発言は、1 つの会話で ${SESSION_LIMITS.maxPaidReplies} 回までです。試し直す発言が ${users} 件あるので、接続をモックに戻してください`,
+        `本物の AI への発言は、1 つの会話で ${SESSION_LIMITS.maxPaidReplies} 回までです。試し直す発言が ${users} 件あるので、試す欄の上の「AI」でお試しの AI に戻してください`,
       );
     }
     const slot = slotOf(projectId, USER_CONVERSATION);
@@ -897,7 +898,7 @@ export class AiSessions {
         throw new AiError(
           429,
           'paid-limit',
-          `${connection.label} への発言は、1 つの会話で ${SESSION_LIMITS.maxPaidReplies} 回までです。Studio の「会話を最初から」でやり直すか、接続をモックに戻してください`,
+          `本物の AI への発言は、1 つの会話で ${SESSION_LIMITS.maxPaidReplies} 回までです。「会話を最初から」でやり直すか、試す欄の上の「AI」でお試しの AI に戻してください`,
         );
       }
     }
@@ -1009,7 +1010,7 @@ export class AiSessions {
         throw new AiError(
           429,
           'paid-limit',
-          `${connection.label} への発言は、1 つの会話で ${SESSION_LIMITS.maxPaidReplies} 回までです。Studio の「会話を最初から」でやり直すか、接続をモックに戻してください`,
+          `本物の AI への発言は、1 つの会話で ${SESSION_LIMITS.maxPaidReplies} 回までです。「会話を最初から」でやり直すか、試す欄の上の「AI」でお試しの AI に戻してください`,
         );
       }
     }
@@ -1120,7 +1121,7 @@ export class AiSessions {
 
   applyCorrection(projectId, changes, { replaying, conversation }) {
     if (this.simulationFor(projectId)) {
-      throw new AiError(409, 'not-supported', 'この試作品は構成(app/composition.json)で会話を回すので、状態を直す口(correct)は使えません');
+      throw new AiError(409, 'not-supported', 'この試作品では、ここで条件を直せません。会話の中で直してください');
     }
     if (!isPlainObject(changes) || Object.keys(changes).length === 0) {
       throw new AiError(400, 'invalid', '直す項目を { 項目の key: 値 } の形で渡してください');

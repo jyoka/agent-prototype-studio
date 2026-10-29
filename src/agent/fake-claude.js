@@ -162,7 +162,7 @@ async function changeHeading(request) {
   const target = await findHeadingFile();
   const match = target && /(<h1(?:\s[^>]*)?>)([^<{]*)(<\/h1>)/.exec(target.text);
   if (!match) {
-    await say('app/ の中に見出し(<h1>)が見つかりませんでした。');
+    await say('試作品のファイルの中に見出し(<h1>)が見つかりませんでした。');
     return finish({ text: '見出しが見つかりませんでした' });
   }
   const safe = wanted.replace(/[<>{}&]/g, '');
@@ -281,7 +281,7 @@ async function writeOutside() {
     { file_path: target, content: '架空のメモ' },
     { result: `偽接続: 作業ディレクトリの外(${target})への書き込みは許可されていません。`, isError: true },
   );
-  const text = 'app/ の外には書けませんでした。権限の設定で断られました。';
+  const text = '試作品のフォルダーの外には書けませんでした。権限の設定で断られました。';
   await say(text);
   return finish({ text, denials: [{ tool_name: 'Write', tool_use_id: id, tool_input: { file_path: target } }] });
 }
@@ -298,7 +298,7 @@ async function breakApp() {
   }
   const firstLine = target.text.split('\n')[0] + '\n';
   await editFile(target, firstLine, firstLine + BROKEN_LINE);
-  const text = `${path.relative(process.cwd(), target.file)} に、ビルドに失敗する行を入れました。`;
+  const text = `${path.relative(process.cwd(), target.file)} に、試作品を表示できなくなる行を入れました。`;
   await say(text);
   return finish({ text });
 }
@@ -324,7 +324,7 @@ async function addScenarioAndScramble() {
   const match = target && HEADING_PATTERN.exec(target.text);
   const heading = match?.[2].trim();
   if (!heading) {
-    await say('app/ の中に、文字のある見出し(<h1>)が見つかりませんでした。');
+    await say('試作品のファイルの中に、文字のある見出し(<h1>)が見つかりませんでした。');
     return finish({ text: '変えていません' });
   }
   if (heading.includes(SCRAMBLE)) {
@@ -334,7 +334,7 @@ async function addScenarioAndScramble() {
   const file = await scenarioFolder();
   await writeScenario(file, { name: '見出しが出る', viewport: 'desktop', steps: [{ expect: 'visible', target: { role: 'heading', name: heading } }] });
   await editFile(target, match[0], `${match[1]}${[...heading].join(SCRAMBLE)}${match[3]}`);
-  const text = `見出しを確かめるシナリオ(${path.relative(process.cwd(), file)})を足し、見出しの文字を崩しました。`;
+  const text = `見出しを確かめる手順(${path.relative(process.cwd(), file)})を足し、見出しの文字を崩しました。`;
   await say(text);
   return finish({ text });
 }
@@ -346,7 +346,7 @@ async function fixScrambled(target, fix) {
   if (/弱めて/.test(fix.request)) {
     const file = await scenarioFolder();
     await writeScenario(file, { name: '見出しが出る', viewport: 'desktop', steps: [{ expect: 'visible' }] });
-    const text = `シナリオ(${path.relative(process.cwd(), file)})の確かめを弱めました。見出しは崩れたままです。`;
+    const text = `決めた手順(${path.relative(process.cwd(), file)})の確かめを弱めました。見出しは崩れたままです。`;
     await say(text);
     return finish({ text });
   }
@@ -368,6 +368,17 @@ async function repairApp() {
   return finish({ text });
 }
 
+// 直す依頼の関門の名前(G4 ビルドなど)を、返事では利用者の言葉で言う(ux-redesign.md 4 節。画面の結果の帯と同じ名前)
+const FIX_GATE_WORDS = {
+  'G1 変更の確認': '変わったところ',
+  'G2 検査': 'ファイルの名前と大きさ',
+  'G3 契約': 'AI の設定と確かめ方の形',
+  'G4 ビルド': '表示の準備',
+  'GE 場面': 'AI の場面で動くか',
+  'G5 起動の確認': '開いて表示できるか',
+  'G6 シナリオ': '決めた手順で動くか',
+};
+
 // Studio の直す依頼(src/server/fix-prompt.js の型)を受けたとき。題材の言葉は持たない。
 // 見出しが崩れていれば(「シナリオを足して、見出しを崩して」の後)、fixScrambled で直す。
 // それ以外は、元の依頼の言葉で振る舞いを決める:
@@ -376,7 +387,7 @@ async function repairApp() {
 //   「2 回目で直」: 1 回目の直す依頼では直せず、2 回目で直す
 // 直すところが見つからなければ、何も変えない
 async function fixRequested(fix) {
-  await say(`Studio の直す依頼を読みました(失敗した関門: ${fix.gate})。`);
+  await say(`Studio の直す依頼を読みました(問題のあったところ: ${FIX_GATE_WORDS[fix.gate] ?? fix.gate})。`);
   const target = await findHeadingFile();
   if (target && HEADING_PATTERN.exec(target.text)?.[2].includes(SCRAMBLE)) return fixScrambled(target, fix);
   if (!target?.text.includes(BROKEN_LINE)) {
@@ -402,15 +413,15 @@ async function readAiFile() {
   // シンボリックリンクの先(app/ の外かもしれない)には書かない
   const stat = await fs.lstat(file).catch(() => null);
   const text = stat?.isFile() ? await fs.readFile(file, 'utf8').catch(() => null) : null;
-  if (stat && !stat.isFile()) return { problem: 'app/ai.json がふつうのファイルではないので、変えずにおきます。' };
-  if (text === null) return { problem: 'この試作品には app/ai.json がないので、プロダクト内 AI の振る舞いは変えられません。AI を使う試作品(例: サンプル: 架空の求人相談、サンプル: 架空の学習相談)を選んでください。' };
+  if (stat && !stat.isFile()) return { problem: 'AI の設定のファイルが、ふつうのファイルではないので、変えずにおきます。' };
+  if (text === null) return { problem: 'この試作品には AI の設定がないので、試作品の中の AI の振る舞いは変えられません。AI と話せる試作品(例: 求人相談、学習相談)を選んでください。' };
   try {
     const json = JSON.parse(text);
     if (json && typeof json === 'object' && Array.isArray(json.fields)) return { file, text, json };
   } catch {
     // 下で同じく扱う
   }
-  return { problem: 'app/ai.json が読めない形なので、変えずにおきます。詳細の欄のビルドの結果を見てください。' };
+  return { problem: 'AI の設定が読めない形なので、変えずにおきます。' };
 }
 
 async function writeAiFile(target, json) {
@@ -443,7 +454,7 @@ async function askFirst(request) {
   }
   const at = target.json.fields.findIndex((field) => field?.label === wanted || field?.key === wanted);
   if (at === -1) {
-    await say(`「${wanted}」という項目は app/ai.json にありません。項目: ${labels.join('、')}`);
+    await say(`「${wanted}」という項目は AI の設定にありません。項目: ${labels.join('、')}`);
     return finish({ text: '変えていません' });
   }
   const field = target.json.fields[at];
@@ -455,7 +466,7 @@ async function askFirst(request) {
   target.json.fields.unshift(field);
   addInstruction(target.json, `足りない項目は、「${field.label}」から先に聞いてください。`);
   await writeAiFile(target, target.json);
-  const text = `プロダクト内 AI が「${field.label}」を先に聞くように、app/ai.json の項目の並びと指示を変えました。`;
+  const text = `試作品の中の AI が「${field.label}」を先に聞くように、AI の設定の項目の並びと指示を変えました。`;
   await say(text);
   return finish({ text });
 }
@@ -484,7 +495,7 @@ async function clarifyWithExamples() {
   json.mock = { ...mock, notUnderstood: reply };
   addInstruction(json, '読み取れなかったときは、選べる値の例を挙げて聞き返してください。');
   await writeAiFile(target, json);
-  const text = 'プロダクト内 AI が読み取れなかったときに例を出して聞き返すように、app/ai.json のモックの返事と指示を変えました。';
+  const text = '試作品の中の AI が読み取れなかったときに例を出して聞き返すように、AI の設定の返事と指示を変えました。';
   await say(text);
   return finish({ text });
 }
@@ -558,7 +569,8 @@ async function main() {
   if (/直/.test(request)) return repairApp();
   if (/見出し/.test(request)) return changeHeading(request);
 
-  const text = '偽接続なので、決まった依頼だけを扱えます。例: 見出しを「ひだまり図書室」にして、見出しを「ひだまり図書室」にして画面で確かめて、シナリオを足して見出しを崩して、「項目の名前」を先に聞くようにして、読み取れなかったときは例を出して聞き返すようにして、app/ の外にメモを書いて、壊して、直して、失敗して、ゆっくり進めて。「壊して」には「2 回目で直して」「直せないふりをして」を添えられます';
+  // 画面の言葉(ux-redesign.md 4 節)で返す。扱える依頼の一覧は、開発者向けの詳細の「試験用の依頼」にある
+  const text = '開発用の偽の直す AI なので、決まった依頼だけを扱えます。扱える依頼は、その他 → 開発者向けの詳細の「試験用の依頼」にあります。';
   await say(text);
   return finish({ text });
 }
