@@ -3,14 +3,15 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 // 動く画像の撮り方。Chromium の画面の配信(CDP の Page.startScreencast)で、画面が変わるたびに PNG を 1 枚ずつ受け取り、
-// 受け取った時刻から各コマの長さを決める。ffmpeg で GIF と WebM(VP9)にする。音は入れない。
+// 受け取った時刻から各コマの長さを決める。ffmpeg で GIF、AVIF(AV1)、WebM(VP9)にする。音は入れない。
+// README は AVIF を出し、AVIF を出せないブラウザには GIF を出す。WebM は LP の video 用
 // ffmpeg は npm の依存ではない。PATH にあるものを使う(STUDIO_MEDIA_FFMPEG で場所を指せる)
 
 const FFMPEG_TIMEOUT_MS = 180_000;
 
 export const ffmpegPath = () => process.env.STUDIO_MEDIA_FFMPEG || 'ffmpeg';
 
-// ffmpeg があり、GIF と VP9 を書けるかを確かめる。なければ理由の文を返す
+// ffmpeg があり、GIF、AV1(AVIF)、VP9 を書けるかを確かめる。なければ理由の文を返す
 export function checkFfmpeg() {
   const bin = ffmpegPath();
   const version = spawnSync(bin, ['-hide_banner', '-version'], { encoding: 'utf8', timeout: 10_000 });
@@ -18,7 +19,11 @@ export function checkFfmpeg() {
     return `ffmpeg が見つかりません(${bin})。動く画像を書くのに使います。入れてから(macOS は brew install ffmpeg)、もう一度 npm run media を動かしてください`;
   }
   const encoders = spawnSync(bin, ['-hide_banner', '-encoders'], { encoding: 'utf8', timeout: 10_000 }).stdout ?? '';
-  const missing = ['gif', 'libvpx-vp9'].filter((name) => !new RegExp(`\\s${name}\\s`).test(encoders));
+  const muxers = spawnSync(bin, ['-hide_banner', '-muxers'], { encoding: 'utf8', timeout: 10_000 }).stdout ?? '';
+  const missing = [
+    ...['gif', 'libsvtav1', 'libvpx-vp9'].filter((name) => !new RegExp(`\\s${name}\\s`).test(encoders)),
+    ...(/\savif\s/.test(muxers) ? [] : ['avif']),
+  ];
   if (missing.length > 0) return `ffmpeg(${bin})が ${missing.join('、')} を書けません。書ける ffmpeg を入れてください`;
   return null;
 }
@@ -86,14 +91,21 @@ async function writeConcatList(frames, file) {
 // 日時と道具の版を、ファイルに入れない
 const NO_METADATA = ['-map_metadata', '-1', '-fflags', '+bitexact', '-flags:v', '+bitexact'];
 
-// GIF と WebM を書く。gif: { fps, width }、webm: { fps, crf }
-export async function encodeClip(frames, dir, { gif, webm }) {
+// GIF、AVIF、WebM を書く。gif: { fps, width }、avif: { fps, crf }、webm: { fps, crf }
+export async function encodeClip(frames, dir, { gif, avif, webm }) {
   const list = path.join(dir, 'frames.ffconcat');
   await writeConcatList(frames, list);
   const total = frames.reduce((sum, frame) => sum + frame.seconds, 0);
   const input = ['-f', 'concat', '-safe', '0', '-i', list, '-t', total.toFixed(3)];
   const palette = 'palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle';
   ffmpeg([...input, '-vf', `fps=${gif.fps},scale=${gif.width}:-1:flags=lanczos,split[a][b];[a]${palette}`, '-loop', '0', ...NO_METADATA, gif.out]);
+  ffmpeg([
+    ...input,
+    '-vf', `fps=${avif.fps},format=yuv420p`,
+    '-c:v', 'libsvtav1', '-crf', String(avif.crf), '-preset', '6', '-an',
+    ...NO_METADATA,
+    '-f', 'avif', avif.out,
+  ]);
   ffmpeg([
     ...input,
     '-vf', `fps=${webm.fps},format=yuv420p`,
