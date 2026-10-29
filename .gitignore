@@ -3,3 +3,5 @@ test-results/
 playwright-report/
 # 見本のフォルダーを npm run observe で観察したときの report
 samples/*/.studio/
+# LP を公開するときに作るフォルダー(site/README.md)
+_site/

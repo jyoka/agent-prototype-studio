@@ -4,6 +4,7 @@ Prototype Studio を外に伝えるときの土台です。README の絵、LP �
 
 - 状態: 1 文、機能の文、分解の絵の台本、見た目、バナーは決めた(2026-10-29)。名前は運営者が決める(2 節)。決まるまでは今の名前 `agent-prototype-studio` を使う
 - 置き場所: この文書と [`assets/brand/`](../assets/brand/)(`tokens.css`、`banner-dark.svg`、`banner-light.svg`)
+- LP: [`site/`](../site/README.md) に作った。公開はしない。手元で `npm run site` で開く
 - お手本は tuios の作りと書き方。文、絵、ロゴは写さない
 - 例のデータは、どれも架空
 
@@ -41,10 +42,10 @@ Studio が何で、何が違うかを 1 文で言い切る。
 |---|---|
 | README の冒頭の太字 | 日本語 |
 | `package.json` の `description`、GitHub のリポジトリの説明 | 英語 |
-| LP の見出し、フッター | 日本語(英語の LP は英語) |
+| LP の見出し、フッター、`site/llms.txt` | 日本語(英語の LP は英語) |
 | バナー(6 節) | 両方 |
 
-`test/unit/brand.test.js` が、README の太字、`package.json` の `description`、バナー、この文書の文が同じかを確かめる。
+`test/unit/brand.test.js` が、README の太字、`package.json` の `description`、バナー、LP、この文書の文が同じかを確かめる。
 
 ### 英語の言葉
 
@@ -102,10 +103,11 @@ Studio が何で、何が違うかを 1 文で言い切る。
 
 ## 4. 分解の絵の台本
 
-1 回のトークを、層に分けて見せる絵。LP の真ん中に置く。
+1 回のトークを、層に分けて見せる絵。LP の真ん中に置く(`site/index.html` の「分解」。動かし方は [site/README.md](../site/README.md))。
 
 - 見出し: 「1 回のトークを、層ごとに見る。」/「One turn of a talk, layer by layer.」
 - 絵の中身は、Studio が自分で撮った本物の画面にする(試す画面と、実行の記録)。下の例は、見本の「バイト探し(架空)」で、モックのまま出せる
+- 層ごとの画面は `npm run media` が撮り、[`assets/media/layers/`](../assets/media/layers/) に置く(`1-talk` から `6-record` まで、下の表の順。ダークとライト)。撮り方は [CONTRIBUTING.md の「画像と動く画像を撮り直す」](../CONTRIBUTING.md#画像と動く画像を撮り直す)
 
 ### 例の会話(架空)
 
@@ -141,7 +143,7 @@ Studio が何で、何が違うかを 1 文で言い切る。
 決まりは [`assets/brand/tokens.css`](../assets/brand/tokens.css) の CSS の変数に書いた。
 
 - 色: ライトの値は、今の画面の `src/ui/studio.css` の `:root` と同じ。同じ名前の変数は同じ値にする(`test/unit/brand.test.js` が確かめる)。画面で値のまま書いている色(`#eef3fd` など)には名前を付けた
-- ダーク: 今の画面にはまだない。`tokens.css` で値を決めた。どの意味の色も、地との差(コントラスト比)が 4.5 以上
+- ダーク: `tokens.css` で値を決め、画面(`src/ui/studio.css`)も同じ値で切り替わる(`test/unit/brand.test.js` が確かめる)。どの意味の色も、地との差(コントラスト比)が 4.5 以上。試作品(iframe の中)の色は、試作品が決める
 - 切り替え: OS の設定(`prefers-color-scheme`)に従う。`<html data-theme="dark">` か `data-theme="light"` を書くと、OS の設定より優先する
 - 字: OS に入っている字だけを使う(`--font-sans`、`--font-mono`)。リポジトリに入れられる字は入れない。Web フォントは読み込まない
 - 角丸: 4、6、8、12 px と丸(999 px)。画面と見本の会話の枠で使っている値
@@ -155,6 +157,7 @@ Studio が何で、何が違うかを 1 文で言い切る。
 | `--text` | `#1f1f1d` | `#ecece8` | 字 |
 | `--muted` | `#6b6b66` | `#a3a39c` | 添える字 |
 | `--accent` | `#2459c4` | `#7ea6ff` | 押せる所、トークの層 |
+| `--on-accent` | `#ffffff` | `#161614` | 押せる所の色の上の字(「送る」など) |
 | `--ok` | `#1d7a43` | `#4cc184` | 通った、ツールの層 |
 | `--error` | `#b42318` | `#f97066` | 止めた、失敗、ガードレールの層 |
 | `--warn` | `#c77700` | `#f0a53a` | 気をつける所の線、プロンプトの層 |
@@ -165,10 +168,10 @@ Studio が何で、何が違うかを 1 文で言い切る。
 - ファイル: [`assets/brand/banner-dark.svg`](../assets/brand/banner-dark.svg)、[`assets/brand/banner-light.svg`](../assets/brand/banner-light.svg)。1280 × 640(GitHub の共有の絵の大きさ)
 - 中身: 名前 `agent-prototype-studio`、1 文(日本語と英語)、分解の絵の 6 層(ガードレールに「止めた」の印)
 - 動きはない。外から読み込むものはない
-- 字は、見る人の OS の字で描かれる。字の形を固定したいとき(GitHub の共有の絵に上げるときなど)は、PNG に書き出す。書き出しは README の絵のカードで行う
+- 字は、見る人の OS の字で描かれる。字の形を固定したいとき(GitHub の共有の絵に上げるときなど)は、PNG に書き出す。書き出しはまだしていない
 - 名前が決まったら、2 つのファイルの名前の文字を差し替える
 
-README で出すときは、ダークとライトを `<picture>` で出し分ける(README の絵のカードで行う)。
+README の一番上で、ダークとライトを `<picture>` で出し分けている(下の形。alt は README を見る)。
 
 ```html
 <picture>
