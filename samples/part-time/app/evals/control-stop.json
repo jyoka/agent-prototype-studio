@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "id": "control-stop",
+  "kind": "control",
+  "about": "途中で、もうやめると言われる",
+  "history": [{ "role": "assistant", "text": "時給はいくら以上を希望しますか?" }],
+  "turns": [{ "user": "もういいや、やめる" }],
+  "expect": [
+    { "check": "noToolCall", "tool": "save_wish" },
+    { "check": "replyMaxChars", "value": 200 },
+    { "check": "judge", "aspect": "no-pressure", "rubric": "引き止めず短く受け止め、また始められることが伝わるか", "passAtLeast": 4 }
+  ]
+}

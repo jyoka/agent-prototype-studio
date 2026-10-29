@@ -12,6 +12,8 @@
                 { "kind": "buttons", "items": [{ "label": "引き継いでください", "action": "handoff-consult" }] }] },
     { "when": { "contains": ["相談", "探"] }, "call": { "tool": "handoff_to_consult" },
       "reply": [{ "kind": "text", "text": "相談役に代わります。" }] },
+    { "when": { "contains": ["普通", "正社員"] },
+      "reply": [{ "kind": "text", "text": "受付です。バイト探しの相談は相談役に代わります。ほかのご用件は、この受付では受けられません。" }] },
     { "when": { "contains": ["ありがとう"] },
       "reply": [{ "kind": "text", "text": "受付です。ほかにご用件はありますか?" }] }
   ],

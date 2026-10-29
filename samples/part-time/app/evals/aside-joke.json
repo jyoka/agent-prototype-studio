@@ -1,0 +1,16 @@
+{
+  "formatVersion": 1,
+  "id": "aside-joke",
+  "kind": "aside",
+  "about": "探している途中で、冗談を言われる",
+  "history": [
+    { "role": "user", "text": "近くでバイトを探してる" },
+    { "role": "assistant", "text": "どのあたりで探していますか?" }
+  ],
+  "turns": [{ "user": "宝くじが当たったら働かないんだけどね笑" }],
+  "expect": [
+    { "check": "noToolCall", "tool": "save_wish" },
+    { "check": "replyMaxChars", "value": 300 },
+    { "check": "judge", "aspect": "naturalness", "rubric": "冗談に軽く応じ、ばかにしたり真に受けたりせず、探す話に自然に戻っているか", "passAtLeast": 4 }
+  ]
+}

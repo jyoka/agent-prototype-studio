@@ -1,0 +1,146 @@
+[
+  {
+    "kind": "sim-turn",
+    "composition": {
+      "name": "相手の会社のエージェントと、こちらのツール(架空)",
+      "file": "composition.json",
+      "digest": "sha256:857692cec85f810fde42581d05bcb26ea02636974cec450424b4472a505d278b"
+    },
+    "assumptions": {
+      "id": "partner-a",
+      "file": "assumptions/partner-a.json",
+      "digest": "sha256:9b88b5fd3080a273f13a43c0b808e517cc4c45ab5030e6207413d6f3a814f8f9",
+      "standIn": true
+    },
+    "turn": 1,
+    "input": {
+      "text": "前の店長にどなられてばかりで、今もつらい",
+      "action": null,
+      "history": 0
+    },
+    "nodes": [
+      "accept",
+      "prompt:partner",
+      "agent:partner",
+      "surface:partner",
+      "output:partner",
+      "handoff",
+      "reply"
+    ],
+    "steps": [
+      {
+        "participant": "partner",
+        "kind": "agent",
+        "connection": "claude-code",
+        "real": true,
+        "ms": 4406,
+        "costUsd": 0.0054878,
+        "prompt": {
+          "pieces": [
+            {
+              "from": "assumptions",
+              "key": "hostPrompt",
+              "owner": "partner",
+              "chars": 60
+            },
+            {
+              "slot": "dip-guide",
+              "owner": "dip",
+              "chars": 212
+            }
+          ],
+          "asked": []
+        },
+        "command": [
+          "claude",
+          "-p",
+          "--restricted",
+          "--setting-sources",
+          "",
+          "--disable-slash-commands",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "<プロジェクト>/.studio/sim/eval-e2c9782b/mcp.json",
+          "--allowedTools",
+          "mcp__proto__search_jobs,mcp__proto__get_job,mcp__proto__suggest_questions,mcp__proto__record_consent,mcp__proto__save_wish",
+          "--permission-mode",
+          "dontAsk",
+          "--permission-prompts",
+          "none",
+          "--no-session-persistence",
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--json-schema=…(1775 文字)",
+          "--system-prompt=…(573 文字)",
+          "--max-turns",
+          "5",
+          "--max-budget-usd",
+          "0.2",
+          "--model=claude-sonnet-5-5"
+        ]
+      },
+      {
+        "participant": "partner",
+        "attempt": 1,
+        "output": {
+          "parts": [
+            {
+              "kind": "text"
+            },
+            {
+              "kind": "text"
+            },
+            {
+              "kind": "buttons",
+              "items": 3
+            }
+          ]
+        },
+        "guards": [
+          {
+            "layer": "output",
+            "guard": "facts-from-tools",
+            "effect": "passed",
+            "owner": "partner"
+          }
+        ]
+      }
+    ],
+    "handoff": null,
+    "active": {
+      "before": "partner",
+      "after": "partner"
+    },
+    "views": {
+      "partnerSees": [
+        "messages",
+        "toolCalls"
+      ],
+      "dipSees": [
+        "toolCalls"
+      ]
+    },
+    "output": {
+      "parts": [
+        {
+          "from": "partner",
+          "parts": [
+            {
+              "kind": "text"
+            },
+            {
+              "kind": "text"
+            },
+            {
+              "kind": "buttons",
+              "items": 3
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

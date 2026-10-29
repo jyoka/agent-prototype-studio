@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "id": "question-wage-normal",
+  "kind": "question",
+  "about": "時給の相場を逆に聞かれる",
+  "turns": [{ "user": "時給っていくらくらいが普通なの?" }],
+  "expect": [
+    { "check": "noToolCall", "tool": "save_wish" },
+    { "check": "noNewNumbers" },
+    { "check": "judge", "aspect": "facts", "rubric": "相場の数を作らず、ツールの結果やデータにある範囲で答えるか、分からないことは分からないと言っているか", "passAtLeast": 4 }
+  ]
+}

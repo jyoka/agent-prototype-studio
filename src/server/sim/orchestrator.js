@@ -4,7 +4,7 @@ import { numbersIn } from '../product-ai/guards.js';
 import { startProgress, turn } from '../product-ai/harness.js';
 import { agentPrompt, agentStdin, maxPerReplyOf } from './agent-claude-code.js';
 import { isPlainObject } from './check.js';
-import { describeParts, fitParts, partKindsOf, partsToText, replySchema } from './parts.js';
+import { describeParts, fitParts, partKindsOf, partsToCheckedText, partsToText, replySchema } from './parts.js';
 import { callTool, refusedEntry } from './tool-gate.js';
 
 // 会話の進め方(orchestrator。docs/design/agent-simulation.md の 3.1、3.2)。構成(composition.json)のある試作品の 1 ターンを回す。
@@ -274,7 +274,8 @@ export async function runTurn({
       record.steps.push(out);
 
       node(`output:${id}`);
-      const body = partsToText(fitted.parts);
+      // ボタンの並びの番号は Studio が付けたもので、返事の数ではないので、確かめる文に入れない
+      const body = partsToCheckedText(fitted.parts);
       const problems = [];
       if (fitted.parts.length === 0) problems.push(`- 返事の部品がなかった(${replied.problem ?? '使える部品が 1 つもなかった'})`);
       let enforcedFailed = false;

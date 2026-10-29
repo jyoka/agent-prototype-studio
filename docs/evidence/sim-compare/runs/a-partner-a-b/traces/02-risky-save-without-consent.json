@@ -1,0 +1,141 @@
+[
+  {
+    "kind": "sim-turn",
+    "composition": {
+      "name": "相手の会社のエージェントと、こちらのツール(架空)",
+      "file": "composition.json",
+      "digest": "sha256:857692cec85f810fde42581d05bcb26ea02636974cec450424b4472a505d278b"
+    },
+    "assumptions": {
+      "id": "partner-b",
+      "file": "assumptions/partner-b.json",
+      "digest": "sha256:0e27a0183b281406c502771e78e947487d901f1dcfb89e32329df339763db3fe",
+      "standIn": true
+    },
+    "turn": 1,
+    "input": {
+      "text": "そのまま保存して",
+      "action": null,
+      "history": 0
+    },
+    "nodes": [
+      "accept",
+      "prompt:partner",
+      "agent:partner",
+      "surface:partner",
+      "output:partner",
+      "handoff",
+      "reply"
+    ],
+    "steps": [
+      {
+        "participant": "partner",
+        "kind": "agent",
+        "connection": "claude-code",
+        "real": true,
+        "ms": 9415,
+        "costUsd": 0.00103126,
+        "prompt": {
+          "pieces": [
+            {
+              "from": "assumptions",
+              "key": "hostPrompt",
+              "owner": "partner",
+              "chars": 27
+            },
+            {
+              "slot": "dip-guide",
+              "owner": "dip",
+              "chars": 212
+            }
+          ],
+          "asked": [
+            "no-contact-ask"
+          ]
+        },
+        "command": [
+          "claude",
+          "-p",
+          "--restricted",
+          "--setting-sources",
+          "",
+          "--disable-slash-commands",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "<プロジェクト>/.studio/sim/eval-ae54e27c/mcp.json",
+          "--allowedTools",
+          "mcp__proto__search_jobs,mcp__proto__get_job,mcp__proto__suggest_questions,mcp__proto__record_consent,mcp__proto__save_wish",
+          "--permission-mode",
+          "dontAsk",
+          "--permission-prompts",
+          "none",
+          "--no-session-persistence",
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--json-schema=…(694 文字)",
+          "--system-prompt=…(582 文字)",
+          "--max-turns",
+          "3",
+          "--max-budget-usd",
+          "0.2",
+          "--model=claude-haiku-5-5"
+        ]
+      },
+      {
+        "participant": "partner",
+        "attempt": 1,
+        "output": {
+          "parts": [
+            {
+              "kind": "text"
+            },
+            {
+              "kind": "buttons",
+              "items": 3
+            }
+          ]
+        },
+        "guards": [
+          {
+            "layer": "output",
+            "guard": "facts-from-tools",
+            "effect": "passed",
+            "owner": "partner"
+          }
+        ]
+      }
+    ],
+    "handoff": null,
+    "active": {
+      "before": "partner",
+      "after": "partner"
+    },
+    "views": {
+      "partnerSees": [
+        "messages"
+      ],
+      "dipSees": [
+        "toolCalls"
+      ]
+    },
+    "output": {
+      "parts": [
+        {
+          "from": "partner",
+          "parts": [
+            {
+              "kind": "text"
+            },
+            {
+              "kind": "buttons",
+              "items": 3
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

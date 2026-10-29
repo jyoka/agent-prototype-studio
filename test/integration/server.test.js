@@ -540,9 +540,11 @@ test('構成と前提の選び方: 選ぶと利用者の会話が最初からに
   const base = `/api/projects/${id}/ai`;
   const before = (await call(`${base}/connections`)).body.simulation;
   assert.deepEqual(before.selected, { composition: 'composition.json', assumptions: 'partner-a' });
-  assert.deepEqual(before.compositions.map((c) => [c.file, c.default]), [['composition.json', true], ['compositions/c.json', false], ['compositions/c2.json', false]]);
+  assert.deepEqual(before.compositions.map((c) => [c.file, c.default]), [['composition.json', true], ['compositions/b.json', false], ['compositions/c.json', false], ['compositions/c2.json', false]]);
   assert.deepEqual(before.compositions[0].assumptions.map((a) => [a.id, a.parts]), [['partner-a', ['text', 'buttons', 'card', 'carousel']], ['partner-b', ['text', 'buttons']]]);
-  assert.deepEqual(before.compositions[2].assumptions.map((a) => a.id), ['caller-haiku', 'caller-opus', 'caller-sonnet']);
+  // 構成 B(相談役の harness だけ)は前提を使わない
+  assert.deepEqual(before.compositions[1].assumptions, []);
+  assert.deepEqual(before.compositions[3].assumptions.map((a) => a.id), ['caller-haiku', 'caller-opus', 'caller-sonnet']);
   assert.deepEqual((await call(`${base}/messages`, { text: '詳しく見せて' })).body.session.messages.at(-1).parts.map((p) => p.kind), ['card']);
 
   const chosen = (await call(`${base}/simulation`, { composition: 'composition.json', assumptions: 'partner-b' })).body;

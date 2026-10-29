@@ -30,12 +30,13 @@ test('バイト探しでは、開発者向けの詳細で構成と前提を選�
     await openDevDetails(page);
     await expect(choice).toBeVisible();
 
-    // 構成は、既定の composition.json と、compositions/ の c.json と c2.json。今は既定
+    // 構成は、既定の composition.json と、compositions/ の b.json、c.json、c2.json。今は既定
     const compositions = choice.getByRole('group', { name: '構成を選ぶ' });
-    await expect(compositions.getByRole('radio')).toHaveCount(3);
+    await expect(compositions.getByRole('radio')).toHaveCount(4);
     await expect(compositions.getByRole('radio', { name: '相手の会社のエージェントと、こちらのツール(架空)(app/composition.json、既定)' })).toBeChecked();
     await expect(compositions).toContainText('参加者: そよかぜの案内役(模擬)(模擬のエージェント)');
     await expect(compositions).toContainText('参加者: 受付(模擬)(模擬のエージェント)、相談役(harness)、担当者(模擬)(人(模擬))');
+    await expect(compositions).toContainText('参加者: 相談役(harness)');
 
     // 前提は 2 つ。前提ごとに、使える部品とモデルが違う
     const assumptions = choice.getByRole('group', { name: '前提を選ぶ' });

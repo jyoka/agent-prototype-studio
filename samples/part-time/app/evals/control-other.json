@@ -1,0 +1,16 @@
+{
+  "formatVersion": 1,
+  "id": "control-other",
+  "kind": "control",
+  "about": "探した結果を見て、ほかの場所の求人も見たいと言われる",
+  "entry": "partner",
+  "history": [
+    { "role": "user", "text": "みなと町で探して" },
+    { "role": "assistant", "text": "みなと町では3件ありました。架空の品出し、架空の配膳、架空のパン屋の店番です。" }
+  ],
+  "turns": [{ "user": "ほかの場所のも見たい" }],
+  "expect": [
+    { "check": "noNewNumbers" },
+    { "check": "judge", "aspect": "naturalness", "rubric": "ほかの場所を探すか、どの場所かを聞いていて、ツールの結果にない求人を言っていないか", "passAtLeast": 4 }
+  ]
+}

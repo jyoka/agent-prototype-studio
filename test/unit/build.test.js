@@ -7,6 +7,7 @@ import { buildApp } from '../../src/server/build.js';
 import { STUDIO_ROOT } from '../../src/server/config.js';
 import { PART_KINDS } from '../../src/server/sim/assumptions.js';
 import { SURFACE_THEMES } from '../../src/server/sim/composition.js';
+import { EVAL_KINDS } from '../../src/server/sim/evals.js';
 import { readScenarios } from '../../src/observer/scenario.js';
 
 async function makeApp(t, files) {
@@ -239,7 +240,7 @@ test('目録が指すシナリオの形の誤りは、contract の段の失敗�
   assert.equal((await buildApp({ appDir: fine.appDir, buildsDir: fine.buildsDir })).ok, true);
 });
 
-test('見本のバイト探し(構成 A)は、ツール 5 つ、前提 2 つ、モックの決まり、構成 A の場面 12 本、シナリオ 1 本を持ち、会話の枠を使ってビルドできる(R1)', async (t) => {
+test('見本のバイト探し(構成 A)は、ツール 5 つ、前提 2 つ、モックの決まり、構成 A の場面 17 本、シナリオ 1 本を持ち、会話の枠を使ってビルドできる(R1)', async (t) => {
   const { buildsDir } = await makeApp(t, {});
   const appDir = path.join(STUDIO_ROOT, 'samples', 'part-time', 'app');
   const result = await buildApp({ appDir, buildsDir });
@@ -265,10 +266,14 @@ test('見本のバイト探し(構成 A)は、ツール 5 つ、前提 2 つ、�
   assert.ok(own[0].assumption.messageTypes.includes('card'));
   assert.ok(!own[1].assumption.messageTypes.includes('card'));
   assert.ok(mocks.some((m) => m.file === 'mocks/partner.json'));
-  // 構成 A の場面は 12 本(entry が partner の会話の場面と、構成 A のツールだけの場面)。ほかは構成 C の場面
+  // 構成 A だけの場面は 17 本(entry が partner の会話の場面と、構成 A のツールだけの場面)。
+  // entry のない場面はどの構成の回し手からも始め、entry が front、consult の場面は構成 B、C の場面
   const names = new Set(tools['tools.json'].tools.map((tool) => tool.name));
   const forA = evals.filter((e) => (e.scenario.kind === 'tool' ? names.has(e.scenario.call.tool) : e.scenario.entry === 'partner'));
-  assert.equal(forA.length, 12);
+  assert.equal(forA.length, 17);
+  // 場面は 30 本以上で、4.2 の種類を全部持つ(sim-9)
+  assert.ok(evals.length >= 30, String(evals.length));
+  assert.deepEqual([...new Set(evals.map((e) => e.scenario.kind))].sort(), [...EVAL_KINDS].sort());
   // ツールだけの場面と、会話の場面の両方がある
   assert.ok(evals.some((e) => e.scenario.kind === 'tool'));
   assert.ok(evals.some((e) => e.scenario.kind === 'risky'));
@@ -284,10 +289,16 @@ test('見本のバイト探しは、構成 C(受付、相談役、担当者)と�
   const result = await buildApp({ appDir: path.join(STUDIO_ROOT, 'samples', 'part-time', 'app'), buildsDir });
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   const { compositions, tools, assumptions, mocks, evals, harnessAis } = result.simulation;
-  assert.deepEqual(compositions.map((c) => c.file), ['compositions/c.json', 'compositions/c2.json']);
+  assert.deepEqual(compositions.map((c) => c.file), ['compositions/b.json', 'compositions/c.json', 'compositions/c2.json']);
+
+  // 構成 B: 相談役(harness)だけ。構成 C と同じ consult.json を使い、場面を同じ見本で比べる(sim-9)
+  const b = compositions[0].composition;
+  assert.equal(b.driver, 'consult');
+  assert.deepEqual(b.participants.map((p) => [p.id, p.kind, p.ai]), [['consult', 'harness', 'consult.json']]);
+  assert.deepEqual(b.handoffs, []);
 
   // 構成 C: 受付(agent)→ 相談役(harness)→ 担当者(human)。引き継ぎの辺と、受け渡す値
-  const c = compositions[0].composition;
+  const c = compositions[1].composition;
   assert.equal(c.driver, 'front');
   assert.deepEqual(c.participants.map((p) => [p.id, p.kind]), [['front', 'agent'], ['consult', 'harness'], ['staff', 'human']]);
   assert.equal(c.participants[1].ai, 'consult.json');
@@ -302,7 +313,7 @@ test('見本のバイト探しは、構成 C(受付、相談役、担当者)と�
   ]);
 
   // 構成 C2: 構成 A から DIP の枠と頼みを外し、前提(callers/)を 3 つ。モデル 3 種、土台のプロンプト 2 種
-  const c2 = compositions[1].composition;
+  const c2 = compositions[2].composition;
   assert.deepEqual(c2.participants[0].prompt.map((piece) => piece.from ?? piece.slot), ['assumptions']);
   assert.deepEqual(c2.guards, []);
   const callers = assumptions.filter((a) => a.file.startsWith('callers/')).map((a) => a.assumption);

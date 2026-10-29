@@ -234,7 +234,7 @@
 
 ## 構成(`app/composition.json`)
 
-構成は、試作品の中で誰が会話を回し、誰が何を持つかを書いたデータ。設計は [agent-simulation.md の 2 節](design/agent-simulation.md#2-構成の書き方)、決定は [ADR-0003](adr/0003-agent-simulation.md)(案)。今は、形の検査と構成 B の読み替えと、ツールの口(ツールを宣言どおりに動かすコード)と、ツールの MCP サーバー(`npm run tools:mcp`。[usage.md](usage.md#ツールの-mcp-サーバーnpm-run-toolsmcp))と、会話の進め方と模擬のエージェントと、会話の枠の部品(`studio-talk`)を作った。`composition.json` のある試作品は、試す画面で構成どおりに会話が回る(下の「構成のある会話」)。場面(`app/evals/`)は、作るループの関門 GE がモックで回し、`npm run evals` で構成と前提を変えて回せる(下の「場面」)。見本は `samples/part-time/app/`(バイト探し。既定は構成 A。`compositions/` に構成 C と C2 も置いた。どれも Studio のコードを変えずにデータだけで書いた)。
+構成は、試作品の中で誰が会話を回し、誰が何を持つかを書いたデータ。設計は [agent-simulation.md の 2 節](design/agent-simulation.md#2-構成の書き方)、決定は [ADR-0003](adr/0003-agent-simulation.md)(案)。今は、形の検査と構成 B の読み替えと、ツールの口(ツールを宣言どおりに動かすコード)と、ツールの MCP サーバー(`npm run tools:mcp`。[usage.md](usage.md#ツールの-mcp-サーバーnpm-run-toolsmcp))と、会話の進め方と模擬のエージェントと、会話の枠の部品(`studio-talk`)を作った。`composition.json` のある試作品は、試す画面で構成どおりに会話が回る(下の「構成のある会話」)。場面(`app/evals/`)は、作るループの関門 GE がモックで回し、`npm run evals` で構成と前提を変えて回せる(下の「場面」)。見本は `samples/part-time/app/`(バイト探し。既定は構成 A。`compositions/` に構成 B、C、C2 も置いた。どれも Studio のコードを変えずにデータだけで書いた)。
 
 - `composition.json` のない試作品は、`ai.json` の harness 1 つの構成(構成 B)として読む。今の試作品と見本は、何も書き足さずに今までどおり動く。`ai.json` もなければ、AI のない試作品
 - 置き場所と形は次のとおり。形の例は設計の 2.2〜2.5、3.3、3.4、4.2 にある
@@ -290,7 +290,8 @@
 - `toolCalled` は、ツールの口まで届いた呼び出し(守りで断ったものも)を数える。`noToolCall` は、呼ぼうとしたもの(許可していない名前も)を全部数える。`args` は書いた引数を含めば通る
 - `guardBlocked`、`noGuardBlock` の `layer`: `tool` と `permission` は断った(`blocked`)とき、`output` は止める出口の確かめがやり直させたか決まった文に代えたとき。`prompt` は、効いたかをコードで決められないので `n/a`
 - `recordHas` は、記録が配列(`append`)なら最後の 1 件を見る。`noAskAgain` は `words` を書かなければ、そのターンの前に決まっていた項目の `ai.json` の問いを見る。`noRepeat` の `times` の既定は 1
-- `judge` は、この回しでは採点しない(未採点)
+- `judge` は、モックの回し(関門 GE も)では採点しない(未採点)。実モデルの回し(`npm run evals -- --real`)では、Claude Code で同じ返事を 2 回採点し、平均が `passAtLeast` 以上なら通る。`aspect` は観点の短い名前、`rubric` は採点に渡す観点の文
+- `noNewNumbers` は、ボタンの並びの番号(Studio が文にするときに付ける「1. 」)を数えない。出口の確かめの `noNewNumbers` も同じ
 
 ### 会話の枠(`studio-talk`)
 

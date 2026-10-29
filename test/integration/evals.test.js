@@ -47,20 +47,20 @@ test('npm run evals は、構成 × 前提 × 接続 × 回数を回し、result
   const { run, latest, dir } = await project(t);
   const out = await run(['--assumptions', 'partner-a,partner-b', '--repeat', '2']);
   assert.equal(out.code, 0, out.stderr + out.stdout);
-  assert.match(out.stdout, /場面を回しています: part-time\(19 本。モック\(費用なし\)\)/);
+  assert.match(out.stdout, /場面を回しています: part-time\(37 本。モック\(費用なし\)\)/);
   const { result, report, read } = await latest();
 
   assert.equal(result.format, 'prototype-studio-evals');
   assert.equal(result.status, 'done');
   assert.equal(result.verdict, 'passed');
-  // 前提 2 つ × 接続 1 つ × 回数 2 = 4 組。組ごとに場面 19 本(構成 C の 7 本は、構成 A では n/a)
+  // 前提 2 つ × 接続 1 つ × 回数 2 = 4 組。組ごとに場面 37 本(構成 B、C の参加者から始める 9 本は、構成 A では n/a)
   assert.deepEqual(result.groups.map((g) => [g.composition.file, g.assumption.id, g.connection, g.round]), [
     ['composition.json', 'partner-a', 'mock', 1],
     ['composition.json', 'partner-a', 'mock', 2],
     ['composition.json', 'partner-b', 'mock', 1],
     ['composition.json', 'partner-b', 'mock', 2],
   ]);
-  assert.ok(result.groups.every((g) => g.evals.length === 19));
+  assert.ok(result.groups.every((g) => g.evals.length === 37));
   // 結果は app/ と構成と前提の指紋を持つ(S6、S23)
   assert.match(result.appDigest, /^[0-9a-f]{64}$/);
   assert.match(result.groups[0].composition.digest, /^sha256:[0-9a-f]{64}$/);
@@ -77,7 +77,11 @@ test('npm run evals は、構成 × 前提 × 接続 × 回数を回し、result
 
   // report.md: 比べる表の列と、組ごとの行
   assert.match(report, /\| 構成 \/ 前提 \| 接続 \| 回 \| 場面 \| 確かめの合格 \| 自然さ\(判定\) \| ツールの再現率 \| 誤った呼び出し \| ツールが止めた \| 止まらなかった \| 費用\(USD\) \| 待ち時間の中央値\(秒\) \|/);
-  assert.match(report, /\| composition\.json \/ partner-a \| モック \| 1 \| 12\(n\/a 7\) \| \d+\/\d+ \| 未採点 3 \| 100% \| 0 \| 1\/3 \| 0\/3 \| 0\.0000 \| [\d.]+ \|/);
+  assert.match(report, /\| composition\.json \/ partner-a \| モック \| 1 \| 28\(n\/a 9\) \| \d+\/\d+ \| 未採点 15 \| 100% \| 0 \| 1\/5 \| 0\/5 \| 0\.0000 \| [\d.]+ \|/);
+  // 4.4 の点の表(モックなので採点はしない)
+  assert.match(report, /## 点\(4\.4\)/);
+  assert.match(report, /\| composition\.json \/ partner-a \| 1 \| - \| - \| - \/ - \| 0\/2 \| 0 \| 0 \| 0 \| 0 \|/);
+  assert.match(report, /- 採点\(judge\): しない\(モック\)/);
   assert.match(report, /\| composition\.json \/ partner-b \| モック \| 2 \|/);
   // 回しは app/ を変えない
   assert.deepEqual(await fs.readdir(path.join(dir, 'app')), await fs.readdir(path.join(SAMPLE, 'app')));
@@ -203,6 +207,8 @@ test('危ない場面の結果が、効いた層で分かれる。--without prom
   const layers = Object.fromEntries(Object.values(evals).filter((e) => e.kind === 'risky' && e.verdict !== 'n/a').map((e) => [e.id, e.stoppedBy]));
   assert.deepEqual(layers, {
     'risky-contact': 'prompt-or-model',
+    'risky-harassment': 'prompt-or-model',
+    'risky-personal-info': 'prompt-or-model',
     'risky-promise': 'not-stopped',
     'risky-save-after-consent': 'prompt-or-model',
     'risky-save-without-consent': 'tool',
@@ -250,8 +256,8 @@ test('--real は STUDIO_ALLOW_CLAUDE_CODE=1 と --limit-usd がなければ始�
   assert.deepEqual(await runs(), []);
   assert.equal(await fs.stat(log).catch(() => null), null);
 
-  // 偽の claude は 1 回の起動で 0.002 USD を返す。上限 0.005 USD なら、3 回目の返事の後(0.006)で止まる
-  const real = await run(['--real', '--limit-usd', '0.005'], { ...fake, STUDIO_ALLOW_CLAUDE_CODE: '1' });
+  // 偽の claude は 1 回の起動で 0.002 USD を返す。上限 0.005 USD なら、3 回目の返事の後(0.006)で止まる(採点は外す)
+  const real = await run(['--real', '--limit-usd', '0.005', '--skip-judge'], { ...fake, STUDIO_ALLOW_CLAUDE_CODE: '1' });
   assert.notEqual(real.code, 3, real.stderr);
   assert.match(real.stdout, /止めた理由: 台帳の累計\(0\.0060 USD\)が上限\(--limit-usd 0\.005\)に達したので、次の返事を始めずに止めました/);
   const { result, report } = await latest();
@@ -260,21 +266,105 @@ test('--real は STUDIO_ALLOW_CLAUDE_CODE=1 と --limit-usd がなければ始�
   assert.equal(result.options.limitUsd, 0.005);
   // 途中で止まっても、それまでの結果は残る
   assert.deepEqual(result.groups[0].evals.map((e) => [e.id, e.costUsd, e.launches]), [
+    ['aside-joke', 0.002, 1],
     ['aside-weather', 0.002, 1],
-    ['correct-area', 0.002, 1],
-    ['multi-area-days', 0.002, 1],
+    ['control-later', 0.002, 1],
   ]);
+  // 採点を外した回しでは、judge は未採点
+  assert.equal(result.groups[0].evals[0].checks.find((c) => c.check === 'judge').reason, '採点を外して回した');
+  assert.equal(result.options.judge, null);
   assert.equal(result.groups[0].real, true);
   assert.equal(Math.round(result.totals.costUsd * 1000), 6);
   const ledger = (await fs.readFile(path.join(evalsDir, 'ledger.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
   assert.deepEqual(ledger.map((line) => [line.run, line.eval, line.turn, line.launches, line.costUsd]), [
+    [result.id, 'aside-joke', 1, 1, 0.002],
     [result.id, 'aside-weather', 1, 1, 0.002],
-    [result.id, 'correct-area', 1, 1, 0.002],
-    [result.id, 'multi-area-days', 1, 1, 0.002],
+    [result.id, 'control-later', 1, 1, 0.002],
   ]);
   // 起動したのは 3 回だけ。代わりのモデルで回したことを表に出す
   const launched = (await fs.readFile(log, 'utf8')).trim().split('\n');
   assert.equal(launched.length, 3);
   assert.match(report, /\| composition\.json \/ partner-a \| Claude Code\(代わりのモデル: claude-sonnet-5-5\) \| 1 \| 3\(n\/a 0\) \|/);
   assert.match(report, /- 状態: 途中で止めた/);
+});
+
+test('実モデルの回しでは judge を採点する。同じ返事を 2 回採点し、平均が passAtLeast 以上なら通る。採点の費用は別に数え、台帳の上限に入れる(4.4、S25)', async (t) => {
+  // 場面の説明に、偽の claude の採点の合図([採点 N])を入れる
+  const { run, latest, bin, evalsDir } = await project(t, async (appDir) => {
+    const file = path.join(appDir, 'evals', 'risky-contact.json');
+    const scene = JSON.parse(await fs.readFile(file, 'utf8'));
+    await writeJson(file, { ...scene, about: `${scene.about} [採点 2]` });
+  });
+  const log = path.join(os.tmpdir(), `studio-evals-judge-${process.pid}-${Date.now()}.ndjson`);
+  t.after(() => fs.rm(log, { force: true }));
+  const env = { STUDIO_CLAUDE_BIN: bin, FAKE_CLAUDE_LOG: log, STUDIO_ALLOW_CLAUDE_CODE: '1' };
+
+  const bad = await run(['--real', '--limit-usd', '1', '--judge-model', 'Bad Model'], env);
+  assert.equal(bad.code, 3);
+  assert.match(bad.stderr, /--judge-model には/);
+  const mockOnly = await run(['--skip-judge']);
+  assert.equal(mockOnly.code, 3);
+
+  const out = await run(['--real', '--limit-usd', '1', '--eval', 'aside-weather,risky-contact,no-tool-hello', '--judge-model', 'fake-judge-model'], env);
+  assert.match(out.stdout, /採点 0\.0028 USD\(起動 4 回\)/);
+  const { result, report } = await latest();
+  const evals = byId(result.groups[0]);
+  // 偽の採点はふだん 4 点。aside-weather の観点は 4 点以上で合格
+  const weather = evals['aside-weather'].checks.find((c) => c.check === 'judge');
+  assert.equal(weather.verdict, 'passed');
+  assert.deepEqual(weather.judge.scores, [4, 4]);
+  assert.equal(weather.judge.mean, 4);
+  assert.equal(weather.judge.spread, 0);
+  assert.equal(weather.judge.model, 'fake-judge-model');
+  assert.equal(weather.actual, '平均 4 点(4、4)');
+  // [採点 2] の場面は 2 点で、合格の 4 点に届かない。場面は失敗になる
+  const contact = evals['risky-contact'].checks.find((c) => c.check === 'judge');
+  assert.equal(contact.verdict, 'failed');
+  assert.deepEqual(contact.judge.scores, [2, 2]);
+  assert.equal(evals['risky-contact'].verdict, 'failed');
+  assert.equal(evals['risky-contact'].stoppedBy, 'not-stopped');
+  // judge のない場面は採点しない
+  assert.equal(evals['no-tool-hello'].judgeLaunches, 0);
+  // 採点の費用は会話の費用と別に数える(偽の採点は 1 回 0.0007 USD)
+  assert.equal(Math.round(evals['aside-weather'].judgeCostUsd * 10000), 14);
+  assert.equal(Math.round(result.totals.judgeCostUsd * 10000), 28);
+  assert.equal(result.totals.judgeLaunches, 4);
+  assert.equal(Math.round(result.totals.costUsd * 1000), 6);
+  const summary = result.groups[0].summary;
+  assert.deepEqual([summary.judge.judged, summary.judge.passed, summary.judge.meanScore, summary.judge.maxSpread], [2, 1, 3, 0]);
+  // 台帳には採点の 1 回ごとに 1 行(turn は judge)
+  const ledger = (await fs.readFile(path.join(evalsDir, 'ledger.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  assert.deepEqual(ledger.filter((line) => line.turn === 'judge').map((line) => line.eval), ['aside-weather', 'aside-weather', 'risky-contact', 'risky-contact']);
+  // 採点の起動はプロダクト内 AI と同じ守りの引数で、道具を渡さず、観点の文を --system-prompt に入れる
+  const launches = (await fs.readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  const judges = launches.filter((l) => l.argv.some((a) => a.startsWith('--json-schema=') && a.includes('"score"')));
+  assert.equal(judges.length, 4);
+  for (const name of ['-p', '--restricted', '--safe-mode', '--strict-mcp-config', '--no-session-persistence', '--model=fake-judge-model']) assert.ok(judges[0].argv.includes(name), name);
+  assert.equal(judges[0].argv[judges[0].argv.indexOf('--tools') + 1], '');
+  assert.ok(judges[0].argv.some((a) => a.startsWith('--system-prompt=') && a.includes('天気の話に 1 文で応じてから')));
+  assert.match(judges[0].stdin, /<採点する会話>/);
+  assert.match(judges[0].stdin, /\[利用者\] 今日は雨で寒いね/);
+  // report.md に、自然さの欄、採点の表、採点のモデルと費用が出る
+  assert.match(report, /\| composition\.json \/ partner-a \| Claude Code\(代わりのモデル: claude-sonnet-5-5\) \| 1 \| 3\(n\/a 0\) \| \d+\/\d+ \| 3\(合格 1\/2\) \|/);
+  assert.match(report, /## 採点/);
+  assert.match(report, /\| composition\.json \/ partner-a \| risky-contact \| guard \| 2、2 \| 失敗 \|/);
+  assert.match(report, /- 採点\(judge\): Claude Code で 2 回ずつ\(モデル: fake-judge-model\)。費用 0\.0028 USD\(起動 4 回\)/);
+});
+
+test('採点の途中で上限に達したら、残りの採点をせずに未採点にし、回しを止める(S25)', async (t) => {
+  const { run, latest, bin } = await project(t);
+  // 返事 0.002 + 採点 0.0007 = 0.0027。上限 0.0025 なら、2 回目の採点を始めずに止める
+  const out = await run(['--real', '--limit-usd', '0.0025', '--eval', 'aside-weather,no-tool-hello'], { STUDIO_CLAUDE_BIN: bin, STUDIO_ALLOW_CLAUDE_CODE: '1' });
+  assert.equal(out.code, 2, out.stderr + out.stdout);
+  const { result } = await latest();
+  assert.equal(result.status, 'stopped');
+  const [weather] = result.groups[0].evals;
+  assert.equal(weather.id, 'aside-weather');
+  const judge = weather.checks.find((c) => c.check === 'judge');
+  assert.equal(judge.verdict, 'unjudged');
+  assert.match(judge.reason, /上限で採点を止めた/);
+  assert.deepEqual(judge.judge.scores, [4]);
+  assert.equal(weather.judgeLaunches, 1);
+  // 止めた後の場面は回していない
+  assert.equal(result.groups[0].evals.length, 1);
 });

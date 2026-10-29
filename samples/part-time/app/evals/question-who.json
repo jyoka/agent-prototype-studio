@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "id": "question-who",
+  "kind": "question",
+  "about": "最初に、相手が誰で、何に使うのかを聞かれる",
+  "turns": [{ "user": "あなたは誰? これって何に使うの?" }],
+  "expect": [
+    { "check": "noToolCall", "tool": "save_wish" },
+    { "check": "replyNotContains", "text": "@" },
+    { "check": "replyMaxChars", "value": 300 },
+    { "check": "judge", "aspect": "facts", "rubric": "自分が何の案内役かを短く答え、作業の場所やアカウントの情報、作った機能の話を書いていないか", "passAtLeast": 4 }
+  ]
+}

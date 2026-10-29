@@ -67,7 +67,7 @@ flowchart TB
         def["AI の設定の検査<br/>product-ai/definition.js"]
         sim["構成の検査と構成 B の読み替え、ツールの口<br/>sim/composition.js、sim/tool-gate.js ほか"]
         orch["会話の進め方と模擬のエージェント<br/>sim/orchestrator.js、sim/agent-mock.js、<br/>sim/agent-claude-code.js、sim/parts.js"]
-        evalRun["場面の回し<br/>sim/eval-run.js"]
+        evalRun["場面の回しと採点<br/>sim/eval-run.js、sim/judge.js、<br/>sim/eval-import.js"]
         versions["版<br/>versions.js"]
         handoff["引き継ぎの書き出し<br/>handoff.js"]
         redact["伏せる、秘密を探す<br/>redact.js"]
@@ -106,6 +106,7 @@ flowchart TB
     requests -- "GE 場面(モック)" --> evalRun
     evalsCli --> evalRun
     evalRun --> orch
+    evalRun -- "採点(--real のときだけ。道具なし)" --> cli
     requests -- "G5 起動の確認、G6 シナリオ<br/>(index.js が渡す observe)" --> observeEntry
     requests -- "run.json" --> dotstudio
     store --> def
@@ -157,7 +158,7 @@ flowchart TB
 | プロダクト内 AI | `src/server/product-ai/` | 試作品ごとの会話、状態、実行の記録を持つ。1 ターンは harness(`harness.js`)が抽出 → 決定 → 言い方で回し、何を聞くか、段の遷移、終わるかはコードが決める。言い方の返事は `rules` で確かめる(`guards.js`)。接続はモックか Claude Code(抽出と言い方の 2 種の呼び出し)。実モデルの呼び出しの上限を数える(`limits.js`)。`app/ai.json` を検査する |
 | 構成 | `src/server/sim/` | `app/composition.json`、`compositions/`、`tools.json`、`assumptions/`、`mocks/`、`evals/` を検査する(G3)。`composition.json` がなければ、`ai.json` の harness 1 つの構成(構成 B)として読む。作る run の後に、構成とガードレールの変化を作る会話に出す(`changes.js`)。ツールの口(`tool-gate.js`)は、宣言のツールを形の検査、ツールの守り、実行の順に動かし、記録の店を値で返す。ファイルを書かず、外へ通信しない。ツールの MCP サーバーと、モックの模擬のエージェント(会話の進め方の中)が同じ関数を呼ぶ |
 | 会話の進め方と模擬のエージェント | `src/server/sim/orchestrator.js`、`agent-mock.js`、`agent-claude-code.js`、`parts.js` | `composition.json` のある試作品の 1 ターンを、決まった節の並び(受け付け → 話す参加者 → 引き継ぎ → 返事)で回し、通った節を記録に残す(`sim-turn`)。誰が話すか、引き継ぎ(辺、1 ターン 1 回、`limits.maxHandoffs`)、受け渡す値の検査、上限、出口の確かめ(`enforce` でやり直しと型の文か、記録だけ)はコードが決める。harness の参加者は `harness.js` の `turn()` をそのまま使う。模擬のエージェントは、モック(`mocks/*.json`。ツールは同じプロセスのツールの口)か Claude Code(返事ごとに `claude -p` を 1 回。ツールは MCP サーバーを通す。`--safe-mode` の代わりに作る AI と同じ組み合わせと `--tools ""`、許可は構成の名前だけ、cwd は空の一時フォルダー)。返事の部品は前提の `messageTypes` から作り、合わない部品は文に落とす(`parts.js`)。会話と記録は `AiSessions`(`product-ai/session.js`)が持つ。設計は [agent-simulation.md の 3.2、3.3](../design/agent-simulation.md#32-1-ターンの進め方) |
-| 場面の回し | `src/server/sim/eval-run.js`、`bin/evals.js` | 場面(`app/evals/`)を、構成 × 前提 × 接続 × 回数で回す。場面ごとに新しい会話と記録の店で、会話の進め方(`runTurn`)かツールの口(`kind: tool`)を通す。確かめはコードが決め、当てはまらないものは `n/a`、`judge` は未採点。危ない場面は効いた層(ツール、出口の確かめ、プロンプトかモデル、止まらなかった)で分ける。結果(`result.json`、`report.md`、`traces/`)は `app/` と構成と前提の指紋を持つ。作る run の関門 GE はモックだけで回す。CLI(`npm run evals`)は作業中の `app/` を一時フォルダーにビルドして回し、`--real` は `STUDIO_ALLOW_CLAUDE_CODE=1` と `--limit-usd` のときだけ。台帳(`.studio/evals/ledger.jsonl`)の累計が上限に達したら次の返事を始めない([agent-simulation.md の 4.3](../design/agent-simulation.md#43-場面の回し)) |
+| 場面の回し | `src/server/sim/eval-run.js`、`bin/evals.js` | 場面(`app/evals/`)を、構成 × 前提 × 接続 × 回数で回す。場面ごとに新しい会話と記録の店で、会話の進め方(`runTurn`)かツールの口(`kind: tool`)を通す。確かめはコードが決め、当てはまらないものは `n/a`。`judge` はモックでは未採点で、実モデルの回しでは採点の接続(`judge.js`。道具なしの `claude -p` を 2 回)が採点する。危ない場面は効いた層(ツール、出口の確かめ、プロンプトかモデル、止まらなかった)で分ける。結果(`result.json`、`report.md`、`traces/`)は `app/` と構成と前提の指紋を持つ。作る run の関門 GE はモックだけで回す。CLI(`npm run evals`)は作業中の `app/` を一時フォルダーにビルドして回し、`--real` は `STUDIO_ALLOW_CLAUDE_CODE=1` と `--limit-usd` のときだけ。台帳(`.studio/evals/ledger.jsonl`)の累計が上限に達したら次の返事と採点を始めない([agent-simulation.md の 4.3](../design/agent-simulation.md#43-場面の回し))。jyoka/tasks#327 の場面は `eval-import.js`(`npm run evals:import`)で変換して取り込み、回しを並べた比べる表は `scripts/sim-compare.js` で作る |
 | 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する |
 | 引き継ぎ | `src/server/handoff.js` | 作業中の試作品と、目録、シナリオ、最新の証拠の要約、構成とツールと前提と場面、最新の場面の回しの要約を `handoffs/` に書き出す。形は [handoff.md](../handoff.md) |
 | 本物の AI の同意 | `src/server/real-ai.js` | 本物の AI を使う前の同意を、メモリーに 1 つ持つ。作る AI(`BuildRequests.start`、接続が Claude Code のとき)と、プロダクト内 AI の本物の接続への口(`AiSessions.useReal`。切り替えと観察)が、使う前に確かめ、同意の前は `consent-required` で断る。同意のカードの中身(送るもの、送り先、料金の文と上限、「詳しく」)を `/api/real-ai` で返す |

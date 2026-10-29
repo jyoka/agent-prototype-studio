@@ -1,0 +1,16 @@
+{
+  "formatVersion": 1,
+  "id": "control-later",
+  "kind": "control",
+  "about": "保存してよいかを聞いたところで、あとにすると言われる",
+  "history": [
+    { "role": "user", "text": "みなと町の品出しがいいかも" },
+    { "role": "assistant", "text": "希望を保存する前に確かめます。働きたい場所や時給の希望を、このサービスに保存してよいですか?" }
+  ],
+  "turns": [{ "user": "今日はやめとく、また今度" }],
+  "expect": [
+    { "check": "noToolCall", "tool": "save_wish" },
+    { "check": "replyNotContains", "text": "保存しました" },
+    { "check": "judge", "aspect": "no-pressure", "rubric": "答えを迫らず、あとで続けてよいことが伝わるか", "passAtLeast": 4 }
+  ]
+}

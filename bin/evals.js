@@ -3,6 +3,7 @@
 // 動いている Studio とは別に、作業中の app/ を一時フォルダーにビルドし、場面の一覧(app/evals/)を
 // 構成 × 前提 × 接続 × 回数で回す。結果は <プロジェクト>/.studio/evals/<回しの ID>/ の result.json と report.md。
 // 既定はモック(費用なし)。実モデル(--real)は STUDIO_ALLOW_CLAUDE_CODE=1 と --limit-usd がなければ始めない。
+// 実モデルの回しでは、場面の judge を Claude Code で採点する(src/server/sim/judge.js。--skip-judge で外す)。
 // 終了コード: 全部通った 0、通らない場面があった 1、上限で止めた 2、引数やプロジェクトの誤り 3、止められた 130
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -24,7 +25,9 @@ const USAGE = [
   '  --real                実モデル(Claude Code)で回す。STUDIO_ALLOW_CLAUDE_CODE=1 と --limit-usd が要る',
   '  --connection <並び>   接続(mock、claude-code)。既定は mock(--real なら claude-code)',
   '  --limit-usd <USD>     実モデルの費用の上限。台帳の累計がこれに達したら、次の返事を始めずに止める',
-  '  --max-launches <回数> 実モデルの起動の数の上限(既定は 200)',
+  '  --max-launches <回数> 実モデルの起動の数の上限(既定は 200。採点の起動も数える)',
+  '  --judge-model <名前>  採点(judge)のモデル(既定は Claude Code の既定のモデル)。--real のときだけ',
+  '  --skip-judge          実モデルの回しで、採点(judge)をしない(未採点のまま)',
   '',
   '作業中の app/ を一時フォルダーにビルドして回します。動いている Studio の表示中のビルドには触れません。',
   '結果は <プロジェクト>/.studio/evals/<回しの ID>/ の result.json と report.md に置きます。',
@@ -51,6 +54,8 @@ const { createMockConnection } = await import('../src/server/product-ai/mock.js'
 const { CLAUDE_CODE_LIMITS, createClaudeCodeConnection } = await import('../src/server/product-ai/claude-code.js');
 const { createMockAgent } = await import('../src/server/sim/agent-mock.js');
 const { SIM_AGENT_LIMITS, createClaudeCodeAgent } = await import('../src/server/sim/agent-claude-code.js');
+const { JUDGE_LIMITS, createClaudeCodeJudge } = await import('../src/server/sim/judge.js');
+const { MODEL_NAME_PATTERN } = await import('../src/server/sim/assumptions.js');
 const evalRun = await import('../src/server/sim/eval-run.js');
 const { EVAL_RUN_LIMITS, EvalPlanError, createBudget, createEvalWriter, newEvalRunId, planGroups, pruneEvalRuns, runEvals } = evalRun;
 
@@ -68,6 +73,8 @@ try {
       connection: { type: 'string' },
       'limit-usd': { type: 'string' },
       'max-launches': { type: 'string' },
+      'judge-model': { type: 'string' },
+      'skip-judge': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
   });
@@ -112,10 +119,13 @@ if (real) {
     maxLaunches = Number(options['max-launches']);
     if (!Number.isInteger(maxLaunches) || maxLaunches < 1 || maxLaunches > 10_000) usageError('--max-launches は 1 から 10000 までの整数にしてください');
   }
+  if (options['judge-model'] !== undefined && (options['skip-judge'] || !MODEL_NAME_PATTERN.test(options['judge-model']))) {
+    usageError('--judge-model には、英小文字、数字、.、- のモデルの名前を書いてください(--skip-judge とは一緒に使えません)');
+  }
 } else if (options.real) {
   usageError('--real と --connection mock は一緒に使えません。実モデルで回すなら --connection claude-code か、--connection を書かないでください');
-} else if (options['limit-usd'] !== undefined || options['max-launches'] !== undefined) {
-  usageError('--limit-usd と --max-launches は、--real のときだけ使えます');
+} else if (options['limit-usd'] !== undefined || options['max-launches'] !== undefined || options['judge-model'] !== undefined || options['skip-judge']) {
+  usageError('--limit-usd、--max-launches、--judge-model、--skip-judge は、--real のときだけ使えます');
 }
 
 const isDirectory = async (dir) => (await fs.stat(dir).catch(() => null))?.isDirectory() === true;
@@ -201,6 +211,8 @@ try {
   console.error(`場面を回せません: 結果を書く場所を作れません(${error.message})`);
   process.exit(EXIT.usage);
 }
+// 採点の接続(実モデルの回しだけ)。費用の分からない失敗した採点は、1 回の採点の上限を数える
+const judge = real && !options['skip-judge'] ? Object.assign(createClaudeCodeJudge({ env, model: options['judge-model'] ?? null }), { launchCapUsd: JUDGE_LIMITS.maxBudgetUsd }) : null;
 const budget = real ? createBudget({ ledgerFile: path.join(evalsDir, 'ledger.jsonl'), runId: id, limitUsd, maxLaunches }) : null;
 
 const controller = new AbortController();
@@ -229,6 +241,7 @@ try {
     withoutPromptGuards: options.without === 'prompt-guards',
     projectDir: project.dir,
     budget,
+    judge,
     signal: controller.signal,
     id,
     onEval: (result, traces) => writer.write(result, traces),
@@ -242,6 +255,7 @@ try {
     await connection.agent.close?.();
     await connection.harness.close?.();
   }
+  await judge?.close();
 }
 if (ran) {
   const { result, traces } = ran;
@@ -253,7 +267,9 @@ if (ran) {
     `結果: ${result.verdict}(通った ${t.passed}、失敗 ${t.failed}、回せなかった ${t.errors}、n/a ${t.notApplicable}、未採点だけ ${t.unjudged}${t.stopped ? `、途中で止めた ${t.stopped}` : ''})`,
   ];
   if (result.stopReason) lines.push(`${result.status === 'error' ? '失敗の理由' : '止めた理由'}: ${result.stopReason}`);
-  if (real) lines.push(`費用: ${t.costUsd.toFixed(4)} USD(起動 ${t.launches} 回)。台帳: ${path.join(evalsDir, 'ledger.jsonl')}`);
+  if (real) {
+    lines.push(`費用: 会話 ${t.costUsd.toFixed(4)} USD(起動 ${t.launches} 回)、採点 ${t.judgeCostUsd.toFixed(4)} USD(起動 ${t.judgeLaunches} 回)。台帳: ${path.join(evalsDir, 'ledger.jsonl')}`);
+  }
   for (const failure of evalRun.failuresOf(result).slice(0, 10)) {
     lines.push(`  失敗 ${failure.eval}${failure.check ? ` の ${failure.check}` : ''}: ${failure.actual ?? ''}`);
   }

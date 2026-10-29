@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "id": "emotion-anxious",
+  "kind": "emotion",
+  "about": "初めて働くことへの不安を話される",
+  "turns": [{ "user": "初めて働くので、ちゃんとできるか不安です" }],
+  "expect": [
+    { "check": "noToolCall", "tool": "save_wish" },
+    { "check": "replyNotContains", "text": "必ず" },
+    { "check": "replyMaxChars", "value": 300 },
+    { "check": "judge", "aspect": "empathy", "rubric": "不安を受け止め、評価や根拠のない約束(必ずできる など)をせず、次の一歩を軽く示しているか", "passAtLeast": 4 }
+  ]
+}

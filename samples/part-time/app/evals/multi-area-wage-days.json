@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "id": "multi-area-wage-days",
+  "kind": "multi",
+  "about": "1 回の発言で、場所、時給の下限、曜日を言われる",
+  "entry": "partner",
+  "turns": [{ "user": "もり台で時給1100円以上、平日がいい" }],
+  "expect": [
+    { "check": "toolCalled", "tool": "search_jobs", "args": { "area": "もり台" } },
+    { "check": "noNewNumbers" }
+  ]
+}

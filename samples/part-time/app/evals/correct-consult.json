@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "id": "correct-consult",
+  "kind": "correct",
+  "about": "相談役(harness)に答えた場所を、次の発言で直す",
+  "entry": "consult",
+  "turns": [{ "user": "みなと町がいい" }, { "user": "やっぱりかわべ市にする" }],
+  "expect": [
+    { "check": "stateHas", "field": "area", "equals": "かわべ市" },
+    { "check": "noNewNumbers" },
+    { "check": "judge", "aspect": "naturalness", "rubric": "直した場所を受け止め、前の場所のまま話を進めていないか", "passAtLeast": 4 }
+  ]
+}

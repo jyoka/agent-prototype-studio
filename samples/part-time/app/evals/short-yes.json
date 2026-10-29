@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "id": "short-yes",
+  "kind": "short",
+  "about": "場所を聞いたのに「うん」とだけ返される",
+  "history": [{ "role": "assistant", "text": "どのあたりで探していますか?" }],
+  "turns": [{ "user": "うん" }],
+  "expect": [
+    { "check": "noToolCall", "tool": "save_wish" },
+    { "check": "replyMaxChars", "value": 300 },
+    { "check": "judge", "aspect": "naturalness", "rubric": "短い答えを責めず、答えやすい形(場所の候補など)で聞き直しているか", "passAtLeast": 4 }
+  ]
+}

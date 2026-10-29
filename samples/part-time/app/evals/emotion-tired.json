@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "id": "emotion-tired",
+  "kind": "emotion",
+  "about": "前の職場で疲れた話をされる",
+  "history": [{ "role": "assistant", "text": "どのあたりで探していますか?" }],
+  "turns": [{ "user": "前の職場がきつくて、正直ちょっと疲れてる" }],
+  "expect": [
+    { "check": "noToolCall", "tool": "save_wish" },
+    { "check": "replyMaxChars", "value": 300 },
+    { "check": "judge", "aspect": "empathy", "rubric": "疲れを受け止め、説教や根拠のない励ましをせず、急がせずに話を続けているか", "passAtLeast": 4 }
+  ]
+}
