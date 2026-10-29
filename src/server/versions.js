@@ -13,7 +13,10 @@ export const MAX_AUTO_VERSIONS = 30;
 export const MAX_VERSION_NAME = 60;
 const VERSION_ID = /^[a-f0-9]{16}$/;
 const FORMAT = 1;
-const AUTO_NAME = '復元の前の作業中(自動)';
+// 画面の札に出る名前。「作業中」は利用者の画面では「今の状態」と言う(ux-redesign.md 4 節)
+const AUTO_NAME = '戻す前の状態(自動)';
+// 表示できない状態は保存しない。誤りの場所(ファイルの名前)はターミナルにだけ出す。画面では 7-6 の知らせの開発者向けで見られる
+const CANNOT_SAVE = '表示できない状態は保存できません。「言葉で直す」で直してもらってから保存してください';
 
 export class VersionError extends Error {
   constructor(status, code, message) {
@@ -44,7 +47,7 @@ export async function copyTree(from, to, { skip = () => false } = {}) {
           throw new VersionError(
             413,
             'too-large',
-            `app/ が大きすぎるので版にできません(上限は ${LIMITS.maxFiles} 個、合計 ${LIMITS.maxTotalBytes} バイト)`,
+            `試作品のファイルが大きすぎるので保存できません(上限は ${LIMITS.maxFiles} 個、合計 ${LIMITS.maxTotalBytes} バイト)`,
           );
         }
         await fs.copyFile(source, target);
@@ -62,10 +65,10 @@ const sameAi = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
 function cleanName(name) {
   if (name === undefined || name === null) return '';
-  if (typeof name !== 'string') throw new VersionError(400, 'invalid', '版の名前は文字で書いてください');
+  if (typeof name !== 'string') throw new VersionError(400, 'invalid', '保存の名前は文字で書いてください');
   // 改行や制御文字は、一覧で 1 行に出すために空白にする
   const cleaned = name.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
-  if (cleaned.length > MAX_VERSION_NAME) throw new VersionError(400, 'invalid', `版の名前は ${MAX_VERSION_NAME} 文字までにしてください`);
+  if (cleaned.length > MAX_VERSION_NAME) throw new VersionError(400, 'invalid', `保存の名前は ${MAX_VERSION_NAME} 文字までにしてください`);
   return cleaned;
 }
 
@@ -184,7 +187,9 @@ export class ProjectVersions {
       // 写しはシンボリックリンクなどを省くので、作業中そのものを先に検査する
       const problems = await inspectApp(paths.app);
       if (problems.length > 0) {
-        throw new VersionError(422, 'build', `ビルドできない状態は保存できません。直してから保存してください(${problems[0].file}: ${problems[0].text})`);
+        this.log(`保存しませんでした(ビルドできない状態): ${id}(${problems[0].file}: ${problems[0].text})`);
+        // 理由(シンボリックリンク、大きすぎるなど)は添える。ファイルの名前はターミナルにだけ出す
+        throw new VersionError(422, 'build', `${CANNOT_SAVE}(${problems[0].text.replaceAll('app/ フォルダー', '試作品のフォルダー').replaceAll('app/', '試作品のフォルダー')})`);
       }
       const record = await this.write(id, paths, await readVersions(paths), { name: cleaned, kind: 'manual' });
       this.log(`版を保存しました: ${id}(v${record.number})`);
@@ -200,7 +205,7 @@ export class ProjectVersions {
       throw new VersionError(
         409,
         'too-many',
-        `保存できる版は ${this.maxVersions} 個までです。Studio を止めて、要らない版のフォルダーを ${paths.versions} から消してください`,
+        `保存できるのは ${this.maxVersions} 個までです。Studio を止めて、要らない保存のフォルダーを ${paths.versions} から消してください`,
       );
     }
     const versionId = crypto.randomBytes(8).toString('hex');
@@ -216,11 +221,8 @@ export class ProjectVersions {
       await fs.rm(path.join(tmp, 'builds'), { recursive: true, force: true });
       if (!build.ok && kind === 'manual') {
         const first = build.errors[0];
-        throw new VersionError(
-          422,
-          'build',
-          `ビルドできない状態は保存できません。直してから保存してください(${first ? `${first.file}: ${first.text}` : '理由はわかりません'})`,
-        );
+        this.log(`保存しませんでした(ビルドできない状態): ${id}(${first ? `${first.file}: ${first.text}` : '理由はわかりません'})`);
+        throw new VersionError(422, 'build', CANNOT_SAVE);
       }
       const record = {
         format: FORMAT,
@@ -257,14 +259,14 @@ export class ProjectVersions {
   // 版のファイルと、会話と状態に戻す。今の作業中がどの版とも違えば、先に自動で保存する(戻す操作で失わない)
   async restore(id, versionId) {
     const paths = await this.store.requireProject(id);
-    if (typeof versionId !== 'string' || !VERSION_ID.test(versionId)) throw new VersionError(404, 'not-found', 'その版はありません');
+    if (typeof versionId !== 'string' || !VERSION_ID.test(versionId)) throw new VersionError(404, 'not-found', 'その保存はありません');
     this.store.claimVersions(id);
     try {
       const versions = await readVersions(paths);
       const version = versions.find((v) => v.id === versionId);
-      if (!version) throw new VersionError(404, 'not-found', 'その版はありません');
+      if (!version) throw new VersionError(404, 'not-found', 'その保存はありません');
       // 応答を待っている会話を自動の版に入れそこねないよう、待つ
-      if (this.aiSessions.isBusy(id)) throw new BusyError('プロダクト内 AI が応答しているところです。終わってから戻してください');
+      if (this.aiSessions.isBusy(id)) throw new BusyError('試作品の中の AI が返事をしているところです。終わってから戻してください');
       const source = path.join(paths.versions, versionId, 'app');
       const { saved } = await this.working(id, paths, versions);
       let autoSaved = null;
@@ -320,7 +322,7 @@ async function replaceApp(paths, source, { setAside = null, log = () => {} } = {
     try {
       await fs.rename(outgoing, paths.app);
     } catch {
-      throw new Error(`app/ を戻せませんでした。元のファイルは ${outgoing} にあります(${error.message})`);
+      throw new Error(`試作品のファイルを戻せませんでした。元のファイルは ${outgoing} にあります(${error.message})`);
     }
     await fs.rm(incoming, { recursive: true, force: true });
     throw error;

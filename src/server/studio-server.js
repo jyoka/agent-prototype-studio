@@ -351,7 +351,7 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     // 接続の一覧と中断、実行の記録は会話を変えないので通す。実モデルの応答はいつでも止められる
     const changesConversation = action && !['connections', 'cancel', 'trace', 'clear-trace'].includes(action);
     if (changesConversation && store.isVersioning(id)) {
-      return sendError(res, 409, 'busy', '版の保存か復元、または引き継ぎの書き出しをしているところです。終わってから試してください');
+      return sendError(res, 409, 'busy', '保存か、保存した状態に戻すか、本番開発へ渡すフォルダーを作っているところです。終わってから試してください');
     }
     try {
       if (action === 'connections') return sendJson(res, 200, aiSessions.connectionChoices(id));
@@ -363,7 +363,7 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       const body = action ? await readJson(req) : null;
       // 本文を読んでいる間に、版の操作が始まったかもしれない
       if (changesConversation && store.isVersioning(id)) {
-        return sendError(res, 409, 'busy', '版の保存か復元、または引き継ぎの書き出しをしているところです。終わってから試してください');
+        return sendError(res, 409, 'busy', '保存か、保存した状態に戻すか、本番開発へ渡すフォルダーを作っているところです。終わってから試してください');
       }
       let session;
       if (!action) session = aiSessions.view(id);

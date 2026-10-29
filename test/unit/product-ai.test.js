@@ -258,10 +258,10 @@ test('設定の前後を比べ、振る舞いの変わったところを利用�
     mock: { ...TRAVEL.mock, notUnderstood: 'もう一度お願いします。' },
   });
   assert.deepEqual(describeDefinitionChanges(before, after), [
-    '実モデルへの指示(instructions)を書き換えました(0 文字 → 5 文字)',
+    '本物の AI への指示を書き換えました(0 文字 → 5 文字)',
     '聞く順と項目の並び: 行き先、泊数 → 泊数、行き先',
     '行き先を聞く文: 「どこへ行きたいですか?」 → 「どちらへ?」',
-    'モックの読み取れなかったときの返事: 「すみません、条件として読み取れませんでした。」 → 「もう一度お願いします。」',
+    'お試しの AI の読み取れなかったときの返事: 「すみません、条件として読み取れませんでした。」 → 「もう一度お願いします。」',
   ]);
   const fewer = parse({ ...TRAVEL, fields: [TRAVEL.fields[0]], initialState: {} });
   assert.deepEqual(describeDefinitionChanges(before, fewer), ['なくした項目: 泊数']);
@@ -441,8 +441,8 @@ test('設定の変化の説明は、段、終わる条件、守ることの変�
     '会話を終えるターン数(flow.maxTurns): 30 → 15',
     '守ること「返事の長さの上限(maxReplyChars)」: 1000 文字 → 300 文字',
     '守ること「禁止の言葉(forbidden)」に足した: 「実在の宿の名前」',
-    'モックが yes と読む言葉: なし → 「はい」、「それで」',
-    'モックが no と読む言葉: なし → 「ちがう」',
+    'お試しの AI が yes と読む言葉: なし → 「はい」、「それで」',
+    'お試しの AI が no と読む言葉: なし → 「ちがう」',
   ]);
   assert.deepEqual(describeDefinitionChanges(v2, parse(TRAVEL_V2)), []);
 
@@ -483,7 +483,7 @@ test('設定の変化の説明は、段、終わる条件、守ることの変�
   const byList = { ...TRAVEL_V2, flow: { steps: [{ id: 'hear', ask: ['place'], next: [{ when: { filled: ['place'] }, to: 'done' }] }] } };
   assert.deepEqual(describeDefinitionChanges(parse(byList), parse({ ...byList, fields: [TRAVEL_V2.fields[0], { ...TRAVEL.fields[1], required: true }] })), []);
   assert.deepEqual(describeDefinitionChanges(v2, parse({ ...TRAVEL_V2, mock: { ...TRAVEL_V2.mock, confirm: '{summary}で進めますか?' } })), [
-    'モックの条件のまとめを確かめるときの返事: 「今の条件は{summary}です。これでよいですか?」 → 「{summary}で進めますか?」',
+    'お試しの AI の条件のまとめを確かめるときの返事: 「今の条件は{summary}です。これでよいですか?」 → 「{summary}で進めますか?」',
   ]);
 });
 
@@ -724,7 +724,7 @@ test('実モデルの呼び出しの 3 つの上限(会話の有料のターン 
 
   // 1 ターン 4 回(抽出 2、言い方 2)。3 回目の抽出は呼ばずに止め、理由を返す
   const before = connection.made.length;
-  await assert.rejects(sessions.send('p', '[やり直しすぎ]'), { status: 429, code: 'turn-limit', message: /1 ターンで実際の AI モデルを呼べるのは 4 回まで\(抽出 2 回、言い方 2 回\)/ });
+  await assert.rejects(sessions.send('p', '[やり直しすぎ]'), { status: 429, code: 'turn-limit', message: /1 回の発言で本物の AI を呼べるのは 4 回まで\(抽出 2 回、言い方 2 回\)/ });
   assert.deepEqual(connection.made.slice(before), ['extract', 'extract']);
   const [turnLimited] = sessions.trace('p').entries;
   assert.equal(turnLimited.status, 'failed');
@@ -750,7 +750,7 @@ test('実モデルの呼び出しの 3 つの上限(会話の有料のターン 
   assert.equal(projectCalls.count('p'), CALL_LIMITS.perProject - 1);
   const madeBefore = connection.made.length;
   // 残りが 1 回で、抽出と言い方の 2 回に足りないので、抽出も呼ばずに止める(抽出だけ呼んで捨てない)
-  await assert.rejects(sessions.send('p', '湖に変えたい'), { status: 429, code: 'project-limit', message: /観察も含めて 60 分に 120 回まで/ });
+  await assert.rejects(sessions.send('p', '湖に変えたい'), { status: 429, code: 'project-limit', message: /自動の確かめも含めて 60 分に 120 回まで/ });
   assert.deepEqual(connection.made.slice(madeBefore), []);
   assert.equal(projectCalls.count('p'), CALL_LIMITS.perProject - 1);
   // 新しい観察の会話を作っても、会話をリセットしても、数え直さない

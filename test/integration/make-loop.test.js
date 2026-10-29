@@ -156,10 +156,20 @@ test('関門の失敗を直す依頼にして作る AI に返し、直った版�
     kinds(run).filter((kind) => ['changes', 'build-failed', 'round', 'fix-request', 'build-ok', 'launch-ok', 'scenarios-ok', 'gates', 'scenarios-changed'].includes(kind)),
     ['changes', 'build-failed', 'round', 'fix-request', 'changes', 'build-ok', 'launch-ok', 'scenarios-ok', 'gates'],
   );
-  assert.equal(run.items.find((item) => item.kind === 'round').text, '直すラウンド 1/2: 作る AI を起動し直します(起動 2/3 回目)。');
-  assert.match(run.items.find((item) => item.kind === 'fix-request').text, /^G4 ビルドの失敗\(app\/App\.jsx:2:\d+ .+\)を作る AI に返しました。添えたのは、元の依頼、失敗の中身、変わったファイルの名前\(1 個\)だけです。$/);
-  assert.ok(run.items.some((item) => item.kind === 'assistant' && item.text.startsWith('Studio の直す依頼を読みました(失敗した関門: G4 ビルド)')));
-  assert.equal(run.items.find((item) => item.kind === 'gates').text, 'Studio が確かめた結果(直すラウンド 1 の後): G1 変更の確認: 通った、G2 検査: 通った、G3 契約: 通った、G4 ビルド: 通った、GE 場面: 通った(場面なし)、G5 起動の確認: 通った、G6 シナリオ: 通った');
+  // 項目の本文(text)は利用者の言葉、関門の名前とファイルの名前は開発者向け(detail)にある(ux-redesign.md 4 節)
+  const round = run.items.find((item) => item.kind === 'round');
+  assert.equal(round.text, '確かめると「表示の準備」で問題が見つかったので、直す AI にもう一度直してもらいます(1 回目。2 回まで)。');
+  assert.equal(round.detail, '直すラウンド 1/2: 作る AI を起動し直す(起動 2/3 回目)。');
+  const fixRequest = run.items.find((item) => item.kind === 'fix-request');
+  assert.equal(fixRequest.text, '見つかった問題を直す AI に伝えました。伝えたのは、あなたの依頼、問題の中身、変わったファイルの名前だけです。');
+  assert.match(fixRequest.detail, /^G4 ビルドの失敗\(app\/App\.jsx:2:\d+ .+\)を作る AI に返した。添えたのは、元の依頼、失敗の中身、変わったファイルの名前\(1 個\)だけ。$/);
+  assert.ok(run.items.some((item) => item.kind === 'assistant' && item.text.startsWith('Studio の直す依頼を読みました(問題のあったところ: 表示の準備)')));
+  const gates = run.items.find((item) => item.kind === 'gates');
+  assert.equal(
+    gates.text,
+    'Studio が確かめた結果(直す AI が 1 回直した後): 変わったところ: 問題なし、ファイルの名前と大きさ: 問題なし、AI の設定と確かめ方の形: 問題なし、表示の準備: 問題なし、AI の場面で動くか: 問題なし(確かめる場面なし)、開いて表示できるか: 問題なし、決めた手順で動くか: 問題なし',
+  );
+  assert.equal(gates.detail, '関門の結果(直すラウンド 1 の後): G1 変更の確認: 通った、G2 検査: 通った、G3 契約: 通った、G4 ビルド: 通った、GE 場面: 通った(場面なし)、G5 起動の確認: 通った、G6 シナリオ: 通った');
 });
 
 test('起動の確認(G5)の失敗も直す依頼にして返す。2 回目の直す依頼には、直前のラウンドの失敗だけを入れる', async (t) => {
@@ -197,7 +207,7 @@ test('1 回目の直すラウンドで直らず、2 回目で直ると fixed に
   assert.deepEqual(record.rounds.map((round) => gateStatus(round.gates).G4), ['failed', 'failed', 'passed']);
   assert.deepEqual(record.rounds.map((round) => round.fixOf?.round ?? null), [null, 1, 2]);
   assert.deepEqual(kinds(run).filter((kind) => kind === 'round').length, 2);
-  assert.equal(run.items.filter((item) => item.kind === 'round').at(-1).text, '直すラウンド 2/2: 作る AI を起動し直します(起動 3/3 回目)。');
+  assert.equal(run.items.filter((item) => item.kind === 'round').at(-1).detail, '直すラウンド 2/2: 作る AI を起動し直す(起動 3/3 回目)。');
   assert.ok(!(await appFile()).includes('偽接続が直そうとした跡'));
 });
 
@@ -228,9 +238,10 @@ test('直せない作る AI では、起動は 3 回で止まり、failed と証
   const gaveUp = run.items.find((item) => item.kind === 'gave-up');
   assert.equal(
     gaveUp.text,
-    '直すラウンドを 2 回行いましたが、G4 ビルドで失敗したままです。ここで止めて、失敗と証拠を返します。詳細の欄で場所を確かめ、直す依頼を送ってください。',
+    '直す AI が 2 回直そうとしましたが、「表示の準備」の問題が残っています。ここで止めました。下の「確かめた中身を見る」で問題を確かめ、直したいことを言葉で送ってください。',
   );
-  assert.ok(run.items.some((item) => item.kind === 'gates' && item.text.includes('G4 ビルド: 失敗')));
+  assert.equal(gaveUp.detail, '直すラウンドを 2 回行ったが、G4 ビルドで失敗したまま。');
+  assert.ok(run.items.some((item) => item.kind === 'gates' && item.text.includes('表示の準備: 問題あり') && item.detail.includes('G4 ビルド: 失敗')));
 });
 
 test('場面のない見本は、関門 GE が「場面なし」で通り、場面の結果を残さない(R2)', async (t) => {
@@ -291,7 +302,9 @@ test('関門 GE: 場面を G4 の後、G5 の前にモックで回し、通ら�
     { eval: 'broken-reply', file: 'app/evals/broken-reply.json', check: 'replyContains', expected: '返事に「架空の合言葉」がある', tools: '' },
   );
   assert.match(failure.actual, /お試しの AI は決まった言葉だけ分かります/);
-  assert.match(run.items.find((item) => item.kind === 'evals-failed').text, /^確かめで失敗あり: 場面「broken-reply」の確かめ「replyContains」が通りませんでした/);
+  const evalsFailed = run.items.find((item) => item.kind === 'evals-failed');
+  assert.match(evalsFailed.text, /^AI の場面で、思ったとおりに動かないところがありました。/);
+  assert.match(evalsFailed.detail, /^GE 場面: 場面「broken-reply」の確かめ「replyContains」が通りませんでした/);
 
   // 直す依頼(2 回目の作る AI の stdin)に、場面の失敗と、場面とガードレールを弱めない決まりが入る
   const stdin = (await records())[1].stdin;
@@ -316,17 +329,19 @@ test('関門 GE: 場面を G4 の後、G5 の前にモックで回し、通ら�
   assert.match(await fs.readFile(path.join(root, `.studio/runs/${run.id}/rounds/1/evals/report.md`), 'utf8'), /\| broken-reply \| no-tool \| 失敗 \|/);
   const second = record.gates.find((gate) => gate.id === 'GE');
   assert.deepEqual([second.status, second.evalCount, second.failedCount], ['passed', 45, 0]);
-  assert.ok(run.items.find((item) => item.kind === 'evals-ok').text.startsWith('場面を確かめました。45 本のうち 36 本が通り'));
+  assert.ok(run.items.find((item) => item.kind === 'evals-ok').text.startsWith('AI の場面を確かめました。45 本のうち 36 本が思ったとおりに動き'));
+  assert.ok(run.items.find((item) => item.kind === 'evals-ok').detail.startsWith('GE 場面: 45 本のうち 36 本が通った'));
 
   // 直すラウンドで場面とツールの守りが変わった印
   assert.deepEqual(record.evalsChanged, [{ round: 2, files: [{ file: 'app/evals/broken-reply.json', change: 'modified' }] }]);
   assert.deepEqual(record.guardsChanged, [{ round: 2, files: [{ file: 'app/tools.json', change: 'modified' }] }]);
   assert.deepEqual(record.rounds.map((round) => [round.evalsChanged ?? false, round.guardsChanged ?? false]), [[false, false], [true, true]]);
-  assert.equal(
-    run.items.find((item) => item.kind === 'evals-changed').text,
-    '確かめ方が変わりました: 直すラウンド 1 で、作る AI が場面を変えました(app/evals/broken-reply.json)。場面を弱めたり消したりして通していないか、変わった場面を確かめてください。',
-  );
-  assert.match(run.items.find((item) => item.kind === 'guards-changed').text, /^ガードレールが変わりました: 直すラウンド 1 で、.*\(app\/tools\.json\)。/);
+  const evalsChanged = run.items.find((item) => item.kind === 'evals-changed');
+  assert.equal(evalsChanged.text, '直す AI が直すときに、AI の場面を変えました(1 回目)。場面を弱めたり消したりして通していないか、確かめてください。');
+  assert.equal(evalsChanged.detail, '確かめ方が変わった: 直すラウンド 1 で、作る AI が場面を変えた(app/evals/broken-reply.json)。');
+  const guardsChanged = run.items.find((item) => item.kind === 'guards-changed');
+  assert.match(guardsChanged.text, /^直す AI が直すときに、試作品の中の AI の守ることを変えました\(1 回目\)。/);
+  assert.match(guardsChanged.detail, /^ガードレールが変わった: 直すラウンド 1 で、.*\(app\/tools\.json\)。/);
   assert.ok(kinds(run).indexOf('guards-changed') > kinds(run).indexOf('gates'));
 });
 
@@ -345,7 +360,8 @@ test('直すラウンドで app/ が変わらなかったら、そこで failed 
   assert.deepEqual(gateStatus(record.gates), { G1: 'unchanged', G2: 'passed', G3: 'passed', G4: 'passed', GE: 'passed', G5: 'failed', G6: 'skipped' });
   assert.equal(record.gates.find((gate) => gate.id === 'G1').detail, '直すラウンドで app/ が変わりませんでした');
   const gaveUp = run.items.find((item) => item.kind === 'gave-up');
-  assert.match(gaveUp.text, /^直すラウンドで app\/ が変わらなかったので、ここで止めました。前のラウンドの失敗\(G5 起動の確認\)は直っていません。/);
+  assert.match(gaveUp.text, /^直す AI がもう一度直そうとしましたが、試作品のファイルが変わらなかったので、ここで止めました。「開いて表示できるか」の問題は直っていません。/);
+  assert.equal(gaveUp.detail, '直すラウンドで app/ が変わらなかったので止めました。前のラウンドの失敗(G5 起動の確認)は直っていません。');
   assert.ok(run.items.some((item) => item.kind === 'assistant' && item.text === '失敗の原因が見つからなかったので、何も変えていません。'));
 });
 
@@ -362,8 +378,8 @@ test('依頼の前から同じ失敗が出ていたら、印を付ける', async
   assert.equal(g4.preexisting, true);
   assert.equal(record.rounds[1].fixOf.preexisting, true);
   assert.deepEqual(
-    run.items.filter((item) => item.kind === 'preexisting').map((item) => item.text),
-    ['G4 ビルドの失敗は、依頼の前のビルドでも同じ形で出ていました(依頼の前から壊れていました)。'],
+    run.items.filter((item) => item.kind === 'preexisting').map((item) => [item.text, item.detail]),
+    [['「表示の準備」の問題は、依頼の前から同じ形で出ていました。', 'G4 ビルドの失敗は、依頼の前のビルドでも同じ形で出ていました(依頼の前から壊れていました)。']],
   );
 
   // 依頼の前は通っていたなら、印は付けない
@@ -380,7 +396,7 @@ test('起動の確認の失敗も、表示中のビルドで前から出てい�
   assert.equal(run.status, 'failed');
   const g5 = (await readRun(run)).rounds[0].gates.find((gate) => gate.id === 'G5');
   assert.equal(g5.preexisting, true);
-  assert.ok(run.items.some((item) => item.kind === 'preexisting' && item.text.startsWith('G5 起動の確認の失敗は')));
+  assert.ok(run.items.some((item) => item.kind === 'preexisting' && item.detail.startsWith('G5 起動の確認の失敗は')));
 });
 
 test('直すラウンドの作る AI も、時間の上限で止まる。上限は 1 回の起動ごとに効く', async (t) => {
@@ -412,12 +428,12 @@ test('関門を回している間に中断すると、今の関門は終わり�
   await inObserve;
   const cancelled = requests.cancel(PROJECT, started.id);
   assert.ok(cancelled, '関門の間の中断を断った');
-  assert.ok(cancelled.items.some((item) => item.text === '中断しています…(今の確かめが終わったら止め、直すラウンドは行いません)'));
+  assert.ok(cancelled.items.some((item) => item.text === '止めています…(今の確かめが終わったら止め、もう一度直すことはしません)'));
   release();
   const run = await ended;
   assert.equal(run.status, 'cancelled');
   assert.equal(run.launches.length, 1);
-  assert.ok(run.items.some((item) => item.kind === 'cancelled' && item.text === '中断しました。直すラウンドは行いません。G5 起動の確認の失敗は直っていません。'));
+  assert.ok(run.items.some((item) => item.kind === 'cancelled' && item.text === '止めました。もう一度直すことはしません。「開いて表示できるか」の問題は直っていません。'));
   const record = await readRun(run);
   assert.equal(record.nodes.find((node) => node.name === 'fix').outcome, 'cancelled');
   assert.equal(record.gates.find((gate) => gate.id === 'G5').status, 'failed');
@@ -476,7 +492,7 @@ test('関門 G6 の全体の時間の上限を超えたら、G6 の失敗にす�
   assert.equal(g6.summary, 'シナリオの関門が時間の上限(1 秒)を超えました。無限ループや重い処理がないか確かめてください');
   assert.deepEqual(g6.errors.map((e) => e.kind), ['timeout']);
   assert.equal(record.rounds[1].fixOf.gate, 'G6');
-  assert.ok(run.items.some((item) => item.kind === 'scenarios-failed' && item.text.startsWith('確かめで失敗あり: シナリオの関門が時間の上限(1 秒)を超えました')));
+  assert.ok(run.items.some((item) => item.kind === 'scenarios-failed' && item.detail.startsWith('G6 シナリオ: シナリオの関門が時間の上限(1 秒)を超えました')));
 });
 
 // ここから先は、Studio を起動し、本物の観察器(Playwright の Chromium)で関門 G6 のシナリオを回す
@@ -546,14 +562,16 @@ test('関門 G6 で app/scenarios/ と基本のシナリオを回し、失敗を
 
   // 直す依頼の要約と、偽接続が G6 の失敗を読んだこと
   assert.equal(
-    run.items.find((item) => item.kind === 'fix-request').text,
-    'G6 シナリオの失敗(シナリオ「見出しが出る」(app/scenarios/heading.json)の 1 番目の手順で失敗しました)を作る AI に返しました。添えたのは、元の依頼、失敗の中身、変わったファイルの名前(2 個)だけです。',
+    run.items.find((item) => item.kind === 'fix-request').detail,
+    'G6 シナリオの失敗(シナリオ「見出しが出る」(app/scenarios/heading.json)の 1 番目の手順で失敗しました)を作る AI に返した。添えたのは、元の依頼、失敗の中身、変わったファイルの名前(2 個)だけ。',
   );
-  assert.ok(run.items.some((item) => item.kind === 'assistant' && item.text.startsWith('Studio の直す依頼を読みました(失敗した関門: G6 シナリオ)')));
-  assert.match(run.items.find((item) => item.kind === 'scenarios-failed').text, /^確かめで失敗あり: シナリオ「見出しが出る」の 1 番目の手順で失敗しました\(役割 heading、名前「こもれび図書室」 が見えません\)/);
+  assert.ok(run.items.some((item) => item.kind === 'assistant' && item.text.startsWith('Studio の直す依頼を読みました(問題のあったところ: 決めた手順で動くか)')));
+  const scenariosFailed = run.items.find((item) => item.kind === 'scenarios-failed');
+  assert.match(scenariosFailed.text, /^決めた手順「見出しが出る」の 1 番目で、思ったとおりに動きませんでした。/);
+  assert.match(scenariosFailed.detail, /^G6 シナリオ: シナリオ「見出しが出る」の 1 番目の手順で失敗しました\(役割 heading、名前「こもれび図書室」 が見えません\)/);
   assert.equal(
     run.items.find((item) => item.kind === 'scenarios-ok').text,
-    'シナリオを確かめました。基本のシナリオ 1 本と、app/ のシナリオ 1 本が、すべて通りました(プロダクト内 AI はモック)。',
+    '決めた手順で試しました。Studio がいつも確かめる手順 1 本と、この試作品の手順 1 本が、すべて思ったとおりに動きました(試作品の中の AI は、お試しの AI で試しました)。',
   );
 
   // 直した版の report: 基本のシナリオと app/ のシナリオが通っている
@@ -575,8 +593,11 @@ test('直すラウンドでシナリオが変わったら「確かめ方が変�
   // 作る AI はシナリオを弱めて通した。関門は通るが、印が残る
   assert.equal(run.status, 'fixed', JSON.stringify(run.items, null, 2));
   const changed = run.items.filter((item) => item.kind === 'scenarios-changed');
-  assert.deepEqual(changed.map((item) => item.text), [
-    '確かめ方が変わりました: 直すラウンド 1 で、作る AI がシナリオを変えました(app/scenarios/heading.json)。シナリオを弱めたり消したりして通していないか、変わったシナリオを確かめてください。',
+  assert.deepEqual(changed.map((item) => [item.text, item.detail]), [
+    [
+      '直す AI が直すときに、決めた手順を変えました(1 回目)。手順を弱めたり消したりして通していないか、確かめてください。',
+      '確かめ方が変わった: 直すラウンド 1 で、作る AI がシナリオを変えた(app/scenarios/heading.json)。',
+    ],
   ]);
   // 結果の項目の後に出す
   assert.ok(kinds(run).indexOf('scenarios-changed') > kinds(run).indexOf('gates'));

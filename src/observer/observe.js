@@ -366,7 +366,7 @@ export class Observer {
       Object.assign(report, structuredClone(draft));
       report.verdict = 'unverified';
       report.reason =
-        error instanceof BrowserUnavailableError ? error.message : `観察の途中で問題が起きました: ${text(error?.message ?? error, 300)}`;
+        error instanceof BrowserUnavailableError ? error.message : `試作品を開いて確かめる途中で問題が起きました。${text(error?.message ?? error, 300)}`;
       return finish();
     }
     Object.assign(report, structuredClone(draft));

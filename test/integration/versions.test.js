@@ -111,7 +111,7 @@ test('ビルドできない状態は保存しない。復元の前の自動保�
   await fs.writeFile(path.join(app, 'main.js'), 'const = ;\n');
   assert.equal((await studio.store.build('travel')).ok, false);
   await studio.aiSessions.send('travel', '山に行きたい');
-  await assert.rejects(studio.versions.save('travel'), (error) => error.code === 'build' && /ビルドできない状態は保存できません/.test(error.message));
+  await assert.rejects(studio.versions.save('travel'), (error) => error.code === 'build' && /表示できない状態は保存できません/.test(error.message));
   assert.equal((await studio.versions.list('travel')).versions.length, 1);
   // 書きかけのフォルダーを残さない
   assert.deepEqual((await fs.readdir(path.join(studioDir(home), 'versions'))).length, 1);
@@ -227,8 +227,8 @@ test('版の操作は、作る AI の実行やビルドと重ならない。知�
   studio.store.releaseRun('travel');
 
   studio.store.claimVersions('travel');
-  await assert.rejects(studio.store.build('travel'), /版の保存か復元、または引き継ぎの書き出しをしているところ/);
-  assert.throws(() => studio.store.claimRun('travel'), /版の保存か復元、または引き継ぎの書き出しをしているところ/);
+  await assert.rejects(studio.store.build('travel'), /保存か、保存した状態に戻すか、本番開発へ渡すフォルダーを作っているところ/);
+  assert.throws(() => studio.store.claimRun('travel'), /保存か、保存した状態に戻すか、本番開発へ渡すフォルダーを作っているところ/);
   studio.store.releaseVersions('travel');
 
   await assert.rejects(studio.versions.restore('travel', '../../etc'), (error) => error.code === 'not-found');
@@ -257,7 +257,7 @@ test('版の操作は、作る AI の実行やビルドと重ならない。知�
   const mock = studio.aiSessions.connections.get('mock');
   studio.aiSessions.connections.set('mock', { ...mock, respond: () => new Promise((resolve) => (release = resolve)) });
   const pending = studio.aiSessions.send('travel', '湖');
-  await assert.rejects(studio.versions.restore('travel', good.version.id), /AI が応答しているところ/);
+  await assert.rejects(studio.versions.restore('travel', good.version.id), /AI が返事をしているところ/);
   release({ reply: 'はい', updates: {} });
   await pending;
 });

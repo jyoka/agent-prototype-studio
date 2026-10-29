@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, launchStudio, openAiMenu, openDevDetails, switchToRealAi, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, devWordsIn, expect, launchStudio, openAiMenu, openDevDetails, switchToRealAi, test } from './studio.js';
 
 // 実モデルは呼ばない。Claude Code は偽の CLI(test/fixtures/fake-claude.js)に差し替える
 const FAKE = path.join(ROOT, 'test', 'fixtures', 'fake-claude.js');
@@ -133,7 +133,9 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
 
     // 失敗: 利用の上限。会話は変わらず、書いた文は残る
     await type('[上限] もう一回');
-    await expect(alert).toContainText('Claude Code の利用の上限に当たりました');
+    // 試作品の中に出る失敗の文は、利用者の言葉(ux-redesign.md 4 節)
+    await expect(alert).toContainText('本物の AI の利用の上限に当たりました。時間をおいて試すか、試す欄の上の「AI」でお試しの AI に戻してください');
+    expect(devWordsIn(await alert.innerText())).toEqual([]);
     await expect(page.locator('#events')).toContainText('利用の上限');
     await expect(message).toHaveValue('[上限] もう一回');
     await expect(log).toHaveCount(8);

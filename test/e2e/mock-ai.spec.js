@@ -203,7 +203,7 @@ test('別の題材でも同じ仕組みで動き、AI のない試作品と連�
     await page.waitForTimeout(1200);
     await expect(page.locator('iframe[title="試作品"]')).toHaveAttribute('src', /\/p\/no-ai\//);
 
-    await expect(app.locator('#root')).toContainText('エラー: no-ai この試作品はプロダクト内 AI を使っていません');
+    await expect(app.locator('#root')).toContainText('エラー: no-ai この試作品には、話せる AI がありません');
     await expect(page.locator('#ai-badge')).toBeHidden();
     await expect(page.locator('#ai-status')).toHaveText('この試作品はプロダクト内 AI を使っていません。');
     await expect(page.locator('#events')).toContainText('AI への要求に失敗しました');

@@ -639,12 +639,12 @@ test('比べるための構成だけが使うツールの守りを外すと、�
   const items = [];
   const fake = {
     store: { aiDefinition: () => after.ai, simulation: () => after.simulation },
-    addItem: (id, run, kind, text) => items.push({ kind, text }),
+    addItem: (id, run, kind, text, extra = {}) => items.push({ kind, text, ...extra }),
   };
   const run = { changedFiles: [{ file: 'app/tools.json', change: 'modified' }] };
   BuildRequests.prototype.reportAiChanges.call(fake, 'p', run, { ai: before.ai, simulation: before.simulation }, true);
   assert.equal(items.length, 1);
-  assert.match(items[0].text, /^【ガードレールが減りました】/);
+  assert.match(items[0].text, /^【AI の守ることが減りました】/);
 });
 
 test('ai.json の rules(構成 B の出口の確かめ)を弱めると、weakened に出す', () => {
@@ -670,20 +670,30 @@ test('作る会話には、構成の変化と、ガードレールが減った�
   const items = [];
   const fake = {
     store: { aiDefinition: () => after.ai, simulation: () => after.simulation },
-    addItem: (id, run, kind, text) => items.push({ kind, text }),
+    addItem: (id, run, kind, text, extra = {}) => items.push({ kind, text, ...extra }),
   };
   const run = { changedFiles: [{ file: 'app/tools.json', change: 'modified' }] };
   BuildRequests.prototype.reportAiChanges.call(fake, 'p', run, { ai: before.ai, simulation: before.simulation }, true);
   assert.equal(items.length, 1);
   assert.equal(items[0].kind, 'ai-settings');
+  // 本文は利用者の言葉で、印と数だけ。変化の行(ファイルの名前、設定の名前)は開発者向け(detail)
   const lines = items[0].text.split('\n');
-  assert.match(lines[0], /^【ガードレールが減りました】/);
-  assert.match(lines[1], /^- ツール「save_wish」の守り deny から外した: /);
-  assert.ok(lines.includes('構成、ツール、ガードレールが変わりました。Studio が前と比べた結果:'), items[0].text);
-  assert.ok(lines.includes('- 足したツール: 「fixed_hello」'), items[0].text);
+  assert.match(lines[0], /^【AI の守ることが減りました】1 か所です。/);
+  assert.ok(lines.includes('試作品の中の AI の組み立て、道具、守ることが 1 か所変わりました。'), items[0].text);
+  const detail = items[0].detail.split('\n');
+  assert.equal(detail[0], 'ガードレールが減った:');
+  assert.match(detail[1], /^- ツール「save_wish」の守り deny から外した: /);
+  assert.ok(detail.includes('構成、ツール、ガードレールの変化:'), items[0].detail);
+  assert.ok(detail.includes('- 足したツール: 「fixed_hello」'), items[0].detail);
 
   // ビルドに失敗したら、構成は前のままと出す
   items.length = 0;
   BuildRequests.prototype.reportAiChanges.call(fake, 'p', run, { ai: before.ai, simulation: before.simulation }, false);
-  assert.deepEqual(items, [{ kind: 'ai-settings', text: 'app/tools.json が変わりましたが、ビルドに失敗したので、構成は前のままです。' }]);
+  assert.deepEqual(items, [
+    {
+      kind: 'ai-settings',
+      text: '試作品の中の AI の組み立てが変わりましたが、試作品を表示できないので、前のままです。',
+      detail: 'app/tools.json が変わったが、ビルドに失敗したので、構成は前のまま。',
+    },
+  ]);
 });

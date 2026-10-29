@@ -169,7 +169,7 @@ async function runOutside(studio, events, home) {
     status: run.status,
     fileCreated,
     stop,
-    items: run.items.filter((item) => ['tool', 'tool-error', 'denied', 'assistant', 'failed'].includes(item.kind)).map((item) => ({ kind: item.kind, text: item.text.slice(0, 600) })),
+    items: run.items.filter((item) => ['tool', 'tool-error', 'denied', 'assistant', 'failed'].includes(item.kind)).map((item) => ({ kind: item.kind, text: item.text.slice(0, 600), ...(item.detail ? { detail: item.detail.slice(0, 600) } : {}) })),
     launch: rounds.map((round) => ({ round: round.round, model: round.model, result: round.result, steps: round.steps })),
   };
 }
