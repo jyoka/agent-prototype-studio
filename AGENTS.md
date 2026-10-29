@@ -7,10 +7,12 @@
 
 | 知りたいこと | 読むもの |
 |---|---|
+| 何のためにあるか(目的、原則、調子) | [docs/vision.md](docs/vision.md)(案) |
 | 何を作るか | [docs/prd.md](docs/prd.md)(最後の「PRD の後に決めたこと」が正) |
 | 全体の部品とデータの流れ | [docs/architecture/hld.md](docs/architecture/hld.md) |
 | なぜこの作りなのか(隔離、作る AI の起動) | [docs/adr/0001-local-runtime-and-isolation.md](docs/adr/0001-local-runtime-and-isolation.md) |
 | これからの画面 | [docs/design/ux-redesign.md](docs/design/ux-redesign.md) |
+| 利用者の流れと、これからのカード | [docs/design/user-journey.md](docs/design/user-journey.md)、[docs/design/design-materials.md](docs/design/design-materials.md)(案) |
 | 使い方の全部 | [docs/usage.md](docs/usage.md)、[docs/claude-code.md](docs/claude-code.md) |
 
 ## 書き方
