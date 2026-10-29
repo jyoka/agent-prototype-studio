@@ -382,6 +382,7 @@ phrase({ definition, decision, state, messages, signal })     -> { reply }
 | `mustAsk` | 決定が項目を聞くとき、返事にその問いの原文(`question`)が入っていること。入っていなければ、harness が返事の後ろに足す | aica の「質問の原文が入っているか」 |
 | `maxReplyChars` | 長さ | aica の `REPLY_MAX` |
 | `forbidden` | 作り手が書いた禁止の言葉を含まない | 作り手の決まり |
+| (`rules` に書かない)`noJsonText` | 返事に JSON の形(`"キー":` や、全体が JSON)が残っていない。いつも確かめる。言い方の `reply` が `{"reply": "…"}` の JSON の文なら、接続が先に中の文を取り出す | jyoka/tasks#365(sim-9 で、返事に JSON の文が出た) |
 
 - 「誘導しない」と「数字を作らない」は、形で確かめる。意味までは確かめられない。確かめた結果は AI の実行の記録(#277)に、合格、やり直し、決まった文に代えた、のどれかで残す。
 - 本人の修正(`correct`)は今と同じく、harness がモデルを呼ばずに状態に入れる。次の言い方の決定に `corrected` として渡す。

@@ -237,6 +237,59 @@ test('応答を待つ間に開き直しても作り直しても、止められ�
   }
 });
 
+// jyoka/tasks#365。sim-9 の実モデルで、言い方の返事に {"reply": "…"} の JSON の文がそのまま出た回があった
+test('言い方の出力が JSON の文でも、前後に文があっても、トークには返事の文だけが出る。読めない JSON は出口の確かめでやり直す', async ({ page, home }) => {
+  const env = fakeEnv(home);
+  const studio = await launchStudio(home, { env });
+  try {
+    await page.goto(studio.url);
+    await chooseSample(page, SAMPLES.jobConsult);
+    const app = page.frameLocator('iframe[title="試作品"]');
+    const log = app.getByRole('region', { name: '会話' }).getByRole('listitem');
+    const message = app.getByLabel('メッセージ');
+    const say = async (text) => {
+      await message.fill(text);
+      await app.getByRole('button', { name: '送る' }).click();
+      await expect(message).toHaveValue('');
+    };
+    await openDevDetails(page);
+    await switchToRealAi(page);
+    const entries = page.locator('#ai-trace').getByRole('list', { name: 'AI の実行の記録' }).locator(':scope > li');
+    const replyOnly = async (text) => {
+      await say(text);
+      await expect(log.last()).toContainText(`偽の Claude Code です。これまでの会話を受け取りました(修正の記録なし)。「${text}」への返事です。`);
+      await expect(log.last()).not.toContainText('"reply"');
+      await expect(log.last()).not.toContainText('返事はこちらです');
+      await expect(log.last()).not.toContainText('{');
+    };
+
+    // reply の中が {"reply": "…"} の JSON の文
+    await replyOnly('[JSON の文] カフェで働きたい');
+    // reply の中の JSON の文の前後に、文が付いている
+    await replyOnly('[前後に文] 正社員がいいです');
+    // 構造化出力がなく、本文の JSON の前後に文が付いている
+    await replyOnly('[文だけ][前後に文] 勤務地は駅の近く');
+
+    // 閉じていない JSON の文は受け取れない。出口の確かめで止め、言い方を 1 回やり直す
+    await say('[一度壊れた JSON] 時給はまだ決めていません');
+    await expect(log.last()).toContainText('「[一度壊れた JSON] 時給はまだ決めていません」への返事です。');
+    await expect(log.last()).not.toContainText('"reply"');
+    const retried = entries.first();
+    await retried.getByText('harness の段: 抽出 → 決定 → 言い方(開発向け)').click();
+    await expect(retried).toContainText('結果: やり直して合格。合わなかった決まり: JSON の文を出さない(noJsonText)');
+
+    // やり直しても受け取れなければ、決まった文(mock の型)に代える
+    await say('[壊れた JSON] まだ考えています');
+    await expect(log.last()).not.toContainText('"reply"');
+    await expect(log.last()).not.toContainText('偽の Claude Code です');
+    const replaced = entries.first();
+    await replaced.getByText('harness の段: 抽出 → 決定 → 言い方(開発向け)').click();
+    await expect(replaced).toContainText('結果: 決まった文(mock の型)に代えた');
+  } finally {
+    await studio.stop();
+  }
+});
+
 test('実モデルは STUDIO_ALLOW_CLAUDE_CODE=0 では選べず、理由を出す。API キーがあれば従量課金と上限を出す', async ({ page, home }) => {
   const blocked = await launchStudio(home, { env: fakeEnv(home, { STUDIO_ALLOW_CLAUDE_CODE: '0' }) });
   try {
