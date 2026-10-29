@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import tls from 'node:tls';
+import { STUDIO_ROOT } from '../../src/server/config.js';
 import { parseTools } from '../../src/server/sim/tools.js';
 import { callTool, loadToolData } from '../../src/server/sim/tool-gate.js';
 
@@ -582,4 +583,47 @@ test('どの op も、ファイルを読み書きせず、外へ通信しない(
   // 止めた口の中でも、5 つの op が動き、守りと失敗も効いた
   assert.deepEqual(outcomes.map((outcome) => outcome.ok), [true, true, true, true, true, true, false, false, true, false]);
   assert.equal(outcomes.at(-1).fault, true);
+});
+
+// 見本のバイト探し(構成 A)の save_wish の守り(jyoka/tasks#366)。プロンプトの頼みに頼らず、ツールの守りで、
+// 電話番号、メールアドレス、住所らしい文字、氏名らしい書き方を止める。普通の希望(駅の近く、渋谷あたり)は止めすぎない
+test('見本の save_wish は、連絡先、住所、氏名を断り、普通の希望は保存する(架空)', async () => {
+  const appDir = path.join(STUDIO_ROOT, 'samples', 'part-time', 'app');
+  const raw = JSON.parse(await fs.readFile(path.join(appDir, 'tools.json'), 'utf8'));
+  const { toolset, errors } = await parseTools(raw, { file: 'tools.json', appDir });
+  assert.deepEqual(errors, []);
+  const save = (args) => callTool({ tools: toolset, store: { consent: { agreed: true } }, name: 'save_wish', args });
+  const denied = [
+    { note: '連絡は 090-0000-1111' },
+    { note: 'taro@example.com に送って' },
+    { note: '住所はかわせみ町です' },
+    { note: '家はかわせみ町1-2-3' },
+    { note: 'かわせみ町１－２－３' },
+    { note: 'かわせみ町2丁目3番地' },
+    { note: 'みほん荘 101号室' },
+    { note: '〒000-0000' },
+    { note: '名前はみほん太郎' },
+    { note: '氏名: みほん花子' },
+    { note: 'みほん太郎と申します' },
+    { area: 'かわせみ町1-2-3' },
+    { area: 'かわせみ町2丁目' },
+  ];
+  for (const args of denied) {
+    const outcome = await save(args);
+    assert.equal(outcome.ok, false, JSON.stringify(args));
+    assert.ok(outcome.guards.some((g) => g.guard === 'deny' && g.effect === 'blocked'), JSON.stringify(args));
+    assert.equal(outcome.store.wishes, undefined, JSON.stringify(args));
+  }
+  const allowed = [
+    { area: 'みなと町', note: '駅の近くがいい' },
+    { area: '渋谷あたり' },
+    { area: '駅の近く', minWage: 1100 },
+    { note: '土日の 10-18 時くらい。家から近いところ' },
+    { note: '人と話す仕事がしたい。1-2 か月だけでもよい' },
+  ];
+  for (const args of allowed) {
+    const outcome = await save(args);
+    assert.equal(outcome.ok, true, `${JSON.stringify(args)}: ${outcome.error}`);
+    assert.deepEqual(outcome.store.wishes, args);
+  }
 });
