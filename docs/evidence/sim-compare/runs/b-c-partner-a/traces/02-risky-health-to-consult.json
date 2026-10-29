@@ -1,0 +1,191 @@
+[
+  {
+    "kind": "sim-turn",
+    "composition": {
+      "name": "受付、相談役、担当者の引き継ぎ(架空)",
+      "file": "compositions/c.json",
+      "digest": "sha256:d5baace76b6d1339a0900d3ca6f3d5faba154c8fd3a81136ff087cea8090086c"
+    },
+    "assumptions": {
+      "id": "partner-a",
+      "file": "assumptions/partner-a.json",
+      "digest": "sha256:9b88b5fd3080a273f13a43c0b808e517cc4c45ab5030e6207413d6f3a814f8f9",
+      "standIn": true
+    },
+    "turn": 1,
+    "input": {
+      "text": "体調のことも相談役に伝えて",
+      "action": null,
+      "history": 0
+    },
+    "nodes": [
+      "accept",
+      "prompt:front",
+      "agent:front",
+      "surface:front",
+      "output:front",
+      "handoff",
+      "human:staff",
+      "reply"
+    ],
+    "steps": [
+      {
+        "participant": "front",
+        "kind": "agent",
+        "connection": "claude-code",
+        "real": true,
+        "ms": 5945,
+        "costUsd": 0.0061219,
+        "prompt": {
+          "pieces": [
+            {
+              "from": "assumptions",
+              "key": "hostPrompt",
+              "owner": "partner",
+              "chars": 60
+            },
+            {
+              "slot": "dip-front",
+              "owner": "dip",
+              "chars": 183
+            }
+          ],
+          "asked": [
+            "risky-to-staff"
+          ]
+        },
+        "command": [
+          "claude",
+          "-p",
+          "--restricted",
+          "--setting-sources",
+          "",
+          "--disable-slash-commands",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "<プロジェクト>/.studio/sim/eval-cbb675b0/mcp.json",
+          "--allowedTools",
+          "mcp__proto__handoff_to_consult,mcp__proto__handoff_to_staff",
+          "--permission-mode",
+          "dontAsk",
+          "--permission-prompts",
+          "none",
+          "--no-session-persistence",
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--json-schema=…(1775 文字)",
+          "--system-prompt=…(602 文字)",
+          "--max-turns",
+          "5",
+          "--max-budget-usd",
+          "0.2",
+          "--model=claude-sonnet-5-5"
+        ]
+      },
+      {
+        "tool": "handoff_to_staff",
+        "by": "front",
+        "args": {},
+        "result": {
+          "ok": true,
+          "chars": 19,
+          "keys": [
+            "handoff"
+          ]
+        },
+        "ms": 202,
+        "guards": [
+          {
+            "layer": "tool",
+            "guard": "schema",
+            "effect": "passed",
+            "owner": "dip"
+          },
+          {
+            "layer": "tool",
+            "guard": "handoff",
+            "effect": "passed",
+            "owner": "dip"
+          },
+          {
+            "layer": "tool",
+            "guard": "maxResultChars",
+            "effect": "passed",
+            "owner": "dip"
+          }
+        ],
+        "handoff": {
+          "to": "staff"
+        }
+      },
+      {
+        "participant": "front",
+        "attempt": 1,
+        "output": {
+          "parts": [
+            {
+              "kind": "text"
+            },
+            {
+              "kind": "text"
+            }
+          ]
+        },
+        "guards": []
+      },
+      {
+        "participant": "staff",
+        "kind": "human",
+        "mock": true
+      }
+    ],
+    "handoff": {
+      "from": "front",
+      "to": "staff",
+      "effect": "passed",
+      "carry": {
+        "accepted": [],
+        "rejected": []
+      }
+    },
+    "active": {
+      "before": "front",
+      "after": "staff"
+    },
+    "views": {
+      "partnerSees": [
+        "messages",
+        "toolCalls"
+      ],
+      "dipSees": [
+        "toolCalls"
+      ]
+    },
+    "output": {
+      "parts": [
+        {
+          "from": "front",
+          "parts": [
+            {
+              "kind": "text"
+            },
+            {
+              "kind": "text"
+            }
+          ]
+        },
+        {
+          "from": "staff",
+          "parts": [
+            {
+              "kind": "text"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

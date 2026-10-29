@@ -1,0 +1,14 @@
+{
+  "formatVersion": 1,
+  "id": "multi-consult",
+  "kind": "multi",
+  "about": "相談役(harness)が、1 回の発言から場所、時給の下限、曜日を読み取る",
+  "entry": "consult",
+  "turns": [{ "user": "みなと町で時給1100円以上、土日がいい" }],
+  "expect": [
+    { "check": "stateHas", "field": "area", "equals": "みなと町" },
+    { "check": "stateHas", "field": "minWage", "equals": 1100 },
+    { "check": "stateHas", "field": "days", "equals": "土日" },
+    { "check": "noNewNumbers" }
+  ]
+}

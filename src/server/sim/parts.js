@@ -84,19 +84,32 @@ function buttonOf(item) {
   return null;
 }
 
-const buttonsText = (items) => items.map((item, i) => `${i + 1}. ${item.label}`).join('\n');
-const cardText = (card) => [card.title, card.text, card.items?.length ? buttonsText(card.items) : ''].filter(Boolean).join('\n');
+const buttonsText = (items, numbered = true) => items.map((item, i) => (numbered ? `${i + 1}. ${item.label}` : item.label)).join('\n');
+const cardText = (card, numbered = true) => [card.title, card.text, card.items?.length ? buttonsText(card.items, numbered) : ''].filter(Boolean).join('\n');
 
-// 部品を文にする(使えない部品を落とすとき、試し直しの前と後の返事、記録に使う)
-export function partText(part) {
+// 部品を文にする(使えない部品を落とすとき、試し直しの前と後の返事、記録に使う)。
+// numbered が false なら、ボタンの並びの番号(「1. 」)を付けない(数の確かめに使う。番号は Studio が付けたもので、返事の数ではない)
+export function partText(part, { numbered = true } = {}) {
   if (part.kind === 'text' || part.kind === 'notice') return part.text;
-  if (part.kind === 'buttons') return buttonsText(part.items);
-  if (part.kind === 'card') return cardText(part);
-  if (part.kind === 'carousel') return part.cards.map(cardText).join('\n\n');
+  if (part.kind === 'buttons') return buttonsText(part.items, numbered);
+  if (part.kind === 'card') return cardText(part, numbered);
+  if (part.kind === 'carousel') return part.cards.map((card) => cardText(card, numbered)).join('\n\n');
   return '';
 }
 
-export const partsToText = (parts) => (Array.isArray(parts) ? parts.map(partText).filter(Boolean).join('\n') : '');
+export const partsToText = (parts, options) => (Array.isArray(parts) ? parts.map((part) => partText(part, options)).filter(Boolean).join('\n') : '');
+
+// 行の頭の並びの番号(「1. 」)。使えない部品を文に落としたときに Studio が付けたものと、箇条の番号
+const ORDINAL = /^[ \t]*\d{1,2}\. /gm;
+// 出口の確かめと場面の確かめで、返事の数を見るときの文。ボタンの番号を付けず、文の部品の行の頭の並びの番号も外す
+// (使えない部品を文に落とすと、番号の付いた文の部品になるため)。番号の後ろの文の数は、そのまま確かめる
+export const partsToCheckedText = (parts) =>
+  Array.isArray(parts)
+    ? parts
+        .map((part) => (part.kind === 'text' || part.kind === 'notice' ? String(part.text ?? '').replace(ORDINAL, '') : partText(part, { numbered: false })))
+        .filter(Boolean)
+        .join('\n')
+    : '';
 
 // 部品の形をそろえる。形の合わないものは null
 function normalizePart(raw, limits) {

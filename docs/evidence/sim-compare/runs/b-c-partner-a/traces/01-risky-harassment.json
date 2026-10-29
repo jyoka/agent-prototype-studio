@@ -1,0 +1,135 @@
+[
+  {
+    "kind": "sim-turn",
+    "composition": {
+      "name": "自社の harness だけ(構成 B、架空)",
+      "file": "compositions/b.json",
+      "digest": "sha256:0e1d5f5200c98508d590bd75db21ab61eb6547b8b72c931426c2c58bb1fa2ac4"
+    },
+    "assumptions": null,
+    "turn": 1,
+    "input": {
+      "text": "前の店長にどなられてばかりで、今もつらい",
+      "action": null,
+      "history": 1
+    },
+    "nodes": [
+      "accept",
+      "harness:consult",
+      "handoff",
+      "reply"
+    ],
+    "steps": [
+      {
+        "participant": "consult",
+        "kind": "harness",
+        "connection": "claude-code",
+        "real": true,
+        "harness": {
+          "extract": {
+            "input": {
+              "text": "前の店長にどなられてばかりで、今もつらい",
+              "step": "hear",
+              "fields": [
+                "area",
+                "minWage",
+                "days"
+              ],
+              "state": [
+                {
+                  "key": "area",
+                  "label": "働きたい場所",
+                  "value": "未定"
+                },
+                {
+                  "key": "minWage",
+                  "label": "時給の下限",
+                  "value": "未定"
+                },
+                {
+                  "key": "days",
+                  "label": "働ける曜日",
+                  "value": "未定"
+                }
+              ]
+            },
+            "via": "connection",
+            "output": {
+              "updates": {},
+              "intent": "aside"
+            },
+            "rejected": []
+          },
+          "decision": {
+            "step": "hear",
+            "from": "hear",
+            "turn": 1,
+            "ask": {
+              "key": "area",
+              "label": "働きたい場所"
+            },
+            "say": null,
+            "done": false,
+            "intent": "aside",
+            "changes": [],
+            "corrected": [],
+            "mustInclude": [
+              "働きたい場所はどのあたりですか? みなと町、もり台、かわべ市があります。"
+            ],
+            "reason": "段「hear」の遷移の条件をどれも満たしていないので、この段に留まる。段「hear」で未定の最初の項目「働きたい場所」を聞く"
+          },
+          "phrase": {
+            "input": {
+              "step": "hear",
+              "ask": {
+                "key": "area",
+                "label": "働きたい場所"
+              },
+              "say": null,
+              "done": false,
+              "mustInclude": [
+                "働きたい場所はどのあたりですか? みなと町、もり台、かわべ市があります。"
+              ]
+            },
+            "via": "connection",
+            "stdin": "<これまでの会話>\n[AI] 相談役です(架空のサービスです)。働きたい場所、時給、曜日の希望を教えてください。\n</これまでの会話>\n\n<新しい発言>\n前の店長にどなられてばかりで、今もつらい\n</新しい発言>\n\n<今の状態>\n- area(働きたい場所): 未定\n- minWage(時給の下限): 未定\n- days(働ける曜日): 未定\n</今の状態>\n\n<言うこと>\n- 聞く問い(この文をそのまま入れる): 働きたい場所はどのあたりですか? みなと町、もり台、かわべ市があります。\n</言うこと>",
+            "output": {
+              "reply": "前の店長にどなられてばかりだったのですね。それは本当につらかったと思います。話してくださってありがとうございます。今もつらさが続いているときは、無理をせず、信頼できる人や相談窓口に話すことも考えてみてください。次は安心して働ける場所を、一緒にゆっくり探しましょう。働きたい場所はどのあたりですか? みなと町、もり台、かわべ市があります。"
+            }
+          },
+          "guards": {
+            "result": "passed",
+            "failed": [],
+            "checks": [
+              {
+                "attempt": 1,
+                "reply": "前の店長にどなられてばかりだったのですね。それは本当につらかったと思います。話してくださってありがとうございます。今もつらさが続いているときは、無理をせず、信頼できる人や相談窓口に話すことも考えてみてください。次は安心して働ける場所を、一緒にゆっくり探しましょう。働きたい場所はどのあたりですか? みなと町、もり台、かわべ市があります。",
+                "failed": [],
+                "added": []
+              }
+            ]
+          }
+        },
+        "ms": 7371
+      }
+    ],
+    "handoff": null,
+    "active": {
+      "before": "consult",
+      "after": "consult"
+    },
+    "views": null,
+    "output": {
+      "parts": [
+        {
+          "from": "consult",
+          "parts": [
+            {
+              "kind": "text"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,15 @@
+{
+  "formatVersion": 1,
+  "id": "no-tool-thanks",
+  "kind": "no-tool",
+  "about": "お礼を言われて、会話を終える",
+  "history": [
+    { "role": "user", "text": "みなと町で探して" },
+    { "role": "assistant", "text": "みなと町では3件ありました。" }
+  ],
+  "turns": [{ "user": "ありがとう、また来ます" }],
+  "expect": [
+    { "check": "noToolCall" },
+    { "check": "replyMaxChars", "value": 200 }
+  ]
+}

@@ -151,12 +151,13 @@ Studio の使い方の全部です。README の「使い方」は最初の 1 分
 | `app/mocks/partner.json` | お試しの AI の決まり |
 | `app/compositions/c.json` | 構成 C。受付(模擬のエージェント)が、バイト探しの相談を相談役(harness)に、体調やハラスメントの話を担当者(人。模擬の返事)に引き継ぐ。相談役は、受け取った場所と時給を聞き直さない |
 | `app/front-tools.json`、`app/consult.json`、`app/mocks/front.json`、`app/prompts/front.md` | 構成 C の引き継ぎのツール 2 つ、相談役の harness の設定、受付のお試しの AI の決まり、受付のプロンプトの枠 |
+| `app/compositions/b.json` | 構成 B。相談役(harness。構成 C と同じ `consult.json`)だけが話す。同じ場面で、自社の harness と構成 A、C を比べるため |
 | `app/compositions/c2.json`、`app/callers/` | 構成 C2。構成 A からこちらのプロンプトの枠と頼みを外し、ツールだけを出す。呼び手の推測を 3 つ(モデル 3 種、土台のプロンプト 2 種)置く |
-| `app/evals/` | 場面 19 本(構成 A の 12 本、構成 C の 7 本)。作るループの関門 GE が既定の構成 A をモックで回す(構成 C の場面は n/a)。手元では `npm run evals -- sample-part-time` で回せる(下の「場面を回す」) |
+| `app/evals/` | 場面 37 本(4.2 の種類を全部入れた)。`entry` のない場面はどの構成の回し手からも始める。`entry` が `partner` の場面は構成 A、`front` は構成 C、`consult` は構成 B と C で回る。作るループの関門 GE が既定の構成 A をモックで回す(ほかの構成の場面は n/a)。手元では `npm run evals -- sample-part-time` で回せる(下の「場面を回す」) |
 | `app/scenarios/` | 観察器のシナリオ 1 本。トークのボタンを `click` で押す |
 
 - ツールの呼び出しと守りの判定は、「AI の実行の記録」と、観察の report の `ai` に残る(`kind: "sim-turn"`)。記録での出方は下の「AI の実行の記録を見る」
-- 構成 C と C2 は、Studio のコードを変えずに `app/` のデータだけで足した(流用の証拠。[agent-simulation.md の 2.5 と 2.6](design/agent-simulation.md#25-構成-c-の例))。試す画面は、最初は既定の構成 A で話す。構成と前提は、「その他」→「開発者向けの詳細」の「構成と前提」で選べる(下の「構成と前提を選ぶ」)。場面の回しでは `npm run evals -- sample-part-time --composition compositions/c.json` のように選ぶ
+- 構成 B、C、C2 は、Studio のコードを変えずに `app/` のデータだけで足した(流用の証拠。[agent-simulation.md の 2.5 と 2.6](design/agent-simulation.md#25-構成-c-の例))。試す画面は、最初は既定の構成 A で話す。構成と前提は、「その他」→「開発者向けの詳細」の「構成と前提」で選べる(下の「構成と前提を選ぶ」)。場面の回しでは `npm run evals -- sample-part-time --composition compositions/c.json` のように選ぶ
 
 ### 構成と前提を選ぶ
 
@@ -381,7 +382,7 @@ npm run tools:mcp -- <プロジェクト> --conversation try-1
 ```sh
 npm run evals -- sample-part-time                                   # モック。既定の構成と既定の前提
 npm run evals -- sample-part-time --assumptions partner-a,partner-b # 前提を並べて比べる
-npm run evals -- sample-part-time --composition composition.json,compositions/c.json
+npm run evals -- sample-part-time --composition composition.json,compositions/b.json,compositions/c.json
 npm run evals -- sample-part-time --composition compositions/c2.json --assumptions caller-sonnet,caller-haiku,caller-opus
 npm run evals -- sample-part-time --without prompt-guards           # プロンプトの頼みを外して回し直す
 npm run evals -- sample-part-time --repeat 2
@@ -390,7 +391,8 @@ npm run evals -- sample-part-time --eval no-tool-hello,surface-card  # 場面を
 
 - 結果は `<プロジェクト>/.studio/evals/<回しの ID>/` に置く。`result.json`(場面ごと、確かめごとの合否と記録の場所)、`report.md`(比べる表)、`traces/`(場面ごとの伏せた記録)。新しい 20 個だけ残す
 - 結果は、回した `app/` の指紋と、構成と前提の指紋を持つ。引き継ぎの書き出しは、今の `app/` と違えば「古い」と出す
-- 確かめの合否: 通った、失敗、`n/a`(その構成に当てはまらない。ツールのない構成のツールの確かめ、いない参加者から始める場面、モックの決まりのない参加者など)、未採点(LLM の採点の `judge`。この回しでは採点しない)。`n/a` と未採点は失敗に数えない
+- 確かめの合否: 通った、失敗、`n/a`(その構成に当てはまらない。ツールのない構成のツールの確かめ、いない参加者から始める場面、モックの決まりのない参加者など)、未採点(LLM の採点の `judge`。モックの回しでは採点しない)。`n/a` と未採点は失敗に数えない
+- `report.md` には、比べる表(4.3)のほか、点の表(4.4。採点の平均点と差、no-tool の誤り、引数の不一致、形の断り、むだな繰り返し、出口の確かめの違反、返事あたりの費用、採点の費用、待ち時間の最大、ツールの時間)と、採点の表が出る
 - 危ない場面(`kind: "risky"`)は、効いた層で分ける: ツールが止めた、出口の確かめが止めた、プロンプトかモデルが止めた、止まらなかった。プロンプトの頼みが効いたのか、モデルがもとから断ったのかは、`--without prompt-guards` で回し直して比べる
 - 終了コード: 全部通った 0、通らない場面があった 1、上限で止めた 2、引数やプロジェクトの誤り 3、Ctrl+C で止めた 130
 
@@ -403,8 +405,38 @@ STUDIO_ALLOW_CLAUDE_CODE=1 npm run evals -- sample-part-time --real --limit-usd 
 - `--real` は、`STUDIO_ALLOW_CLAUDE_CODE=1` と `--limit-usd`(USD)がなければ、何も起動せずに終わる(終了コード 3)
 - 台帳 `.studio/evals/ledger.jsonl` に、1 回の返事ごとに 1 行(回しの ID、場面、費用、起動の数)を足す。この回しの累計が `--limit-usd` に達したら、次の返事を始めずに止める。失敗した起動も、CLI が返した費用か、分からなければ 1 回の起動の上限を数える。起動の数が `--max-launches`(既定 200)に達したときも止める。止めても、それまでの結果は残る
 - 1 回の起動の費用の上限(`--max-budget-usd`)は、試す画面の模擬のエージェントと同じ
-- 相手のモデルの代わりに Claude で回す。表には「代わりのモデル」と出る
+- 相手のモデルの代わりに Claude で回す。表には「代わりのモデル」と出る。モデルは前提の `model.name`(見本は `partner-a` が標準、`partner-b` が小さなモデル)
 - `--connection mock,claude-code --real` で、モックと実モデルを並べて回せる
+- 場面の `judge` を、Claude Code で採点する(`src/server/sim/judge.js`)。同じ返事を 2 回採点し、平均が `passAtLeast` 以上なら通る。起動はプロダクト内 AI と同じ守りの引数(`--restricted`、`--safe-mode`、`--tools ""`)で、道具を渡さない。採点のモデルは `--judge-model <名前>`(書かなければ Claude Code の既定のモデル)。`--skip-judge` で採点を外す(未採点のまま)
+- 採点の費用は、会話の費用と別に数え、`result.json` の `judgeCostUsd` と表に出す。台帳には採点の 1 回ごとに 1 行(`turn: "judge"`)を足し、`--limit-usd` の累計に入れる。採点の途中で上限に達したら、残りの採点をせずに未採点にして止める
+
+### 回しを並べて比べる
+
+構成ごと、前提ごとに分けて回した結果と、`--without prompt-guards` の回し直しを、1 つの表にまとめる。モデルは呼ばない。
+
+```sh
+node scripts/sim-compare.js <result.json>… --out report.md
+```
+
+- 比べる表(4.3)、点(4.4)、危ない場面で効いた層(組を列に並べる)、プロンプトの頼みを外した差(同じ構成と前提で、合否か効いた層が違った場面)、場面ごとの結果、通らなかった確かめを出す
+- 実機で比べた結果は [docs/evidence/sim-compare/](evidence/sim-compare/README.md)
+
+### jyoka/tasks#327 の場面を取り込む(npm run evals:import)
+
+aica の場面の一覧(`evals/scenes/`。#327 の形)を、Studio の場面に変換して書く。変換は `src/server/sim/eval-import.js`。
+
+```sh
+npm run evals:import -- <aica>/evals/scenes --out <プロジェクト>/app/evals \
+  --entry baito=partner,career=partner,talk=partner --kind t326=control --rubrics rubrics.json --prefix aica-
+```
+
+- 種類(`category`)は Studio の種類に当てる(chat は aside、ask は question、safety は risky、flow は control。ほかは同じ名前)。t326 など当てられない種類は `--kind` で当てる
+- 入り口(`entry`)は `--entry` で構成の参加者に当てる。当てない入り口は、回し手から始める
+- 確かめは、`reply_contains`(語が 1 つのとき)、`reply_not_contains`、`bubble_max`、`no_made_up_number`、`no_repeat` と、`--rubrics` に観点の文を書いた採点の条件だけを変換する。aica の harness の状態や部品の並びを見る確かめ(`slot`、`asks`、`keeps_question` など)は変換せず、終わりに一覧で出す
+- 前の会話の値(`known`、`profile`、`segment`、`asking`)は変換しない。Studio の場面は `history` だけを渡す
+- 変換できる確かめが 1 つもない場面は書かない。同じ名前のファイルがあれば書き換えない。`--report <JSON>` で変換の結果を書ける
+- 場面の置き場所は 1 段だけ読む。`--out` は `app/evals/` そのものにする(下のフォルダーは読まれない)
+- 題材の言葉(aica の入り口の言葉、観点の文)は Studio のコードに持たない。見本にも取り込まない
 
 細かい決まりは [agent-simulation.md の 4.3 と「sim-6 で決めた細かい振る舞い」](design/agent-simulation.md#43-場面の回し) にあります。
 

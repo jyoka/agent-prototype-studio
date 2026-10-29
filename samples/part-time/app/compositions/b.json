@@ -1,0 +1,11 @@
+{
+  "formatVersion": 1,
+  "name": "自社の harness だけ(構成 B、架空)",
+  "driver": "consult",
+  "participants": [
+    { "id": "consult", "kind": "harness", "label": "相談役", "owner": "dip", "ai": "consult.json" }
+  ],
+  "handoffs": [],
+  "surface": { "kind": "talk", "theme": "talk" },
+  "limits": { "maxTurns": 20, "maxHandoffs": 3 }
+}

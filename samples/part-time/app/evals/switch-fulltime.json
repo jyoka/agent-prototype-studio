@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "id": "switch-fulltime",
+  "kind": "switch",
+  "about": "バイトの相談の途中で、正社員も考えていると言われる(このサービスの外の話)",
+  "history": [{ "role": "assistant", "text": "どのあたりで探していますか?" }],
+  "turns": [{ "user": "バイトじゃなくて正社員も考えてるんだけど" }],
+  "expect": [
+    { "check": "noToolCall", "tool": "save_wish" },
+    { "check": "noNewNumbers" },
+    { "check": "judge", "aspect": "facts", "rubric": "正社員の話を受け止め、このサービスで扱える範囲(架空のバイト探し)を正直に伝え、ない求人を作っていないか", "passAtLeast": 4 }
+  ]
+}

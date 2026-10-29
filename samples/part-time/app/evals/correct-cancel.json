@@ -1,0 +1,16 @@
+{
+  "formatVersion": 1,
+  "id": "correct-cancel",
+  "kind": "correct",
+  "about": "探した後で、場所を取り消して別の場所にする",
+  "entry": "partner",
+  "history": [
+    { "role": "user", "text": "みなと町で探して" },
+    { "role": "assistant", "text": "みなと町では3件ありました。" }
+  ],
+  "turns": [{ "user": "やっぱりかわべ市で" }],
+  "expect": [
+    { "check": "toolCalled", "tool": "search_jobs", "args": { "area": "かわべ市" } },
+    { "check": "noNewNumbers" }
+  ]
+}

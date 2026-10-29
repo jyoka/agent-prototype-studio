@@ -8,7 +8,7 @@ import { STUDIO_ROOT } from '../../src/server/config.js';
 import { createMockConnection } from '../../src/server/product-ai/mock.js';
 import { createMockAgent } from '../../src/server/sim/agent-mock.js';
 import { guardFingerprint } from '../../src/server/sim/changes.js';
-import { EvalPlanError, createBudget, judgeCheck, planGroups, runEvals, stoppedByOf } from '../../src/server/sim/eval-run.js';
+import { EvalPlanError, createBudget, judgeCheck, planGroups, renderComparison, runEvals, stoppedByOf, summarizeGroup } from '../../src/server/sim/eval-run.js';
 
 // 場面の回しの部品(docs/design/agent-simulation.md の 4.3 と「sim-6 で決めた細かい振る舞い」)。
 // 見本のバイト探し(構成 A)をビルドして使う。実モデルは呼ばない(実モデルの接続は、失敗する偽の接続に替える)
@@ -93,8 +93,9 @@ test('失敗した起動の費用も台帳に数える。費用が分からな�
   const known = await run(0.003, 0.005);
   assert.equal(known.result.status, 'stopped');
   assert.equal(known.launches, 2);
-  assert.deepEqual(known.ledger.map((line) => [line.eval, line.costUsd]), [['aside-weather', 0.003], ['correct-area', 0.003]]);
-  assert.deepEqual(known.result.groups[0].evals.map((e) => [e.id, e.verdict]), [['aside-weather', 'error'], ['correct-area', 'error']]);
+  // 場面はファイルの名前の順。始めの 2 本(どちらも回し手から始める)
+  assert.deepEqual(known.ledger.map((line) => [line.eval, line.costUsd]), [['aside-joke', 0.003], ['aside-weather', 0.003]]);
+  assert.deepEqual(known.result.groups[0].evals.map((e) => [e.id, e.verdict]), [['aside-joke', 'error'], ['aside-weather', 'error']]);
 
   // 費用が分からないとき: 1 回の起動の上限(0.2 USD)を数える。1 回目の後で止まる
   const unknown = await run(undefined, 0.1);
@@ -111,8 +112,9 @@ test('モックと実モデルを並べたとき、上限はモックの組を�
   const mock = { kind: 'mock', real: false, agent: createMockAgent(), harness: createMockConnection() };
   const { result } = await runEvals({ simulation: build.simulation, aiOf, plan: { connections: ['mock'] }, connectionFor: () => mock, budget });
   assert.equal(result.status, 'done');
-  // 場面は 19 本(構成 A の 12 本と、構成 C の 7 本。構成 C の場面は、この構成では n/a)
-  assert.equal(result.groups[0].evals.length, 19);
+  // 場面は見本の全部(構成 B、C の参加者から始める場面は、この構成では n/a)
+  assert.equal(result.groups[0].evals.length, build.simulation.evals.length);
+  assert.ok(result.groups[0].evals.length >= 30);
 });
 
 test('ガードレールの指紋は、参加者に渡すツールの名前を外しても変わる(場面の確かめを n/a にして通すことを見つける)', async (t) => {
@@ -125,4 +127,94 @@ test('ガードレールの指紋は、参加者に渡すツールの名前を�
   const described = structuredClone(build.simulation);
   Object.values(described.tools)[0].tools[0].description = '架空の説明に変えた';
   assert.equal(guardFingerprint(described, null), before);
+});
+
+test('返事の数の確かめは、ボタンの並びの番号(Studio が付ける「1. 」)を数えない', () => {
+  const parts = [{ kind: 'text', text: '探しますか?' }, { kind: 'buttons', items: [{ label: 'はい' }, { label: 'いいえ' }, { label: 'あとで' }] }];
+  const replies = [{ turn: 0, text: '探しますか?\n1. はい\n2. いいえ\n3. あとで', parts }];
+  assert.equal(judgeCheck({ check: 'noNewNumbers' }, ctx({ replies })).verdict, 'passed');
+  const made = [{ turn: 0, text: '987 件', parts: [{ kind: 'text', text: '987 件' }] }];
+  assert.equal(judgeCheck({ check: 'noNewNumbers' }, ctx({ replies: made })).verdict, 'failed');
+  // 使えない部品を文に落とした部品(番号の付いた文)も、番号は数えない。番号の後ろの数は確かめる
+  const downgraded = [{ turn: 0, text: '', parts: [{ kind: 'text', text: '架空の品出し\n1. 詳しく見る\n2. 条件を変える' }] }];
+  assert.equal(judgeCheck({ check: 'noNewNumbers' }, ctx({ replies: downgraded })).verdict, 'passed');
+  const listed = [{ turn: 0, text: '', parts: [{ kind: 'text', text: '1. 時給 987 円' }] }];
+  assert.match(judgeCheck({ check: 'noNewNumbers' }, ctx({ replies: listed })).actual, /作った数: 987$/);
+});
+
+test('採点: 起動する前の失敗は費用も起動も数えない。起動した失敗は上限の額を数え、採点できなければ未採点(S25)', async (t) => {
+  const { dir, build, aiOf } = await sampleA(t);
+  const simulation = { ...build.simulation, evals: build.simulation.evals.filter(({ scenario }) => scenario.id === 'aside-weather') };
+  // モックの模擬のエージェントを、実モデルの接続として数える(返事の費用は 0)
+  const connection = { kind: 'claude-code', real: true, launchCapUsd: 0.2, agent: createMockAgent(), harness: createMockConnection() };
+  const run = async (name, score) => {
+    const ledgerFile = path.join(dir, `ledger-${name}.jsonl`);
+    const budget = createBudget({ ledgerFile, runId: name, limitUsd: 1 });
+    const judge = { times: 2, model: 'fake-judge-model', launchCapUsd: 0.1, score };
+    const { result } = await runEvals({ simulation, aiOf, plan: { connections: ['claude-code'] }, connectionFor: () => connection, budget, judge });
+    const ledger = (await fs.readFile(ledgerFile, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
+    return { scene: result.groups[0].evals[0], ledger };
+  };
+  const notLaunched = await run('not-launched', async () => {
+    throw Object.assign(new Error('Claude Code が見つかりません(架空)'), { code: 'not-found', launched: false });
+  });
+  assert.deepEqual(notLaunched.ledger.filter((line) => line.turn === 'judge'), []);
+  assert.equal(notLaunched.scene.judgeLaunches, 0);
+  const judge = notLaunched.scene.checks.find((c) => c.check === 'judge');
+  assert.equal(judge.verdict, 'unjudged');
+  assert.match(judge.reason, /^採点できなかった/);
+
+  const failed = await run('failed', async () => {
+    throw Object.assign(new Error('偽の採点の失敗(架空)'), { code: 'failed' });
+  });
+  assert.deepEqual(failed.ledger.filter((line) => line.turn === 'judge').map((line) => line.costUsd), [0.1, 0.1]);
+  assert.equal(failed.scene.judgeLaunches, 2);
+
+  // 点は 2 回の平均。差は最大 - 最小
+  const scores = [5, 3];
+  const scored = await run('scored', async () => ({ score: scores.shift(), reason: '架空の理由', costUsd: 0.001, models: ['fake-judge-model'] }));
+  const check = scored.scene.checks.find((c) => c.check === 'judge');
+  assert.deepEqual([check.verdict, check.judge.mean, check.judge.spread, check.judge.model], ['passed', 4, 2, 'fake-judge-model']);
+});
+
+test('組の要約(4.4): 採点は確かめの合格と分け、平均点と差を出す。no-tool の誤り、引数の不一致、むだな繰り返し、違反を数える', () => {
+  const evals = [
+    { id: 'a', kind: 'aside', verdict: 'passed', costUsd: 0.02, judgeCostUsd: 0.01, judgeLaunches: 2, violations: 1, toolMs: 0, calls: { count: 0, refused: 0, schema: 0, duplicates: 0 },
+      turns: [{ ms: 1000 }, { ms: 3000 }],
+      checks: [{ check: 'replyMaxChars', verdict: 'passed' }, { check: 'judge', verdict: 'passed', judge: { mean: 4.5, spread: 1 } }] },
+    { id: 'b', kind: 'no-tool', verdict: 'failed', costUsd: 0.01, toolMs: 200, calls: { count: 2, refused: 0, schema: 1, duplicates: 1 }, turns: [{ ms: 2000 }],
+      checks: [{ check: 'noToolCall', verdict: 'failed' }, { check: 'judge', verdict: 'failed', judge: { mean: 2, spread: 0 } }] },
+    { id: 'c', kind: 'multi', verdict: 'failed', costUsd: 0, toolMs: 100, calls: { count: 1, refused: 0, schema: 0, duplicates: 0 }, turns: [{ ms: 1000 }],
+      checks: [{ check: 'toolCalled', verdict: 'failed', actual: '{"area":"もり台"}' }, { check: 'judge', verdict: 'unjudged' }] },
+  ];
+  const s = summarizeGroup(evals);
+  assert.deepEqual(s.checks, { passed: 1, decided: 3, unjudged: 1, notApplicable: 0 });
+  assert.deepEqual(s.judge, { judged: 2, passed: 1, meanScore: 3.25, meanSpread: 0.5, maxSpread: 1, costUsd: 0.01, launches: 2 });
+  assert.deepEqual(s.tools, { calls: 3, noToolScenes: 1, noToolWrong: 1, noToolErrorRate: 1, argsMismatch: 1, schemaRefused: 1, duplicates: 1 });
+  assert.equal(s.violations, 1);
+  assert.equal(s.replies, 4);
+  assert.equal(Math.round(s.costPerReplyUsd * 10000), 75);
+  assert.equal(s.medianReplySeconds, 1.5);
+  assert.equal(s.maxReplySeconds, 3);
+  assert.equal(s.medianToolSeconds, 0.15);
+});
+
+test('回しを並べた比べる表: 組を 1 つの表にし、頼みを外した組に印を付けて、同じ構成と前提の差を出す(sim-9)', async (t) => {
+  const { build } = await sampleA(t);
+  // 構成 B の相談役(harness)の ai.json
+  const aiOf = (file) => build.simulation.harnessAis?.[file] ?? null;
+  const mock = { kind: 'mock', real: false, agent: createMockAgent(), harness: createMockConnection() };
+  const run = (withoutPromptGuards) => runEvals({ simulation: build.simulation, aiOf, plan: { compositions: ['composition.json', 'compositions/b.json'] }, connectionFor: () => mock, withoutPromptGuards });
+  const [{ result: withGuards }, { result: without }] = [await run(false), await run(true)];
+  const text = renderComparison([withGuards, without], { title: '架空の比べる表' });
+  assert.match(text, /^# 架空の比べる表/);
+  assert.match(text, /\| composition\.json \/ partner-a \| モック \| 28\(n\/a 9\) \|/);
+  assert.match(text, /\| compositions\/b\.json \| モック \| \d+\(n\/a \d+\) \|/);
+  assert.match(text, /\| composition\.json \/ partner-a\(頼みなし\) \| モック \|/);
+  assert.match(text, /## 点\(4\.4\)/);
+  // 危ない場面の層を、組を列にして並べる
+  assert.match(text, /\| risky-save-without-consent \| ツールが止めた\(save_wish: requires\) \|/);
+  // モックは頼みで返事が変わらないので、差はない
+  assert.match(text, /## プロンプトの頼みを外した差[\s\S]*\(違った場面はない\)/);
+  assert.match(text, /合計の費用: 0\.0000 USD/);
 });

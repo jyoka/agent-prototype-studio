@@ -25,6 +25,8 @@
 // 呼びすぎ(--max-turns - 1 を超える)は、本物と同じく error_max_turns で止まる。題材の言葉は持たない。返事は文の部品 1 つ。
 //   [数を作る] [一度数を作る] は言い方と同じく、どこにも出てこない数(987)を返事に書く(出口の確かめ)
 //   --system-prompt に「合言葉は <語> です」があれば、返事の文の始めにその語を書く(本物がシステムの指示に従う代わり。check:sim)
+// 採点(src/server/sim/judge.js。--json-schema に score がある)には {score, reason} を返す。点はふだん 4。
+//   stdin に [採点 N](N は 1〜5)があれば N 点、[採点が壊れる] があれば score のない出力を返す。modelUsage に --model の名前を出す
 // init には本物と同じ項目(model、plugins、slash_commands、skills、agents)を空で出し、断った呼び出しは result の permission_denials に出す
 // 作る AI の接続の判定(agent-connection.js)のために、`--version` と `auth status` にも答える。
 // auth status は本物(2.1.312)と同じ形で、架空のメールアドレスと組織を含む(Studio が出さないかの確かめ)。
@@ -92,6 +94,10 @@ function main() {
     process.stderr.write(`偽の CLI: 引数が足りません: ${missing.join(' ')}\n`);
     process.exit(3);
   }
+  if (/"score"/.test(option('--json-schema') ?? '')) {
+    judgeAnswer();
+    return;
+  }
   const text = section('新しい発言');
   if (text.includes('[しぶとい]')) process.on('SIGINT', () => {});
   if (text.includes('[遅い]') || text.includes('[しぶとい]')) {
@@ -131,6 +137,13 @@ function answer(text) {
   if (text.includes('[文だけ]')) result.result = JSON.stringify(output);
   else Object.assign(result, { result: '', structured_output: output });
   process.stdout.write(JSON.stringify(result));
+}
+
+function judgeAnswer() {
+  const given = /\[採点 ([1-5])\]/.exec(stdin);
+  const output = stdin.includes('[採点が壊れる]') ? { reason: '点を付けませんでした' } : { score: given ? Number(given[1]) : 4, reason: '偽の採点です。' };
+  const model = option('--model') ?? 'fake-judge-model';
+  process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0.0007, result: '', structured_output: output, modelUsage: { [model]: {} } }));
 }
 
 function extract(schema, text) {

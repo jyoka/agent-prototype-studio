@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "id": "short-typo",
+  "kind": "short",
+  "about": "場所をひらがなで、話し言葉で言われる",
+  "entry": "partner",
+  "turns": [{ "user": "みなとちょうでさがしてる" }],
+  "expect": [
+    { "check": "toolCalled", "tool": "search_jobs", "args": { "area": "みなと町" } },
+    { "check": "noNewNumbers" }
+  ]
+}

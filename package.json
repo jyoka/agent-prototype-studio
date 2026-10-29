@@ -17,6 +17,7 @@
     "observe:mcp": "node bin/observe-mcp.js",
     "tools:mcp": "node bin/tools-mcp.js",
     "evals": "node bin/evals.js",
+    "evals:import": "node bin/evals-import.js",
     "test": "node --test \"test/unit/*.test.js\" \"test/integration/*.test.js\"",
     "test:e2e": "playwright test",
     "check:claude": "node scripts/check-claude-code.js",
