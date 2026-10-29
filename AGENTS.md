@@ -13,6 +13,7 @@
 | なぜこの作りなのか(隔離、作る AI の起動) | [docs/adr/0001-local-runtime-and-isolation.md](docs/adr/0001-local-runtime-and-isolation.md) |
 | これからの画面 | [docs/design/ux-redesign.md](docs/design/ux-redesign.md) |
 | 利用者の流れと、これからのカード | [docs/design/user-journey.md](docs/design/user-journey.md)、[docs/design/design-materials.md](docs/design/design-materials.md)(案) |
+| ヒアリングの現場、同時に作ることとコメント | [docs/design/field-session.md](docs/design/field-session.md)、[docs/design/collaboration.md](docs/design/collaboration.md)、[ADR 0004](docs/adr/0004-shared-session-and-customer-data.md)(どれも案) |
 | 使い方の全部 | [docs/usage.md](docs/usage.md)、[docs/claude-code.md](docs/claude-code.md) |
 
 ## 書き方
