@@ -488,6 +488,8 @@ test('構成、ツール、前提、プロンプトの枠、場面と最新の�
   assert.ok(items.includes('mock:会話の枠(studio-talk)'));
   assert.deepEqual(manifest.source.studioParts, ['studio-talk']);
   assert.ok(!manifest.source.libraries.includes('studio-talk'));
+  // スコープつきの名前も出す。中のファイルの名前は出さない
+  assert.deepEqual(manifest.source.libraries, ['react', 'react-dom', '@radix-ui/themes', '@radix-ui/colors', 'lucide-react']);
 
   // README: 構成とツール、前提、場面、最新の回し
   assert.match(readme, /## 構成とツール\(模擬\)\n[\s\S]*\| `app\/composition\.json`\(既定\) \| 相手の会社のエージェントと、こちらのツール\(架空\) \| partner \| partner\(agent、partner\) \| no-contact-ask\(prompt、ours\)、facts-from-tools\(output、partner、記録だけ\)、no-contact-in-reply\(output、partner、記録だけ\) \|/);

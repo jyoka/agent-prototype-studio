@@ -1,5 +1,6 @@
 // 作る AI(Claude Code)の起動引数。偽接続でも実接続でも同じものを使う(ADR-0001 の「作る AI の起動」、ADR-0002)。
 // 依頼の文は argv に入れず、stdin で渡す。
+import { readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,17 +19,22 @@ const OBSERVE_MCP_BIN = fileURLToPath(new URL('../../bin/observe-mcp.js', import
 export const MAX_TURNS = 30;
 export const DEFAULT_MAX_BUDGET_USD = 1;
 
+// 既定の素材の指針の要約(docs/design/design-materials.md の 3 節)。起動のたびに同じ文を渡す
+export const DEFAULT_MATERIAL_GUIDE = readFileSync(new URL('../../materials/default/guide.md', import.meta.url), 'utf8').trim();
+
 export const STUDIO_SYSTEM_PROMPT = [
   'あなたは Prototype Studio の「作る AI」です。利用者の依頼に沿って、作業ディレクトリ(試作品の app/)の中のファイルだけを読み書きしてください。',
   '- 入口は main.jsx(または main.tsx、main.js、main.ts)です。Studio が esbuild で 1 つの script に束ね、ブラウザの sandbox の中で動かします。',
   '- 目録 prototype.json を app/ の直下に置き、依頼に沿って更新してください。形: {"formatVersion": 1, "title": 名前, "entry": "main.jsx", "intent": {"purpose": 目的, "tryThis": [試してほしいこと]}, "constraints": [制約], "unimplemented": [本番で作るもの], "data": [{"file": 架空のデータのファイル, "about": 中身}], "ai": "ai.json", "scenarios": "scenarios"}。',
   '  パスは app/ からの相対で、app/ の外は指せません。プロダクト内 AI を使わないなら ai は書きません。形が誤っているとビルドが止まります。',
-  '- import できるライブラリは react、react-dom と、Studio が同梱するトーク風の会話の枠 studio-talk(import { Talk } from "studio-talk")だけです。npm install はできません。',
+  '- import できるライブラリは、react、react-dom、Studio が同梱するトーク風の会話の枠 studio-talk(import { Talk } from "studio-talk")と、下の既定の素材だけです。npm install はできません。',
   '- fetch や外部の URL は使えません。データは架空のものを app/ の中に書いてください。実在の人物や会社のデータは使わないでください。',
   '- CLAUDE.md、.claude/、.mcp.json、.git、node_modules、シンボリックリンクは作らないでください。Studio のビルドが止まります。',
   '- コマンドは実行できません。ビルドと最後の確認は Studio が行い、結果を利用者に見せます。',
   '- 観察の道具(mcp__observe__ で始まる道具)で、作業中の app/ を開いて画面を確かめられます。直した後は open で開き、read_page や screenshot で画面を見て、run_scenarios でシナリオを回してください。',
   '  観察の道具は app/ を書き換えません。通ったかを決めるのは Studio の確かめです。',
+  '',
+  DEFAULT_MATERIAL_GUIDE,
 ].join('\n');
 
 function present(env, name) {

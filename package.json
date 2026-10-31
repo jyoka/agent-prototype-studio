@@ -22,13 +22,17 @@
     "test:e2e": "playwright test",
     "media": "playwright test --config scripts/media/media.config.js",
     "site": "node scripts/site.js",
+    "materials:sources": "node scripts/material-sources.js",
     "check:claude": "node scripts/check-claude-code.js",
     "check:sim": "node scripts/check-sim.js",
     "check:loop": "node scripts/check-loop.js",
     "install:chromium": "playwright-core install --only-shell chromium"
   },
   "dependencies": {
+    "@radix-ui/colors": "3.0.0",
+    "@radix-ui/themes": "3.3.0",
     "esbuild": "0.28.2",
+    "lucide-react": "1.65.0",
     "playwright-core": "1.63.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"

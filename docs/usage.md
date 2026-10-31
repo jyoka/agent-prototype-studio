@@ -104,6 +104,19 @@ Studio の使い方の全部です。README の「使い方」は最初の 1 分
 - 今の設定にない項目や、今の決まりに合わない値の修正は、送り直さずに「直す前と後の返事」に出す。
 - 設定にない項目を「」で書いたときや、`app/ai.json` のない試作品(架空の図書室など)では、作る AI がそう答え、ファイルは変えない。
 
+## 既定の素材で作る
+
+作る AI は、見た目の指定がなければ、既定の素材で試作品を作ります。自分で `app/` を書くときも同じものを使えます。
+
+| 役 | 素材 | import の例 |
+|---|---|---|
+| 部品 | Radix Themes | `import { Button, Theme } from '@radix-ui/themes'`、`import '@radix-ui/themes/styles.css'` |
+| 色 | Radix Colors | `import '@radix-ui/colors/blue.css'` の後に `var(--blue-9)` |
+| アイコン | Lucide | `import { BookOpen } from 'lucide-react'` |
+| 字 | OS の字 | 何も読まない |
+
+どれも試作品の束に入り、外への通信なしで描けます。指針の要約は `materials/default/guide.md`、出典とライセンスの一覧は `materials/default/source.json` にあります。
+
 ## 別の題材で試す(架空の学習相談)
 
 求人ではない題材でも、作成・試行・変更・版・引き継ぎが同じ画面と手順で通るかを確かめるサンプルです。Studio のコードは変えずに、題材の言葉は `app/ai.json` と `app/` の画面にだけ書いています。
