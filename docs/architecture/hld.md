@@ -71,6 +71,7 @@ flowchart TB
         versions["版<br/>versions.js"]
         handoff["引き継ぎの書き出し<br/>handoff.js"]
         intent["目的の聞き出しと目的の文書<br/>intent.js、intent-ai.js"]
+        organize["ヒアリングの整理<br/>organize.js、organize-ai.js"]
         redact["伏せる、秘密を探す<br/>redact.js"]
     end
 
@@ -102,6 +103,9 @@ flowchart TB
     api --> intent
     intent -- "読み書き(.studio/intent.json)" --> dotstudio
     intent -- "聞き出す AI(道具なし、cwd は空のフォルダー)" --> cli
+    api --> organize
+    organize -- "読み書き(.studio/organize.json)" --> dotstudio
+    organize -- "整理する AI(道具なし、cwd は空のフォルダー)" --> cli
     requests --> agent
     agent -- "子プロセス(cwd は app/)" --> cli
     cli -- "読み書き" --> app
@@ -185,6 +189,10 @@ flowchart TB
 ### 目的を聞き出す(はじめの画面)
 
 はじめの画面の 1 文で新しい試作品を作り(`intent.js` の `createProject`)、聞き出す AI に次の問いと下書きをもらいます(`intent-ai.js`)。問いの数の上限と「分からない」の扱いは Studio が決め、AI の返事では変わりません。「決めた」の印は、人が「これで決める」を押す `decide` でだけ `.studio/intent.json` に付きます。同意の前と AI を使えないときは、聞き出す AI を呼ばず、決まった問いで進みます。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#j1-で決めたことtask-3822026-10-31)にあります。
+
+### ヒアリングを整理する(聞き取りの欄と整理の板)
+
+操作役が要点を打ち(`organize.js` の `addPoint`)、「整理する」を押すと、整理する AI に振り分けをもらいます(`organize-ai.js`)。起動の形は聞き出す AI と同じです(`structured-ai.js`)。「推測」の印は Studio が決めます。今ある要点を指す番号がない項目に付き、AI の返事では消せません。「確かめた」の印は、決める人が「この理解で合っている」を押す `confirm` でだけ `.studio/organize.json` に付き、板が変わると外れます。同意の前と AI を使えないときは整理する AI を呼ばず、人が手で振り分けます。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#k1-で決めたことtask-3842026-10-31)にあります。
 
 ### 作る(試作品を変える)
 
@@ -315,6 +323,7 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | `projects/<id>/.studio/versions/`、`working.json` | 保存した版と、どの版から作業しているか | Studio |
 | `projects/<id>/.studio/handoff-notes.json` | 引き継ぎのメモ | Studio |
 | `projects/<id>/.studio/intent.json` | 目的の文書。1 文、案内の深さ、問いと答え、文書、決めた時刻か飛ばした時刻 | Studio(作る AI と聞き出す AI は書けない) |
+| `projects/<id>/.studio/organize.json` | 整理の板。要点、5 つの欄の項目と元の要点、聞くこと、人が消したもの、確かめた時刻 | Studio(作る AI と整理する AI は書けない) |
 | `handoffs/` | 引き継ぎの書き出し | Studio |
 | Studio のメモリー | 作業中の会話と状態、実行の記録、作る欄の会話 | Studio(止めると消える) |
 
@@ -329,6 +338,7 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | Claude Code の CLI(起動のときの確かめ) | 作る AI が自動か `claude` のとき、起動のときに 1 回ずつ。`claude --version` と `claude auth status --json` | なし。モデルを呼ばない |
 | Claude Code の CLI(作る AI) | 作る AI が自動(既定)か `STUDIO_AGENT=claude` で、Claude Code が使えるとき。同意の後、作る欄で送るたび | 本人のアカウントの枠か API の従量課金。1 回の起動は 10 分、30 回まで。直すラウンドを合わせて 1 つの依頼で 3 回まで起動する |
 | Claude Code の CLI(聞き出す AI) | はじめの画面で同意した後、1 文か 1 つの答えを送るたび。`STUDIO_ALLOW_CLAUDE_CODE=0` では呼ばない | 同上。1 回の呼び出しは 90 秒、$0.1 まで。1 文か 1 つの答えで 2 回まで。問いの数は深さごとに 2、4、7 まで |
+| Claude Code の CLI(整理する AI) | 整理の板で同意した後、「整理する」を押すたび。`STUDIO_ALLOW_CLAUDE_CODE=0` では呼ばない | 同上。1 回の呼び出しは 120 秒、$0.3 まで。1 回押して 2 回まで |
 | Playwright の Chromium(観察器) | 観察するとき。`npm run install:chromium` で入れたもの | なし。モデルを呼ばない。AI の要求は、呼ぶ側が渡す関数に渡す |
 | Claude Code の CLI(プロダクト内 AI) | 画面で同意して切り替えたとき。`STUDIO_ALLOW_CLAUDE_CODE=0` では選べない | 同上。1 ターンは抽出と言い方の 2 種の呼び出し。1 回の呼び出しは 90 秒、$0.1 まで。上限は下の 3 つ |
 

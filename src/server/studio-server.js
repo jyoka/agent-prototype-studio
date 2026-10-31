@@ -86,7 +86,22 @@ async function readJson(req) {
   }
 }
 
-function projectView(project, previewPort, runs, checks, firstSteps, intents) {
+// ヒアリングの整理の操作(URL の名前と organize.js の関数)。cancel は別に扱う
+const ORGANIZE_ACTIONS = {
+  point: 'addPoint',
+  'point-remove': 'removePoint',
+  place: 'placePoint',
+  item: 'addItem',
+  'item-edit': 'editItem',
+  'item-remove': 'removeItem',
+  'item-check': 'checkItem',
+  'ask-remove': 'removeAsk',
+  run: 'run',
+  confirm: 'confirm',
+  cancel: 'cancel',
+};
+
+function projectView(project, previewPort, runs, checks, firstSteps, intents, organizes) {
   return {
     id: project.id,
     title: project.title,
@@ -103,6 +118,8 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents) {
     firstSteps: firstSteps.view(project.id),
     // 目的の文書の状態(intent.js)。none と skipped は「目的なし」の印
     intent: intents.summary(project.id),
+    // 整理の板の状態(organize.js)。confirmed は「確かめた」の印
+    organize: organizes.summary(project.id),
     previewUrl: project.previewBuildId
       ? `http://localhost:${previewPort}/p/${project.id}/${project.previewBuildId}/`
       : null,
@@ -112,9 +129,9 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents) {
 // Studio 画面と API。API はすべてトークンを要求する(ADR-0001 の層 3)。
 // realAi(projectId) は本物の AI を使う前の同意のカードの中身(real-ai.js の consentView)、consent は同意の状態。
 // firstSteps は最初の一歩の案内の進み方と、閉じたこと(first-steps.js)
-// intents は目的の聞き出しと目的の文書(intent.js)
-export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, token, ports, realAi, consent, firstSteps }) {
-  const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents);
+// intents は目的の聞き出しと目的の文書(intent.js)。organizes はヒアリングの整理(organize.js)
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, token, ports, realAi, consent, firstSteps }) {
+  const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes);
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
   // EventSource はヘッダーにトークンを付けられないので、画面は fetch の応答をストリームで読む(ADR-0001)。
@@ -171,6 +188,9 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     // 目的の聞き出しと目的の文書。GET は今の状態。「決めた」の印は decide でだけ付く
     const intentMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/intent(?:\/(start|answer|finish|edit|decide|skip|cancel))?$/.exec(url.pathname);
     if (intentMatch && (intentMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleIntent(req, res, intentMatch[1], intentMatch[2]);
+    // ヒアリングの整理。GET は今の板。「確かめた」の印は confirm でだけ付く
+    const organizeMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/organize(?:\/([a-z-]+))?$/.exec(url.pathname);
+    if (organizeMatch && (organizeMatch[2] ? req.method === 'POST' && Object.hasOwn(ORGANIZE_ACTIONS, organizeMatch[2]) : req.method === 'GET')) return handleOrganize(req, res, organizeMatch[1], organizeMatch[2]);
     // 最初の一歩の案内。{ dismiss: true } で閉じる。{ touched: 試作品の ID } は、AI のない試作品の画面を触ったこと(画面が送る)
     if (url.pathname === '/api/first-steps' && req.method === 'POST') return handleFirstSteps(req, res);
     // 本物の AI を使う前の同意。GET はカードの中身(?project= で、その試作品の中の AI の「詳しく」も入れる)、
@@ -264,6 +284,17 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       const body = await readJson(req);
       if (action === 'cancel') return sendJson(res, 200, { cancelled: intents.cancel(id) });
       return sendJson(res, 200, { intent: await intents[action](id, body ?? {}) });
+    } catch (error) {
+      return sendIntentError(res, error);
+    }
+  }
+
+  async function handleOrganize(req, res, id, action) {
+    try {
+      if (!action) return sendJson(res, 200, { organize: await organizes.view(id) });
+      const body = await readJson(req);
+      if (action === 'cancel') return sendJson(res, 200, { cancelled: organizes.cancel(id) });
+      return sendJson(res, 200, { organize: await organizes[ORGANIZE_ACTIONS[action]](id, body ?? {}) });
     } catch (error) {
       return sendIntentError(res, error);
     }

@@ -10,6 +10,8 @@ import { FirstSteps } from './first-steps.js';
 import { ProjectHandoffs } from './handoff.js';
 import { ProjectIntents } from './intent.js';
 import { createIntentAi, INTENT_SYSTEM_PROMPT } from './intent-ai.js';
+import { ProjectOrganizes } from './organize.js';
+import { createOrganizeAi, ORGANIZE_SYSTEM_PROMPT } from './organize-ai.js';
 import { createPreviewHandler } from './preview-server.js';
 import { createClaudeCodeConnection } from './product-ai/claude-code.js';
 import { createMockConnection } from './product-ai/mock.js';
@@ -158,20 +160,25 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   const firstSteps = new FirstSteps({ statusesOf: (id) => requests.statuses(id) });
   // 目的の聞き出し。聞き出す AI は、作る AI と同じ接続の判定を使う別の役(intent-ai.js)。
   // 偽接続は同意なしで使う。本物は同意の後だけ。使えないとき、本物の AI を止めた設定のときは、決まった問いで進める
+  const thinkingAiMode = () => {
+    if (connection.problem) return null;
+    if (connection.kind === 'fake') return 'fake';
+    return config.allowClaudeCode === true ? 'real' : null;
+  };
   const intents = new ProjectIntents({
     home: config.home,
     store,
     ai: createIntentAi({ connection, env }),
     consent,
-    aiMode: () => {
-      if (connection.problem) return null;
-      if (connection.kind === 'fake') return 'fake';
-      return config.allowClaudeCode === true ? 'real' : null;
-    },
+    aiMode: thinkingAiMode,
     startScreen: config.startScreen !== false,
+    otherWork: () => organizes.boards.size > 0,
     log,
   });
   await intents.load();
+  // ヒアリングの整理。整理する AI は聞き出す AI と同じ決め方の別の役(organize-ai.js)。使えないときは、人が手で振り分ける
+  const organizes = new ProjectOrganizes({ home: config.home, store, ai: createOrganizeAi({ connection, env }), consent, aiMode: thinkingAiMode, log });
+  await organizes.load();
   const servers = [];
   const versions = new ProjectVersions({ store, aiSessions, log });
   const handoffs = new ProjectHandoffs({ home: config.home, store, aiSessions, versions, requests, log });
@@ -185,6 +192,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       versions,
       handoffs,
       intents,
+      organizes,
       token,
       ports,
       // 同意のカードの中身(real-ai.js の consentView)。試作品を渡すと、その試作品の中の AI の「詳しく」も入れる
@@ -197,6 +205,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
           fixLaunches: MAX_FIX_ROUNDS + 1,
           systemPrompt: STUDIO_SYSTEM_PROMPT,
           intentPrompt: INTENT_SYSTEM_PROMPT,
+          organizePrompt: ORGANIZE_SYSTEM_PROMPT,
           productAllowed: config.allowClaudeCode === true,
           product: projectId ? aiSessions.realDetails(projectId) : null,
         }),
@@ -224,7 +233,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     }
   } catch (error) {
     await Promise.all(servers.map((server) => new Promise((resolve) => server.close(() => resolve()))));
-    await Promise.all([aiSessions.close(), intents.close()]);
+    await Promise.all([aiSessions.close(), intents.close(), organizes.close()]);
     throw error;
   }
 
@@ -243,6 +252,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     versions,
     handoffs,
     intents,
+    organizes,
     checks,
     observer,
     // 表示中のビルドを観察する。report とスクリーンショットは .studio/observations/<観察の ID>/ に置く。
@@ -254,8 +264,8 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       return (await observeShown(id, { scenarios, viewports, ai, aiConnection, operate, limits })).report;
     },
     async close() {
-      // 作る AI と、人の「確かめる」と、応答を待っているプロダクト内 AI と聞き出す AI の Claude Code と、観察器のブラウザを止め、終わるまで待つ
-      await Promise.all([requests.closeAll(), checks.closeAll(), aiSessions.close(), intents.close(), observer.close()]);
+      // 作る AI と、人の「確かめる」と、応答を待っているプロダクト内 AI と聞き出す AI と整理する AI の Claude Code と、観察器のブラウザを止め、終わるまで待つ
+      await Promise.all([requests.closeAll(), checks.closeAll(), aiSessions.close(), intents.close(), organizes.close(), observer.close()]);
       await Promise.all(
         servers.map(
           (server) =>
