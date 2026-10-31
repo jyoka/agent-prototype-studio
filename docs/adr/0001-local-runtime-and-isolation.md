@@ -421,6 +421,15 @@ AiSessions  会話を新しい設定で最初からにし、前の会話を 1 �
 - 本物の AI を使う前の同意は、サーバーで確かめる(P24)。作る欄で初めて送ると、同意のカード(P25)を出して送らない。同意すると、欄に残った依頼を送る([harness.md の 8 節](../design/harness.md#8-実装のカード))。
 - テストは、`STUDIO_AGENT=fake` か偽の `claude` を必ず明示する。`test/e2e/studio.js` の `launchStudio` は、指定がなければ `STUDIO_AGENT=fake` にし、自動か `claude` で `STUDIO_CLAUDE_BIN` がなければ起動しない。`resolveConnection` は、接続(`agent`)を書かない呼び出しを誤りにする。
 
+## #382 で決めたこと(2026-10-31)
+
+目的の聞き出し(J1)のために、Claude Code の起動を 1 つ足した。隔離は弱めない。
+
+- 聞き出す AI は、プロダクト内 AI と採点と同じ形で起動する(`--restricted`、`--safe-mode`、`--tools ""`、`--strict-mcp-config`、`--no-session-persistence`、`--max-budget-usd`。cwd は空の一時フォルダー)。ファイルの道具も MCP も渡さない。
+- 本物の接続は、作る AI と同じ同意(`RealAiConsent`)の後だけ呼ぶ。同意の前は `consent-required` で断り、試作品も作らない。
+- 目的の文書は `.studio/intent.json` に置く。`app/` の外なので、作る AI は書けない。外への通信は足していない。
+- 理由と採らなかった案は [user-journey.md の 7 節](../design/user-journey.md#j1-で決めたことtask-3822026-10-31)。
+
 ## 未決事項
 
 | 未決事項 | 決める人・場所 |

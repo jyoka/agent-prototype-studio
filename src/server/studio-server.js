@@ -9,6 +9,7 @@ import { EvidenceError, evidenceState, readEvidenceImage } from './evidence.js';
 import { ConsentRequiredError } from './real-ai.js';
 import { BusyError, NotFoundError } from './store.js';
 import { HandoffError } from './handoff.js';
+import { IntentError } from './intent.js';
 import { VersionError } from './versions.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -85,7 +86,7 @@ async function readJson(req) {
   }
 }
 
-function projectView(project, previewPort, runs, checks, firstSteps) {
+function projectView(project, previewPort, runs, checks, firstSteps, intents) {
   return {
     id: project.id,
     title: project.title,
@@ -100,6 +101,8 @@ function projectView(project, previewPort, runs, checks, firstSteps) {
     lastBuild: project.lastBuild,
     // 最初の一歩の案内の、この試作品の手順の済み(first-steps.js)
     firstSteps: firstSteps.view(project.id),
+    // 目的の文書の状態(intent.js)。none と skipped は「目的なし」の印
+    intent: intents.summary(project.id),
     previewUrl: project.previewBuildId
       ? `http://localhost:${previewPort}/p/${project.id}/${project.previewBuildId}/`
       : null,
@@ -109,8 +112,9 @@ function projectView(project, previewPort, runs, checks, firstSteps) {
 // Studio 画面と API。API はすべてトークンを要求する(ADR-0001 の層 3)。
 // realAi(projectId) は本物の AI を使う前の同意のカードの中身(real-ai.js の consentView)、consent は同意の状態。
 // firstSteps は最初の一歩の案内の進み方と、閉じたこと(first-steps.js)
-export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, token, ports, realAi, consent, firstSteps }) {
-  const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps);
+// intents は目的の聞き出しと目的の文書(intent.js)
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, token, ports, realAi, consent, firstSteps }) {
+  const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents);
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
   // EventSource はヘッダーにトークンを付けられないので、画面は fetch の応答をストリームで読む(ADR-0001)。
@@ -155,8 +159,18 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       const projects = await store.list();
       // consent は本物の AI を使う前の同意の状態。画面は、本物の AI を使っている間の印を、これで出す。
       // firstSteps は最初の一歩の案内を閉じたか(手順の済みは、試作品ごとの firstSteps)
-      return sendJson(res, 200, { projects: projects.map(view), agent, consent: consent.state(), firstSteps: firstSteps.state() });
+      // start ははじめの画面を出すか
+      return sendJson(res, 200, { projects: projects.map(view), agent, consent: consent.state(), firstSteps: firstSteps.state(), start: intents.startState() });
     }
+    // はじめの画面。1 文から新しい試作品を作る({ sentence, guide })。本物の AI は、同意の前は 403(consent-required)で断り、試作品を作らない
+    if (req.method === 'POST' && url.pathname === '/api/projects') return handleNewProject(req, res);
+    // はじめの画面を閉じる。起動し直すと、文書のある試作品がなければまた出る
+    if (req.method === 'POST' && url.pathname === '/api/start') {
+      return sendJson(res, 200, { start: intents.dismissStart() });
+    }
+    // 目的の聞き出しと目的の文書。GET は今の状態。「決めた」の印は decide でだけ付く
+    const intentMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/intent(?:\/(start|answer|finish|edit|decide|skip|cancel))?$/.exec(url.pathname);
+    if (intentMatch && (intentMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleIntent(req, res, intentMatch[1], intentMatch[2]);
     // 最初の一歩の案内。{ dismiss: true } で閉じる。{ touched: 試作品の ID } は、AI のない試作品の画面を触ったこと(画面が送る)
     if (url.pathname === '/api/first-steps' && req.method === 'POST') return handleFirstSteps(req, res);
     // 本物の AI を使う前の同意。GET はカードの中身(?project= で、その試作品の中の AI の「詳しく」も入れる)、
@@ -222,6 +236,37 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       return handleAi(req, res, aiMatch[1], aiMatch[2]);
     }
     return sendError(res, 404, 'not-found', 'その API はありません');
+  }
+
+  function sendIntentError(res, error) {
+    if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', error.message);
+    if (error instanceof BusyError) return sendError(res, 409, 'busy', error.message);
+    if (error instanceof IntentError) return sendError(res, error.status, error.code, error.message);
+    if (error instanceof ConsentRequiredError) return sendError(res, 403, error.code, error.message, error.next);
+    if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
+    throw error;
+  }
+
+  async function handleNewProject(req, res) {
+    try {
+      const body = await readJson(req);
+      const id = await intents.createProject({ sentence: body?.sentence, guide: body?.guide });
+      const project = (await store.list()).find((p) => p.id === id);
+      return sendJson(res, 200, { project: view(project) });
+    } catch (error) {
+      return sendIntentError(res, error);
+    }
+  }
+
+  async function handleIntent(req, res, id, action) {
+    try {
+      if (!action) return sendJson(res, 200, { intent: await intents.view(id) });
+      const body = await readJson(req);
+      if (action === 'cancel') return sendJson(res, 200, { cancelled: intents.cancel(id) });
+      return sendJson(res, 200, { intent: await intents[action](id, body ?? {}) });
+    } catch (error) {
+      return sendIntentError(res, error);
+    }
   }
 
   // file が undefined なら、run ごとの古いかの印。文字列か null なら、その画像

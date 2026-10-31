@@ -91,6 +91,8 @@ export async function launchStudio(home, { useNpm = false, env: extraEnv = {}, r
   const env = { ...process.env, STUDIO_HOME: home, STUDIO_NO_OPEN: '1', STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0' };
   for (const name of AGENT_ENV) delete env[name];
   env.STUDIO_AGENT = 'fake';
+  // はじめの画面は test/e2e/intent.spec.js が確かめる。ほかのテストは、試作品の画面から始める
+  env.STUDIO_START_SCREEN = '0';
   Object.assign(env, extraEnv);
   for (const [name, value] of Object.entries(env)) if (value === undefined) delete env[name];
   if (env.STUDIO_AGENT !== 'fake' && !env.STUDIO_CLAUDE_BIN && !real) {

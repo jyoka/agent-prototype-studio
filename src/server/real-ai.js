@@ -1,9 +1,10 @@
 import { describeBilling, needsBudget } from './claude-args.js';
 import { CLAUDE_CODE_LIMITS, PROVIDER_ENV } from './product-ai/claude-code.js';
 import { CALL_LIMITS } from './product-ai/limits.js';
+import { INTENT_AI_LIMITS } from './intent-ai.js';
 
 // 本物の AI(利用者の Claude Code)を使う前の同意(docs/design/ux-redesign.md の 6 節、ADR-0001 の T6)。
-// 同意は 1 つで、直す AI の送信、試作品の中の AI の本物への切り替え、人の「確かめる」の全部に効く。
+// 同意は 1 つで、直す AI の送信、試作品の中の AI の本物への切り替え、人の「確かめる」、目的の聞き出しの全部に効く。
 // Studio のメモリーにだけ持ち、Studio を起動し直すと消える(ディスクには覚えない。ux-redesign.md の 11 節)。
 // 偽接続とお試しの AI(モック)は、同意なしで使える。
 
@@ -15,6 +16,7 @@ const USES = {
   fix: '言葉で直す',
   product: '試作品の中の AI を本物の AI にする',
   check: '本物の AI で確かめる',
+  intent: '本物の AI で目的を聞き出す',
 };
 
 export class ConsentRequiredError extends Error {
@@ -92,7 +94,7 @@ export class RealAiConsent {
     return { agreed: this.agreed, agreedAt: this.agreedAt };
   }
 
-  // 本物の AI を使う前に呼ぶ。同意の前は投げる。use は fix、product、check のどれか
+  // 本物の AI を使う前に呼ぶ。同意の前は投げる。use は fix、product、check、intent のどれか
   require(use) {
     if (!this.agreed) throw new ConsentRequiredError(use);
   }
@@ -109,15 +111,27 @@ function fixDetails({ agent, systemPrompt }) {
   };
 }
 
+// 目的の聞き出しの「詳しく」。送るものと、渡す道具と、聞き出す AI への指示の全文
+function intentDetails({ intentPrompt }) {
+  return {
+    items: ['書いた 1 文', 'これまでの問いと答え', '今の目的の文書の下書き'],
+    notSent: '試作品のファイル、PC のほかのファイル、ほかの試作品は送りません。',
+    tools: '聞き出す AI には道具を渡しません。ファイル、コマンド、Web は使えません。',
+    limits: `1 回の呼び出しで ${INTENT_AI_LIMITS.maxBudgetUsd} ドルまで、1 回の答えで多くて ${INTENT_AI_LIMITS.attempts} 回呼びます。問いの数の上限は、案内の深さで決まります。`,
+    systemPrompt: intentPrompt,
+  };
+}
+
 // 「詳しく」の記録の扱い。直す AI の結果は build-requests.js の evidence、試作品の中の AI の記録は AiSessions の trace(ADR-0001 の #277)
 const RECORDS = [
   '言葉で直したときの結果(変えたファイル、確かめた結果、かかった時間と費用)は、試作品のフォルダーの中の .studio/runs に残ります。',
   '試作品の中の AI とのやりとりの記録は、Studio のメモリーにだけ置き、Studio を止めると消えます。記録では、メールアドレスや API キーらしい文字列を伏せます。',
+  '目的の聞き出しの 1 文、問いと答え、目的の文書は、試作品のフォルダーの中の .studio/intent.json に残ります。',
 ];
 
 // 同意のカード(画面は P25)に出す中身。product は試作品の中の AI の「詳しく」(AiSessions.realDetails)で、試作品を選んだときだけ
 // fixLaunches は、1 つの依頼で直す AI を起動する回数の上限(build-requests.js の MAX_FIX_ROUNDS + 1)
-export function consentView({ consent, env, agent, fixBudgetUsd, fixLaunches, systemPrompt, productAllowed, product = null }) {
+export function consentView({ consent, env, agent, fixBudgetUsd, fixLaunches, systemPrompt, intentPrompt, productAllowed, product = null }) {
   const cost = describeCost({ env, auth: agent.auth, fixBudgetUsd, fixLaunches });
   return {
     consent: consent.state(),
@@ -128,12 +142,12 @@ export function consentView({ consent, env, agent, fixBudgetUsd, fixLaunches, sy
     },
     summary: {
       runsOn: 'AI は、あなたの Claude Code で動きます。',
-      sends: ['頼んだ文と試作品のファイル(言葉で直すとき)', '試作品の中の会話と AI の設定(本物の AI と話すとき)'],
+      sends: ['頼んだ文と試作品のファイル(言葉で直すとき)', '試作品の中の会話と AI の設定(本物の AI と話すとき)', '書いた 1 文と問いへの答え(目的を聞き出すとき)'],
       notSent: 'PC のほかのファイル、ほかの試作品',
       to: cost.to,
       cost,
       note: '架空のデータだけで試してください。実在の人や会社の情報は入れないでください。',
     },
-    details: { fix: fixDetails({ agent, systemPrompt }), product, records: RECORDS },
+    details: { fix: fixDetails({ agent, systemPrompt }), intent: agent.kind === 'claude' && intentPrompt ? intentDetails({ intentPrompt }) : null, product, records: RECORDS },
   };
 }

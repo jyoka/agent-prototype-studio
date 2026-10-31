@@ -15,7 +15,7 @@ test('U1: 新しい置き場で開くと、AI と話せる求人相談が選ば�
     await page.goto(studio.url);
 
     // 一覧の順と名前。名前は目録の title と、試作品の中の AI があるかから作る。一覧は上の帯のメニューで、最初は閉じている
-    const list = page.getByRole('navigation', { name: '試作品の一覧', includeHidden: true }).getByRole('button', { includeHidden: true });
+    const list = page.getByRole('navigation', { name: '試作品の一覧', includeHidden: true }).getByRole('list', { includeHidden: true }).getByRole('button', { includeHidden: true });
     const names = [SAMPLES.jobConsult, SAMPLES.studyConsult, SAMPLES.partTime, SAMPLES.library].map((sample) => sample.name);
     await expect(list).toHaveText(names.map((name) => new RegExp(`^${name.replace(/[()]/g, '\\$&')}`)));
 

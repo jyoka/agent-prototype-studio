@@ -510,12 +510,58 @@ async function slow() {
   return finish({ text: 'ゆっくり終わりました。何も変えていません。' });
 }
 
+// 聞き出す AI の偽物(src/server/intent-ai.js)。--json-schema に draft がある起動で動く。
+// プロダクト内 AI と同じ守りの引数(--restricted、--safe-mode、道具なし)を確かめ、1 文の中の語を入れた問いを順に返す。
+// 下書きは答えをそのまま項目に入れる。聞くことが尽きるか、残りの問いの数が 0 なら、問いを空にする
+const INTENT_QUESTIONS = [
+  ['who', (sentence) => `「${sentence}」で、一番困っているのは誰ですか?`],
+  ['problem', () => 'その人は、今どんなことで困っていますか?'],
+  ['scene', () => 'それが起きるのは、いつ、どんなときですか?'],
+  ['success', () => 'うまくいったら、何が変わりますか?'],
+  ['notDoing', () => '今回はしないと決めていることはありますか?'],
+];
+
+function isIntentCall(argv) {
+  const schema = argv.find((arg) => arg.startsWith('--json-schema='));
+  return Boolean(schema) && /"draft"/.test(schema);
+}
+
+async function intentCall(argv) {
+  const missing = ['-p', '--restricted', '--safe-mode', '--strict-mcp-config', '--no-session-persistence'].filter((flag) => !argv.includes(flag));
+  if (missing.length > 0 || argv[argv.indexOf('--tools') + 1] !== '' || argv[argv.indexOf('--output-format') + 1] !== 'json') {
+    process.stderr.write(`偽接続: 聞き出す AI の引数が足りません: ${missing.join(' ')}\n`);
+    process.exitCode = 3;
+    return;
+  }
+  const input = await readStdin();
+  const section = (name) => new RegExp(`<${name}>\\n?([\\s\\S]*?)\\n?</${name}>`).exec(input)?.[1] ?? '';
+  const sentence = section('最初の 1 文');
+  const remaining = Number(section('残りの問いの数'));
+  const asked = [...section('問いと答え').matchAll(/^\[問い \d+\]\((\w+)\) /gm)].map((match) => match[1]);
+  const answers = [...section('問いと答え').matchAll(/^\[答え \d+\] (.*)$/gm)].map((match) => match[1]);
+  const draft = { who: '', problem: '', scene: '', success: '', notDoing: [], undecided: [] };
+  asked.forEach((field, index) => {
+    if (answers[index] === '(分からない)') return;
+    if (field === 'notDoing') draft.notDoing.push(answers[index]);
+    else draft[field] = answers[index];
+  });
+  const next = remaining > 0 ? INTENT_QUESTIONS.find(([field]) => !asked.includes(field)) : null;
+  const output = {
+    question: next ? next[1](sentence) : '',
+    reason: next ? '目的をはっきりさせるためです。' : '',
+    about: next ? next[0] : 'problem',
+    draft,
+  };
+  emit({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0, result: '', structured_output: output });
+}
+
 async function main() {
   // Claude Code は SIGINT で止まる。偽接続も同じく、すぐ終わる
   process.on('SIGINT', () => process.exit(130));
   process.on('SIGTERM', () => process.exit(143));
 
   const argv = process.argv.slice(2);
+  if (isIntentCall(argv)) return intentCall(argv);
   const problems = await checkArgs(argv);
   const request = (await readStdin()).trim();
   // 実機の init と同じ項目。偽接続は利用者の設定を読まないので、MCP は渡された観察の道具だけで、ほかは空

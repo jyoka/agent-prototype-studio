@@ -70,6 +70,7 @@ flowchart TB
         evalRun["場面の回しと採点<br/>sim/eval-run.js、sim/judge.js、<br/>sim/eval-import.js"]
         versions["版<br/>versions.js"]
         handoff["引き継ぎの書き出し<br/>handoff.js"]
+        intent["目的の聞き出しと目的の文書<br/>intent.js、intent-ai.js"]
         redact["伏せる、秘密を探す<br/>redact.js"]
     end
 
@@ -98,6 +99,9 @@ flowchart TB
     api --> ai
     api --> versions
     api --> handoff
+    api --> intent
+    intent -- "読み書き(.studio/intent.json)" --> dotstudio
+    intent -- "聞き出す AI(道具なし、cwd は空のフォルダー)" --> cli
     requests --> agent
     agent -- "子プロセス(cwd は app/)" --> cli
     cli -- "読み書き" --> app
@@ -176,6 +180,10 @@ flowchart TB
 | 観察用の親ページ | `src/ui/observe.html`、`src/ui/observe.js` | Studio の `/observe.html` に置く静的なページ。試作品を同じ sandbox の iframe に入れ、エラーと AI の要求を `exposeBinding` で観察器に渡す。Studio の API は呼ばない(CSP の `connect-src 'none'`) |
 
 ## 4. データの流れ
+
+### 目的を聞き出す(はじめの画面)
+
+はじめの画面の 1 文で新しい試作品を作り(`intent.js` の `createProject`)、聞き出す AI に次の問いと下書きをもらいます(`intent-ai.js`)。問いの数の上限と「分からない」の扱いは Studio が決め、AI の返事では変わりません。「決めた」の印は、人が「これで決める」を押す `decide` でだけ `.studio/intent.json` に付きます。同意の前と AI を使えないときは、聞き出す AI を呼ばず、決まった問いで進みます。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#j1-で決めたことtask-3822026-10-31)にあります。
 
 ### 作る(試作品を変える)
 
@@ -305,6 +313,7 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | `projects/<id>/.studio/evals/<回しの ID>/`、`ledger.jsonl` | 場面の回し(`npm run evals`)の結果(`result.json`、`report.md`、`traces/`)。新しい 20 個だけ残す。台帳は実モデルの回しの返事ごとの費用 | 場面の回しの CLI |
 | `projects/<id>/.studio/versions/`、`working.json` | 保存した版と、どの版から作業しているか | Studio |
 | `projects/<id>/.studio/handoff-notes.json` | 引き継ぎのメモ | Studio |
+| `projects/<id>/.studio/intent.json` | 目的の文書。1 文、案内の深さ、問いと答え、文書、決めた時刻か飛ばした時刻 | Studio(作る AI と聞き出す AI は書けない) |
 | `handoffs/` | 引き継ぎの書き出し | Studio |
 | Studio のメモリー | 作業中の会話と状態、実行の記録、作る欄の会話 | Studio(止めると消える) |
 
@@ -318,6 +327,7 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | モック(`product-ai/mock.js`) | プロダクト内 AI の既定 | なし。モデルを呼ばない |
 | Claude Code の CLI(起動のときの確かめ) | 作る AI が自動か `claude` のとき、起動のときに 1 回ずつ。`claude --version` と `claude auth status --json` | なし。モデルを呼ばない |
 | Claude Code の CLI(作る AI) | 作る AI が自動(既定)か `STUDIO_AGENT=claude` で、Claude Code が使えるとき。同意の後、作る欄で送るたび | 本人のアカウントの枠か API の従量課金。1 回の起動は 10 分、30 回まで。直すラウンドを合わせて 1 つの依頼で 3 回まで起動する |
+| Claude Code の CLI(聞き出す AI) | はじめの画面で同意した後、1 文か 1 つの答えを送るたび。`STUDIO_ALLOW_CLAUDE_CODE=0` では呼ばない | 同上。1 回の呼び出しは 90 秒、$0.1 まで。1 文か 1 つの答えで 2 回まで。問いの数は深さごとに 2、4、7 まで |
 | Playwright の Chromium(観察器) | 観察するとき。`npm run install:chromium` で入れたもの | なし。モデルを呼ばない。AI の要求は、呼ぶ側が渡す関数に渡す |
 | Claude Code の CLI(プロダクト内 AI) | 画面で同意して切り替えたとき。`STUDIO_ALLOW_CLAUDE_CODE=0` では選べない | 同上。1 ターンは抽出と言い方の 2 種の呼び出し。1 回の呼び出しは 90 秒、$0.1 まで。上限は下の 3 つ |
 

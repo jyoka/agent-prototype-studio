@@ -60,6 +60,8 @@ export function loadConfig(env = process.env) {
     studioPort,
     previewPort,
     openBrowser: env.STUDIO_NO_OPEN !== '1',
+    // はじめの画面(目的の聞き出し)。STUDIO_START_SCREEN=0 で、起動のときに出さない。上の帯の「新しく作る」からは開ける
+    startScreen: env.STUDIO_START_SCREEN !== '0',
     // 試作品の中の AI の本物の AI(Claude Code)。STUDIO_ALLOW_CLAUDE_CODE=0 のときだけ選べない
     allowClaudeCode: parseAllowClaudeCode(env.STUDIO_ALLOW_CLAUDE_CODE),
     // 作る AI。既定は auto。偽接続は STUDIO_AGENT=fake と書いたときだけ

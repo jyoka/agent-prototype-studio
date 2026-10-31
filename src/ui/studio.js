@@ -224,6 +224,10 @@ const retryOpen = new Set();
 // 最初の一歩の案内(ux-redesign.md 2 節)。dismissed は閉じたか(サーバーが Studio を止めるまで覚える)。
 // 手順の済みは、一覧の API の試作品ごとの firstSteps(src/server/first-steps.js)
 const firstSteps = { dismissed: false, touching: false };
+// はじめの画面、目的の聞き出し、目的の文書(user-journey.md の段 1、段 2、J1)。view は出している画面(start、talk、doc)で、null なら試作品の画面。
+// projectId は聞き出している試作品(はじめの画面で新しく作るときは null)。record はサーバーの状態(src/server/intent.js)。
+// guide は聞き出し方(ai か fixed)。startSeen は起動後の最初の一覧を読んだか(はじめの画面は 1 回だけ開く)
+const intentUi = { view: null, projectId: null, record: null, waiting: false, guide: 'ai', declined: false, startSeen: false, sending: false, shownQuestion: null, seq: 0 };
 // AI の実行の記録(#277)。open は、開いている「渡したもの、受け取ったもの」の記録の ID
 const trace = { projectId: null, entries: null, snapshot: '', seq: 0, timer: null, open: new Set() };
 const TRACE_POLL_MS = 1000;
@@ -328,6 +332,10 @@ async function refresh() {
     // この画面で閉じた後は、閉じたことを送り終える前の一覧で、もう一度出さない
     firstSteps.dismissed ||= data.firstSteps?.dismissed === true;
     renderFirstSteps(selectedProject());
+    if (!intentUi.startSeen) {
+      intentUi.startSeen = true;
+      if (data.start?.show) openStart(null);
+    }
     const snapshot = JSON.stringify(data.projects);
     if (snapshot !== lastSnapshot) {
       lastSnapshot = snapshot;
@@ -351,11 +359,14 @@ function selectedProject() {
 
 function render() {
   if (!selectedProject()) {
-    // 初めて開いたときは、AI と話せる試作品(求人相談)を選ぶ(ux-redesign.md 5 節)
-    selectedId = projects.find((p) => p.id === 'sample-job-consult')?.id ?? projects[0]?.id ?? null;
+    // 目的を聞き出した試作品があれば、最後に触ったものを選ぶ(読み込み直しや起動し直しで、続きに戻れるように)。
+    // なければ、AI と話せる試作品(求人相談)を選ぶ(ux-redesign.md 5 節)
+    const latest = projects.filter((p) => p.intent?.updatedAt).sort((a, b) => b.intent.updatedAt.localeCompare(a.intent.updatedAt))[0];
+    selectedId = latest?.id ?? projects.find((p) => p.id === 'sample-job-consult')?.id ?? projects[0]?.id ?? null;
   }
   renderList();
   const project = selectedProject();
+  renderIntentMark(project);
   els.title.textContent = project ? project.title : 'ありません';
   els.reopen.disabled = !project?.previewUrl;
   els.reset.disabled = !project?.previewUrl;
@@ -408,6 +419,7 @@ function renderList() {
     button.append(name, state);
     button.addEventListener('click', () => {
       setProjectMenu(false);
+      leaveIntent();
       if (selectedId === project.id) return;
       selectedId = project.id;
       makeError = null;
@@ -1491,6 +1503,17 @@ function consentDetails(view, key) {
       element('pre', product.sends.systemPrompt),
     );
   }
+  if (details.intent) {
+    part(
+      '目的を聞き出すとき',
+      ...labeledList('目的を聞き出すときに送るもの', details.intent.items),
+      element('p', details.intent.notSent),
+      element('p', details.intent.tools),
+      element('p', details.intent.limits),
+      element('p', '聞き出す AI への指示の全文:'),
+      element('pre', details.intent.systemPrompt),
+    );
+  }
   part('1 回の上限', element('p', summary.cost.limits));
   part('記録の扱い', ...(details.records ?? []).map((text) => element('p', text)));
   return box;
@@ -1562,6 +1585,7 @@ async function agreeConsent() {
   consent.agreeing = true;
   renderMake(selectedProject());
   renderAi();
+  renderIntentConsent();
   let agreed = false;
   // 待つ間に、別のカードに入れ替わったか、試作品を切り替えて閉じたときは、同意だけをして送らない
   let still = false;
@@ -1577,6 +1601,11 @@ async function agreeConsent() {
     consent.agreeing = false;
     renderMake(selectedProject());
     renderAi();
+    renderIntentConsent();
+  }
+  if (card.use === 'intent') {
+    if (agreed && still) await sendSentence();
+    return;
   }
   if (!agreed || !still || card.projectId !== selectedId) return;
   if (card.use === 'product') await selectConnection(card.kind);
@@ -1591,9 +1620,11 @@ function declineConsent() {
   if (consent.agreeing) return;
   consent.card = null;
   if (card?.use === 'fix') consent.declined = true;
+  if (card?.use === 'intent') intentUi.declined = true;
   if (card?.use === 'check') checks.message = { projectId: card.projectId, text: '本物の AI で確かめるには、同意が要ります。お試しの AI なら、同意なしで確かめられます。' };
   renderMake(selectedProject());
   renderAi();
+  renderIntentConsent();
 }
 
 // 本物の AI を使っている間の小さな印(試す欄の上と直す欄の上)。押すと、カードの中身をもう一度見られる。
@@ -3200,6 +3231,455 @@ els.cancel.addEventListener('click', async () => {
   } finally {
     els.cancel.disabled = false;
   }
+});
+
+// 目的の聞き出しと目的の文書(user-journey.md の段 1、段 2、J1)。サーバーは src/server/intent.js。
+// 外から来た文字(1 文、問い、答え)は、ほかと同じく textContent と value でだけ出す
+const INTENT_MARKS = { none: '目的なし', skipped: '目的なし', interviewing: '目的: 下書き', draft: '目的: 下書き', decided: '目的: 決めた' };
+const INTENT_EXAMPLES = ['商店街のお店への問い合わせに、AI が答えられるようにしたい', '小さな図書室で、読みたい本を探す手伝いをしたい', '習い事の教室の予約の問い合わせを減らしたい'];
+const INTENT_LIST_FIELDS = ['notDoing', 'undecided'];
+const INTENT_TEXT_FIELDS = ['who', 'problem', 'scene', 'success'];
+// 言葉で直す欄の上限(index.html の request-text の maxlength)
+const MAX_REQUEST_TEXT = 4000;
+const intentEls = {
+  section: $('intent'),
+  heading: $('intent-heading'),
+  start: $('intent-start'),
+  lead: $('intent-lead'),
+  sentence: $('intent-sentence'),
+  examples: $('intent-examples'),
+  fixedNote: $('intent-fixed-note'),
+  consent: $('intent-consent'),
+  declined: $('intent-declined'),
+  send: $('intent-send'),
+  talk: $('intent-talk'),
+  talkSentence: $('intent-talk-sentence'),
+  turns: $('intent-turns'),
+  waiting: $('intent-waiting'),
+  asking: $('intent-asking'),
+  progress: $('intent-progress'),
+  question: $('intent-question'),
+  reason: $('intent-reason'),
+  answer: $('intent-answer'),
+  doc: $('intent-doc'),
+  docState: $('intent-doc-state'),
+  decide: $('intent-decide'),
+  begin: $('intent-begin'),
+  reopen: $('intent-reopen'),
+  back: $('intent-back'),
+  docSkip: $('intent-doc-skip'),
+  trailHead: $('intent-trail-head'),
+  trail: $('intent-trail'),
+  note: $('intent-note'),
+  error: $('intent-error'),
+  mark: $('intent-mark'),
+};
+const intentDocField = (field) => $(`intent-doc-${field}`);
+
+function renderIntentMark(project) {
+  const status = project?.intent?.status ?? 'none';
+  // はじめの画面で新しく作るときは、選んでいる試作品の印を出さない(これから作るものの印に見えるため)
+  intentEls.mark.hidden = !project || (intentUi.view === 'start' && !intentUi.projectId);
+  intentEls.mark.textContent = INTENT_MARKS[status] ?? INTENT_MARKS.none;
+  intentEls.mark.dataset.state = status === 'decided' ? 'decided' : status === 'draft' || status === 'interviewing' ? 'draft' : 'none';
+}
+
+function intentError(text) {
+  intentEls.error.hidden = !text;
+  intentEls.error.textContent = text ?? '';
+}
+
+function renderIntentConsent() {
+  const card = consent.card?.use === 'intent' ? consent.card : null;
+  intentEls.consent.replaceChildren(...(card ? [consentCard(card.view, { card })] : []));
+  intentEls.declined.hidden = !intentUi.declined || Boolean(card);
+}
+
+function turnItems(turns) {
+  return turns.map((turn) => {
+    const li = element('li', turn.question);
+    li.append(element('span', turn.unknown ? '分からない(決めていないことに入れました)' : turn.answer, 'intent-answer-text'));
+    return li;
+  });
+}
+
+function renderIntentDocState(record) {
+  const decided = record.status === 'decided';
+  intentEls.docState.dataset.state = record.status;
+  if (decided) intentEls.docState.textContent = `${formatTime(record.decidedAt)}に決めました。次にすること: この目的で試作品を作り始めてください。`;
+  else if (record.status === 'skipped') intentEls.docState.textContent = `${formatTime(record.skippedAt)}に飛ばしました。「目的なし」のまま進めています。決めるときは、中身を確かめて「これで決める」を押してください。`;
+  else intentEls.docState.textContent = 'まだ決めていません。答えから下書きを作りました。次にすること: 違うところを直して、「これで決める」を押してください。';
+  intentEls.decide.hidden = decided;
+  intentEls.docSkip.hidden = decided || record.status === 'skipped';
+  intentEls.begin.hidden = !decided;
+  intentEls.reopen.hidden = !decided;
+  for (const field of [...INTENT_TEXT_FIELDS, ...INTENT_LIST_FIELDS]) intentDocField(field).readOnly = decided;
+}
+
+// 文書の欄を、サーバーの文書で埋める。書いている途中の文を上書きしないよう、文書の画面に入るときと、決めた後だけ呼ぶ
+function fillIntentDoc(doc) {
+  for (const field of INTENT_TEXT_FIELDS) intentDocField(field).value = doc[field] ?? '';
+  for (const field of INTENT_LIST_FIELDS) intentDocField(field).value = (doc[field] ?? []).join('\n');
+}
+
+function readIntentDoc() {
+  const doc = {};
+  for (const field of INTENT_TEXT_FIELDS) doc[field] = intentDocField(field).value.trim();
+  for (const field of INTENT_LIST_FIELDS) doc[field] = intentDocField(field).value.split('\n').map((line) => line.trim()).filter(Boolean);
+  return doc;
+}
+
+function renderIntent() {
+  const { view, record, waiting } = intentUi;
+  intentEls.section.hidden = !view;
+  if (view) document.body.dataset.intent = view;
+  else delete document.body.dataset.intent;
+  intentEls.start.hidden = view !== 'start';
+  intentEls.talk.hidden = view !== 'talk';
+  intentEls.doc.hidden = view !== 'doc';
+  intentEls.note.hidden = !record?.note || view === 'start';
+  intentEls.note.textContent = record?.note ?? '';
+  renderIntentMark(selectedProject());
+  if (view === 'start') {
+    intentEls.heading.textContent = 'どんなものを作りたいですか';
+    const project = intentUi.projectId ? selectedProject() : null;
+    intentEls.lead.textContent = project ? `「${project.title}」の目的を聞き出します。1 文で書いてください。` : '1 文で書いてください。あいまいなままで構いません。問いを 1 つずつ返します。';
+    intentEls.fixedNote.hidden = Boolean(agent?.ready) || intentUi.guide === 'fixed';
+    intentEls.send.disabled = intentUi.sending;
+    renderIntentConsent();
+  } else if (view === 'talk') {
+    intentEls.heading.textContent = '目的を聞いています';
+    intentEls.talkSentence.textContent = record?.sentence ?? intentEls.sentence.value.trim();
+    intentEls.turns.replaceChildren(...turnItems(record?.turns ?? []));
+    intentEls.waiting.hidden = !waiting;
+    intentEls.asking.hidden = waiting || !record?.pending;
+    if (record?.pending) {
+      intentEls.progress.textContent = `問い ${record.turns.length + 1} / 多くて ${record.limit}(案内の深さ: ${record.depthLabel})`;
+      intentEls.question.textContent = record.pending.question;
+      intentEls.reason.textContent = record.pending.reason;
+    }
+  } else if (view === 'doc') {
+    intentEls.heading.textContent = '目的の文書';
+    renderIntentDocState(record);
+    intentEls.trailHead.textContent = record.depthLabel ? `最初の 1 文: ${record.sentence}(案内の深さ: ${record.depthLabel})` : `最初の 1 文: ${record.sentence}`;
+    intentEls.trail.replaceChildren(...turnItems(record.turns ?? []));
+  }
+}
+
+function openStart(projectId, sentence = '') {
+  intentUi.view = 'start';
+  intentUi.projectId = projectId;
+  intentUi.record = null;
+  intentUi.guide = 'ai';
+  intentUi.declined = false;
+  intentEls.sentence.value = sentence;
+  intentError(null);
+  renderIntent();
+  intentEls.sentence.focus();
+}
+
+// 別の画面へ移る。書いた文書は下書きとして残す
+function leaveIntent() {
+  if (intentUi.view === 'doc' && intentUi.record?.status === 'draft') {
+    api(intentPath(intentUi.projectId, 'edit'), { method: 'POST', json: { doc: readIntentDoc() } }).catch(handleError);
+  }
+  closeIntent();
+}
+
+function closeIntent() {
+  intentUi.seq += 1;
+  if (!intentUi.view) return;
+  if (consent.card?.use === 'intent') consent.card = null;
+  intentUi.view = null;
+  intentUi.record = null;
+  intentUi.waiting = false;
+  intentUi.declined = false;
+  intentError(null);
+  renderIntent();
+}
+
+// サーバーの状態を画面にする。聞いている間は会話、終わったら文書
+function showIntent(record) {
+  const entering = intentUi.view !== 'doc';
+  intentUi.record = record;
+  intentUi.waiting = false;
+  intentUi.view = record.status === 'interviewing' ? 'talk' : 'doc';
+  if (intentUi.view === 'doc' && entering) fillIntentDoc(record.doc);
+  renderIntent();
+  if (intentUi.view === 'talk') {
+    // 問いが変わったときだけ、答えの欄を空にする(開き直しで、書いている途中の文を消さない)
+    if (record.pending?.question !== intentUi.shownQuestion) intentEls.answer.value = '';
+    intentUi.shownQuestion = record.pending?.question ?? null;
+    intentEls.answer.focus();
+  } else if (entering) {
+    intentEls.heading.focus();
+  }
+}
+
+async function refreshAfterIntent() {
+  // 作ったばかりの試作品を読む前の一覧で、選び直されていても、聞き出している試作品に戻す
+  if (intentUi.view && intentUi.projectId) selectedId = intentUi.projectId;
+  lastSnapshot = '';
+  await refresh();
+}
+
+const intentPath = (id, action = '') => `/api/projects/${encodeURIComponent(id)}/intent${action ? `/${action}` : ''}`;
+
+function intentFailed(error) {
+  if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) intentError(`進められませんでした: ${error.message}`);
+  else handleError(error);
+}
+
+// 同意のカードを出す。別のタブで同意していたら、そのまま送る
+async function openIntentConsent() {
+  const view = await api('/api/real-ai');
+  setConsentState(view.consent);
+  if (view.consent.agreed) return sendSentence();
+  openConsentDetails.delete('card');
+  consent.card = { use: 'intent', projectId: null, view };
+  renderIntentConsent();
+}
+
+// 1 文を送る。新しく作るときは試作品を作ってから聞き出しを始める。同意の前は、サーバーが断る
+async function sendSentence() {
+  const sentence = intentEls.sentence.value.trim();
+  if (!sentence) {
+    intentError('作りたいものを 1 文で書いてください。');
+    intentEls.sentence.focus();
+    return;
+  }
+  if (intentUi.sending) return;
+  intentError(null);
+  intentUi.sending = true;
+  intentUi.declined = false;
+  renderIntent();
+  const depth = intentEls.start.querySelector('input[name="intent-depth"]:checked')?.value ?? 'normal';
+  const guide = intentUi.guide;
+  let id = intentUi.projectId;
+  try {
+    if (!id) {
+      const { project } = await api('/api/projects', { method: 'POST', json: { sentence, guide } });
+      id = project.id;
+      intentUi.projectId = id;
+      selectedId = id;
+    }
+    intentUi.view = 'talk';
+    intentUi.waiting = true;
+    renderIntent();
+    await refreshAfterIntent();
+    const { intent } = await api(intentPath(id, 'start'), { method: 'POST', json: { sentence, depth, guide } });
+    if (intentUi.projectId === id && intentUi.view) showIntent(intent);
+  } catch (error) {
+    intentUi.view = intentUi.view ? 'start' : null;
+    intentUi.waiting = false;
+    if (error instanceof ApiError && error.code === 'consent-required') {
+      intentUi.sending = false;
+      renderIntent();
+      await openIntentConsent();
+      return;
+    }
+    intentFailed(error);
+  } finally {
+    intentUi.sending = false;
+    renderIntent();
+  }
+  await refreshAfterIntent();
+}
+
+// 答える。text が null なら「分からない」
+async function sendAnswer(text) {
+  const id = intentUi.projectId;
+  if (!id || intentUi.waiting) return;
+  if (text !== null && !text.trim()) {
+    intentError('答えを書くか、「分からない」を押してください。');
+    intentEls.answer.focus();
+    return;
+  }
+  intentError(null);
+  intentUi.waiting = true;
+  renderIntent();
+  try {
+    const turn = intentUi.record?.turns?.length;
+    const { intent } = await api(intentPath(id, 'answer'), { method: 'POST', json: text === null ? { unknown: true, turn } : { answer: text, turn } });
+    if (intentUi.projectId === id && intentUi.view) showIntent(intent);
+  } catch (error) {
+    intentUi.waiting = false;
+    renderIntent();
+    intentFailed(error);
+    // 別の画面で問いが進んでいたら、今の問いを読み直す(答えの文は欄に残る)
+    if (error instanceof ApiError && ['stale-question', 'not-asking'].includes(error.code)) await reloadIntent(id);
+  }
+  await refreshAfterIntent();
+}
+
+// 打ち切り、決める、直す、飛ばす。どれも 1 回の POST で、返った状態を出す
+async function intentAction(action, body = {}) {
+  const id = intentUi.projectId;
+  if (!id) return null;
+  intentError(null);
+  try {
+    const { intent } = await api(intentPath(id, action), { method: 'POST', json: body });
+    await refreshAfterIntent();
+    return intent;
+  } catch (error) {
+    intentFailed(error);
+    return null;
+  }
+}
+
+// はじめの画面の「飛ばす」。1 文があれば新しい試作品を作って「目的なし」を残す。なければ、はじめの画面を閉じるだけ(サンプルで試せる)
+async function skipFromStart() {
+  if (intentUi.sending) return;
+  const sentence = intentEls.sentence.value.trim();
+  intentError(null);
+  intentUi.sending = true;
+  try {
+    let id = intentUi.projectId;
+    if (!id && sentence) {
+      const { project } = await api('/api/projects', { method: 'POST', json: { sentence, guide: 'fixed' } });
+      id = project.id;
+      selectedId = id;
+    }
+    if (id) await api(intentPath(id, 'skip'), { method: 'POST', json: { sentence } });
+    await api('/api/start', { method: 'POST' });
+    // 新しい試作品が一覧に載ってから閉じる(印と 2 列が、その試作品を指すように)
+    if (id) selectedId = id;
+    await refreshAfterIntent();
+    closeIntent();
+  } catch (error) {
+    intentFailed(error);
+  } finally {
+    intentUi.sending = false;
+  }
+}
+
+// サーバーの今の状態を読み直して出す。問いを考えている最中なら、終わるまで待つ(読み込み直した後に、古い問いへ答えないように)
+async function reloadIntent(id) {
+  const seq = ++intentUi.seq;
+  const { intent } = await api(intentPath(id));
+  if (seq !== intentUi.seq) return;
+  if (intent.thinking) {
+    intentUi.record = intent;
+    intentUi.view = 'talk';
+    intentUi.waiting = true;
+    renderIntent();
+    setTimeout(() => {
+      if (seq === intentUi.seq) reloadIntent(id).catch(handleError);
+    }, 1000);
+    return;
+  }
+  showIntent(intent);
+  await refreshAfterIntent();
+}
+
+// 上の帯の印を押す。文書がなければはじめの画面、聞いている間は会話、それ以外は文書。
+// その試作品の聞き出しか文書を出しているときは、何もしない(書いている途中の文を上書きしない)
+async function openIntentFromMark() {
+  const project = selectedProject();
+  if (!project || (intentUi.view && intentUi.projectId === project.id)) return;
+  try {
+    const { intent } = await api(intentPath(project.id));
+    if (intent.thinking) {
+      intentUi.projectId = project.id;
+      intentError(null);
+      await reloadIntent(project.id);
+      return;
+    }
+    if (intent.status === 'none' || (intent.status === 'skipped' && (intent.turns ?? []).length === 0)) {
+      openStart(project.id, intent.sentence ?? '');
+      return;
+    }
+    intentUi.projectId = project.id;
+    intentUi.guide = intent.guide ?? 'ai';
+    intentUi.view = null;
+    intentError(null);
+    showIntent(intent);
+  } catch (error) {
+    handleError(error);
+  }
+}
+
+// 決めた目的を、言葉で直す欄の依頼に入れる。送るのは人(同意もここでは取らない)
+function intentRequestText(doc) {
+  const lines = ['次の目的で試作品を作ってください。'];
+  const labels = { who: '誰', problem: '何の問題', scene: '場面', success: '成功の印' };
+  for (const field of INTENT_TEXT_FIELDS) if (doc[field]) lines.push(`${labels[field]}: ${doc[field]}`);
+  if (doc.notDoing?.length > 0) lines.push(`しないこと: ${doc.notDoing.join('、')}`);
+  if (doc.undecided?.length > 0) lines.push(`決めていないこと: ${doc.undecided.join('、')}`);
+  // 文書が長いときは、欄の上限で切る。送る前に人が見られる
+  const text = lines.join('\n');
+  return text.length > MAX_REQUEST_TEXT ? `${text.slice(0, MAX_REQUEST_TEXT - 1)}…` : text;
+}
+
+intentEls.examples.replaceChildren(
+  ...INTENT_EXAMPLES.map((text) => {
+    const li = element('li');
+    const button = element('button', text);
+    button.type = 'button';
+    button.addEventListener('click', () => {
+      intentEls.sentence.value = text;
+      intentEls.sentence.focus();
+    });
+    li.append(button);
+    return li;
+  }),
+);
+intentEls.mark.addEventListener('click', openIntentFromMark);
+$('new-project').addEventListener('click', () => {
+  setProjectMenu(false);
+  leaveIntent();
+  openStart(null);
+});
+intentEls.start.addEventListener('submit', (event) => {
+  event.preventDefault();
+  sendSentence();
+});
+$('intent-skip').addEventListener('click', skipFromStart);
+$('intent-use-fixed').addEventListener('click', () => {
+  intentUi.guide = 'fixed';
+  sendSentence();
+});
+intentEls.talk.addEventListener('submit', (event) => {
+  event.preventDefault();
+  sendAnswer(intentEls.answer.value);
+});
+$('intent-unknown').addEventListener('click', () => sendAnswer(null));
+$('intent-stop').addEventListener('click', () => {
+  if (intentUi.projectId) api(intentPath(intentUi.projectId, 'cancel'), { method: 'POST' }).catch(intentFailed);
+});
+$('intent-finish').addEventListener('click', async () => {
+  const intent = await intentAction('finish');
+  if (intent) showIntent(intent);
+});
+async function skipFromIntent() {
+  const intent = await intentAction('skip');
+  if (intent) closeIntent();
+}
+$('intent-talk-skip').addEventListener('click', skipFromIntent);
+intentEls.docSkip.addEventListener('click', skipFromIntent);
+intentEls.doc.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const intent = await intentAction('decide', { doc: readIntentDoc() });
+  if (!intent) return;
+  // 決めるときに足した「書いていません」の行を、欄に出す
+  fillIntentDoc(intent.doc);
+  showIntent(intent);
+  intentEls.begin.focus();
+});
+// 決めた後に直す。「決めた」の印を外し、もう一度押すまで付かない
+intentEls.reopen.addEventListener('click', async () => {
+  const intent = await intentAction('edit', { doc: readIntentDoc() });
+  if (intent) showIntent(intent);
+});
+intentEls.back.addEventListener('click', async () => {
+  // 決める前に書いた分は残す。決めた後と飛ばした後の印は変えない
+  if (intentUi.record?.status === 'draft' && !(await intentAction('edit', { doc: readIntentDoc() }))) return;
+  closeIntent();
+});
+intentEls.begin.addEventListener('click', () => {
+  const text = intentRequestText(intentUi.record.doc);
+  closeIntent();
+  fillRequest(text);
 });
 
 // 案内のとおり同じタブに URL を貼ると、フラグメントだけが変わり、画面は読み直されない。

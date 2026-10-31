@@ -201,6 +201,45 @@ button { font: inherit; }
 /* 読み上げにだけ出す文字(手順の「済み」) */
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
+/* 目的の文書の印。赤は使わない(目的なしは止めた所でも失敗でもない) */
+.intent-mark { padding: 0.15rem 0.6rem; border: 1px dashed var(--muted); border-radius: 999px; background: var(--panel); color: var(--muted); font-size: 0.8rem; white-space: nowrap; cursor: pointer; }
+.intent-mark[hidden] { display: none; }
+.intent-mark[data-state="draft"] { border: 1px solid var(--warn); background: var(--warn-bg); color: var(--warn-text); }
+.intent-mark[data-state="decided"] { border: 1px solid var(--ok); background: var(--ok-bg); color: var(--ok); }
+.new-project { width: 100%; margin-top: 0.3rem; padding: 0.4rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); text-align: left; cursor: pointer; }
+
+/* はじめの画面、目的の聞き出し、目的の文書。出している間は、2 列と最初の一歩の案内を隠す */
+body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
+.intent { flex: 1 1 0; width: min(46rem, 100%); margin: 0 auto; padding: 1.5rem 1rem; box-sizing: border-box; overflow-y: auto; }
+.intent[hidden], .intent-form[hidden], .intent-waiting[hidden], .intent-declined[hidden], .intent-note[hidden], .intent-error[hidden] { display: none; }
+.intent h2 { margin: 0 0 0.6rem; font-size: 1.4rem; }
+.intent h2:focus { outline: none; }
+.intent h3 { margin: 0.2rem 0; font-size: 1.1rem; }
+.intent p { margin: 0.3rem 0; }
+.intent-form { display: flex; flex-direction: column; gap: 0.35rem; }
+.intent-form label { font-weight: 600; }
+.intent-form fieldset label { font-weight: 400; display: block; }
+.intent-form textarea { width: 100%; box-sizing: border-box; padding: 0.5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; }
+.intent-form textarea[readonly] { background: var(--bg); }
+.intent-form button { padding: 0.4rem 0.9rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
+.intent-form button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.intent-form button:disabled { opacity: 0.5; cursor: default; }
+.intent-form button[hidden] { display: none; }
+.intent-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+.intent-examples { display: flex; flex-direction: column; align-items: flex-start; gap: 0.3rem; margin: 0; padding: 0; list-style: none; }
+.intent-examples button { text-align: left; }
+.intent-depth { margin: 0.5rem 0; padding: 0.4rem 0.8rem; border: 1px solid var(--line); border-radius: 6px; }
+.intent-sentence { padding: 0.4rem 0.8rem; border-left: 3px solid var(--line); color: var(--muted); }
+.intent-turns { margin: 0.3rem 0; padding-left: 1.3rem; }
+.intent-turns li { margin-bottom: 0.4rem; }
+.intent-turns .intent-answer-text { display: block; color: var(--muted); }
+.intent-waiting { display: flex; align-items: center; gap: 0.8rem; padding: 0.5rem 0.8rem; border: 1px solid var(--line); border-radius: 6px; }
+.intent-declined { padding: 0.5rem 0.8rem; border: 1px solid var(--line); border-radius: 6px; }
+.intent-doc-state { padding: 0.5rem 0.8rem; border: 1px solid var(--line); border-radius: 6px; background: var(--accent-bg); }
+.intent-doc-state[data-state="decided"] { background: var(--ok-bg); border-color: var(--ok); }
+.intent-note { color: var(--muted); }
+.intent-error { color: var(--error); }
+
 /* 2 列。左の「試す」が約 6 割、右の「言葉で直す」が約 4 割。主役の 2 つを、スクロールなしで 1 画面に収める */
 .layout {
   display: grid;
@@ -589,6 +628,8 @@ button { font: inherit; }
   .make { overflow: visible; }
   .make > .conversation { max-height: 50vh; }
   .topbar h1 { display: none; }
+  /* 体の高さが決まらないので、中身の高さで広げて、ページごとスクロールする */
+  .intent { flex: none; }
 }
 
 /* 人の「確かめる」(P27)。引き出しの「試作品を自動で確かめる」 */
