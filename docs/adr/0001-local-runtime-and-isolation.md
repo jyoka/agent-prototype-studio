@@ -445,6 +445,15 @@ AiSessions  会話を新しい設定で最初からにし、前の会話を 1 �
 - 目的の文書は `.studio/intent.json` に置く。`app/` の外なので、作る AI は書けない。外への通信は足していない。
 - 理由と採らなかった案は [user-journey.md の 7 節](../design/user-journey.md#j1-で決めたことtask-3822026-10-31)。
 
+## #384 で決めたこと(2026-10-31)
+
+ヒアリングの整理(K1)のために、Claude Code の起動を 1 つ足した。隔離は弱めない。
+
+- 整理する AI は、聞き出す AI と同じ形で起動する。形は `src/server/structured-ai.js` の 1 か所にまとめ、2 つの役で同じにした。ファイルの道具も MCP も渡さない。
+- 本物の接続は、作る AI と同じ同意(`RealAiConsent`)の後だけ呼ぶ。同意の前は `consent-required` で断る。人が「整理する」を押したときだけ呼ぶ。
+- 整理の板は `.studio/organize.json` に置く。`app/` の外なので、作る AI は書けない。外への通信は足していない。
+- 理由と採らなかった案は [user-journey.md の 7 節](../design/user-journey.md#k1-で決めたことtask-3842026-10-31)。
+
 ## 未決事項
 
 | 未決事項 | 決める人・場所 |

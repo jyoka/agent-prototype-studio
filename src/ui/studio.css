@@ -208,6 +208,44 @@ button { font: inherit; }
 .intent-mark[data-state="decided"] { border: 1px solid var(--ok); background: var(--ok-bg); color: var(--ok); }
 .new-project { width: 100%; margin-top: 0.3rem; padding: 0.4rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); text-align: left; cursor: pointer; }
 
+/* ヒアリングの整理。左に聞き取りの欄、右に整理の板。大きな画面に映して読む */
+body[data-organize] .layout, body[data-organize] .first-steps { display: none; }
+.organize { flex: 1 1 0; width: 100%; padding: 1rem; box-sizing: border-box; overflow-y: auto; }
+.organize[hidden], .organize [hidden] { display: none; }
+.organize h2 { margin: 0 0 0.5rem; font-size: 1.4rem; }
+.organize h2:focus { outline: none; }
+.organize h3 { margin: 0; font-size: 1.1rem; }
+.organize h4 { margin: 0 0 0.3rem; font-size: 1rem; }
+.organize p { margin: 0.3rem 0; }
+.organize button, .organize select, .organize input { font: inherit; }
+.organize button { flex: none; white-space: nowrap; padding: 0.3rem 0.7rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
+.organize button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.organize button:disabled { opacity: 0.5; cursor: default; }
+.organize input, .organize select, .organize textarea { padding: 0.35rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); box-sizing: border-box; }
+.organize-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+.organize-body { display: grid; grid-template-columns: minmax(16rem, 24rem) minmax(0, 1fr); gap: 1rem; margin-top: 0.6rem; align-items: start; }
+.organize-points, .organize-board { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.organize-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.organize-line label { font-weight: 600; }
+.organize-line input { flex: 1 1 10rem; min-width: 0; }
+.organize-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.3rem; }
+.organize-list > li { padding: 0.35rem 0.5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); overflow-wrap: anywhere; }
+.organize-point-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; }
+.organize-unplaced { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; margin-top: 0.2rem; color: var(--warn-text); font-size: 0.85rem; }
+.organize-board-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.organize-columns { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.6rem; }
+.organize-column { padding: 0.5rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); min-width: 0; }
+.organize-item[data-guess="true"] { border-style: dashed; border-color: var(--warn); }
+.organize-item-text { font-weight: 600; }
+.organize-source { color: var(--muted); font-size: 0.85rem; }
+.organize-badge { display: inline-block; padding: 0 0.45rem; border-radius: 999px; font-size: 0.8rem; white-space: nowrap; border: 1px solid var(--line); color: var(--muted); }
+.organize-badge[data-kind="guess"] { border-color: var(--warn); background: var(--warn-bg); color: var(--warn-text); }
+.organize-badge[data-kind="conflict"] { border-color: var(--warn); color: var(--warn-text); }
+.organize-item-actions { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.25rem; font-size: 0.85rem; }
+.organize-edit { display: flex; flex-direction: column; gap: 0.3rem; }
+.organize-edit textarea { width: 100%; }
+.organize-asks { padding: 0.5rem; border: 1px solid var(--line); border-radius: 8px; }
+
 /* はじめの画面、目的の聞き出し、目的の文書。出している間は、2 列と最初の一歩の案内を隠す */
 body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
 .intent { flex: 1 1 0; width: min(46rem, 100%); margin: 0 auto; padding: 1.5rem 1rem; box-sizing: border-box; overflow-y: auto; }
@@ -628,8 +666,11 @@ body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
   .make { overflow: visible; }
   .make > .conversation { max-height: 50vh; }
   .topbar h1 { display: none; }
+  /* 印が増えても横にはみ出さず、下の中身にも重ならないように、折り返して帯を伸ばす */
+  .topbar { flex-wrap: wrap; height: auto; min-height: 3.2rem; padding-block: 0.4rem; gap: 0.4rem 0.6rem; }
   /* 体の高さが決まらないので、中身の高さで広げて、ページごとスクロールする */
-  .intent { flex: none; }
+  .intent, .organize { flex: none; }
+  .organize-body { grid-template-columns: 1fr; }
 }
 
 /* 人の「確かめる」(P27)。引き出しの「試作品を自動で確かめる」 */

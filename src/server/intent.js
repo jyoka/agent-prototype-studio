@@ -168,13 +168,15 @@ export async function createStarterProject(home, sentence) {
 // ai は聞き出す AI の接続(intent-ai.js)。consent は本物の AI を使う前の同意(real-ai.js)。
 // aiMode() は 'fake'(偽接続。同意なし)、'real'(同意が要る)、null(使えない。決まった問いで進める)のどれか
 export class ProjectIntents {
-  constructor({ home, store, ai, consent, aiMode, startScreen = true, log = () => {} }) {
+  // otherWork() は、ほかに続きのある作業(整理の板)があるか。あれば、はじめの画面を出さない
+  constructor({ home, store, ai, consent, aiMode, startScreen = true, otherWork = () => false, log = () => {} }) {
     this.home = home;
     this.store = store;
     this.ai = ai;
     this.consent = consent;
     this.aiMode = aiMode;
     this.startScreen = startScreen;
+    this.otherWork = otherWork;
     this.log = log;
     this.records = new Map();
     // 応答を待っている試作品ごとの AbortController
@@ -227,9 +229,9 @@ export class ProjectIntents {
     return { status: record?.status ?? 'none', decidedAt: record?.decidedAt ?? null, updatedAt: record?.updatedAt ?? null };
   }
 
-  // はじめの画面を出すか。出さない設定か、閉じたか、文書のある試作品があれば出さない
+  // はじめの画面を出すか。出さない設定か、閉じたか、文書か整理の板のある試作品があれば出さない
   startState() {
-    return { show: this.startScreen && !this.startDismissed && this.records.size === 0 };
+    return { show: this.startScreen && !this.startDismissed && this.records.size === 0 && !this.otherWork() };
   }
 
   dismissStart() {

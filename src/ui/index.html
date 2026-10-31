@@ -22,6 +22,8 @@
     </div>
     <!-- 目的の文書の印(user-journey.md の段 2)。押すと、聞き出しか目的の文書を開く -->
     <button type="button" id="intent-mark" class="intent-mark" data-state="none" hidden>目的なし</button>
+    <!-- 整理の板の印(field-session.md の段 2)。押すと、聞き取りの欄と整理の板を開く -->
+    <button type="button" id="organize-mark" class="intent-mark" data-state="none" hidden>ヒアリングの整理</button>
     <div class="topbar-end">
       <!-- STUDIO_AGENT=fake で起動したときだけ出す(ux-redesign.md 4 節) -->
       <span id="dev-agent-mark" class="dev-agent-mark" hidden>開発用: 偽の直す AI</span>
@@ -121,6 +123,55 @@
     </form>
     <p id="intent-note" class="intent-note" role="status" hidden></p>
     <p id="intent-error" class="intent-error" role="alert" hidden></p>
+  </section>
+  <!-- ヒアリングの整理(user-journey.md の K1、field-session.md の段 1、段 2)。左に聞き取りの欄、右に整理の板。出している間は、下の 2 列を隠す -->
+  <section id="organize" class="organize" aria-labelledby="organize-heading" hidden>
+    <h2 id="organize-heading" tabindex="-1">ヒアリングの整理</h2>
+    <p id="organize-state" class="intent-doc-state" role="status"></p>
+    <div class="organize-actions">
+      <button type="button" id="organize-confirm" class="primary">この理解で合っている</button>
+      <button type="button" id="organize-back">試作品の画面に戻る</button>
+    </div>
+    <p class="muted">「この理解で合っている」は、決める人が板を読んでから押します。</p>
+    <p id="organize-note" class="intent-note" role="status" hidden></p>
+    <p id="organize-error" class="intent-error" role="alert" hidden></p>
+    <div class="organize-body">
+      <section class="organize-points" aria-labelledby="organize-points-heading">
+        <h3 id="organize-points-heading">聞き取りの欄</h3>
+        <form id="organize-point-form" class="organize-line">
+          <label for="organize-point">聞いた要点</label>
+          <input id="organize-point" type="text" maxlength="500" autocomplete="off">
+          <button type="submit">要点を足す</button>
+        </form>
+        <p class="muted">要点だけを短く打ちます。架空の題材で試してください。実在の人の記録は入れないでください。</p>
+        <ol id="organize-points" class="organize-list" aria-label="打った要点"></ol>
+      </section>
+      <section class="organize-board" aria-labelledby="organize-board-heading">
+        <div class="organize-board-head">
+          <h3 id="organize-board-heading">整理の板</h3>
+          <button type="button" id="organize-run" class="primary">整理する</button>
+          <div id="organize-waiting" class="intent-waiting" role="status" hidden>
+            <p>整理しています…(要点は打ち続けられます)</p>
+            <button type="button" id="organize-stop">止める</button>
+          </div>
+        </div>
+        <p id="organize-no-ai" class="muted" hidden>今は AI を使えないので、要点の横の欄で、手で振り分けてください。料金はかかりません。</p>
+        <div id="organize-consent"></div>
+        <p id="organize-declined" class="intent-declined" hidden>AI には送りませんでした。要点の横の欄で、手で振り分けられます。</p>
+        <div id="organize-columns" class="organize-columns"></div>
+        <form id="organize-add-form" class="organize-line">
+          <label for="organize-add-column">足す欄</label>
+          <select id="organize-add-column"></select>
+          <label for="organize-add-text">足す項目</label>
+          <input id="organize-add-text" type="text" maxlength="300" autocomplete="off">
+          <button type="submit">項目を足す</button>
+        </form>
+        <section class="organize-asks" aria-labelledby="organize-asks-heading">
+          <h4 id="organize-asks-heading">聞くこと</h4>
+          <ul id="organize-asks" class="organize-list" aria-label="聞くことの一覧"></ul>
+        </section>
+      </section>
+    </div>
   </section>
   <main class="layout">
     <section class="preview" aria-labelledby="try-heading">

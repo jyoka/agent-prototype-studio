@@ -35,6 +35,9 @@
 //   [聞き出しが遅い] は止められるまで応答しない。[聞き出しが失敗] は終了コード 2 で止まる
 //   [聞き出しが壊れる] はいつも、[聞き出しが一度壊れる] は やり直し(stdin の <前の出力の問題>)でなければ、形の合わない出力を返す
 //   [問いなし] は最初から問いを空にする(最初の 1 問は Studio が必ず返すかの確かめ)
+// 整理する AI(src/server/organize-ai.js。--json-schema に toAsk がある)には、要点を順に 5 つの欄へ振り分け、元の要点のない項目と、ない要点を指す項目と、聞くことを返す。
+//   stdin に [整理が遅い] があれば止められるまで応答しない。[整理が失敗] は終了コード 2 で止まる
+//   [整理が壊れる] はいつも、[整理が一度壊れる] はやり直しでなければ、形の合わない出力を返す。[印を書く] があれば、形にない guess: false、held、checkedAt、status: confirmed を足す
 // init には本物と同じ項目(model、plugins、slash_commands、skills、agents)を空で出し、断った呼び出しは result の permission_denials に出す
 // 作る AI の接続の判定(agent-connection.js)のために、`--version` と `auth status` にも答える。
 // auth status は本物(2.1.312)と同じ形で、架空のメールアドレスと組織を含む(Studio が出さないかの確かめ)。
@@ -108,6 +111,10 @@ function main() {
   }
   if (/"draft"/.test(option('--json-schema') ?? '')) {
     intentAnswer();
+    return;
+  }
+  if (/"toAsk"/.test(option('--json-schema') ?? '')) {
+    organizeAnswer();
     return;
   }
   const text = section('新しい発言');
@@ -186,6 +193,33 @@ function intentAnswer() {
         draft: { who: count > 0 ? '偽の下書きの人' : '', problem: '', scene: '', success: '', notDoing: [], undecided: [] },
         ...(stdin.includes('[決めた印]') ? { status: 'decided', decidedAt: '2026-10-31T00:00:00.000Z' } : {}),
       };
+  process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0.0012, result: '', structured_output: output }));
+}
+
+function organizeAnswer() {
+  if (stdin.includes('[整理が遅い]')) {
+    setInterval(() => {}, 1000);
+    return;
+  }
+  if (stdin.includes('[整理が失敗]')) {
+    process.stderr.write('偽の CLI: 途中で止まりました\n');
+    process.exit(2);
+  }
+  const retrying = stdin.includes('<前の出力の問題>');
+  const broken = stdin.includes('[整理が壊れる]') || (stdin.includes('[整理が一度壊れる]') && !retrying);
+  const points = [...section('要点').matchAll(/^\[要点 (\d+)\] (.*)$/gm)].map((match) => ({ n: Number(match[1]), text: match[2] }));
+  const columns = ['requirement', 'user', 'scene', 'rule', 'data'];
+  const marks = stdin.includes('[印を書く]') ? { guess: false, held: true, by: 'person', checkedAt: '2026-10-31T00:00:00.000Z', status: 'confirmed', confirmedAt: '2026-10-31T00:00:00.000Z' } : {};
+  const items = [
+    ...points.map(({ n, text }, index) => ({ column: columns[index % columns.length], text, sources: [n] })),
+    { column: 'data', text: '偽の話に出ていない項目', sources: [], ...marks },
+    { column: 'rule', text: '偽のない要点を指す項目', sources: [9999], ...marks },
+  ];
+  const toAsk = [
+    { kind: 'conflict', text: '偽の食い違いがあります', sources: points.slice(0, 2).map((point) => point.n) },
+    { kind: 'unasked', text: '偽の聞いていないことがあります', sources: [] },
+  ];
+  const output = broken ? { items: '形が壊れています' } : { items, toAsk, ...marks };
   process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0.0012, result: '', structured_output: output }));
 }
 

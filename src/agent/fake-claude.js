@@ -555,6 +555,35 @@ async function intentCall(argv) {
   emit({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0, result: '', structured_output: output });
 }
 
+// 整理する AI の偽物(src/server/organize-ai.js)。--json-schema に toAsk がある起動で動く。
+// 聞き出す AI と同じ守りの引数を確かめ、要点の中の語で欄を決める。元の要点のない項目と、聞くことも 1 つずつ返す(印を試せるように)
+const ORGANIZE_WORDS = [
+  ['data', /データ|番号|項目|一覧|名簿|記録/],
+  ['rule', /決まり|まで|してはいけない|必ず|翌日|禁止/],
+  ['scene', /とき|時に|朝|昼|夕方|夜|場面/],
+  ['user', /人|お客さん|担当|利用者/],
+];
+
+function isOrganizeCall(argv) {
+  const schema = argv.find((arg) => arg.startsWith('--json-schema='));
+  return Boolean(schema) && /"toAsk"/.test(schema);
+}
+
+async function organizeCall(argv) {
+  const missing = ['-p', '--restricted', '--safe-mode', '--strict-mcp-config', '--no-session-persistence'].filter((flag) => !argv.includes(flag));
+  if (missing.length > 0 || argv[argv.indexOf('--tools') + 1] !== '' || argv[argv.indexOf('--output-format') + 1] !== 'json') {
+    process.stderr.write(`偽接続: 整理する AI の引数が足りません: ${missing.join(' ')}\n`);
+    process.exitCode = 3;
+    return;
+  }
+  const input = await readStdin();
+  const points = [...input.matchAll(/^\[要点 (\d+)\] (.*)$/gm)].map((match) => ({ n: Number(match[1]), text: match[2] }));
+  const items = points.map(({ n, text }) => ({ column: ORGANIZE_WORDS.find(([, words]) => words.test(text))?.[0] ?? 'requirement', text, sources: [n] }));
+  items.push({ column: 'rule', text: '答えられないときは、人に渡す', sources: [] });
+  const output = { items, toAsk: [{ kind: 'unasked', text: 'うまくいかなかったときに、誰に渡すかを聞いていません。', sources: [] }] };
+  emit({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0, result: '', structured_output: output });
+}
+
 async function main() {
   // Claude Code は SIGINT で止まる。偽接続も同じく、すぐ終わる
   process.on('SIGINT', () => process.exit(130));
@@ -562,6 +591,7 @@ async function main() {
 
   const argv = process.argv.slice(2);
   if (isIntentCall(argv)) return intentCall(argv);
+  if (isOrganizeCall(argv)) return organizeCall(argv);
   const problems = await checkArgs(argv);
   const request = (await readStdin()).trim();
   // 実機の init と同じ項目。偽接続は利用者の設定を読まないので、MCP は渡された観察の道具だけで、ほかは空

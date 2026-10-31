@@ -359,9 +359,10 @@ function selectedProject() {
 
 function render() {
   if (!selectedProject()) {
-    // 目的を聞き出した試作品があれば、最後に触ったものを選ぶ(読み込み直しや起動し直しで、続きに戻れるように)。
+    // 目的を聞き出したか、ヒアリングを整理した試作品があれば、最後に触ったものを選ぶ(読み込み直しや起動し直しで、続きに戻れるように)。
     // なければ、AI と話せる試作品(求人相談)を選ぶ(ux-redesign.md 5 節)
-    const latest = projects.filter((p) => p.intent?.updatedAt).sort((a, b) => b.intent.updatedAt.localeCompare(a.intent.updatedAt))[0];
+    const touchedAt = (p) => [p.intent?.updatedAt, p.organize?.updatedAt].filter(Boolean).sort().at(-1);
+    const latest = projects.filter(touchedAt).sort((a, b) => touchedAt(b).localeCompare(touchedAt(a)))[0];
     selectedId = latest?.id ?? projects.find((p) => p.id === 'sample-job-consult')?.id ?? projects[0]?.id ?? null;
   }
   renderList();
@@ -420,6 +421,7 @@ function renderList() {
     button.addEventListener('click', () => {
       setProjectMenu(false);
       leaveIntent();
+      closeOrganize();
       if (selectedId === project.id) return;
       selectedId = project.id;
       makeError = null;
@@ -1514,6 +1516,17 @@ function consentDetails(view, key) {
       element('pre', details.intent.systemPrompt),
     );
   }
+  if (details.organize) {
+    part(
+      'ヒアリングを整理するとき',
+      ...labeledList('ヒアリングを整理するときに送るもの', details.organize.items),
+      element('p', details.organize.notSent),
+      element('p', details.organize.tools),
+      element('p', details.organize.limits),
+      element('p', '整理する AI への指示の全文:'),
+      element('pre', details.organize.systemPrompt),
+    );
+  }
   part('1 回の上限', element('p', summary.cost.limits));
   part('記録の扱い', ...(details.records ?? []).map((text) => element('p', text)));
   return box;
@@ -1586,6 +1599,7 @@ async function agreeConsent() {
   renderMake(selectedProject());
   renderAi();
   renderIntentConsent();
+  renderOrganizeConsent();
   let agreed = false;
   // 待つ間に、別のカードに入れ替わったか、試作品を切り替えて閉じたときは、同意だけをして送らない
   let still = false;
@@ -1602,9 +1616,14 @@ async function agreeConsent() {
     renderMake(selectedProject());
     renderAi();
     renderIntentConsent();
+    renderOrganizeConsent();
   }
   if (card.use === 'intent') {
     if (agreed && still) await sendSentence();
+    return;
+  }
+  if (card.use === 'organize') {
+    if (agreed && still) await runOrganize();
     return;
   }
   if (!agreed || !still || card.projectId !== selectedId) return;
@@ -1621,10 +1640,12 @@ function declineConsent() {
   consent.card = null;
   if (card?.use === 'fix') consent.declined = true;
   if (card?.use === 'intent') intentUi.declined = true;
+  if (card?.use === 'organize') organizeUi.declined = true;
   if (card?.use === 'check') checks.message = { projectId: card.projectId, text: '本物の AI で確かめるには、同意が要ります。お試しの AI なら、同意なしで確かめられます。' };
   renderMake(selectedProject());
   renderAi();
   renderIntentConsent();
+  renderOrganize();
 }
 
 // 本物の AI を使っている間の小さな印(試す欄の上と直す欄の上)。押すと、カードの中身をもう一度見られる。
@@ -3282,6 +3303,7 @@ function renderIntentMark(project) {
   intentEls.mark.hidden = !project || (intentUi.view === 'start' && !intentUi.projectId);
   intentEls.mark.textContent = INTENT_MARKS[status] ?? INTENT_MARKS.none;
   intentEls.mark.dataset.state = status === 'decided' ? 'decided' : status === 'draft' || status === 'interviewing' ? 'draft' : 'none';
+  renderOrganizeMark(project);
 }
 
 function intentError(text) {
@@ -3577,6 +3599,7 @@ async function reloadIntent(id) {
 async function openIntentFromMark() {
   const project = selectedProject();
   if (!project || (intentUi.view && intentUi.projectId === project.id)) return;
+  closeOrganize();
   try {
     const { intent } = await api(intentPath(project.id));
     if (intent.thinking) {
@@ -3628,6 +3651,7 @@ intentEls.mark.addEventListener('click', openIntentFromMark);
 $('new-project').addEventListener('click', () => {
   setProjectMenu(false);
   leaveIntent();
+  closeOrganize();
   openStart(null);
 });
 intentEls.start.addEventListener('submit', (event) => {
@@ -3681,6 +3705,408 @@ intentEls.begin.addEventListener('click', () => {
   closeIntent();
   fillRequest(text);
 });
+
+// ヒアリングの整理(user-journey.md の K1、field-session.md の段 1、段 2)。サーバーは src/server/organize.js。
+// 要点と項目は外から来た文字なので、ほかと同じく textContent と value でだけ出す。
+// board はサーバーの板。waiting はこの画面の「整理する」の応答を待っている間。editing は直している項目の ID で、editDraft はその書きかけ(板を読み直しても消さない)
+const ORGANIZE_COLUMNS = { requirement: '要求', user: '使う人', scene: '場面', rule: '決まりごと', data: 'データ' };
+const ORGANIZE_MARKS = { none: 'ヒアリングの整理', draft: '整理: 下書き', confirmed: '整理: 確かめた' };
+const ORGANIZE_ASK_KINDS = { conflict: '矛盾', unasked: '聞いていない', guess: '推測', empty: '聞いていない' };
+const organizeUi = { open: false, projectId: null, board: null, waiting: false, declined: false, editing: null, editDraft: null, inputsFor: null, seq: 0, timer: null };
+const organizeEls = {
+  section: $('organize'),
+  heading: $('organize-heading'),
+  state: $('organize-state'),
+  confirm: $('organize-confirm'),
+  note: $('organize-note'),
+  error: $('organize-error'),
+  pointForm: $('organize-point-form'),
+  point: $('organize-point'),
+  points: $('organize-points'),
+  run: $('organize-run'),
+  waiting: $('organize-waiting'),
+  noAi: $('organize-no-ai'),
+  consent: $('organize-consent'),
+  declined: $('organize-declined'),
+  columns: $('organize-columns'),
+  addForm: $('organize-add-form'),
+  addColumn: $('organize-add-column'),
+  addText: $('organize-add-text'),
+  asks: $('organize-asks'),
+  mark: $('organize-mark'),
+};
+const organizePath = (id, action = '') => `/api/projects/${encodeURIComponent(id)}/organize${action ? `/${action}` : ''}`;
+
+function renderOrganizeMark(project) {
+  const status = project?.organize?.status ?? 'none';
+  organizeEls.mark.hidden = !project || (intentUi.view === 'start' && !intentUi.projectId);
+  organizeEls.mark.textContent = ORGANIZE_MARKS[status] ?? ORGANIZE_MARKS.none;
+  organizeEls.mark.dataset.state = status === 'confirmed' ? 'decided' : status === 'draft' ? 'draft' : 'none';
+}
+
+function organizeError(text) {
+  organizeEls.error.hidden = !text;
+  organizeEls.error.textContent = text ?? '';
+}
+
+function organizeFailed(error) {
+  if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) organizeError(`進められませんでした: ${error.message}`);
+  else handleError(error);
+}
+
+function renderOrganizeConsent() {
+  const card = consent.card?.use === 'organize' ? consent.card : null;
+  organizeEls.consent.replaceChildren(...(card ? [consentCard(card.view, { card })] : []));
+  organizeEls.declined.hidden = !organizeUi.declined || Boolean(card);
+}
+
+function smallButton(text, onClick) {
+  const button = element('button', text);
+  button.type = 'button';
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+function columnOptions(select) {
+  select.append(...Object.entries(ORGANIZE_COLUMNS).map(([value, label]) => {
+    const option = element('option', label);
+    option.value = value;
+    return option;
+  }));
+}
+
+function organizePointItem(point) {
+  const li = element('li');
+  const head = element('div', undefined, 'organize-point-head');
+  head.append(element('span', `${point.n}. ${point.text}`), smallButton('消す', () => organizeAct('point-remove', { n: point.n })));
+  li.append(head);
+  if (!point.placed) {
+    // AI が落とした要点と、まだ整理していない要点。手で振り分ける道にもなる
+    const row = element('div', undefined, 'organize-unplaced');
+    const select = element('select');
+    select.setAttribute('aria-label', `要点 ${point.n} を入れる欄`);
+    const blank = element('option', '欄を選ぶ');
+    blank.value = '';
+    select.append(blank);
+    columnOptions(select);
+    select.addEventListener('change', () => {
+      if (select.value) organizeAct('place', { n: point.n, column: select.value });
+    });
+    row.append(element('span', 'まだどの欄にもありません'), select);
+    li.append(row);
+  }
+  return li;
+}
+
+function organizeEditForm(item) {
+  const form = element('form', undefined, 'organize-edit');
+  const text = element('textarea');
+  text.rows = 2;
+  text.maxLength = 300;
+  text.value = organizeUi.editDraft?.text ?? item.text;
+  text.setAttribute('aria-label', '項目の文');
+  text.addEventListener('input', () => {
+    organizeUi.editDraft = { text: text.value, column: select.value };
+  });
+  const select = element('select');
+  select.setAttribute('aria-label', '項目の欄');
+  columnOptions(select);
+  select.value = organizeUi.editDraft?.column ?? item.column;
+  select.addEventListener('change', () => {
+    organizeUi.editDraft = { text: text.value, column: select.value };
+  });
+  const save = element('button', '保存する');
+  save.type = 'submit';
+  const buttons = element('div', undefined, 'organize-item-actions');
+  buttons.append(save, smallButton('やめる', () => {
+    organizeUi.editing = null;
+    organizeUi.editDraft = null;
+    renderOrganize();
+  }));
+  form.append(text, select, buttons);
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    // 保存できるまで、書きかけを残す
+    organizeUi.editDraft = { text: text.value, column: select.value };
+    if (!(await organizeAct('item-edit', { id: item.id, text: text.value, column: select.value }))) return;
+    organizeUi.editing = null;
+    organizeUi.editDraft = null;
+    renderOrganize();
+  });
+  return form;
+}
+
+function organizeItemNode(item, pointText) {
+  const li = element('li', undefined, 'organize-item');
+  li.dataset.guess = String(item.guess);
+  if (organizeUi.editing === item.id) {
+    li.append(organizeEditForm(item));
+    return li;
+  }
+  li.append(element('p', item.text, 'organize-item-text'));
+  if (item.guess) {
+    const badge = element('span', '推測', 'organize-badge');
+    badge.dataset.kind = 'guess';
+    li.append(badge, element('p', '話に出ていません。', 'organize-source'));
+  } else if (item.sources.length === 0) {
+    li.append(element('span', '人が確かめた', 'organize-badge'));
+  }
+  for (const n of item.sources) li.append(element('p', `元の要点 ${n}: ${pointText.get(n) ?? ''}`, 'organize-source'));
+  const buttons = element('div', undefined, 'organize-item-actions');
+  if (item.guess) buttons.append(smallButton('この項目は合っている', () => organizeAct('item-check', { id: item.id })));
+  buttons.append(
+    smallButton('直す', () => {
+      organizeUi.editing = item.id;
+      organizeUi.editDraft = null;
+      renderOrganize();
+    }),
+    smallButton('消す', () => organizeAct('item-remove', { id: item.id })),
+  );
+  li.append(buttons);
+  return li;
+}
+
+function organizeAskItem(ask) {
+  const li = element('li');
+  const badge = element('span', ORGANIZE_ASK_KINDS[ask.kind] ?? ask.kind, 'organize-badge');
+  badge.dataset.kind = ask.kind;
+  const head = element('div', undefined, 'organize-point-head');
+  const body = element('span');
+  body.append(badge, ` ${ask.text}`);
+  if (ask.sources.length > 0) body.append(`(要点 ${ask.sources.join('、')})`);
+  head.append(body);
+  // 推測と空の欄は Studio が出す。元を直すと消える
+  if (ask.kind === 'conflict' || ask.kind === 'unasked') head.append(smallButton('消す', () => organizeAct('ask-remove', { id: ask.id })));
+  li.append(head);
+  return li;
+}
+
+function organizeStateText(board) {
+  const guesses = board.items.filter((item) => item.guess).length;
+  const counts = `要点 ${board.points.length} 個、項目 ${board.items.length} 個、推測 ${guesses} 個、聞くこと ${board.asks.length} 個。`;
+  if (board.status === 'confirmed') return `${formatTime(board.confirmedAt)}に、決める人が確かめました。板を変えると、この印は外れます。${counts}`;
+  if (board.items.length === 0) return 'まだ整理していません。次にすること: 聞いた要点を打ち、「整理する」を押してください。';
+  return `まだ確かめていません。次にすること: 違う項目を直し、推測を確かめ、決める人が読んで押してください。${counts}`;
+}
+
+function renderOrganize() {
+  const { open, board, waiting } = organizeUi;
+  organizeEls.section.hidden = !open;
+  if (open) document.body.dataset.organize = 'open';
+  else delete document.body.dataset.organize;
+  renderOrganizeConsent();
+  if (!open) return;
+  if (!board) {
+    // 読み込みの間は、前に開いていた試作品の板を見せない(読んでいない板を押したり消したりしないように)
+    organizeEls.state.textContent = '読み込んでいます…';
+    organizeEls.confirm.disabled = true;
+    organizeEls.run.disabled = true;
+    organizeEls.waiting.hidden = true;
+    for (const list of [organizeEls.points, organizeEls.columns, organizeEls.asks]) list.replaceChildren();
+    return;
+  }
+  const thinking = waiting || board.thinking;
+  organizeEls.state.textContent = organizeStateText(board);
+  organizeEls.state.dataset.state = board.status === 'confirmed' ? 'decided' : 'draft';
+  organizeEls.note.hidden = !board.note;
+  organizeEls.note.textContent = board.note ?? '';
+  organizeEls.confirm.disabled = thinking || board.items.length === 0 || board.status === 'confirmed';
+  organizeEls.run.hidden = thinking;
+  organizeEls.run.disabled = !board.ai || board.points.length === 0;
+  organizeEls.waiting.hidden = !thinking;
+  organizeEls.noAi.hidden = Boolean(board.ai);
+  organizeEls.points.replaceChildren(...board.points.map(organizePointItem));
+  const pointText = new Map(board.points.map((point) => [point.n, point.text]));
+  organizeEls.columns.replaceChildren(...Object.entries(ORGANIZE_COLUMNS).map(([column, label]) => {
+    const box = element('section', undefined, 'organize-column');
+    box.setAttribute('aria-label', label);
+    box.dataset.column = column;
+    const list = element('ul', undefined, 'organize-list');
+    list.append(...board.items.filter((item) => item.column === column).map((item) => organizeItemNode(item, pointText)));
+    box.append(element('h4', label), list);
+    return box;
+  }));
+  organizeEls.asks.replaceChildren(...board.asks.map(organizeAskItem));
+}
+
+// サーバーの板を出す。後から来た応答が古ければ捨てる(AI を待つ間も要点を足せるので、順が入れ替わることがある)
+function applyBoard(board) {
+  const shown = organizeUi.board;
+  if (shown && board.rev < shown.rev) return;
+  // 待つ間の読み直しで何も変わっていなければ、書き直さない(書いている欄の入力と開いた選択を崩さない)
+  if (shown && board.rev === shown.rev && board.thinking === shown.thinking && board.ai === shown.ai) {
+    scheduleOrganizePoll();
+    return;
+  }
+  organizeUi.board = board;
+  // 直している項目が整理し直しで入れ替わったら、編集を閉じる。書きかけの文は失わないよう、知らせに出す
+  if (organizeUi.editing && !board.items.some((item) => item.id === organizeUi.editing)) {
+    organizeError(organizeUi.editDraft ? `直している間に整理し直したので、閉じました。書きかけ: ${organizeUi.editDraft.text}` : null);
+    organizeUi.editing = null;
+    organizeUi.editDraft = null;
+  }
+  renderOrganize();
+  scheduleOrganizePoll();
+}
+
+// 別の画面か読み込み直しの前に押した整理を待つ間は、板を読み直す
+function scheduleOrganizePoll() {
+  clearTimeout(organizeUi.timer);
+  if (!organizeUi.open || organizeUi.waiting || !organizeUi.board?.thinking) return;
+  const { seq, projectId } = organizeUi;
+  organizeUi.timer = setTimeout(async () => {
+    try {
+      const { organize } = await api(organizePath(projectId));
+      if (seq === organizeUi.seq) applyBoard(organize);
+    } catch (error) {
+      if (seq === organizeUi.seq) handleError(error);
+    }
+    if (seq === organizeUi.seq && !organizeUi.board?.thinking) await refreshOrganizeList();
+  }, 1000);
+}
+
+async function refreshOrganizeList() {
+  if (organizeUi.open) selectedId = organizeUi.projectId;
+  lastSnapshot = '';
+  await refresh();
+}
+
+async function organizeAct(action, body = {}) {
+  const id = organizeUi.projectId;
+  if (!id) return null;
+  organizeError(null);
+  const { seq } = organizeUi;
+  try {
+    const { organize } = await api(organizePath(id, action), { method: 'POST', json: body });
+    if (seq === organizeUi.seq) applyBoard(organize);
+    await refreshOrganizeList();
+    return organize;
+  } catch (error) {
+    if (seq !== organizeUi.seq) return null;
+    organizeFailed(error);
+    // 板が変わっていたら、読み直す(古い板を読んだまま押さないように)
+    if (error instanceof ApiError && ['stale-board', 'no-item', 'no-point', 'no-ask'].includes(error.code)) {
+      const { organize } = await api(organizePath(id));
+      if (seq === organizeUi.seq) applyBoard(organize);
+    }
+    return null;
+  }
+}
+
+// 「整理する」。1 回押すと 1 回呼ぶ。本物の AI は、同意の前はサーバーが断る
+async function runOrganize() {
+  const id = organizeUi.projectId;
+  if (!id || organizeUi.waiting) return;
+  organizeError(null);
+  organizeUi.waiting = true;
+  organizeUi.declined = false;
+  renderOrganize();
+  const { seq } = organizeUi;
+  try {
+    const { organize } = await api(organizePath(id, 'run'), { method: 'POST' });
+    if (seq !== organizeUi.seq) return;
+    organizeUi.waiting = false;
+    applyBoard(organize);
+    await refreshOrganizeList();
+  } catch (error) {
+    if (seq !== organizeUi.seq) return;
+    organizeUi.waiting = false;
+    renderOrganize();
+    if (error instanceof ApiError && error.code === 'consent-required') {
+      const view = await api('/api/real-ai');
+      if (seq !== organizeUi.seq) return;
+      setConsentState(view.consent);
+      if (view.consent.agreed) return runOrganize();
+      openConsentDetails.delete('card');
+      consent.card = { use: 'organize', projectId: null, view };
+      renderOrganizeConsent();
+      return;
+    }
+    organizeFailed(error);
+  }
+}
+
+// 聞き取りの欄と整理の板を開く
+async function openOrganize() {
+  const project = selectedProject();
+  if (!project || (organizeUi.open && organizeUi.projectId === project.id)) return;
+  leaveIntent();
+  // 別の試作品の板には、前の試作品のために書いた文を持ち込まない
+  if (organizeUi.inputsFor !== project.id) {
+    organizeEls.point.value = '';
+    organizeEls.addText.value = '';
+  }
+  organizeUi.inputsFor = project.id;
+  organizeUi.seq += 1;
+  const { seq } = organizeUi;
+  organizeUi.open = true;
+  organizeUi.projectId = project.id;
+  organizeUi.board = null;
+  organizeUi.waiting = false;
+  organizeUi.declined = false;
+  organizeUi.editing = null;
+  organizeUi.editDraft = null;
+  organizeError(null);
+  renderOrganize();
+  try {
+    const { organize } = await api(organizePath(project.id));
+    if (seq !== organizeUi.seq) return;
+    applyBoard(organize);
+    organizeEls.point.focus();
+  } catch (error) {
+    if (seq === organizeUi.seq) handleError(error);
+  }
+}
+
+function closeOrganize() {
+  organizeUi.seq += 1;
+  clearTimeout(organizeUi.timer);
+  if (!organizeUi.open) return;
+  if (consent.card?.use === 'organize') consent.card = null;
+  organizeUi.open = false;
+  organizeUi.board = null;
+  organizeUi.projectId = null;
+  organizeUi.waiting = false;
+  organizeUi.declined = false;
+  organizeUi.editing = null;
+  organizeUi.editDraft = null;
+  organizeError(null);
+  renderOrganize();
+}
+
+columnOptions(organizeEls.addColumn);
+organizeEls.mark.addEventListener('click', openOrganize);
+organizeEls.pointForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const text = organizeEls.point.value.trim();
+  if (!text) {
+    organizeError('聞いた要点を書いてください。');
+    return;
+  }
+  // 打ち続けられるように、応答を待たずに欄を空にする。足せなかったら、文を欄に戻す
+  organizeEls.point.value = '';
+  organizeEls.point.focus();
+  if (await organizeAct('point', { text })) return;
+  // 次の要点を打ち始めていたら、上書きせず、足せなかった文を知らせに出す
+  if (organizeEls.point.value) organizeError(`足せなかった要点: ${text}`);
+  else organizeEls.point.value = text;
+});
+organizeEls.addForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const text = organizeEls.addText.value.trim();
+  if (!text) {
+    organizeError('足す項目の文を書いてください。');
+    return;
+  }
+  if (await organizeAct('item', { column: organizeEls.addColumn.value, text })) organizeEls.addText.value = '';
+});
+organizeEls.run.addEventListener('click', runOrganize);
+$('organize-stop').addEventListener('click', () => {
+  if (organizeUi.projectId) api(organizePath(organizeUi.projectId, 'cancel'), { method: 'POST' }).catch(organizeFailed);
+});
+// 読んでいた板の版を送る。読んだ後に板が変わっていたら、サーバーが断る
+organizeEls.confirm.addEventListener('click', () => organizeAct('confirm', { rev: organizeUi.board?.rev }));
+$('organize-back').addEventListener('click', closeOrganize);
 
 // 案内のとおり同じタブに URL を貼ると、フラグメントだけが変わり、画面は読み直されない。
 // 新しい鍵を覚えてから読み直し、はじめからつなぎ直す。

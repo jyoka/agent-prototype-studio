@@ -12,7 +12,7 @@
 | `STUDIO_NO_OPEN` | なし | `1` でブラウザを自動で開かない |
 | `STUDIO_START_SCREEN` | なし | `0` で、起動のときにはじめの画面([usage.md](usage.md#目的を聞き出すはじめの画面))を出さない。「新しく作る」からは開ける |
 | `STUDIO_AGENT` | `auto` | 作る AI。`auto`(自動)は、Claude Code が見つかり、版が足り、ログインしていれば Claude Code を使い、そうでなければ言葉で直す欄を使えない状態にして理由を出す。`claude` は Claude Code に固定する(判定は自動と同じ)。`fake` は偽接続で、モデルを呼ばない。テストと開発では `fake` か偽の `claude` を明示する |
-| `STUDIO_ALLOW_CLAUDE_CODE` | なし | `0` でプロダクト内 AI に Claude Code(本物の AI)を選べなくする(会社として止めたいとき)。目的の聞き出しも本物の AI を呼ばず、決まった問いで進む。書かなければ選べる。使う前に画面で同意する([claude-code.md](claude-code.md#本物の-ai-を使う前の同意))。`0` と `1`(前の決まりの名残りで、書かないのと同じ)のほかの値では起動しない |
+| `STUDIO_ALLOW_CLAUDE_CODE` | なし | `0` でプロダクト内 AI に Claude Code(本物の AI)を選べなくする(会社として止めたいとき)。目的の聞き出しも本物の AI を呼ばず、決まった問いで進む。ヒアリングの整理も呼ばず、手で振り分ける。書かなければ選べる。使う前に画面で同意する([claude-code.md](claude-code.md#本物の-ai-を使う前の同意))。`0` と `1`(前の決まりの名残りで、書かないのと同じ)のほかの値では起動しない |
 | `STUDIO_CLAUDE_BIN` | PATH の `claude` | 起動する Claude Code の場所。作る AI(`STUDIO_AGENT` が `auto` か `claude`)とプロダクト内 AI の両方で使う。ない場所を指すと、作る AI は「ない」になる。テストでは偽の CLI を指す |
 | `STUDIO_MAX_BUDGET_USD` | `1` | 作る AI で、API キーなど、サブスクの枠でないときに、作る AI の 1 回の起動に付ける費用の上限(ドル)。直すラウンドを合わせて、1 つの依頼で 3 回まで起動するので、1 つの依頼では最大でこの 3 倍になる。プロダクト内 AI の上限(1 回の呼び出し 0.1 ドル)は変えない |
 
@@ -332,5 +332,6 @@ export default function App() {
 - 保存した版は `~/PrototypeStudio/projects/<試作品の ID>/.studio/versions/<版の ID>/` に置く。`app/` はファイルの写し、`version.json` はファイルの指紋(SHA-256)と、会話と状態。どの版から作業しているかは `.studio/working.json` に置く。`.studio/` は Studio だけが書く場所で、作る AI は読み書きしない。復元が途中で止まったときは、次の起動で `app/` を戻し、前の `app/` は `.studio/set-aside/` に置く。
 - `app/` の入口は、目録の `entry`。目録がなければ `main.jsx`(または `main.tsx`、`main.js`、`main.ts`)。使えるライブラリは React(`react`、`react-dom`)、会話の枠(`studio-talk`。上の「会話の枠」)、既定の素材(`@radix-ui/themes`、`@radix-ui/themes/styles.css`、`@radix-ui/colors`、`@radix-ui/colors/<色>.css`、`lucide-react`)だけ。出典とライセンスは `materials/default/source.json` にある。
 - 目的の文書は `projects/<試作品の ID>/.studio/intent.json` に置く。1 文、案内の深さ、問いと答え、文書、決めた時刻か飛ばした時刻が入る。目録の `intent`(作る AI が書く 1 文)とは別のもの。
+- 整理の板は `projects/<試作品の ID>/.studio/organize.json` に置く。要点、5 つの欄の項目と元の要点、聞くこと、人が消したもの、確かめた時刻が入る。
 - 引き継ぎの書き出しは `~/PrototypeStudio/handoffs/` に置く。書き出すたびに新しいフォルダーを作る。要らなくなったら消してよい。書いたメモは `projects/<試作品の ID>/.studio/handoff-notes.json`。
 - 自分で試作品を足すときは、`~/PrototypeStudio/projects/<英小文字・数字・ハイフンの名前>/app/main.jsx` を置き、画面で選んで、「その他」の「開発者向けの詳細」の「ファイルから作り直す」を押す。
