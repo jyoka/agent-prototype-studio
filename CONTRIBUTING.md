@@ -81,6 +81,7 @@ scripts/site.js        npm run site。LP(site/)を 127.0.0.1 で配る
 site/                  LP(index.html、site.css、site.js、llms.txt)。公開しない
 src/ui/                Studio の画面と、観察用の親ページ(observe.html、observe.js)
 src/runtime/runtime.js 試作品に配る runtime。試作品のエラーを Studio の画面に知らせ、window.studio.ai を配る
+materials/default/     既定の素材の指針の要約(guide.md)、出典とライセンスの一覧(source.json)、原文(licenses/)。npm run materials:sources で一覧を作る
 samples/library/app/   固定のサンプル試作品(架空の図書室)
 samples/job-consult/app/ 固定のサンプル試作品(架空の求人相談とモックの AI)
 samples/study-consult/app/ 固定のサンプル試作品(架空の学習相談とモックの AI。求人ではない題材で汎用性を確かめる)
@@ -97,11 +98,12 @@ assets/media/          npm run media が撮った画像と動く画像(手で直
 | コマンド | 中身 | 時間の目安 |
 |---|---|---|
 | `npm test` | 単体と結合のテスト(Node の test runner)。作る欄の API、偽の CLI に渡る引数と stdin、確認スクリプトの空回しを含む | 1 分ほど |
-| `npm run test:e2e` | ブラウザの E2E(Playwright の Chromium)。起動手順、サンプルの操作、モックの AI との会話と修正とリセット、偽の Claude Code への切り替えと履歴と失敗と中断、AI の実行の記録(正常と失敗、次にすること、伏せる文字列)、失敗の表示、試作品の隔離、作る欄の依頼・変更・反映・拒否・失敗・中断、作る欄で AI の振る舞いを変えて前の発言で試し直すこと、版の保存・変更・復元・起動し直した後の再開、引き継ぎの書き出しと、別の場所での確認(資料を読む、ソースを別の Studio で動かす)と秘密での停止、求人ではない題材(架空の学習相談)での作成・試行・変更・版・引き継ぎの通しと、Studio の画面と書き出しに求人の言葉が出ないこと、観察器の report(正常と、壊した見本のエラー、AI の要求の中継、7 つの操作とシナリオ、失敗した手順のスクリーンショット、見本のシナリオ)と、観察器の隔離(悪意のある見本、名前の解決、時間の上限)と、LP(`test/e2e/site.spec.js`。リンクの先、層のアニメ、動きを止める設定、スマホの幅、外への通信がないこと)を確かめる。「分かるか」の確かめの画面(U10)を `test-results/ux/` に撮る([docs/evidence/ux/final/](docs/evidence/ux/final/README.md)) | 全体でおよそ 3 分半(上限は 7 分) |
+| `npm run test:e2e` | ブラウザの E2E(Playwright の Chromium)。起動手順、サンプルの操作、モックの AI との会話と修正とリセット、偽の Claude Code への切り替えと履歴と失敗と中断、AI の実行の記録(正常と失敗、次にすること、伏せる文字列)、失敗の表示、試作品の隔離、作る欄の依頼・変更・反映・拒否・失敗・中断、作る欄で AI の振る舞いを変えて前の発言で試し直すこと、版の保存・変更・復元・起動し直した後の再開、引き継ぎの書き出しと、別の場所での確認(資料を読む、ソースを別の Studio で動かす)と秘密での停止、求人ではない題材(架空の学習相談)での作成・試行・変更・版・引き継ぎの通しと、Studio の画面と書き出しに求人の言葉が出ないこと、観察器の report(正常と、壊した見本のエラー、AI の要求の中継、7 つの操作とシナリオ、失敗した手順のスクリーンショット、見本のシナリオ)と、観察器の隔離(悪意のある見本、名前の解決、時間の上限)と、既定の素材の見本が外への通信なしで描けること(`test/e2e/default-material.spec.js`)と、LP(`test/e2e/site.spec.js`。リンクの先、層のアニメ、動きを止める設定、スマホの幅、外への通信がないこと)を確かめる。「分かるか」の確かめの画面(U10)を `test-results/ux/` に撮る([docs/evidence/ux/final/](docs/evidence/ux/final/README.md)) | 全体でおよそ 3 分半(上限は 7 分) |
 
 E2E と観察器のブラウザがないときは、`npm run install:chromium` で入れる。どのテストも実モデルと外部の API を呼ばない(`STUDIO_REAL=1` を付けた `test/e2e/real-loop.spec.js` だけが例外)。作る AI の既定は自動(手元の Claude Code を使う)なので、テストは `STUDIO_AGENT=fake`(偽接続、`src/agent/fake-claude.js`)か、偽の `claude`(`STUDIO_CLAUDE_BIN`)を必ず明示する。`STUDIO_AGENT` を消すテストは、`STUDIO_CLAUDE_BIN` を偽の `claude` か、ない場所に向ける。E2E の `launchStudio` は、指定がなければ `STUDIO_AGENT=fake` にする。プロダクト内 AI の Claude Code は、偽の CLI(`test/fixtures/fake-claude.js`)に差し替える。
 
 - 不具合は、利用者から見た動きを再現する E2E を先に書き、失敗するのを見てから直します
+- 同梱のパッケージを変えたら、`npm run materials:sources` で一覧を作り直し、新しいライセンスの原文を読みます。一覧が古いと `test/unit/materials.test.js` が落ちます
 - 実モデルで守りが効くかは、`npm run check:claude` で確かめます。実モデルを呼ぶので、人が決めたときだけ動かします([docs/claude-code.md の「実機で確かめる」](docs/claude-code.md#実機で確かめる))
 - 場面を実モデルで回す `npm run evals -- <プロジェクト> --real`(`STUDIO_ALLOW_CLAUDE_CODE=1` と `--limit-usd` が要る)も、人が決めたときだけです。テストは偽の `claude` で回します([docs/usage.md の「場面を回す」](docs/usage.md#場面を回すnpm-run-evals))
 - 実モデルで模擬のエージェントの起動が動くかは、`npm run check:sim -- --run --limit-usd <USD>` と `STUDIO_REAL=1 npx playwright test test/e2e/real-sim.spec.js` で確かめます。これも人が決めたときだけです。`npm run test:e2e` では、`real-sim.spec.js` は飛ばされます([docs/claude-code.md の「模擬のエージェントの起動を実機で確かめる」](docs/claude-code.md#模擬のエージェントの起動を実機で確かめる))

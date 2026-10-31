@@ -2,7 +2,7 @@
 
 試作品の見た目と使いやすさを、誰でも少しの「良い味」から始められるようにする作戦です。既定の素材の候補とライセンス、自分の素材をつなぐ形、取り込みの案内を書きます。
 
-- 状態: 案(task 378)。書いた日: 2026-10-29。既定の素材(3 節)は、運営者が 2026-10-29 に決めた(task 381)。実装は [user-journey.md の 6 節](user-journey.md#6-実装のカードの分け方)の J3〜J5
+- 状態: 案(task 378)。書いた日: 2026-10-29。既定の素材(3 節)は、運営者が 2026-10-29 に決めた(task 381)。実装は [user-journey.md の 6 節](user-journey.md#6-実装のカードの分け方)の J3〜J5。J3 の結果は 3 節の「J3 で確かめたこと」(2026-10-31)
 - 前提: [vision.md](../vision.md) の原則 6「素材を流用できる」、[ADR 0001](../adr/0001-local-runtime-and-isolation.md)。隔離は弱めない
 - 出典はどれも 2026-10-29 に読んだ。ライセンスは一次資料(リポジトリの LICENSE、公式の規約、npm の登録)で確かめた。確かめられなかったものは「未確認」と書いた
 - ライセンスの読み方は、法律の助言ではない。同梱を決める前に、運営者が原文を読む
@@ -21,12 +21,12 @@
 
 | 今の決まり | 出典 | 素材への影響 |
 |---|---|---|
-| ビルドの import は、`app/` の中と、Studio が同梱するライブラリ(今は `react`、`react-dom`)だけ | ADR 0001 の 77 行、`src/server/build.js` の `ALLOWED_PACKAGES` | 部品のパッケージは、Studio が同梱するか、検査して許したものしか使えない |
+| ビルドの import は、`app/` の中と、Studio が同梱するライブラリ(`react`、`react-dom`、`studio-talk`、既定の素材)だけ | ADR 0001 の 77 行、`src/server/build.js` の `ALLOWED_PACKAGES` | 部品のパッケージは、Studio が同梱するか、検査して許したものしか使えない |
 | 試作品の CSP は `default-src 'none'`、`connect-src 'none'`。画像はそのビルドの URL と `data:`、`blob:` だけ | ADR 0001 の 152 行 | 字、アイコン、画像を外(CDN、Google Fonts など)から読めない。全部を同梱する |
 | CSS の中の外の URL はビルドで残すが、CSP が止める | `src/server/build.js` | 外の字を読む部品は、見た目が崩れる。検査で知らせる |
 | サーバーで `npm install` も package.json の scripts も動かさない | ADR 0001 の 149 行 | 利用者のパッケージを入れるときも、スクリプトは動かさない |
 | 作る AI は `--restricted` で、ファイルの道具は `app/` の中だけ。Web の道具はない。MCP は観察の道具のサーバーだけ(`--strict-mcp-config`)。skills はない | `src/server/claude-args.js` の `buildClaudeArgs` | 作る AI は、Figma や Storybook の MCP、Web の指針を直接読めない。指針は `app/` の中か、Studio の決まり(`--append-system-prompt`)で渡す |
-| 同梱するライブラリの範囲(UI の部品まで入れるか)は後のカード | ADR 0001 の 441 行 | 既定の素材を同梱するときに、ADR 0001 を直す |
+| 同梱するライブラリの範囲は、既定の素材まで | [ADR 0001 の「J3 で決めたこと」](../adr/0001-local-runtime-and-isolation.md#j3-で決めたこと2026-10-31) | 自分の素材は、J5 で ADR 0001 を直してから足す |
 
 ## 2. 既定の素材の候補とライセンス
 
@@ -34,7 +34,7 @@
 
 | 候補 | ライセンス | 出典 | Studio に同梱 | 試作品で使う | 気をつけること |
 |---|---|---|---|---|---|
-| Radix Primitives、Radix Themes、Radix Colors | MIT | https://github.com/radix-ui/primitives 、https://github.com/radix-ui/themes 、https://github.com/radix-ui/colors | できる | できる | React の部品。Themes は CSS のファイルを読む。今のビルドがパッケージの CSS を import できるかは確かめていない(J3 で確かめる) |
+| Radix Primitives、Radix Themes、Radix Colors | MIT | https://github.com/radix-ui/primitives 、https://github.com/radix-ui/themes 、https://github.com/radix-ui/colors | できる | できる | React の部品。Themes は CSS のファイルを読む。今のビルドで読める(J3 で確かめた) |
 | shadcn/ui | MIT | https://github.com/shadcn-ui/ui | できる | できる | 部品のコードを自分のプロジェクトに写す形なので、`app/` に置ける。ただし Tailwind CSS と Radix などの土台が要る。Tailwind の CSS を作る手順は今のビルドにない |
 | Material Web(`@material/web`) | Apache-2.0 | https://github.com/material-components/material-web | できる | できる | Web Components(React の部品ではない)。README に「maintenance mode」とある(2024-06 の告知: https://github.com/material-components/material-web/discussions/5642) |
 | Material Symbols、Material Icons | Apache-2.0 | https://github.com/google/material-design-icons | できる | できる | 字のファイルを同梱する。Google Fonts からは読めない |
@@ -92,7 +92,7 @@ Apple の見た目を求める人には、次の代わりを使います。ど�
 
 | 候補 | ライセンス | React 19 | 外への通信なし | 手入れ | 中立 | 見立て |
 |---|---|---|---|---|---|---|
-| Radix Themes + Radix Colors + Lucide(決めた) | MIT、ISC | React の部品 | 字は OS の字で済む見込み(推測) | 続いている見込み(Themes 3.3.0。頻度は確かめていない) | 中立 | 既定にする |
+| Radix Themes + Radix Colors + Lucide(決めた) | MIT、ISC | React の部品 | 字は OS の字で済む(J3 で確かめた) | 続いている見込み(Themes 3.3.0。頻度は確かめていない) | 中立 | 既定にする |
 | Material Web + Material Symbols + Roboto | Apache-2.0、OFL-1.1 | Web Components。React 19 は custom elements を扱えるが、Studio では確かめていない | 字とアイコンの同梱が要る | maintenance mode | Google の見た目 | 「Google の見た目」を選べる素材として足す。既定にはしない |
 | Fluent UI React v9 + Fluent System Icons | MIT | React の部品 | Segoe を同梱できない。OS の字に落とす | 続いている(9.75.0) | Microsoft の見た目 | 第 3 の候補。Replica と比べるときの見本にもなる |
 | shadcn/ui | MIT | React の部品 | Tailwind の CSS を作る手順が要る | 続いている | 中立 | 今のビルドに Tailwind がないので、後にする |
@@ -103,9 +103,34 @@ Apple の見た目を求める人には、次の代わりを使います。ど�
 
 - 既定の素材: 部品は Radix Themes。色は Radix Colors。アイコンは Lucide。字は OS の字(`assets/brand/tokens.css` と同じ決まり)
 - 選べる素材: Material 3 を「Google の見た目」(Material Web、Material Symbols、Roboto、色は material-color-utilities)として足す。Material Web は既定にしない。maintenance mode なので、画面に「手入れが止まっている素材です」と出す
-- ライセンスの確かめ: 同梱の前に、運営者がライセンスの原文を読む。J3 は同梱の前で止まり、運営者が読み終えてから同梱に進む
+- ライセンスの確かめ: 同梱の前に、運営者がライセンスの原文を読む。J3 は同梱の前で止まり、運営者が読み終えてから同梱に進む(J3 の PR を merge して確定する)
 - 作る AI への指針: 素材ごとに 1 枚の指針の要約(部品の選び方、色の役割、字の大きさ、間隔、アクセシビリティ)を Studio が持つ。ライセンスが確かめられない指針の文は写さず、自分の言葉で書く
-- 同梱の大きさと、ビルドの時間への影響は測っていない(不明)。J3 で測る
+- 同梱の大きさと、ビルドの時間への影響は、下の「J3 で確かめたこと」で測った
+
+### J3 で確かめたこと
+
+2026-10-31 に、`test/fixtures/default-material/app/` の見本で確かめた。
+
+| 問い | 結果 |
+|---|---|
+| 今のビルドがパッケージの CSS を読めるか | 読める。JS の `import` でも、CSS の `@import` でも通る |
+| 外への通信なしで描けるか | 描ける。iframe が読むのは自分の版の 4 つのファイルだけ。CSP に止められたものはない |
+| 字を同梱しなくてよいか | よい。Radix Themes の CSS に `url()` はなく、`@font-face` は `local()` だけ。Segoe などの字のファイルは同梱しない |
+| React 19 で動くか | 動く。Radix Themes 3.3.0 と Lucide 1.65.0 を React 19.3.1 で動かした。Dialog は `sandbox` の中で開いて閉じる |
+| 同梱の大きさ | `node_modules` が約 64 MB 増える(Lucide 48 MB、`@radix-ui` 16 MB)。入るパッケージは 78 個 |
+| 試作品の大きさ | `app.js` は 1.25 MB から 1.50 MB、`app.css` は 2 KB から 815 KB(図書室の見本と、部品を 9 つ使う見本を比べた) |
+| ビルドの時間 | 約 40 ms から約 300 ms(同じ比べ方。手元の Mac で 5 回。別の機械では測っていない) |
+
+置き場所も決めた。
+
+| もの | 置き場所 |
+|---|---|
+| 出典とライセンスの一覧 | `materials/default/source.json`。`npm run materials:sources` で作る。中で使うパッケージも全部載せる |
+| ライセンスの原文 | `materials/default/licenses/`。同じ原文は 1 つにまとめる |
+| npm のパッケージに原文がないものの写し | `materials/default/licenses-upstream/`(出典のリポジトリから写す) |
+| 指針の要約 | `materials/default/guide.md`。作る AI の決まりに入る |
+
+Material 3 は J3 では同梱しない。選ぶ画面と「手入れが止まっている素材です」の表示が要り、J3 の受け入れ条件の外にあるため。選ぶ形を別のカードで作るときに、そのカードで運営者がライセンスの原文を読む。
 
 ## 4. 自分の素材をつなぐ形
 
@@ -118,7 +143,7 @@ Apple の見た目を求める人には、次の代わりを使います。ど�
 | トークンの CSS、部品のパッケージ | Studio が持つ場所(試作品の `.studio/` の下か、データの置き場)。ビルドが決まった名前の import(例: `studio:design/tokens.css`)で解く | 読めない。import の名前で使う | 書き換えられない |
 | 指針の文、部品の一覧の文 | `app/design/` に写す | 読める | 作る AI は `app/` の外を読めない |
 | 写しが変わっていないか | 関門(検査の G3 の仲間)で写しのハッシュを確かめる | | 作る AI が指針を書き換えても気づける |
-| 出典とライセンス | 素材ごとの一覧(`source.json` など。名前は J3 で決める) | 読める | 引き継ぎと見直しで使う |
+| 出典とライセンス | 素材ごとの一覧(`source.json`。既定の素材は `materials/default/source.json`) | 読める | 引き継ぎと見直しで使う |
 
 ### 形ごとの道
 
@@ -178,13 +203,13 @@ Studio が違えること:
 |---|---|---|
 | 2026-10-29 | 既定の素材は Radix Themes + Radix Colors + Lucide + OS の字。Material 3 は「Google の見た目」として選べる素材にする。Material Web は既定にしない | 3 節 |
 | 2026-10-29 | 同梱の前に、運営者がライセンスの原文を読む。J3 は止まって確かめる | 3 節 |
+| 2026-10-31 | J3 では Material 3 を同梱しない。選ぶ画面と一緒に別のカードで足す(J3 の担当が決めた。運営者が PR で確かめる) | 3 節 |
 
 ### 決めていないこと、確かめていないこと
 
 - Material 3 の指針の文のライセンス: 未確認。確かめるまでは写さない
 - SF Pro と SF Symbols の契約の全文: 未確認。どちらにしても同梱しない
-- 同梱の大きさと、ビルドの時間: 測っていない。J3 で測る
-- 今のビルドが、パッケージの CSS(Radix Themes の CSS など)を import できるか: 確かめていない。J3 で確かめる
+- 既定の素材の指針の要約で、作る AI の試作品が良くなるか: 実モデルで確かめていない
 - React 19 での Material Web の動き: Studio では確かめていない
 - アクセシビリティの検査の道具と、そのライセンス: 選んでいない。J6 で確かめる
 - Storybook の URL を読むための、Studio の新しい外への呼び出し: 入れるかを決めていない。入れるなら同意と送り先の表示を、今の本物の AI の同意と同じ形で作る

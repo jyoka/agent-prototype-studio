@@ -13,6 +13,7 @@ import { readSimulation } from './sim/composition.js';
 
 // 試作品が import できる、Studio が同梱するライブラリ。
 // studio-talk は Studio のコードの中の会話の枠(docs/design/agent-simulation.md の 3.8。src/runtime/studio-talk/)
+// @radix-ui と lucide-react は既定の素材(docs/design/design-materials.md の 3 節)。出典とライセンスは materials/default/source.json
 export const ALLOWED_PACKAGES = [
   'react',
   'react/jsx-runtime',
@@ -20,7 +21,18 @@ export const ALLOWED_PACKAGES = [
   'react-dom',
   'react-dom/client',
   'studio-talk',
+  '@radix-ui/themes',
+  '@radix-ui/themes/styles.css',
+  '@radix-ui/colors',
+  'lucide-react',
 ];
+// Radix Colors の色ごとの CSS。ファイルは 100 を超えるので、形で許す。色の名前の外には出られない
+const RADIX_COLOR_CSS = /^@radix-ui\/colors\/[a-z]+(-dark)?(-alpha)?\.css$/;
+const RADIX_COLOR_CSS_LABEL = '@radix-ui/colors/<色>.css';
+
+function isAllowedPackage(spec) {
+  return ALLOWED_PACKAGES.includes(spec) || RADIX_COLOR_CSS.test(spec);
+}
 
 const RUNTIME_FILE = path.join(STUDIO_ROOT, 'src', 'runtime', 'runtime.js');
 const NODE_MODULES = path.join(STUDIO_ROOT, 'node_modules');
@@ -29,6 +41,10 @@ const STUDIO_TALK_DIR = path.join(STUDIO_ROOT, 'src', 'runtime', 'studio-talk');
 const STUDIO_MODULES = { 'studio-talk': path.join(STUDIO_TALK_DIR, 'index.js') };
 // 同梱のライブラリのうち、npm のパッケージでなく Studio のコードの中にあるものの名前
 export const STUDIO_PACKAGES = Object.keys(STUDIO_MODULES);
+// 同梱の npm のパッケージの名前(react/jsx-runtime のような中のファイルを除く)
+export const NPM_LIBRARIES = ALLOWED_PACKAGES.filter(
+  (p) => p.split('/').length === (p.startsWith('@') ? 2 : 1) && !STUDIO_PACKAGES.includes(p),
+);
 
 function isInside(parent, child) {
   const relative = path.relative(parent, child);
@@ -59,9 +75,9 @@ function restrictImports(appReal, nodeModulesReal, studioTalkReal) {
           return { errors: [{ text: `外部の URL は読み込めません: ${args.path}` }] };
         }
         if (isBareSpecifier(args.path)) {
-          if (!ALLOWED_PACKAGES.includes(args.path)) {
+          if (!isAllowedPackage(args.path)) {
             return {
-              errors: [{ text: `「${args.path}」は使えません。使えるライブラリ: ${ALLOWED_PACKAGES.join(', ')}` }],
+              errors: [{ text: `「${args.path}」は使えません。使えるライブラリ: ${[...ALLOWED_PACKAGES, RADIX_COLOR_CSS_LABEL].join(', ')}` }],
             };
           }
           if (Object.hasOwn(STUDIO_MODULES, args.path)) return { path: await fs.realpath(STUDIO_MODULES[args.path]) };

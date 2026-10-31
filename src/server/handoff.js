@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { digestSnapshot, snapshotApp } from './app-snapshot.js';
-import { ALLOWED_PACKAGES, STUDIO_PACKAGES, buildApp } from './build.js';
+import { NPM_LIBRARIES, STUDIO_PACKAGES, buildApp } from './build.js';
 import { RUN_FORMAT } from './build-requests.js';
 import { STUDIO_ROOT } from './config.js';
 import { MANIFEST_FILE } from './manifest.js';
@@ -994,7 +994,7 @@ export class ProjectHandoffs {
         source: {
           entry: prototype.entry ? `app/${prototype.entry}` : null,
           // npm のパッケージだけ。Studio の中の会話の枠(studio-talk)は書き出しに入らない。試作品が import していれば studioParts に出す
-          libraries: ALLOWED_PACKAGES.filter((p) => !p.includes('/') && !STUDIO_PACKAGES.includes(p)),
+          libraries: NPM_LIBRARIES,
           studioParts: scan.studioParts,
           files: scan.files,
           signs: scan.signs,
