@@ -30,6 +30,11 @@
 //   --system-prompt に「合言葉は <語> です」があれば、返事の文の始めにその語を書く(本物がシステムの指示に従う代わり。check:sim)
 // 採点(src/server/sim/judge.js。--json-schema に score がある)には {score, reason} を返す。点はふだん 4。
 //   stdin に [採点 N](N は 1〜5)があれば N 点、[採点が壊れる] があれば score のない出力を返す。modelUsage に --model の名前を出す
+// 聞き出す AI(src/server/intent-ai.js。--json-schema に draft がある)には、残りの問いの数によらず、いつも次の問いを返す(上限を数えるのは Studio だと確かめるため)。
+//   stdin に [問いを 2 つ] があれば、1 回の問いに 2 つの問いを書く。[決めた印] があれば、形にない status: decided を足して返す
+//   [聞き出しが遅い] は止められるまで応答しない。[聞き出しが失敗] は終了コード 2 で止まる
+//   [聞き出しが壊れる] はいつも、[聞き出しが一度壊れる] は やり直し(stdin の <前の出力の問題>)でなければ、形の合わない出力を返す
+//   [問いなし] は最初から問いを空にする(最初の 1 問は Studio が必ず返すかの確かめ)
 // init には本物と同じ項目(model、plugins、slash_commands、skills、agents)を空で出し、断った呼び出しは result の permission_denials に出す
 // 作る AI の接続の判定(agent-connection.js)のために、`--version` と `auth status` にも答える。
 // auth status は本物(2.1.312)と同じ形で、架空のメールアドレスと組織を含む(Studio が出さないかの確かめ)。
@@ -101,6 +106,10 @@ function main() {
     judgeAnswer();
     return;
   }
+  if (/"draft"/.test(option('--json-schema') ?? '')) {
+    intentAnswer();
+    return;
+  }
   const text = section('新しい発言');
   if (text.includes('[しぶとい]')) process.on('SIGINT', () => {});
   if (text.includes('[遅い]') || text.includes('[しぶとい]')) {
@@ -152,6 +161,32 @@ function wrapReply(text, reply, textOnly) {
   if (!nested) return reply;
   const json = JSON.stringify({ reply });
   return text.includes('[前後に文]') && !textOnly ? `返事はこちらです。\n${json}\nよろしくお願いします。` : json;
+}
+
+function intentAnswer() {
+  if (stdin.includes('[聞き出しが遅い]')) {
+    setInterval(() => {}, 1000);
+    return;
+  }
+  if (stdin.includes('[聞き出しが失敗]')) {
+    process.stderr.write('偽の CLI: 途中で止まりました\n');
+    process.exit(2);
+  }
+  const count = [...stdin.matchAll(/^\[問い \d+\]/gm)].length;
+  const retrying = stdin.includes('<前の出力の問題>');
+  const broken = stdin.includes('[聞き出しが壊れる]') || (stdin.includes('[聞き出しが一度壊れる]') && !retrying);
+  const fields = ['who', 'problem', 'scene', 'success', 'notDoing'];
+  const question = stdin.includes('[問いなし]') ? '' : `偽の問い ${count + 1} は何ですか?${stdin.includes('[問いを 2 つ]') ? '2 つ目の問いは何ですか?' : ''}`;
+  const output = broken
+    ? { reason: '形が壊れています' }
+    : {
+        question,
+        reason: '偽の理由です。',
+        about: fields[count % fields.length],
+        draft: { who: count > 0 ? '偽の下書きの人' : '', problem: '', scene: '', success: '', notDoing: [], undecided: [] },
+        ...(stdin.includes('[決めた印]') ? { status: 'decided', decidedAt: '2026-10-31T00:00:00.000Z' } : {}),
+      };
+  process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0.0012, result: '', structured_output: output }));
 }
 
 function judgeAnswer() {

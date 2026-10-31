@@ -17,8 +17,11 @@
       </button>
       <nav id="project-menu" class="project-menu" aria-label="試作品の一覧" hidden>
         <ul id="project-list"></ul>
+        <button type="button" id="new-project" class="new-project">新しく作る</button>
       </nav>
     </div>
+    <!-- 目的の文書の印(user-journey.md の段 2)。押すと、聞き出しか目的の文書を開く -->
+    <button type="button" id="intent-mark" class="intent-mark" data-state="none" hidden>目的なし</button>
     <div class="topbar-end">
       <!-- STUDIO_AGENT=fake で起動したときだけ出す(ux-redesign.md 4 節) -->
       <span id="dev-agent-mark" class="dev-agent-mark" hidden>開発用: 偽の直す AI</span>
@@ -38,6 +41,86 @@
     <button type="button" id="first-steps-close" class="first-steps-close">閉じる</button>
     <ol id="first-steps-list" class="first-steps-list" aria-label="3 つの手順"></ol>
     <p id="first-steps-hint" class="first-steps-hint" role="status"></p>
+  </section>
+  <!-- はじめの画面、目的の聞き出し、目的の文書(user-journey.md の段 1、段 2、J1)。出している間は、下の 2 列を隠す -->
+  <section id="intent" class="intent" aria-labelledby="intent-heading" hidden>
+    <h2 id="intent-heading" tabindex="-1"></h2>
+    <form id="intent-start" class="intent-form" hidden>
+      <p id="intent-lead"></p>
+      <label for="intent-sentence">作りたいもの</label>
+      <textarea id="intent-sentence" rows="2" maxlength="400"></textarea>
+      <p class="muted">例(押すと欄に入ります)</p>
+      <ul id="intent-examples" class="intent-examples" aria-label="例の 1 文"></ul>
+      <fieldset class="intent-depth">
+        <legend>案内の深さ</legend>
+        <label><input type="radio" name="intent-depth" value="quick"> 速く(問いは多くて 2 つ)</label>
+        <label><input type="radio" name="intent-depth" value="normal" checked> ふつう(おすすめ。問いは多くて 4 つ)</label>
+        <label><input type="radio" name="intent-depth" value="deep"> 深く(問いは多くて 7 つ)</label>
+      </fieldset>
+      <p id="intent-fixed-note" class="muted" hidden>今は AI を使えないので、決まった順に聞きます。料金はかかりません。</p>
+      <div id="intent-consent"></div>
+      <div id="intent-declined" class="intent-declined" hidden>
+        <p>AI には送りませんでした。AI を使わず、決まった順の問いで進めることもできます。</p>
+        <button type="button" id="intent-use-fixed">決まった問いで進める</button>
+      </div>
+      <div class="intent-actions">
+        <button type="submit" id="intent-send" class="primary">送る</button>
+        <button type="button" id="intent-skip">飛ばす</button>
+      </div>
+      <p class="muted">飛ばすと、目的を決めずに進みます。「目的なし」の印が付きます。上の帯の印から、あとで聞き出せます。</p>
+      <p class="muted">架空の題材で試してください。実在の人や会社の情報は入れないでください。</p>
+    </form>
+    <form id="intent-talk" class="intent-form" hidden>
+      <p id="intent-talk-sentence" class="intent-sentence"></p>
+      <ol id="intent-turns" class="intent-turns" aria-label="問いと答え"></ol>
+      <div id="intent-waiting" class="intent-waiting" role="status" hidden>
+        <p>問いを考えています…</p>
+        <button type="button" id="intent-stop">止める</button>
+      </div>
+      <div id="intent-asking">
+        <p id="intent-progress" class="muted"></p>
+        <h3 id="intent-question"></h3>
+        <p id="intent-reason" class="muted"></p>
+        <label for="intent-answer">答え</label>
+        <textarea id="intent-answer" rows="3" maxlength="1000"></textarea>
+        <div class="intent-actions">
+          <button type="submit" id="intent-reply" class="primary">答える</button>
+          <button type="button" id="intent-unknown">分からない</button>
+          <button type="button" id="intent-finish">ここまでで文書にする</button>
+          <button type="button" id="intent-talk-skip">飛ばす</button>
+        </div>
+        <p class="muted">分からないと答えた問いは、「決めていないこと」に入ります。</p>
+      </div>
+    </form>
+    <form id="intent-doc" class="intent-form" hidden>
+      <p id="intent-doc-state" class="intent-doc-state" role="status"></p>
+      <label for="intent-doc-who">誰</label>
+      <textarea id="intent-doc-who" rows="2" maxlength="1000"></textarea>
+      <label for="intent-doc-problem">何の問題</label>
+      <textarea id="intent-doc-problem" rows="2" maxlength="1000"></textarea>
+      <label for="intent-doc-scene">場面</label>
+      <textarea id="intent-doc-scene" rows="2" maxlength="1000"></textarea>
+      <label for="intent-doc-success">成功の印</label>
+      <textarea id="intent-doc-success" rows="2" maxlength="1000"></textarea>
+      <label for="intent-doc-notDoing">しないこと(1 行に 1 つ)</label>
+      <textarea id="intent-doc-notDoing" rows="2" maxlength="3000"></textarea>
+      <label for="intent-doc-undecided">決めていないこと(1 行に 1 つ)</label>
+      <textarea id="intent-doc-undecided" rows="3" maxlength="3000"></textarea>
+      <div class="intent-actions">
+        <button type="submit" id="intent-decide" class="primary">これで決める</button>
+        <button type="button" id="intent-begin" class="primary">この目的で試作品を作り始める</button>
+        <button type="button" id="intent-reopen">直す</button>
+        <button type="button" id="intent-back">試作品の画面に戻る</button>
+        <button type="button" id="intent-doc-skip">飛ばす</button>
+      </div>
+      <details class="intent-trail">
+        <summary>聞いた問いと答え</summary>
+        <p id="intent-trail-head" class="muted"></p>
+        <ol id="intent-trail" class="intent-turns" aria-label="聞いた問いと答え"></ol>
+      </details>
+    </form>
+    <p id="intent-note" class="intent-note" role="status" hidden></p>
+    <p id="intent-error" class="intent-error" role="alert" hidden></p>
   </section>
   <main class="layout">
     <section class="preview" aria-labelledby="try-heading">

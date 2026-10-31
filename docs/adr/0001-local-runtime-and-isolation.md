@@ -436,6 +436,15 @@ AiSessions  会話を新しい設定で最初からにし、前の会話を 1 �
 - 作る AI には、既定の素材の指針の要約を `--append-system-prompt` で渡す(`materials/default/guide.md`)。決まりの文が増えるだけで、道具と読める範囲は変えない。
 - Material 3(Google の見た目)は同梱していない。選ぶ画面が要るので、別のカードで足す。
 
+## #382 で決めたこと(2026-10-31)
+
+目的の聞き出し(J1)のために、Claude Code の起動を 1 つ足した。隔離は弱めない。
+
+- 聞き出す AI は、プロダクト内 AI と採点と同じ形で起動する(`--restricted`、`--safe-mode`、`--tools ""`、`--strict-mcp-config`、`--no-session-persistence`、`--max-budget-usd`。cwd は空の一時フォルダー)。ファイルの道具も MCP も渡さない。
+- 本物の接続は、作る AI と同じ同意(`RealAiConsent`)の後だけ呼ぶ。同意の前は `consent-required` で断り、試作品も作らない。
+- 目的の文書は `.studio/intent.json` に置く。`app/` の外なので、作る AI は書けない。外への通信は足していない。
+- 理由と採らなかった案は [user-journey.md の 7 節](../design/user-journey.md#j1-で決めたことtask-3822026-10-31)。
+
 ## 未決事項
 
 | 未決事項 | 決める人・場所 |
