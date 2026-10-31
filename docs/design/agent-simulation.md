@@ -2,6 +2,7 @@
 
 - 状態: **案**(2026-10-28)。出典のタスク: jyoka/tasks#328。決定の記録は [ADR-0003](../adr/0003-agent-simulation.md)(案)
 - 関係するカード: jyoka/tasks#327(aica の全部の入り口に共通の会話の層。作業中)
+- [AI 構成の審査](ai-architecture-review.md)(案。jyoka/tasks#416)との関係: この文書の土台の上に、人の承認を足す。R1〜R5 の条件は変えない。新しい処理を足す #419、#420、#421 は R3 の例外で、理由は審査の設計の 5 節に書いた。構成 C(AI 同士の引き継ぎ)は流用を試した結果として残し、審査の選択肢には出さない(審査の設計の 3 節)。C3 は #419 で、親子の委任は #420 で足す
 - 読んだもの: [PRD](../prd.md)、[HLD](../architecture/hld.md)、[harness.md](harness.md)、[ADR-0001](../adr/0001-local-runtime-and-isolation.md)、[ADR-0002](../adr/0002-observer-and-harness.md)、[configuration.md](../configuration.md)、今のコード(`src/server/product-ai/`、`src/server/observe-mcp.js`、`src/server/product-ai/claude-code.js` の `buildArgs`、`src/runtime/runtime.js`)、jyoka/tasks#327 の Goal、jyoka/aica の `evals/fulltime_hearing/README.md`
 - 範囲: 設計だけ。実装は 7 節のカードで行う。実モデルは呼んでいない
 - データの例は、どれも架空。相手の会社の仕様の推測は、**前提**(3.4)の例として架空の値で書いた。本物の仕様ではない
@@ -321,7 +322,7 @@ sim-8 で、構成 C を見本のバイト探し(`samples/part-time/app/`)に、
 | 構成 | 書き方 |
 |---|---|
 | C2. ツールだけを出し、呼び手を何種類も試す | 構成 A から DIP の枠を外した構成を 1 つ置き、前提を 3 つ用意する(モデルを 3 種、土台のプロンプトを 2 種)。場面の回しで前提を並べる(4.3) |
-| C3. 自社の harness がツールを使う | 今は書けない。harness はツールを持たない(S10)。要るなら ADR で決め直す |
+| C3. 自社の harness がツールを使う | 今は書けない。harness はツールを持たない(S10)。#419 で、モデルにツールを渡さず、流れの段からコードが呼ぶ形を足す([ADR-0005](../adr/0005-ai-architecture-review.md)) |
 | C4. 相談役と求人の係のエージェントが、役割を分ける | `agent` の参加者を 2 人にし、`handoff` のツールで行き来する。辺に両向きを書く |
 
 sim-8 で C2 を試した結果: コードを足さずに書けた。見本のバイト探しの `compositions/c2.json`(構成 A から DIP の枠 `dip-guide` と頼み `no-contact-ask` を外し、出口の確かめも外した。ツール 5 つとモックの決まりは同じ)と、前提 3 つ(`callers/`。モデル 3 種、土台のプロンプト 2 種)で、`npm run evals -- <プロジェクト> --composition compositions/c2.json --assumptions caller-sonnet,caller-haiku,caller-opus` が 3 組を回す。分かったこと:

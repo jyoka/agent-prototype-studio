@@ -7,7 +7,8 @@
 
 | 知りたいこと | 読むもの |
 |---|---|
-| 何のためにあるか(目的、原則、調子) | [docs/vision.md](docs/vision.md)(2026-10-29 に決めた) |
+| 何のためにあるか(目的、原則、調子) | [docs/vision.md](docs/vision.md)(2026-10-29 に決めた。2026-10-31 に中心を変える案を足した) |
+| AI の作りを見せて、人が承認する | [docs/design/ai-architecture-review.md](docs/design/ai-architecture-review.md)、[ADR 0005](docs/adr/0005-ai-architecture-review.md)(案) |
 | 何を作るか | [docs/prd.md](docs/prd.md)(最後の「PRD の後に決めたこと」が正) |
 | 全体の部品とデータの流れ | [docs/architecture/hld.md](docs/architecture/hld.md) |
 | なぜこの作りなのか(隔離、作る AI の起動) | [docs/adr/0001-local-runtime-and-isolation.md](docs/adr/0001-local-runtime-and-isolation.md) |
