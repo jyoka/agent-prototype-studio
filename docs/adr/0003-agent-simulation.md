@@ -3,6 +3,7 @@
 - 状態: **案**(2026-10-28)。利用者が採るかを決める。設計は [docs/design/agent-simulation.md](../design/agent-simulation.md)
 - 出典のタスク: jyoka/tasks#328。関係するカード: jyoka/tasks#327
 - 確認日: 2026-10-28。実モデルは呼んでいない。Claude Code の引数の組み合わせのうち、模擬のエージェントで新しく使うもの(`--tools ""` と `--mcp-config` を一緒に使うなど)は確かめていない。設計の sim-7 で確かめる
+- 関係: [ADR-0005](0005-ai-architecture-review.md)(案。2026-10-31)が、この土台の上に人の承認を足す。この ADR の決定は変えない。AI 同士の引き継ぎ(`handoffs`)はデータとして残し、審査の選択肢には出さない
 - 実機の確認: 2026-10-29(sim-7、Claude Code 2.1.312、本人のログイン)。組み合わせは動いた。`--system-prompt` は置き換えきれないものがあった(下の「残る危険」)。記録は [docs/evidence/sim-a/](../evidence/sim-a/README.md)
 - [ADR-0001](0001-local-runtime-and-isolation.md) の 3 つの層と、[ADR-0002](0002-observer-and-harness.md) の観察器の隔離、直すラウンドの回数、作る AI の起動の決まりは変えない。作るループには関門を 1 つ足す(下の「変える今の決まり」)
 

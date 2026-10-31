@@ -22,6 +22,8 @@ if (nodeMajor < MIN_NODE_MAJOR) {
 try {
   await import('esbuild');
   await import('playwright-core');
+  // 既定の素材はサーバーでは動かさない。入っているかだけを見る
+  for (const name of ['@radix-ui/themes', '@radix-ui/colors', 'lucide-react']) import.meta.resolve(name);
 } catch {
   fail([
     'Prototype Studio を起動できません: 必要な部品が入っていません。',

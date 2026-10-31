@@ -1,0 +1,687 @@
+{
+  "formatVersion": 1,
+  "material": "既定の素材",
+  "decidedIn": "docs/design/design-materials.md の 3 節",
+  "roles": [
+    {
+      "role": "土台",
+      "package": "react",
+      "about": "試作品の画面を動かす"
+    },
+    {
+      "role": "土台",
+      "package": "react-dom",
+      "about": "試作品の画面を動かす"
+    },
+    {
+      "role": "部品",
+      "package": "@radix-ui/themes",
+      "about": "既定の部品"
+    },
+    {
+      "role": "色",
+      "package": "@radix-ui/colors",
+      "about": "既定の色の段"
+    },
+    {
+      "role": "アイコン",
+      "package": "lucide-react",
+      "about": "既定のアイコン。Feather から来たアイコンは MIT で、LICENSE の後半に一覧がある"
+    },
+    {
+      "role": "字",
+      "package": null,
+      "about": "OS の字を使う。字のファイルは同梱せず、外からも読まない"
+    }
+  ],
+  "packages": [
+    {
+      "name": "@floating-ui/core",
+      "version": "1.8.0",
+      "license": "MIT",
+      "source": "https://github.com/floating-ui/floating-ui",
+      "licenseFile": "licenses/floating-ui-core.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@floating-ui/dom",
+      "version": "1.8.0",
+      "license": "MIT",
+      "source": "https://github.com/floating-ui/floating-ui",
+      "licenseFile": "licenses/floating-ui-core.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@floating-ui/react-dom",
+      "version": "2.1.9",
+      "license": "MIT",
+      "source": "https://github.com/floating-ui/floating-ui",
+      "licenseFile": "licenses/floating-ui-core.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@floating-ui/utils",
+      "version": "0.2.12",
+      "license": "MIT",
+      "source": "https://github.com/floating-ui/floating-ui",
+      "licenseFile": "licenses/floating-ui-core.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/colors",
+      "version": "3.0.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/colors",
+      "licenseFile": "licenses/radix-ui-colors.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/number",
+      "version": "1.1.3",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/primitive",
+      "version": "1.2.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-accessible-icon",
+      "version": "1.2.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-accordion",
+      "version": "1.3.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-alert-dialog",
+      "version": "1.2.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-arrow",
+      "version": "1.1.17",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-aspect-ratio",
+      "version": "1.2.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-avatar",
+      "version": "1.3.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-checkbox",
+      "version": "1.4.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-collapsible",
+      "version": "1.2.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-collection",
+      "version": "1.2.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-compose-refs",
+      "version": "1.1.5",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-context-menu",
+      "version": "2.4.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-context",
+      "version": "1.3.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-dialog",
+      "version": "1.3.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-direction",
+      "version": "1.2.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-dismissable-layer",
+      "version": "1.2.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-dropdown-menu",
+      "version": "2.2.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-focus-guards",
+      "version": "1.2.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-focus-scope",
+      "version": "1.3.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-form",
+      "version": "0.3.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-hover-card",
+      "version": "1.2.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-id",
+      "version": "1.1.4",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-label",
+      "version": "2.1.17",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-menu",
+      "version": "2.2.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-menubar",
+      "version": "1.2.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-navigation-menu",
+      "version": "1.4.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-one-time-password-field",
+      "version": "0.2.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-password-toggle-field",
+      "version": "0.2.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-popover",
+      "version": "1.3.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-popper",
+      "version": "1.4.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-portal",
+      "version": "1.2.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-presence",
+      "version": "1.1.11",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-primitive",
+      "version": "2.2.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-progress",
+      "version": "1.2.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-radio-group",
+      "version": "1.5.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-roving-focus",
+      "version": "1.2.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-scroll-area",
+      "version": "1.4.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-select",
+      "version": "2.4.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-separator",
+      "version": "1.2.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-slider",
+      "version": "1.6.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-slot",
+      "version": "1.5.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-switch",
+      "version": "1.4.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-tabs",
+      "version": "1.2.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-toast",
+      "version": "1.3.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-toggle-group",
+      "version": "1.2.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-toggle",
+      "version": "1.2.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-toolbar",
+      "version": "1.2.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-tooltip",
+      "version": "1.4.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-use-callback-ref",
+      "version": "1.1.5",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-use-controllable-state",
+      "version": "1.3.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-use-effect-event",
+      "version": "0.0.5",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-use-escape-keydown",
+      "version": "1.1.6",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-use-is-hydrated",
+      "version": "0.1.3",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-use-layout-effect",
+      "version": "1.1.4",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-use-previous",
+      "version": "1.1.4",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-use-rect",
+      "version": "1.1.4",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-use-size",
+      "version": "1.1.5",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/react-visually-hidden",
+      "version": "1.2.13",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/rect",
+      "version": "1.1.3",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "@radix-ui/themes",
+      "version": "3.3.0",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/themes",
+      "licenseFile": "licenses/radix-ui-themes.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "aria-hidden",
+      "version": "1.2.6",
+      "license": "MIT",
+      "source": "https://github.com/theKashey/aria-hidden",
+      "licenseFile": "licenses/aria-hidden.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "classnames",
+      "version": "2.5.1",
+      "license": "MIT",
+      "source": "https://github.com/JedWatson/classnames",
+      "licenseFile": "licenses/classnames.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "detect-node-es",
+      "version": "1.1.0",
+      "license": "MIT",
+      "source": "https://github.com/thekashey/detect-node",
+      "licenseFile": "licenses/detect-node-es.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "get-nonce",
+      "version": "1.0.1",
+      "license": "MIT",
+      "source": "https://github.com/theKashey/get-nonce",
+      "licenseFile": "licenses/get-nonce.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "lucide-react",
+      "version": "1.65.0",
+      "license": "ISC",
+      "source": "https://github.com/lucide-icons/lucide",
+      "licenseFile": "licenses/lucide-react.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "radix-ui",
+      "version": "1.8.1",
+      "license": "MIT",
+      "source": "https://github.com/radix-ui/primitives",
+      "licenseFile": "licenses/radix-ui-number.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "react-dom",
+      "version": "19.3.1",
+      "license": "MIT",
+      "source": "https://github.com/react/react",
+      "licenseFile": "licenses/react-dom.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "react-remove-scroll-bar",
+      "version": "2.3.8",
+      "license": "MIT",
+      "source": "https://github.com/theKashey/react-remove-scroll-bar",
+      "licenseFile": "licenses/react-remove-scroll-bar.txt",
+      "licenseFrom": "upstream"
+    },
+    {
+      "name": "react-remove-scroll",
+      "version": "2.7.2",
+      "license": "MIT",
+      "source": "https://github.com/theKashey/react-remove-scroll",
+      "licenseFile": "licenses/aria-hidden.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "react-style-singleton",
+      "version": "2.2.3",
+      "license": "MIT",
+      "source": "https://github.com/theKashey/react-style-singleton",
+      "licenseFile": "licenses/aria-hidden.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "react",
+      "version": "19.3.1",
+      "license": "MIT",
+      "source": "https://github.com/react/react",
+      "licenseFile": "licenses/react-dom.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "scheduler",
+      "version": "0.28.0",
+      "license": "MIT",
+      "source": "https://github.com/react/react",
+      "licenseFile": "licenses/react-dom.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "tslib",
+      "version": "2.9.1",
+      "license": "0BSD",
+      "source": "https://github.com/Microsoft/tslib",
+      "licenseFile": "licenses/tslib.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "use-callback-ref",
+      "version": "1.3.3",
+      "license": "MIT",
+      "source": "https://github.com/theKashey/use-callback-ref",
+      "licenseFile": "licenses/aria-hidden.txt",
+      "licenseFrom": "package"
+    },
+    {
+      "name": "use-sidecar",
+      "version": "1.1.3",
+      "license": "MIT",
+      "source": "https://github.com/theKashey/use-sidecar",
+      "licenseFile": "licenses/aria-hidden.txt",
+      "licenseFrom": "package"
+    }
+  ]
+}

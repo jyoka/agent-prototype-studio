@@ -146,7 +146,7 @@ cwd: ~/PrototypeStudio/projects/<id>/app/
 
 | 守り | 中身 | 防ぐもの |
 |---|---|---|
-| サーバーで実行しない | `npm install`、package.json の scripts、プロジェクトのビルド設定は使わない。使えるライブラリは Studio が同梱するもの(React など)だけ | 依存パッケージやスクリプト経由で PC 上でコードが動くこと |
+| サーバーで実行しない | `npm install`、package.json の scripts、プロジェクトのビルド設定は使わない。使えるライブラリは Studio が同梱するもの(React と既定の素材。下の「J3 で決めたこと」)だけ | 依存パッケージやスクリプト経由で PC 上でコードが動くこと |
 | 別ポートから配信 | プレビューは `<preview-port>` から、静的ファイルだけを配信する。Studio の API はこのポートに置かない | 試作品が Studio の API を同一 origin として呼ぶこと |
 | iframe の `sandbox` | `allow-scripts allow-forms`。`allow-same-origin`、`allow-top-navigation`、`allow-popups` は付けない | 親画面の DOM とストレージへのアクセス、ページの乗っ取り、新しいウィンドウ |
 | 試作品の CSP ヘッダー | `sandbox allow-scripts allow-forms; default-src 'none'; script-src <そのビルドの URL>; style-src <そのビルドの URL> 'unsafe-inline'; img-src <そのビルドの URL> data: blob:; connect-src 'none'; form-action 'none'; frame-ancestors http://127.0.0.1:<studio-port>`。CSP の `sandbox` は、プレビューの URL を直接開いても効く。`'self'` ではなくパスつきの URL にするのは、他のプロジェクトのビルドを読ませないため | 外部への通信(fetch、XHR、WebSocket、sendBeacon)、外部の画像やスクリプト、他のプロジェクトのファイル、Studio 以外の画面への埋め込み |
@@ -421,6 +421,21 @@ AiSessions  会話を新しい設定で最初からにし、前の会話を 1 �
 - 本物の AI を使う前の同意は、サーバーで確かめる(P24)。作る欄で初めて送ると、同意のカード(P25)を出して送らない。同意すると、欄に残った依頼を送る([harness.md の 8 節](../design/harness.md#8-実装のカード))。
 - テストは、`STUDIO_AGENT=fake` か偽の `claude` を必ず明示する。`test/e2e/studio.js` の `launchStudio` は、指定がなければ `STUDIO_AGENT=fake` にし、自動か `claude` で `STUDIO_CLAUDE_BIN` がなければ起動しない。`resolveConnection` は、接続(`agent`)を書かない呼び出しを誤りにする。
 
+## J3 で決めたこと(2026-10-31)
+
+[design-materials.md の 3 節](../design/design-materials.md#3-既定の素材)の決定を入れた。未決事項の「同梱するライブラリの範囲」を閉じる。運営者がライセンスの原文を読み、この変更を merge して確定する。
+
+- 同梱するライブラリの範囲は、React、会話の枠(`studio-talk`)、既定の素材(Radix Themes、Radix Colors、Lucide)にする。字は OS の字で、同梱しない。
+- import を許す名前は、`src/server/build.js` の `ALLOWED_PACKAGES` に並べた名前と、`@radix-ui/colors/<色>.css` の形だけ。パッケージの中のファイル(`@radix-ui/themes/dist/...`、`lucide-react/dynamic` など)と、部品が中で使うパッケージ(`radix-ui`、`@floating-ui/*` など)は、試作品から直接 import できない。
+  - 理由: 入口を絞ると、見直す範囲と、作る AI に渡す指針が決まる。
+- 許す名前を足しても、隔離の決まりは変えない。
+  - 部品のコードは、試作品の束に入り、`sandbox` の iframe と CSP の中でだけ動く。サーバーでは動かさない。esbuild はコードを動かさない。
+  - CSP は変えない。Radix Themes の CSS に `url()` はなく、字は `local()` だけで、外へ読みに行かない(`test/unit/materials.test.js`、`test/e2e/default-material.spec.js`)。
+  - 利用者の PC で `npm install` を動かすのは利用者で、サーバーは動かさない。足したパッケージに、インストールのスクリプトを持つものはない(`package-lock.json` の `hasInstallScript` で確かめた)。
+- 同梱した全部(中で使うパッケージを含む)の版、ライセンス、出典、原文は `materials/default/` に置く。依存が変わると、単体のテストが落ちる。
+- 作る AI には、既定の素材の指針の要約を `--append-system-prompt` で渡す(`materials/default/guide.md`)。決まりの文が増えるだけで、道具と読める範囲は変えない。
+- Material 3(Google の見た目)は同梱していない。選ぶ画面が要るので、別のカードで足す。
+
 ## #382 で決めたこと(2026-10-31)
 
 目的の聞き出し(J1)のために、Claude Code の起動を 1 つ足した。隔離は弱めない。
@@ -447,7 +462,7 @@ AiSessions  会話を新しい設定で最初からにし、前の会話を 1 �
 | 版を消す画面、版どうしの差分、保存版を読むだけで開く表示、共有のための書き出し | 後のカード(書き出しは引き継ぎの #280 を想定) |
 | プロダクト内 AI の設定を、作る欄の依頼だけで変えるか、設定を直接編集する画面も作るか | #279 で依頼だけに仮決め。利用者 |
 | 試し直しで、前と今の応答を並べるだけでよいか(良し悪しの判定や、複数の会話をまとめて回す評価まで要るか) | 利用者 |
-| 同梱するライブラリの範囲(#273 では React だけ。UI 部品まで入れるか) | #274 では React だけのまま。後のカード |
+| 同梱するライブラリの範囲(#273 では React だけ。UI 部品まで入れるか) | 上の「J3 で決めたこと」で決めた。Radix Themes、Radix Colors、Lucide を足す |
 | コンパイルのエラーを作る AI に 1 回だけ返して直させるか | [ADR-0002](0002-observer-and-harness.md) で決めた。関門の失敗を返し、直すラウンドは 2 回まで |
 | AI が試作品の画面を見て操作する閉ループ(ヘッドレスのブラウザ) | [ADR-0002](0002-observer-and-harness.md) で決めた。観察器(Playwright の Chromium)を関門と作る AI が使う |
 | 配布の形(段階 2) | 利用者 |
