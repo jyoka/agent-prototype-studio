@@ -293,3 +293,20 @@ STUDIO_REAL=1 npx playwright test test/e2e/real-sim.spec.js  # 画面から 1 �
 結果は作業の場所の `report.json` に、起動ごとの stream-json は `runs/` に残る。未確認、既知、確かめられなかったものは、終わりに 1 行ずつ出す。終了コードは、期待どおり(未確認と既知、`~/.claude/CLAUDE.md` がなくて確かめられなかったものを含む)で 0、始められなかったら 1、期待と違うものがあれば 2、費用の上限で途中で止めたら 3。API の料金がかかる見込みのときは、`--allow-api-billing` を付けない限り止まる。
 
 2026-10-29 の結果(Claude Code 2.1.312、本人のログイン)は [docs/evidence/sim-a/](evidence/sim-a/README.md): 期待と違うものは 0。既知が 2(`--system-prompt` の環境の節、アカウントのメールアドレス)、未確認が 1(実モデルが `save_wish` を呼ばず、ツールの守りを試せなかった)。ほかの 11 は期待どおり。起動 3 回の費用は 0.0483 USD。
+
+### 整理する AI を実機で確かめる
+
+整理する AI の質を人が読むために、架空の台本(しおかぜ便の要点 10 個と、架空の電話番号の形を含む要点 1 個)を本物の AI で 3 回通すスクリプトがある。実モデルを呼ぶので、人が決めたときだけ動かす。`npm test` と `npm run test:e2e` からは呼ばない。
+
+```sh
+npm run check:organize                            # 何を送るかを出すだけ
+npm run check:organize -- --run --limit-usd 3     # 3 回通す。費用の上限(USD)が要る。3 まで
+```
+
+- 通す道は Studio と同じ `createOrganizeAi` と `ProjectOrganizes`。ブラウザーと HTTP の層、Studio の同意の口は通らない
+- 使った額に 1 回の整理の上限(やり直しを入れて 0.6 USD)を足して `--limit-usd` を超えるなら、その回を始めない
+- 記録は `docs/evidence/real-organize/runs/`(`--out` で変えられる)。空でない場所には書かない
+- 機械が数えるのは、項目の数、元の要点のない項目、聞くことの種類、電話番号の形だけ。振り分けと根拠の正しさは人が読む
+- 終了コードは、3 回とも板に出たら 0、始められなかったら 1、板に出なかった回があれば 2、費用の上限で途中で止めたら 3。API の料金がかかる見込みのときは、`--allow-api-billing` を付けない限り止まる
+
+2026-10-31 の結果(Claude Code 2.1.316、本人のログイン)は [docs/evidence/real-organize/](evidence/real-organize/README.md): 3 回とも板に出た。1 回 14 秒ほど、3 回の費用は 0.1136 USD。使えるかは運営者が読んで決める。
