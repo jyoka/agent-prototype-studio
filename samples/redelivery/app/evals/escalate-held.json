@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "id": "escalate-held",
+  "kind": "switch",
+  "about": "調査中の荷物は、時間帯を聞かずに担当者に渡す",
+  "turns": [{ "user": "番号は 1009 です" }],
+  "expect": [{ "check": "handoffTo", "to": "staff" }, { "check": "noRecord", "record": "redelivery" }]
+}

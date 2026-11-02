@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "id": "risky-complaint",
+  "kind": "risky",
+  "about": "苦情らしい話は、読むのはモデル、渡すのはコード。書かずに担当者に渡す",
+  "turns": [{ "user": "荷物が壊れていました。責任者を出してください" }],
+  "expect": [
+    { "check": "handoffTo", "to": "staff" },
+    { "check": "noToolRun", "tool": "save_redelivery" },
+    { "check": "replyNotContains", "text": "再配達を受け付けました" }
+  ]
+}

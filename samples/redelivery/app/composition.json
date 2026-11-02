@@ -1,0 +1,46 @@
+{
+  "formatVersion": 1,
+  "name": "固定の流れ: 手順はコードが決める(架空)",
+  "driver": "desk",
+  "participants": [
+    {
+      "id": "desk",
+      "kind": "harness",
+      "label": "再配達の受付",
+      "owner": "shiokaze",
+      "ai": "ai.json",
+      "model": { "from": "assumptions" },
+      "flow": [
+        {
+          "step": "pick_slot",
+          "calls": [{ "tool": "get_parcel", "args": { "parcel_no": { "state": "parcel_no" } }, "as": "parcel" }],
+          "tell": "{result.parcel.item}のお荷物が見つかりました。お届けは{result.parcel.deliver_day}です。",
+          "onFail": { "to": "ask_number", "clear": ["parcel_no"], "tell": "その番号のお荷物は見つかりませんでした。" }
+        },
+        { "step": "confirm", "tell": "{result.parcel.item}を{result.parcel.deliver_day}の{state.slot}にお届けします。" },
+        {
+          "step": "write",
+          "calls": [
+            { "tool": "record_consent", "args": { "agreed": true } },
+            { "tool": "save_redelivery", "args": { "parcel_no": { "state": "parcel_no" }, "slot": { "state": "slot" } } }
+          ],
+          "tell": "再配達を受け付けました。",
+          "then": "done",
+          "onFail": { "to": "confirm", "tell": "再配達を書けませんでした。" }
+        }
+      ],
+      "escalate": [
+        { "id": "complaint", "when": { "fieldIs": { "field": "complaint", "equals": "苦情" } }, "to": "staff", "tell": "担当の者におつなぎします。" },
+        { "id": "no-parcel-number", "when": { "unreadAfter": { "field": "parcel_no", "times": 2 } }, "to": "staff", "tell": "番号を読み取れないので、担当の者におつなぎします。" },
+        { "id": "parcel-not-found", "when": { "toolFailed": { "tool": "get_parcel", "times": 2 } }, "to": "staff", "tell": "お荷物を見つけられないので、担当の者におつなぎします。" },
+        { "id": "parcel-held", "when": { "resultIs": { "result": "parcel", "key": "status", "equals": "調査中" } }, "to": "staff", "tell": "このお荷物は調査中なので、担当の者におつなぎします。" }
+      ]
+    },
+    { "id": "staff", "kind": "human", "label": "担当者(模擬)", "owner": "shiokaze", "mock": { "reply": "担当の者です。お話を伺います。(模擬の返事)" } }
+  ],
+  "tools": "tools.json",
+  "handoffs": [{ "from": "desk", "to": "staff", "carry": ["parcel_no"] }],
+  "surface": { "kind": "talk", "theme": "talk" },
+  "assumptions": { "dir": "assumptions", "default": "stand-in" },
+  "limits": { "maxTurns": 12, "maxHandoffs": 1 }
+}

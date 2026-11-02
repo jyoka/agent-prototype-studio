@@ -310,6 +310,10 @@ function describeSimulation(simulation, latestRun) {
       owner: p.owner,
       ...(p.kind === 'agent' ? { prompt: p.prompt, tools: p.tools ?? [], mock: p.mock ? `app/${p.mock}` : null } : {}),
       ...(p.kind === 'harness' ? { ai: `app/${p.ai}`, returnTo: p.returnTo ?? null } : {}),
+      // 固定の流れ(コードがツールを呼ぶ段、人に渡す条件、モデルの指定)。書いた参加者だけ
+      ...(p.kind === 'harness' && p.flow ? { flow: p.flow, tools: p.tools ?? [] } : {}),
+      ...(p.kind === 'harness' && p.escalate ? { escalate: p.escalate } : {}),
+      ...(p.kind === 'harness' && p.model ? { model: p.model } : {}),
       ...(p.kind === 'human' ? { mock: p.mock ?? null } : {}),
     })),
     tools: composition.tools ? `app/${composition.tools}` : null,

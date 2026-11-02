@@ -11,7 +11,7 @@
       "modelRole": "読み取りと言い方だけ",
       "participantKinds": ["harness"],
       "available": true,
-      "limitation": "今は道具(ツール)を呼べません。道具の呼び出しは、これから足します。",
+      "limitation": "Studio が書く構成には、道具(ツール)を呼ぶ段はまだ入りません。要るときは、後から構成に足します。",
       "addedOn": "2026-11-02"
     },
     {

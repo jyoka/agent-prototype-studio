@@ -8,6 +8,7 @@ import { RealAiConsent } from '../real-ai.js';
 import { createMockAgent } from '../sim/agent-mock.js';
 import { ACTION_PATTERN } from '../sim/check.js';
 import { partKindsOf } from '../sim/parts.js';
+import { usesAssumptions } from '../sim/composition.js';
 import { SimError, newSimConversationId, prepareSimulation, runTurn, startConversation } from '../sim/orchestrator.js';
 
 export const SESSION_LIMITS = {
@@ -63,10 +64,10 @@ function freshSimSession(prepared, key, conversationPrefix) {
 // 構成の中の構成(既定の composition.json と compositions/*.json)。既定を先に
 const compositionsOf = (simulation) => [simulation.composition, ...(simulation.compositions ?? []).map((item) => item.composition)];
 
-// 構成が使える前提(構成の assumptions.dir にあるもの)。agent の参加者がいない構成は前提を使わない
+// 構成が使える前提(構成の assumptions.dir にあるもの)。agent の参加者も、前提のモデルを使う harness もいない構成は前提を使わない
 function assumptionsOf(simulation, composition) {
   const dir = composition.assumptions?.dir;
-  if (!dir || !composition.participants.some((p) => p.kind === 'agent')) return [];
+  if (!dir || !usesAssumptions(composition)) return [];
   return (simulation.assumptions ?? []).filter((item) => item.file.startsWith(`${dir}/`));
 }
 

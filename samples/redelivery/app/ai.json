@@ -1,0 +1,37 @@
+{
+  "formatVersion": 2,
+  "name": "しおかぜ便の再配達の受付(架空)",
+  "instructions": "あなたは架空の宅配サービス「しおかぜ便」の再配達の受付です。短く、ていねいに話してください。実在の会社や配送の話はしないでください。",
+  "fields": [
+    { "key": "parcel_no", "label": "荷物の番号", "type": "number", "min": 1000, "max": 9999, "question": "荷物の番号を教えてください。不在票の右上にあります。" },
+    { "key": "slot", "label": "希望の時間帯", "question": "希望の時間帯を教えてください。午前中、昼すぎ、夕方、夜があります。",
+      "options": [
+        { "value": "午前中", "keywords": ["午前"] },
+        { "value": "昼すぎ", "keywords": ["昼"] },
+        { "value": "夕方", "keywords": ["夕方"] },
+        { "value": "夜", "keywords": ["夜"] }
+      ] },
+    { "key": "complaint", "label": "お困りごと", "required": false, "question": "ほかにお困りのことはありますか?",
+      "options": [{ "value": "苦情", "keywords": ["苦情", "責任者", "壊れ", "怒"] }] }
+  ],
+  "flow": {
+    "steps": [
+      { "id": "ask_number", "ask": ["parcel_no"], "next": [{ "when": { "filled": ["parcel_no"] }, "to": "pick_slot" }] },
+      { "id": "pick_slot", "ask": ["slot"], "next": [{ "when": { "filled": ["slot"] }, "to": "confirm" }] },
+      { "id": "confirm", "say": "summary", "next": [{ "when": { "filled": "required", "intent": "yes" }, "to": "write" }] },
+      { "id": "write" }
+    ],
+    "maxTurns": 12
+  },
+  "end": { "say": "complete" },
+  "rules": { "noNewNumbers": true, "noLeading": true, "mustAsk": true, "maxReplyChars": 300, "forbidden": ["必ず届きます"] },
+  "mock": {
+    "greeting": "しおかぜ便の再配達の受付です(架空のサービスです)。荷物の番号を教えてください。",
+    "understood": "{changes}と理解しました。",
+    "afterCorrection": "直していただいた{changes}で進めます。",
+    "notUnderstood": "すみません、読み取れませんでした。",
+    "complete": "ご利用ありがとうございました。",
+    "confirm": "これでよいですか?",
+    "intents": { "yes": ["はい", "お願いします"], "no": ["いいえ", "違います"] }
+  }
+}

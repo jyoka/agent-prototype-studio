@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "id": "correct-number",
+  "kind": "correct",
+  "about": "確かめる前に番号を言い直すと、言い直した番号で荷物を引く",
+  "turns": [{ "user": "番号は 1001 です" }, { "user": "午前中で" }, { "user": "すみません、番号は 1002 でした" }],
+  "expect": [
+    { "check": "toolCalled", "tool": "get_parcel", "args": { "parcel_no": 1002 } },
+    { "check": "noToolRun", "tool": "save_redelivery" },
+    { "check": "noRecord", "record": "redelivery" }
+  ]
+}

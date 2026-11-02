@@ -121,6 +121,20 @@ function describeOutputRules(at, was, now, out) {
   if (added.length > 0) out.lines.push(`${at}の禁止の言葉(forbidden)に足した: ${names(added)}`);
 }
 
+// 固定の流れ。順番と書く条件はコードの守りなので、段を外す、人に渡す条件を外すのは、守りが減ったとして出す
+function describeFlow(at, q, p, out) {
+  const stepsBefore = (q.flow ?? []).map((entry) => entry.step);
+  const stepsAfter = (p.flow ?? []).map((entry) => entry.step);
+  const removedSteps = stepsBefore.filter((step) => !stepsAfter.includes(step));
+  if (removedSteps.length > 0) out.weakened.push(`${at}の流れからツールを呼ぶ段を外した: ${names(removedSteps)}`);
+  if (!same(q.flow ?? [], p.flow ?? []) && removedSteps.length === 0) out.lines.push(`${at}の流れ(flow)を変えました`);
+  const idsBefore = (q.escalate ?? []).map((item) => item.id);
+  const idsAfter = (p.escalate ?? []).map((item) => item.id);
+  const removedIds = idsBefore.filter((id) => !idsAfter.includes(id));
+  if (removedIds.length > 0) out.weakened.push(`${at}の人に渡す条件(escalate)を外した: ${names(removedIds)}`);
+  if (!same(q.escalate ?? [], p.escalate ?? []) && removedIds.length === 0) out.lines.push(`${at}の人に渡す条件(escalate)を変えました`);
+}
+
 function describeParticipants(was, now, out) {
   const wasList = was?.participants ?? [];
   const nowList = now?.participants ?? [];
@@ -150,6 +164,8 @@ function describeParticipants(was, now, out) {
     if (!same(q.mock, p.mock)) out.lines.push(`${at}のモック: ${JSON.stringify(q.mock)} → ${JSON.stringify(p.mock)}`);
     if (q.ai !== p.ai) out.lines.push(`${at}の harness の設定: app/${q.ai} → app/${p.ai}`);
     if (q.returnTo !== p.returnTo) out.lines.push(`${at}の戻り先(returnTo): ${q.returnTo ?? 'なし'} → ${p.returnTo ?? 'なし'}`);
+    if (!same(q.model, p.model)) out.lines.push(`${at}のモデルの指定(model)を変えました`);
+    describeFlow(at, q, p, out);
   }
 }
 
@@ -285,13 +301,13 @@ export function referencedFiles(simulation) {
 }
 
 // ガードレールの指紋。直すラウンドでガードレールが変わったか(guardsChanged の印)を見るのに使う。
-// 中身: 構成ごとの守り(guards)、引き継ぎの辺(handoffs)、参加者に渡すツールの名前、ツールごとの守り、harness の ai.json の rules(目録の ai も)
+// 中身: 構成ごとの守り(guards)、引き継ぎの辺(handoffs)、参加者に渡すツールの名前、固定の流れ(flow、escalate)、ツールごとの守り、harness の ai.json の rules(目録の ai も)
 export function guardFingerprint(simulation, ai) {
   if (!simulation) return JSON.stringify({ ai: ai?.rules ?? null });
   const compositions = [simulation.composition, ...(simulation.compositions ?? []).map((item) => item.composition)].filter(Boolean);
   return JSON.stringify({
     // 参加者に渡すツールの名前も守り(許可していない名前は permission の層で断る)。外すと、その確かめが n/a になるため
-    compositions: compositions.map((c) => [c.file ?? null, c.guards ?? [], c.handoffs ?? [], c.participants.map((p) => [p.id, p.kind, p.tools ?? null])]),
+    compositions: compositions.map((c) => [c.file ?? null, c.guards ?? [], c.handoffs ?? [], c.participants.map((p) => [p.id, p.kind, p.tools ?? null, ...(p.flow || p.escalate ? [p.flow ?? null, p.escalate ?? null] : [])])]),
     tools: Object.entries(simulation.tools ?? {}).sort(([a], [b]) => (a < b ? -1 : 1)).map(([file, toolset]) => [file, toolset.tools.map((tool) => [tool.name, tool.guards ?? null])]),
     ai: ai?.rules ?? null,
     harness: Object.entries(simulation.harnessAis ?? {}).sort(([a], [b]) => (a < b ? -1 : 1)).map(([file, definition]) => [file, definition.rules]),

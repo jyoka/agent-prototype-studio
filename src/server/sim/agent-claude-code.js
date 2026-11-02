@@ -264,12 +264,28 @@ export function createClaudeCodeAgent({ env = process.env, limits = SIM_AGENT_LI
     // 実行の前に画面に出す。何が、どこへ送られるか
     sends(simulation) {
       const agents = (simulation?.composition?.participants ?? []).filter((p) => p.kind === 'agent');
+      const flows = (simulation?.composition?.participants ?? []).filter((p) => p.kind === 'harness' && p.flow);
+      const to = billing.providers ? `環境変数(${billing.providers.join('、')})で指定された提供元(Claude Code が送ります)` : 'Anthropic(Claude Code が送ります)';
+      // 固定の流れだけの構成(docs/design/agent-simulation.md の 2.8)。モデルにツールを渡さないので、送るものが違う
+      if (flows.length > 0 && agents.length === 0) {
+        return {
+          to,
+          items: [
+            `${flows.map((p) => p.label).join('、')}の指示(harness の設定の instructions)と、Studio が付け足す決まり`,
+            '覚える項目と選択肢、今の状態',
+            '流れがツールの結果から作った文(構成の tell に書いた置き換えの値)',
+            'この試作品で話した会話の全体と、新しく送る発言',
+          ],
+          notSent: 'ツールの説明と結果の全体、app/ の他のファイル、記録の店の全体、他の試作品、PC のファイルは送りません。モデルにツールは渡しません。',
+        };
+      }
       return {
-        to: billing.providers ? `環境変数(${billing.providers.join('、')})で指定された提供元(Claude Code が送ります)` : 'Anthropic(Claude Code が送ります)',
+        to,
         items: [
           `模擬のエージェント(${agents.map((p) => p.label).join('、') || 'なし'})の組んだプロンプト(前提の土台、枠、頼み、Studio の決まり)`,
           '構成に書いた試作品のツールの説明と、ツールの結果(前提の長さまで)',
           'この試作品で話した会話の全体と、新しく送る発言',
+          ...(flows.length > 0 ? ['流れがツールの結果から作った文(構成の tell に書いた置き換えの値)'] : []),
         ],
         notSent: 'app/ の他のファイル、記録の店の全体、他の試作品、PC のファイルは送りません。ファイル、コマンド、Web の道具は渡しません。',
       };
