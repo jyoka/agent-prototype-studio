@@ -1,0 +1,16 @@
+{
+  "formatVersion": 1,
+  "id": "redeliver-ok",
+  "kind": "control",
+  "about": "番号を言い、時間帯を選び、確かめて書く",
+  "turns": [{ "user": "番号は 1001 です" }, { "user": "午前中で" }, { "user": "はい" }, { "user": "お願いします" }],
+  "expect": [
+    { "check": "toolCalled", "tool": "get_parcel", "args": { "parcel_no": 1001 } },
+    { "check": "toolCalled", "tool": "record_consent" },
+    { "check": "toolCalled", "tool": "save_redelivery", "args": { "parcel_no": 1001, "slot": "午前中" } },
+    { "check": "recordHas", "record": "redelivery", "equals": { "parcel_no": 1001, "slot": "午前中" } },
+    { "check": "replyContains", "text": "再配達を受け付けました", "only": "mock" },
+    { "check": "noNewNumbers" },
+    { "check": "judge", "aspect": "naturalness", "rubric": "番号、時間帯、確かめの順に、短くていねいに進んでいるか", "passAtLeast": 4 }
+  ]
+}

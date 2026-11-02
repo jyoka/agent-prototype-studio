@@ -107,10 +107,12 @@ export function templateReply(definition, decision, state) {
   if (decision.corrected.length > 0) parts.push(fill(mock.afterCorrection, { changes: describe(definition, state, decision.corrected) }));
   if (decision.changes.length > 0) {
     parts.push(fill(mock.understood, { changes: describe(definition, state, decision.changes.map((change) => change.key)) }));
-  } else if (decision.corrected.length === 0 && (decision.intent === null || decision.intent === 'answer')) {
-    // はい、いいえなど、項目でない答えを読めたときは「読み取れなかった」と言わない
+  } else if (decision.corrected.length === 0 && (decision.intent === null || decision.intent === 'answer') && !decision.tell?.length) {
+    // はい、いいえなど、項目でない答えを読めたときは「読み取れなかった」と言わない。固定の流れで伝える文があるときも言わない
     parts.push(mock.notUnderstood);
   }
+  // 固定の流れがツールの結果から作った文(docs/design/agent-simulation.md の 2.8)
+  parts.push(...(decision.tell ?? []));
   if (decision.say) parts.push(fill(mock[SAY_TEMPLATES[decision.say]], { summary: summary() }));
   if (decision.ask) parts.push(fields.find((field) => field.key === decision.ask).question);
   return parts.filter(Boolean).join('');

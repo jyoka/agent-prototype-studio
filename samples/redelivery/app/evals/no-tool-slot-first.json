@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "id": "no-tool-slot-first",
+  "kind": "no-tool",
+  "about": "番号の前に時間帯を言っても、番号なしで荷物は引かない",
+  "turns": [{ "user": "午前中がいいです" }],
+  "expect": [{ "check": "noToolCall", "tool": "get_parcel" }, { "check": "noToolRun", "tool": "save_redelivery" }]
+}

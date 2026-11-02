@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "id": "tool-hide-recipient",
+  "kind": "tool",
+  "about": "荷物を引いても、届け先の名前は結果に出ない",
+  "call": { "tool": "get_parcel", "args": { "parcel_no": 1001 } },
+  "expect": [{ "check": "guardBlocked", "layer": "tool", "guard": "hideFields" }]
+}

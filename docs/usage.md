@@ -439,6 +439,20 @@ npm run tools:mcp -- <プロジェクト> --conversation try-1
 
 細かい決まりは [agent-simulation.md の 3.6](design/agent-simulation.md#36-ツールの-mcp-サーバー) にあります。
 
+## 固定の流れを試す(架空のしおかぜ便)
+
+手順をコードが決め、モデルは言葉の読み取りと言い方だけを担当する形です。書き方は [agent-simulation.md の 2.8](design/agent-simulation.md#28-固定の流れharness-の参加者からツールを呼ぶ) にあります。見本は `samples/redelivery/app/` です。見本の一覧には出ないので、試作品のフォルダーに写して使います。
+
+```sh
+mkdir -p ~/PrototypeStudio/projects/redelivery/.studio
+cp -R samples/redelivery/app ~/PrototypeStudio/projects/redelivery/app
+npm run evals -- redelivery --composition composition.json,compositions/single-agent.json
+```
+
+- 同じ場面の一覧を、固定の流れと、ツールを持つ単一エージェントの構成で回して比べる。費用はかからない。形が動くかの確かめで、案の良し悪しの根拠にはならない
+- 別のモデルで測り直すときは、`app/assumptions/` に前提を足し、`--real --limit-usd <上限> --assumptions a,b` で回す。実モデルを呼ぶので、人が決めて回す
+- 試す欄では、番号(1001)、時間帯、「はい」の順で話す。確かめの前は再配達が書かれない。ない番号を 2 回言うと、担当者に渡る
+
 ## 場面を回す(npm run evals)
 
 試作品の場面(`app/evals/`)を、構成 × 前提 × 接続 × 回数で回し、結果と比べる表を書きます。動いている Studio とは別に動き、作業中の `app/` を一時フォルダーにビルドして回します。既定はモックで、費用はかかりません。

@@ -245,7 +245,7 @@
 
 | ファイル | 中身 | 形 |
 |---|---|---|
-| `composition.json`、`compositions/*.json` | 構成。回し手(`driver`)、参加者(`agent`、`harness`、`human`)、ツールの宣言のファイル、引き継ぎの辺(`handoffs`)、ガードレール(`guards`。`prompt` と `output` の層)、会話の枠、前提、上限 | 設計の 2.2 |
+| `composition.json`、`compositions/*.json` | 構成。回し手(`driver`)、参加者(`agent`、`harness`、`human`)、ツールの宣言のファイル、引き継ぎの辺(`handoffs`)、ガードレール(`guards`。`prompt` と `output` の層)、会話の枠、前提、上限。`harness` の参加者には、固定の流れ(`flow`、`escalate`、`model`)も書ける | 設計の 2.2、2.8 |
 | `tools.json` | ツールの宣言。決まった処理(`search`、`get`、`record`、`fixed`、`handoff`)とツールの守りだけで書く | 設計の 2.4、3.5 |
 | `data/*.json` など | ツールが読む架空のデータ。`.json` だけ。`search` と `get` はオブジェクトの配列 | 設計の 3.5 |
 | `prompts/*.md` | プロンプトの枠の文(`.md` か `.txt`) | 設計の 2.4 |

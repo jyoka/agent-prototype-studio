@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "id": "escalate-unread",
+  "kind": "short",
+  "about": "番号が 2 回読めないと、担当者に渡す",
+  "turns": [{ "user": "えーと" }, { "user": "えーと、どこだろう" }],
+  "expect": [{ "check": "handoffTo", "to": "staff" }, { "check": "noToolCall", "tool": "get_parcel" }]
+}
