@@ -108,7 +108,7 @@ export class RealAiConsent {
 function fixDetails({ agent, systemPrompt }) {
   if (agent.kind !== 'claude') return null;
   return {
-    items: ['頼んだ文', '試作品のファイル(直す AI が読み書きするもの)', '自動の確かめで見つかった問題(直し直すとき)'],
+    items: ['頼んだ文', '試作品のファイル(直す AI が読み書きするもの)', '自動の確かめで見つかった問題(直し直すとき)', 'つないだトークンの名前(つないでいるとき)'],
     notSent: 'PC のほかのファイル、ほかの試作品は送りません。直す AI は試作品のフォルダーの外を読み書きできません。',
     tools: '試作品のファイルの読み書きと検索、試作品の画面を見る道具だけを渡します。コマンドの実行と Web は渡しません。',
     systemPrompt,

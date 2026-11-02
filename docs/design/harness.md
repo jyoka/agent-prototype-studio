@@ -104,7 +104,7 @@ flowchart TD
 | 作る AI | モデル | `app/` を読み書きする。道具は Read、Edit、Write、Glob、Grep と、決まった名前の観察の道具。観察の道具で画面を見て、操作して直してよい。cwd は `app/` | `startAgentProcess`、`buildClaudeArgs`(残す。観察の道具を渡す所を足す) |
 | G1 変更の確認 | コード | 前と後の `app/` を SHA-256 で比べる。AI の報告に頼らない。直すラウンドで何も変わらなければ、直せなかったとして `failed` にする(前の失敗を隠さない) | `snapshotApp`、`diffSnapshots`(残す) |
 | G2 検査 | コード | 禁止の名前、シンボリックリンク、数と大きさ | `inspectApp`(残す) |
-| G3 契約の検査 | コード | `prototype.json`、`ai.json`、`scenarios/*.json` の形 | `parseAiDefinition`(広げる)、目録とシナリオは新しく作る |
+| G3 契約の検査 | コード | `prototype.json`、`ai.json`、`scenarios/*.json` の形。つないだトークンがあれば、指紋と `app/` の中の変数の上書き(J4) | `parseAiDefinition`(広げる)、目録とシナリオは新しく作る |
 | G4 ビルド | コード | esbuild で 1 つの IIFE にする。import は `app/` と同梱のライブラリだけ | `buildApp`(残す) |
 
 今の `buildApp` は、中で `inspectApp` と `ai.json` の検査を先に行い、失敗した所で止めている。G2、G3、G4 はこの 1 回の呼び出しのままにし、`buildApp` の誤りに段の名前(`inspect`、`contract`、`compile`)を付けて返すように直す。安い順に止まる決まり(S11)は、今の順のままで満たす。

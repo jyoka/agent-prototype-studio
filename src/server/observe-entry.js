@@ -121,7 +121,7 @@ async function observeWorking({ projectDir, observe }) {
     await fs.mkdir(buildsDir, { recursive: true });
     let result;
     try {
-      result = await buildApp({ appDir: path.join(projectDir, 'app'), buildsDir });
+      result = await buildApp({ appDir: path.join(projectDir, 'app'), buildsDir, projectRoot: projectDir });
     } catch (error) {
       // 読めないファイルなど。Studio のビルド(store.js)と同じく、ビルドの失敗にする
       result = {

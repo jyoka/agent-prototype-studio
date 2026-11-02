@@ -7,6 +7,7 @@ import { diffSnapshots, digestSnapshot, MAX_SNAPSHOT_ENTRIES, snapshotApp } from
 import { buildClaudeArgs, DEFAULT_MAX_BUDGET_USD, MAX_TURNS, OBSERVE_TOOLS, writeObserveMcpConfig } from './claude-args.js';
 import { describeStep } from '../observer/scenario.js';
 import { buildFixPrompt, describeFailure, ERROR_KIND_TEXT } from './fix-prompt.js';
+import { readTokenMaterial } from './materials.js';
 import { AI_FILE, describeDefinitionChanges } from './product-ai/definition.js';
 import { RealAiConsent } from './real-ai.js';
 import { readMessage } from './stream-json.js';
@@ -97,7 +98,7 @@ const GATE_TIMEOUT = Symbol('gate-timeout');
 const freshGates = () => GATES.map((node) => ({ id: node.gate, name: node.name, label: node.label, status: 'skipped' }));
 // ビルドの誤りを、関門の結果に残す形にする
 const gateErrors = (errors) =>
-  errors.slice(0, MAX_GATE_ERRORS).map((e) => ({ file: e.file, line: e.line ?? null, column: e.column ?? null, text: clip(e.text) }));
+  errors.slice(0, MAX_GATE_ERRORS).map((e) => ({ file: e.file, line: e.line ?? null, column: e.column ?? null, text: clip(e.text), ...(e.material ? { material: true } : {}), ...(e.locked ? { locked: true } : {}) }));
 
 // 失敗の指紋。依頼の前から同じ失敗が出ていたかを比べる。行と列は、前後の行が変わるとずれるので入れない
 function failureSignature(gate) {
@@ -491,10 +492,11 @@ export class BuildRequests {
       state.mcpConfig = await writeObserveMcpConfig({ dir: this.runDir(paths, run), projectDir: paths.root, maxSeconds: this.timeoutMs / 1000 });
       const input = state.fixPrompt ?? run.request;
       const event = { projectId: id, runId: run.id, round: run.round };
+      const material = await readTokenMaterial(paths.root);
       this.onAgentEvent({ ...event, type: 'input', text: input });
       handle = startAgentProcess({
         command: connection.command,
-        args: [...connection.prefixArgs, ...buildClaudeArgs({ billing: connection.billing, mcpConfig: state.mcpConfig, maxBudgetUsd: this.maxBudgetUsd })],
+        args: [...connection.prefixArgs, ...buildClaudeArgs({ billing: connection.billing, mcpConfig: state.mcpConfig, maxBudgetUsd: this.maxBudgetUsd, materialGuide: material?.guide ?? null })],
         cwd: paths.app,
         // 利用者の環境変数をそのまま渡す。値は読まない、残さない
         env: this.env,
@@ -960,6 +962,14 @@ export class BuildRequests {
         detail: `直すラウンドは行わない。${gateName(failed)}の失敗は直っていない。`,
       });
       return { next: 'evidence', outcome: 'cancelled' };
+    }
+    // つないだ素材のファイル自体の誤りは app/ の外にあり、作る AI には直せない。起動しても料金がかかるだけなので止める
+    if (failed.errors?.some((error) => error.locked)) {
+      run.status = 'failed';
+      this.addItem(id, run, 'gave-up', `つないだ素材のファイルに問題があります。${FIX_AI} には直せないので、ここで止めました。その他の「自分のトークン」から外して、つなぎ直してください。`, {
+        detail: `${gateName(failed)}: つないだ素材のファイルは app/ の外にあるので、直すラウンドは行わない。`,
+      });
+      return { next: 'evidence', outcome: 'gave-up' };
     }
     if (run.round > MAX_FIX_ROUNDS) {
       this.addItem(

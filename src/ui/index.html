@@ -350,6 +350,31 @@
       <button type="button" id="check-run" disabled>試作品を自動で確かめる</button>
       <p id="check-message" class="check-message" role="status" hidden></p>
     </section>
+    <!-- 自分のトークンをつなぐ(user-journey.md の J4)。形を確かめてから、Studio の持つ場所に置く -->
+    <section aria-labelledby="tokens-heading">
+      <h3 id="tokens-heading">自分のトークンをつなぐ</h3>
+      <p class="muted">色と字の決まりを書いたファイル(W3C の Design Tokens 2025.10 の形の JSON)を選びます。Studio が形を確かめ、この試作品に入れます。素材は Studio が持つので、直す AI は書き換えられません。直す AI への決まりには、値ではなく名前だけを書きます。</p>
+      <div id="tokens-connected" class="tokens-connected" hidden></div>
+      <p id="tokens-message" class="versions-message" role="status" hidden></p>
+      <form id="tokens-form" class="handoff-form">
+        <label for="tokens-file">トークンのファイル</label>
+        <input id="tokens-file" type="file" accept=".json,.tokens,application/json,application/design-tokens+json" disabled>
+        <div id="tokens-problems" class="tokens-problems" hidden></div>
+        <div id="tokens-review" class="tokens-review" hidden>
+          <p id="tokens-summary"></p>
+          <fieldset class="tokens-roles">
+            <legend>どのトークンを、どの役割に使うか</legend>
+            <div id="tokens-roles"></div>
+            <p id="tokens-missing" class="muted" hidden></p>
+          </fieldset>
+          <label for="tokens-source">誰の素材か(引き継ぎの出典になります)</label>
+          <input id="tokens-source" type="text" maxlength="200" autocomplete="off">
+          <label for="tokens-reason">つなぐ理由(書かなくても進めます)</label>
+          <input id="tokens-reason" type="text" maxlength="300" autocomplete="off">
+          <button type="submit" id="tokens-connect" disabled>つなぐ</button>
+        </div>
+      </form>
+    </section>
     <section aria-labelledby="handoff-heading">
       <h3 id="handoff-heading">本番開発へ渡す</h3>
       <p class="muted">今の試作品を、本番開発の担当者に渡すフォルダーにまとめます。試作品のファイル、AI の設定、会話と状態、本物につないだもの・お試しのもの・つないでいないものの区別、未決事項が入ります。秘密情報らしい文字列があると作りません。</p>

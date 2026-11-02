@@ -8,6 +8,7 @@
 - J1 を task 382(2026-10-31)で作った。聞き出しの AI と目的の文書の置き場所の決めたことは 7 節
 - K1 を task 384(2026-10-31)で作った。整理する AI と板の決めたことは 7 節
 - J2 を task 385(2026-11-02)で作った。案を出す AI、設計の置き場所、Studio が `app/` に書くファイルの決めたことは 7 節。審査の画面は #422 のまま
+- J4 を task 386(2026-11-02)で作った。決めたことは [design-materials.md の 4 節](design-materials.md#j4-で決めたこと)
 - 前提: [vision.md](../vision.md)、[AI 構成の審査](ai-architecture-review.md)、[PRD](../prd.md)、[ADR 0001](../adr/0001-local-runtime-and-isolation.md)、[ux-redesign.md](ux-redesign.md)。ADR 0001 の隔離は変えない
 - 人物、会社、題材は、どれも架空。気持ちの点は、利用者の調べをしていないので推測
 
@@ -184,7 +185,7 @@ Studio を知ってから、人に勧めるまでの流れです。今は LP を
 | 7. 人に見せて確かめる | 版の保存と戻す | 見せる画面、確かめたい問い、感想の記録 | 大 |
 | 8. 本番開発に引き継ぐ | 引き継ぎ(形式 3。ソース、AI の設定、構成、場面、証拠の要約、未接続の一覧) | 目的の文書、設計の決定と理由、質の結果、素材の出典 | 小 |
 | 知る | README、LP(`site/`、公開しない)、バナー、動く画像 | 新しい目的の 1 文。ジャーニーの絵 | 中 |
-| 素材(全段) | `assets/brand/tokens.css`(Studio の画面の色。試作品には効かない)。既定の素材(`materials/default/`) | 自分の素材をつなぐ形、取り込みの案内([design-materials.md](design-materials.md))、選べる素材(Material 3) | 大 |
+| 素材(全段) | `assets/brand/tokens.css`(Studio の画面の色。試作品には効かない)。既定の素材(`materials/default/`)。自分のトークン(J4) | 自分の部品と指針をつなぐ形、取り込みの案内([design-materials.md](design-materials.md))、選べる素材(Material 3) | 中 |
 
 ## 5. 今のカードへの影響
 
