@@ -1,0 +1,6 @@
+[
+  { "parcel_no": 1001, "item": "りんごの箱", "recipient": "みほん 花子", "deliver_day": "本日", "status": "持ち戻り" },
+  { "parcel_no": 1002, "item": "本の包み", "recipient": "みほん 太郎", "deliver_day": "本日", "status": "持ち戻り" },
+  { "parcel_no": 1003, "item": "鉢植え", "recipient": "ためし 一郎", "deliver_day": "翌日", "status": "持ち戻り" },
+  { "parcel_no": 1009, "item": "陶器の皿", "recipient": "ためし 二郎", "deliver_day": "本日", "status": "調査中" }
+]

@@ -1,0 +1,25 @@
+{
+  "formatVersion": 1,
+  "name": "単一エージェント: 1 つの AI が道具を選ぶ(架空)",
+  "driver": "desk-agent",
+  "participants": [
+    {
+      "id": "desk-agent",
+      "kind": "agent",
+      "label": "再配達の受付(模擬)",
+      "owner": "shiokaze",
+      "prompt": [
+        { "from": "assumptions", "key": "hostPrompt", "owner": "shiokaze" },
+        { "slot": "desk-guide", "owner": "shiokaze", "file": "prompts/desk-guide.md" }
+      ],
+      "tools": ["get_parcel", "record_consent", "save_redelivery", "handoff_to_staff"],
+      "mock": "mocks/desk.json"
+    },
+    { "id": "staff", "kind": "human", "label": "担当者(模擬)", "owner": "shiokaze", "mock": { "reply": "担当の者です。お話を伺います。(模擬の返事)" } }
+  ],
+  "tools": "tools.json",
+  "handoffs": [{ "from": "desk-agent", "to": "staff" }],
+  "surface": { "kind": "talk", "theme": "talk" },
+  "assumptions": { "dir": "assumptions", "default": "stand-in" },
+  "limits": { "maxTurns": 12, "maxHandoffs": 1 }
+}

@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "id": "escalate-not-found",
+  "kind": "switch",
+  "about": "ない番号が 2 回続くと、担当者に渡す",
+  "turns": [{ "user": "番号は 9999 です" }, { "user": "では 9998 です" }],
+  "expect": [
+    { "check": "handoffTo", "to": "staff" },
+    { "check": "replyContains", "text": "担当の者です", "only": "mock" },
+    { "check": "noRecord", "record": "redelivery" }
+  ]
+}

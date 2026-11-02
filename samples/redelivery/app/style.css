@@ -1,0 +1,9 @@
+.app { max-width: 960px; margin: 0 auto; padding: 16px; font-family: system-ui, sans-serif; color: #1c2024; }
+header h1 { margin: 0 0 4px; font-size: 22px; }
+.note, .hint { margin: 0 0 12px; color: #60646c; font-size: 13px; }
+.columns { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; }
+.side { border: 1px solid #d9d9e0; border-radius: 8px; padding: 12px; }
+.side h2 { margin: 0 0 4px; font-size: 15px; }
+dt { font-weight: 600; font-size: 13px; }
+dd { margin: 0 0 8px; font-size: 14px; }
+@media (max-width: 640px) { .columns { grid-template-columns: 1fr; } }

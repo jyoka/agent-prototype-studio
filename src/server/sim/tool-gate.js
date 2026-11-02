@@ -268,7 +268,7 @@ export function refusedEntry({ name, args, by, layer = 'tool', guard, reason, ow
 // 1 回のツールの呼び出し。
 // tools: 検査した tools.json(parseTools の toolset)。data: loadToolData の data。store: 会話ごとの記録の店({ 記録の名前: 値 })。
 // context: { conversationId, userId, by(呼んだ参加者), calls({ ツールの名前: これまでの回数 }), assumption(前提。toolCalling を見る),
-//            handoffs(構成の辺), sleep(テスト用) }
+//            handoffs(構成の辺), via(モデルでなくコードが呼んだとき 'flow'。記録に残す), sleep(テスト用) }
 // 返す値: { ok, result | error, guards[], ms, store(新しい記録の店), calls(新しい回数), handoff?, fault?, entry(記録の 1 件) }。
 // 同じ tools、data、store、context.calls、args なら、ms のほかは同じ値を返す
 export async function callTool({ tools, data = {}, store = {}, context = {}, name, args = {} }) {
@@ -298,6 +298,7 @@ export async function callTool({ tools, data = {}, store = {}, context = {}, nam
   const entry = redactRecord({
     tool: String(name),
     ...(context.by ? { by: context.by } : {}),
+    ...(context.via ? { via: context.via } : {}),
     args: jsonCopy(args),
     result: summarize(outcome),
     ms,
