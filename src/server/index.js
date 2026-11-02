@@ -13,6 +13,7 @@ import { createIntentAi, INTENT_SYSTEM_PROMPT } from './intent-ai.js';
 import { ProjectDesigns } from './design.js';
 import { ProjectMaterials } from './materials.js';
 import { createDesignAi, DESIGN_SYSTEM_PROMPT } from './design-ai.js';
+import { ProjectMeetings, removeErasing } from './meeting.js';
 import { ProjectOrganizes } from './organize.js';
 import { createOrganizeAi, ORGANIZE_SYSTEM_PROMPT } from './organize-ai.js';
 import { createPreviewHandler } from './preview-server.js';
@@ -24,7 +25,7 @@ import { ensureSampleProjects, listProjects, projectPaths, projectsDir } from '.
 import { createClaudeCodeAgent } from './sim/agent-claude-code.js';
 import { createMockAgent } from './sim/agent-mock.js';
 import { removeAllSimDirs } from './sim/tools-mcp.js';
-import { consentView, RealAiConsent } from './real-ai.js';
+import { consentView, describeCost, RealAiConsent } from './real-ai.js';
 import { STUDIO_SYSTEM_PROMPT } from './claude-args.js';
 import { createToken } from './security.js';
 import { createStudioHandler } from './studio-server.js';
@@ -81,6 +82,8 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       log(`サンプルの試作品を用意しました: ${id}`);
     }
     await recoverInterrupted(config.home, log);
+    // 消している途中で止まった会のデータは、続きを消す
+    await removeErasing(config.home, log);
     // 前の起動の模擬の会話の作業の場所(.studio/sim/)は、会話がもうメモリーにないので消す
     for (const project of await listProjects(config.home)) await removeAllSimDirs(project.paths.root);
   } catch (error) {
@@ -97,6 +100,28 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   const token = createToken();
   const store = new ProjectStore(config.home, log);
   const ports = { studio: config.studioPort, preview: config.previewPort };
+  // 外の AI に送る接続か(直す AI の同意の判定と同じ)
+  const sendsOutside = connection.kind === 'claude' && !connection.problem;
+  // 会の始めと会のデータ(meeting.js)。同意の前は、どの AI も呼ばない。消すときは、下の部品のメモリーも捨てる
+  const meetings = new ProjectMeetings({
+    home: config.home,
+    store,
+    consent,
+    sendsOutside,
+    cost: () => describeCost({ env, auth: connection.auth, fixBudgetUsd: config.maxBudgetUsd, fixLaunches: MAX_FIX_ROUNDS + 1 }),
+    busy: (id) => intents.calling.has(id) || intents.locked.has(id) || organizes.calling.has(id) || designs.calling.has(id) || designs.locked.has(id) || aiSessions.busyFor(id),
+    forget: async (id) => {
+      await organizes.forget(id);
+      intents.forget(id);
+      designs.forget(id);
+      requests.forget(id);
+      checks.forget(id);
+      aiSessions.forgetProject(id);
+      firstSteps.forget(id);
+    },
+    log,
+  });
+  await meetings.load();
   // 観察器のブラウザは、Studio の中で 1 つだけ。最初の観察のときに起動する
   const observer = new Observer();
 
@@ -133,6 +158,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     dataNumbersOf: (id) => store.dataNumbers(id),
     connections: [createMockConnection(), createClaudeCodeConnection({ env, allowed: config.allowClaudeCode === true })],
     consent,
+    meetingGate: (id, mode) => meetings.require(id, mode),
     simulationOf: (id) => store.simulationContext(id),
     agents: [createMockAgent(), createClaudeCodeAgent({ env })],
     projectDirOf: (id) => projectPaths(config.home, id).root,
@@ -154,6 +180,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     log,
     maxBudgetUsd: config.maxBudgetUsd,
     consent,
+    meetingGate: (id, mode) => meetings.require(id, mode),
     ...(scenarioLimits ? { scenarioLimits } : {}),
     ...(onAgentEvent ? { onAgentEvent } : {}),
   });
@@ -163,10 +190,16 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   const firstSteps = new FirstSteps({ statusesOf: (id) => requests.statuses(id) });
   // 目的の聞き出し。聞き出す AI は、作る AI と同じ接続の判定を使う別の役(intent-ai.js)。
   // 偽接続は同意なしで使う。本物は同意の後だけ。使えないとき、本物の AI を止めた設定のときは、決まった問いで進める
-  const thinkingAiMode = () => {
+  // お客さんの話を書き換える前に呼ぶ。同意の前と、消している間は断る
+  const talkGate = (id) => {
+    meetings.requireDecided(id);
+    store.checkNotErasing(id);
+  };
+  // 会の中では、同意の前は使えない扱い。お試しだけの会では、本物を使えない扱い(meeting.js)。id がないのは新しい試作品のとき
+  const thinkingAiMode = (id) => {
     if (connection.problem) return null;
-    if (connection.kind === 'fake') return 'fake';
-    return config.allowClaudeCode === true ? 'real' : null;
+    const mode = connection.kind === 'fake' ? 'fake' : config.allowClaudeCode === true ? 'real' : null;
+    return mode && id && !meetings.mayCall(id, mode) ? null : mode;
   };
   const intents = new ProjectIntents({
     home: config.home,
@@ -174,13 +207,14 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     ai: createIntentAi({ connection, env }),
     consent,
     aiMode: thinkingAiMode,
+    talkGate,
     startScreen: config.startScreen !== false,
-    otherWork: () => organizes.boards.size > 0 || designs.records.size > 0,
+    otherWork: () => organizes.boards.size > 0 || designs.records.size > 0 || meetings.records.size > 0,
     log,
   });
   await intents.load();
   // ヒアリングの整理。整理する AI は聞き出す AI と同じ決め方の別の役(organize-ai.js)。使えないときは、人が手で振り分ける
-  const organizes = new ProjectOrganizes({ home: config.home, store, ai: createOrganizeAi({ connection, env }), consent, aiMode: thinkingAiMode, log });
+  const organizes = new ProjectOrganizes({ home: config.home, store, ai: createOrganizeAi({ connection, env }), consent, aiMode: thinkingAiMode, talkGate, log });
   await organizes.load();
   // 設計の案内。案を出す AI は聞き出す AI と同じ決め方の別の役(design-ai.js)。使えないときは、Studio の決まった案を出す
   const designs = new ProjectDesigns({
@@ -189,6 +223,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     ai: createDesignAi({ connection, env }),
     consent,
     aiMode: thinkingAiMode,
+    talkGate,
     intentOf: (id) => intents.records.get(id) ?? null,
     boardOf: (id) => organizes.boards.get(id)?.items ?? [],
     log,
@@ -211,6 +246,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       organizes,
       designs,
       materials,
+      meetings,
       token,
       ports,
       // 同意のカードの中身(real-ai.js の consentView)。試作品を渡すと、その試作品の中の AI の「詳しく」も入れる
@@ -273,6 +309,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     intents,
     organizes,
     designs,
+    meetings,
     checks,
     observer,
     // 表示中のビルドを観察する。report とスクリーンショットは .studio/observations/<観察の ID>/ に置く。

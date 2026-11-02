@@ -4,12 +4,15 @@ import path from 'node:path';
 import { IntentError } from './intent.js';
 import { AI_ASK_KINDS, COLUMNS } from './organize-ai.js';
 import { isValidProjectId, listProjects, projectPaths } from './projects.js';
+import { findRecords } from './redact.js';
 import { BusyError, NotFoundError } from './store.js';
 
 // ヒアリングの整理(docs/design/user-journey.md の K1、docs/design/field-session.md の段 1、段 2)。
 // 置き場所は .studio/organize.json。.studio/ は Studio だけが書く場所で、作る AI は読み書きできない。
 // 「推測」の印は Studio が決める。元の要点(今ある要点を指す番号)のない項目に付き、AI の返事では消せない。
 // 「確かめた」の印は、決める人が「この理解で合っている」を押したとき(confirm)だけ付く。板が変わると外れる。
+// 記録らしいもの(名前や電話番号の形。redact.js の findRecords)は、板に入れない(docs/design/collaboration.md の 7 節、K4)。
+// 人が打った文は保存せずに断る。AI の返事からは捨てて知らせる。前の板に残っていたら、起動のときに取り除く。
 
 export const ORGANIZE_FILE = 'organize.json';
 const FORMAT = 1;
@@ -22,6 +25,16 @@ const MAX_ASKS = 50;
 const clip = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
 const uniqueKnown = (value, known) => (Array.isArray(value) ? [...new Set(value.filter((n) => known.has(n)))] : []);
 const itemKey = (item) => `${item.column}\n${item.text}`;
+const hasRecord = (text) => findRecords(text).length > 0;
+const citesAny = (sources, numbers) => Array.isArray(sources) && sources.some((n) => numbers.includes(n));
+
+// 記録らしいものを省いたときの知らせ。値そのものは入れない
+const omittedNote = (count) => `記録らしいものを省きました(${count} 件)。整理の板には入れません。お客さんの記録は打たないでください。`;
+
+function refuseRecord(text) {
+  const kinds = findRecords(text);
+  if (kinds.length > 0) throw new IntentError(422, 'record', `記録らしいものを省きました(${kinds.join('、')})。AI にも整理の板にも入れていません。その部分を抜いて、打ち直してください。`);
+}
 
 export function emptyBoard() {
   return {
@@ -50,20 +63,37 @@ export const isGuess = (item) => item.sources.length === 0 && !item.checkedAt;
 // AI の返事を板に入れる。形に合わないものは捨てる。今ない要点を指す番号は捨てるので、指す先がなくなった項目は「推測」になる。
 // 人が直した項目は残し、人が消したものは戻さない。「推測」と「確かめた」を AI が書く口はない(知らない項目は読まない)
 export function applyOrganized(board, output) {
-  const known = pointNumbers(board);
-  const held = board.items.filter((item) => item.held);
+  // AI が記録らしいと言った要点は、一覧から消す。元にしていた番号も消える
+  const recorded = uniqueKnown(output?.recordPoints, pointNumbers(board));
+  // 手で欄に置いた項目は要点と同じ文なので、一緒に消す。人が消したものの中の同じ文も消す。人が直した文は残す(元の番号だけが消える)
+  const recordTexts = new Set(board.points.filter((point) => recorded.includes(point.n)).map((point) => point.text.slice(0, MAX_TEXT)));
+  const dropped = recorded.reduce(withoutPoint, board);
+  const cleaned = {
+    ...dropped,
+    items: dropped.items.filter((item) => !recordTexts.has(item.text)),
+    dismissed: { items: dropped.dismissed.items.filter((text) => !recordTexts.has(text)), asks: dropped.dismissed.asks },
+  };
+  const known = pointNumbers(cleaned);
+  const held = cleaned.items.filter((item) => item.held);
   // 人が直すか振り分けた文は、欄が違っても AI の項目にしない(同じ話が 2 つの項目に分かれないように)
   const heldTexts = new Set(held.map((item) => item.text));
   const seen = new Set();
-  const dismissedItems = new Set(board.dismissed.items);
-  const dismissedAsks = new Set(board.dismissed.asks);
-  let { nextItem, nextAsk } = board;
+  const dismissedItems = new Set(cleaned.dismissed.items);
+  const dismissedAsks = new Set(cleaned.dismissed.asks);
+  let { nextItem, nextAsk } = cleaned;
+  let omitted = recorded.length;
   const items = [...held];
   for (const given of Array.isArray(output?.items) ? output.items : []) {
     if (items.length >= MAX_ITEMS) break;
     if (typeof given?.column !== 'string' || !Object.hasOwn(COLUMNS, given.column)) continue;
     const text = clip(given.text, MAX_TEXT);
     const key = itemKey({ column: given.column, text });
+    // 記録があると言った要点を元にした項目は、作らない(番号を抜いた文でも、記録の話なので)
+    if (citesAny(given.sources, recorded)) continue;
+    if (hasRecord(text)) {
+      omitted += 1;
+      continue;
+    }
     if (!text || dismissedItems.has(text) || heldTexts.has(text) || seen.has(key)) continue;
     seen.add(key);
     items.push({ id: `i${nextItem}`, column: given.column, text, sources: uniqueKnown(given.sources, known), by: 'ai', held: false, checkedAt: null });
@@ -73,11 +103,31 @@ export function applyOrganized(board, output) {
   for (const given of Array.isArray(output?.toAsk) ? output.toAsk : []) {
     if (asks.length >= MAX_ASKS) break;
     const text = clip(given?.text, MAX_TEXT);
+    if (citesAny(given?.sources, recorded)) continue;
+    if (hasRecord(text)) {
+      omitted += 1;
+      continue;
+    }
     if (!text || dismissedAsks.has(text) || asks.some((ask) => ask.text === text)) continue;
     asks.push({ id: `a${nextAsk}`, kind: AI_ASK_KINDS.includes(given.kind) ? given.kind : 'unasked', text, sources: uniqueKnown(given.sources, known) });
     nextAsk += 1;
   }
-  return { ...board, items, asks, nextItem, nextAsk, note: null, organizedAt: new Date().toISOString() };
+  return { ...cleaned, items, asks, nextItem, nextAsk, note: omitted > 0 ? omittedNote(omitted) : null, organizedAt: new Date().toISOString() };
+}
+
+// 前の板に残っていた記録らしいものを取り除く。K4 より前に打った要点のため。何もなければ同じ板を返す
+export function scrubRecords(board) {
+  const recorded = board.points.filter((point) => hasRecord(point.text)).map((point) => point.n);
+  const dropped = recorded.reduce(withoutPoint, board);
+  const clean = (entry) => !hasRecord(entry.text);
+  const scrubbed = {
+    ...dropped,
+    items: dropped.items.filter(clean),
+    asks: dropped.asks.filter(clean),
+    dismissed: { items: dropped.dismissed.items.filter((text) => !hasRecord(text)), asks: dropped.dismissed.asks.filter((text) => !hasRecord(text)) },
+  };
+  const removed = recorded.length + (dropped.items.length - scrubbed.items.length) + (dropped.asks.length - scrubbed.asks.length) + (dropped.dismissed.items.length - scrubbed.dismissed.items.length) + (dropped.dismissed.asks.length - scrubbed.dismissed.asks.length);
+  return removed > 0 ? { ...scrubbed, note: omittedNote(removed) } : board;
 }
 
 // 要点を消す。指していた番号も消す。元の要点がなくなった項目は「推測」になる
@@ -108,13 +158,15 @@ export function boardView(board) {
 
 export class ProjectOrganizes {
   // ai は整理する AI の接続(organize-ai.js)。consent は本物の AI を使う前の同意(real-ai.js)。
-  // aiMode() は 'fake'(偽接続。同意なし)、'real'(同意が要る)、null(使えない。人が手で振り分ける)のどれか
-  constructor({ home, store, ai, consent, aiMode, log = () => {} }) {
+  // aiMode(id) は 'fake'(偽接続。同意なし)、'real'(同意が要る)、null(使えない。人が手で振り分ける)のどれか。
+  // talkGate(id) は、会の同意の前に投げる(meeting.js)。お客さんの話を、同意の前に板へ入れない
+  constructor({ home, store, ai, consent, aiMode, talkGate = () => {}, log = () => {} }) {
     this.home = home;
     this.store = store;
     this.ai = ai;
     this.consent = consent;
     this.aiMode = aiMode;
+    this.talkGate = talkGate;
     this.log = log;
     this.boards = new Map();
     // 応答を待っている試作品ごとの AbortController
@@ -133,7 +185,14 @@ export class ProjectOrganizes {
     for (const project of await listProjects(this.home)) {
       try {
         const board = JSON.parse(await fs.readFile(this.file(project.id), 'utf8'));
-        if (board?.formatVersion === FORMAT && [board.points, board.items, board.asks, board.dismissed?.items, board.dismissed?.asks].every(Array.isArray)) this.boards.set(project.id, board);
+        if (board?.formatVersion === FORMAT && [board.points, board.items, board.asks, board.dismissed?.items, board.dismissed?.asks].every(Array.isArray)) {
+          const scrubbed = scrubRecords(board);
+          if (scrubbed === board) this.boards.set(project.id, board);
+          else {
+            await this.write(project.id, { ...scrubbed, rev: board.rev + 1, status: 'draft', confirmedAt: null });
+            this.log(`整理の板から、記録らしいものを取り除きました: ${project.id}`);
+          }
+        }
       } catch (error) {
         if (error.code !== 'ENOENT') this.log(`整理の板を読めませんでした: ${project.id}(${error.message})`);
       }
@@ -143,6 +202,8 @@ export class ProjectOrganizes {
   async write(id, board) {
     // 止めた後に返ってきた呼び出しは書かない(置き場が消されていても、作り直さない)
     if (this.closed) return;
+    // 待つ間に会のデータが消されていたら、書かない(置き場を作り直さない)
+    await this.store.requireProject(id);
     const file = this.file(id);
     board.updatedAt = new Date().toISOString();
     await fs.mkdir(path.dirname(file), { recursive: true });
@@ -167,7 +228,7 @@ export class ProjectOrganizes {
   viewOf(id) {
     const board = this.boards.get(id);
     const base = board ? boardView(board) : { ...boardView(emptyBoard()), status: 'none' };
-    return { ...base, thinking: this.calling.has(id), ai: this.aiMode() };
+    return { ...base, thinking: this.calling.has(id), ai: this.aiMode(id) };
   }
 
   async view(id) {
@@ -178,7 +239,10 @@ export class ProjectOrganizes {
   // 書き換えを 1 つずつ通す。work は今の板から次の板を返す。keepMark でなければ「確かめた」の印を外す
   async change(id, work, { keepMark = false } = {}) {
     await this.requireProject(id);
+    this.talkGate(id);
     const run = async () => {
+      // 列を待つ間に、会のデータが消されたかもしれない。消した後に書いて、置き場を作り直さない
+      await this.requireProject(id);
       const board = this.boards.get(id) ?? emptyBoard();
       const next = work(board);
       next.rev = board.rev + 1;
@@ -197,6 +261,7 @@ export class ProjectOrganizes {
   // 聞いた要点を足す
   addPoint(id, { text } = {}) {
     return this.change(id, (board) => {
+      refuseRecord(text ?? '');
       const clean = clip(text, MAX_POINT);
       if (!clean) throw new IntentError(400, 'invalid', '聞いた要点を書いてください');
       return withPoint(board, clean).board;
@@ -223,6 +288,7 @@ export class ProjectOrganizes {
   addItem(id, { column, text } = {}) {
     return this.change(id, (board) => {
       requireColumn(column);
+      refuseRecord(text ?? '');
       const clean = clip(text, MAX_TEXT);
       if (!clean) throw new IntentError(400, 'invalid', '項目の文を書いてください');
       const { board: added, n } = withPoint(board, clean);
@@ -235,6 +301,7 @@ export class ProjectOrganizes {
   editItem(id, { id: itemId, text, column } = {}) {
     return this.change(id, (board) => {
       const item = requireItem(board, itemId);
+      refuseRecord(text ?? '');
       const clean = text === undefined ? item.text : clip(text, MAX_TEXT);
       if (!clean) throw new IntentError(400, 'invalid', '項目の文を書いてください');
       if (column !== undefined) requireColumn(column);
@@ -277,7 +344,8 @@ export class ProjectOrganizes {
   async run(id) {
     await this.requireProject(id);
     if (this.calling.has(id)) throw new BusyError('整理しているところです。終わるか止めるまで待ってください');
-    const mode = this.aiMode();
+    this.talkGate(id);
+    const mode = this.aiMode(id);
     if (!mode) throw new IntentError(409, 'no-ai', '今は AI を使えません。要点の横の欄で、手で振り分けてください');
     if (mode === 'real') this.consent.require('organize');
     const board = this.boards.get(id);
@@ -325,6 +393,13 @@ export class ProjectOrganizes {
       if (rev !== board.rev) throw new IntentError(409, 'stale-board', '読んだ後に整理の板が変わりました。読み直してから押してください');
       return { ...board, status: 'confirmed', confirmedAt: new Date().toISOString(), note: null };
     }, { keepMark: true });
+  }
+
+  // 会のデータを消した後に呼ぶ。列の書き換えが終わるのを待ち、メモリーの板を捨てる
+  async forget(id) {
+    await this.queues.get(id);
+    this.queues.delete(id);
+    this.boards.delete(id);
   }
 
   async close() {

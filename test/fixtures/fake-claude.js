@@ -257,7 +257,16 @@ function organizeAnswer() {
     { kind: 'conflict', text: '偽の食い違いがあります', sources: points.slice(0, 2).map((point) => point.n) },
     { kind: 'unasked', text: '偽の聞いていないことがあります', sources: [] },
   ];
-  const output = broken ? { items: '形が壊れています' } : { items, toAsk, ...marks };
+  // [記録を返す] AI が記録らしいものを項目と聞くことに書き、その要点を recordPoints に入れた返事(Studio が捨てるかの確かめ)
+  const recorded = points.filter(({ text }) => text.includes('[記録を返す]'));
+  const records = recorded.length > 0
+    ? {
+        items: [{ column: 'scene', text: '偽の 090-0000-0000 の項目', sources: [recorded[0].n] }],
+        toAsk: [{ kind: 'unasked', text: '偽の 090-0000-0000 を聞くこと', sources: [] }],
+        recordPoints: recorded.map(({ n }) => n),
+      }
+    : { items: [], toAsk: [], recordPoints: [] };
+  const output = broken ? { items: '形が壊れています' } : { items: [...items, ...records.items], toAsk: [...toAsk, ...records.toAsk], recordPoints: records.recordPoints, ...marks };
   process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0.0012, result: '', structured_output: output }));
 }
 

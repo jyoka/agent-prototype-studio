@@ -256,11 +256,14 @@ export class BuildRequests {
     scenarioLimits = SCENARIO_GATE_LIMITS,
     maxBudgetUsd = DEFAULT_MAX_BUDGET_USD,
     consent = new RealAiConsent(),
+    meetingGate = () => {},
   }) {
     this.store = store;
     this.connection = connection;
     // 本物の AI を使う前の同意(real-ai.js)。接続が Claude Code のときだけ、送る前に確かめる。偽接続は同意なしで使える
     this.consent = consent;
+    // 会の同意の前と、お試しだけの会では断る(meeting.js)
+    this.meetingGate = meetingGate;
     // 決まった節が使う、接続の名前と問題。決まった節は、ここだけを見る
     this.agentLabel = connection.label;
     this.agentProblem = connection.problem;
@@ -338,6 +341,7 @@ export class BuildRequests {
     const paths = await this.store.requireProject(id);
     if (this.closing) throw new AgentUnavailableError('Studio を止めているところです');
     if (this.agentProblem) throw new AgentUnavailableError(this.agentProblem);
+    this.meetingGate(id, this.connection.kind === 'claude' ? 'real' : 'fake');
     if (this.connection.kind === 'claude') this.consent.require('fix');
     this.store.claimRun(id);
 
@@ -1226,6 +1230,11 @@ export class BuildRequests {
       }
     }
     return structuredClone(active.run);
+  }
+
+  // 会のデータを消した後に呼ぶ
+  forget(id) {
+    for (const map of [this.runs, this.active, this.versions, this.launchFailures]) map.delete(id);
   }
 
   // Studio のプロセスが終わる直前(SIGHUP や例外で、closeAll を待てないとき)。同期で強制終了する

@@ -88,7 +88,7 @@ export class ProjectChecks {
       throw new CheckError(400, 'invalid', `確かめるときの AI は ${CHECK_CONNECTIONS.join(' か ')} で選んでください`);
     }
     // 本物の AI は、選べるかと同意を、始める前に確かめる(同意の前は consent-required で断る)
-    this.aiSessions.observationConnection(connection);
+    this.aiSessions.observationConnection(connection, id);
     const project = (await this.store.list()).find((p) => p.id === id);
     this.store.claimCheck(id);
     const check = {
@@ -144,6 +144,12 @@ export class ProjectChecks {
   }
 
   // Studio を止めるとき。観察器のブラウザが閉じれば、動いている確かめは終わる
+  // 会のデータを消した後に呼ぶ
+  forget(id) {
+    this.checks.delete(id);
+    this.versions.delete(id);
+  }
+
   async closeAll() {
     this.closing = true;
     await Promise.allSettled([...this.running]);

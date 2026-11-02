@@ -6,6 +6,7 @@
 //   npm run check:organize                            何を送るかを出すだけ(Claude Code を呼ばない)
 //   npm run check:organize -- --run --limit-usd 3     3 回通す(本人のログインで動くときだけ)
 //   npm run check:organize -- --run --limit-usd 3 --out <フォルダー>    記録の置き場所を変える
+//   npm run check:organize -- --script hard --run --limit-usd 3 --out <フォルダー>    崩れた台本(長い要点、1 要点に 2 つの話、言い間違い)で読む
 //
 // 同意: --run は、この台本を送ってよいと人が頼んだ印。Studio の同意の口(POST /api/real-ai/consent)は使わず、Studio も起動しない。
 // 終了コード: 0 は 3 回とも板に出た、1 は始められなかった、2 は板に出なかった回がある、3 は費用の上限で途中で止めた
@@ -47,15 +48,32 @@ export const POINTS = [
 // 記録の確かめの要点。10 個には電話番号の形がないので 11 個目に足す。番号は架空
 export const RECORD_POINT = '先週、090-0000-0000 のお客さんから同じ荷物のことで 3 回電話があった';
 export const SCRIPT_POINTS = [...POINTS, RECORD_POINT];
-const RECORD_N = SCRIPT_POINTS.length;
+// 崩れた台本。同じ題材で、長い要点、1 要点に 2 つの話、言い間違いを混ぜた(K4、#418 の「崩れた台本」)。どれも架空
+export const HARD_POINTS = [
+  'えっと再配達の受付なんですけど、今は全部電話で受けていて、夕方になると電話が鳴りっぱなしで、受付の 2 人だけだと出られないことがあって、折り返しもできないまま翌日になることもあるので、できれば電話なしで済ませたいという話です',
+  'お年寄りのお客さんも多いし、不在票に荷物の番号があるのに読めないって言われることもある',
+  '再配達の受付は 15 時まで、いや違う、17 時まで',
+  '17 時を過ぎたら翌日の受付にする',
+  '今日の夜に届けてほしいと言う人が多い',
+  '「荷物はいつ届くか」の電話も多くて、担当の人はそれを見てる画面も古い',
+  'お届け先と希望の日時を聞いている',
+  '受付の担当は 3 人、あ、2 人で回している',
+  '夜の配達は 2 便で、午前は運転手が 1 人だけ',
+  'メモは紙に書いて配車の人に渡している',
+  // 形では止まらない名前(AI が recordPoints に入れるか)と、記録ではない呼び名(AI が止めすぎないか)
+  '先月、佐藤はなこさんの荷物を別の家に届けてしまった',
+  '宇田さん「電話の半分は再配達」',
+  RECORD_POINT,
+];
+const SCRIPTS = { base: SCRIPT_POINTS, hard: HARD_POINTS };
 // 台本に仕込んだ穴(荷物の番号を忘れた人)を拾ったらしい文。候補を出すだけで、拾えたかは人が読んで決める
 const HOLE = /(番号|不在票).*(忘|なくし|無くし|紛失|分から|わから|手元にない|ない場合|ないとき|ない人|持っていない)/;
 
 const hasPhone = (text) => findPersonalData(text).some((found) => found.kind === '電話番号');
 
 // 人が読むための数のうち、機械で数えられるもの。振り分けと根拠の正しさは数えない(人が読む)
-export function countsOf(view, raw, points = SCRIPT_POINTS) {
-  const known = new Set(points.map((_, index) => index + 1));
+export function countsOf(view, raw, { refused = [], sent = [] } = {}) {
+  const known = new Set(view.points.map((point) => point.n));
   const rawItems = Array.isArray(raw?.items) ? raw.items : [];
   const rawAsks = Array.isArray(raw?.toAsk) ? raw.toAsk : [];
   const cited = new Set(view.items.flatMap((item) => item.sources));
@@ -73,16 +91,20 @@ export function countsOf(view, raw, points = SCRIPT_POINTS) {
     uncitedPoints: [...known].filter((n) => !cited.has(n)),
     asks: { conflict: asks('conflict').length, unasked: asks('unasked').length, guess: asks('guess').length, empty: asks('empty').length },
     holeCandidates: view.asks.filter((ask) => HOLE.test(ask.text)).map((ask) => ask.text),
+    // 記録の確かめ。K4 から、番号のある要点は Studio が断る。AI に送らず、板にもファイルにも残らないこと
     record: {
+      refusedPoints: refused,
+      sentToAiWithPhone: sent.filter(hasPhone).length,
+      pointsWithPhone: view.points.filter((point) => hasPhone(point.text)).map((point) => point.text),
       itemsWithPhone: view.items.filter((item) => hasPhone(item.text)).map((item) => item.text),
       asksWithPhone: view.asks.filter((ask) => hasPhone(ask.text)).map((ask) => ask.text),
-      itemsCitingPoint: view.items.filter((item) => item.sources.includes(RECORD_N)).map((item) => item.text),
-      asksCitingPoint: view.asks.filter((ask) => ask.sources.includes(RECORD_N)).map((ask) => ask.text),
+      // AI が記録らしいと言った要点の番号(Studio が一覧から消す)
+      recordPoints: Array.isArray(raw?.recordPoints) ? raw.recordPoints : [],
     },
   };
 }
 
-// 記録に残さないもの: メールアドレスの形(Claude Code が文脈に足すことがある)、手元のパス。電話番号は台本の架空の番号なので残す
+// 記録に残さないもの: メールアドレスの形(Claude Code が文脈に足すことがある)、手元のパス。電話番号は台本の架空の番号で、もし AI に届いたら記録で分かるように残す
 function masker(paths) {
   return (text) => paths.reduce((acc, value) => acc.replaceAll(value, '<手元>'), String(text)).replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[伏せた: メールアドレス]');
 }
@@ -140,27 +162,36 @@ export function attemptOf(line, mask) {
 }
 
 // 1 回通す。毎回、空の板から始める。要点は Studio と同じ口(addPoint)で 1 つずつ足す
-async function runOnce({ connection, home, logFile, mask }) {
+async function runOnce({ connection, home, logFile, mask, points }) {
   await fs.writeFile(logFile, '');
   const recording = { ...connection, command: process.execPath, prefixArgs: [SCRIPT, '--tee', logFile, connection.command, ...connection.prefixArgs] };
   const ai = createOrganizeAi({ connection: recording });
   // 同意の口は通らない(頭の「同意」)。aiMode は 'real' にして、Studio の本物の AI と同じ道を通す
   const organizes = new ProjectOrganizes({ home, store: { requireProject: async (id) => ({ id }) }, ai, consent: { require() {} }, aiMode: () => 'real', log: (text) => console.log(`  ${text}`) });
   try {
-    for (const text of SCRIPT_POINTS) await organizes.addPoint(PROJECT, { text });
+    // 記録らしい要点は Studio が断る。断られた数を数えて進む(人が打ち直す場面の代わり)
+    const refused = [];
+    for (const text of points) {
+      try {
+        await organizes.addPoint(PROJECT, { text });
+      } catch (error) {
+        if (error.code !== 'record') throw error;
+        refused.push(text);
+      }
+    }
     const started = Date.now();
     const view = await organizes.run(PROJECT);
     const seconds = (Date.now() - started) / 1000;
     const lines = (await fs.readFile(logFile, 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line));
-    return { seconds, view, attempts: lines.map((line) => attemptOf(line, mask)) };
+    return { seconds, view, refused, attempts: lines.map((line) => attemptOf(line, mask)) };
   } finally {
     await organizes.close();
   }
 }
 
-function printPlan() {
-  console.log(`整理する AI に、架空の台本を ${RUNS} 回通します。毎回、空の板から始めます。送る要点は次の ${SCRIPT_POINTS.length} 個です。`);
-  SCRIPT_POINTS.forEach((text, index) => console.log(`  ${index + 1}. ${text}`));
+function printPlan(points) {
+  console.log(`整理する AI に、架空の台本を ${RUNS} 回通します。毎回、空の板から始めます。打つ要点は次の ${points.length} 個です。記録らしいものは Studio が断り、送りません。`);
+  points.forEach((text, index) => console.log(`  ${index + 1}. ${text}`));
   console.log('');
   console.log(`1 回の整理で多くて ${ORGANIZE_AI_LIMITS.attempts} 回起動し、起動ごとに Studio と同じ費用の上限(--max-budget-usd ${ORGANIZE_AI_LIMITS.maxBudgetUsd})を付けます。`);
   console.log(`使った額に ${USD_PER_RUN.toFixed(1)} USD を足すと --limit-usd を超えるなら、その回を始めずに止めます。`);
@@ -172,14 +203,21 @@ async function main() {
   if (process.argv[2] === '--tee') return tee(process.argv.slice(3));
   let options;
   try {
-    ({ values: options } = parseArgs({ args: process.argv.slice(2), options: { run: { type: 'boolean' }, 'limit-usd': { type: 'string' }, 'allow-api-billing': { type: 'boolean' }, out: { type: 'string' } } }));
+    ({ values: options } = parseArgs({ args: process.argv.slice(2), options: { run: { type: 'boolean' }, 'limit-usd': { type: 'string' }, 'allow-api-billing': { type: 'boolean' }, out: { type: 'string' }, script: { type: 'string' } } }));
   } catch (error) {
     console.error(`始められません: ${error.message}`);
     process.exitCode = 1;
     return;
   }
+  const scriptName = options.script ?? 'base';
+  if (!Object.hasOwn(SCRIPTS, scriptName)) {
+    console.error(`始められません: --script は ${Object.keys(SCRIPTS).join('、')} のどれかです`);
+    process.exitCode = 1;
+    return;
+  }
+  const points = SCRIPTS[scriptName];
   if (!options.run) {
-    printPlan();
+    printPlan(points);
     return;
   }
   const limitUsd = Number(options['limit-usd']);
@@ -212,7 +250,7 @@ async function main() {
   const work = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'prototype-studio-check-organize-')));
   const mask = masker([work, work.replace(/^\/private\//, '/'), os.tmpdir(), os.homedir()]);
   await fs.mkdir(out, { recursive: true });
-  const summary = { claudeCode: connection.version, billing: connection.billing.mode, limitUsd, usdPerRun: USD_PER_RUN, points: SCRIPT_POINTS, systemPrompt: ORGANIZE_SYSTEM_PROMPT, runs: [], totalCostUsd: 0, stopped: null };
+  const summary = { claudeCode: connection.version, billing: connection.billing.mode, limitUsd, usdPerRun: USD_PER_RUN, script: scriptName, points, systemPrompt: ORGANIZE_SYSTEM_PROMPT, runs: [], totalCostUsd: 0, stopped: null };
   let spent = 0;
   try {
     for (let n = 1; n <= RUNS; n += 1) {
@@ -223,13 +261,13 @@ async function main() {
       }
       console.log(`${n} 回目を始めます…`);
       const home = path.join(work, `home-${n}`);
-      const { seconds, view, attempts } = await runOnce({ connection, home, logFile: path.join(work, `log-${n}.jsonl`), mask });
+      const { seconds, view, refused, attempts } = await runOnce({ connection, home, logFile: path.join(work, `log-${n}.jsonl`), mask, points });
       const costUsd = attempts.reduce((sum, attempt) => sum + (attempt.costUsd ?? 0), 0);
       // 費用が分からない起動は、1 回の上限を数える(少なく数えないため)
       spent += attempts.reduce((sum, attempt) => sum + (attempt.costUsd ?? ORGANIZE_AI_LIMITS.maxBudgetUsd), 0);
       const raw = attempts.at(-1)?.structuredOutput ?? null;
       const onBoard = view.items.length > 0;
-      const record = { run: n, seconds, costUsd, attemptCount: attempts.length, models: [...new Set(attempts.flatMap((attempt) => Object.keys(attempt.modelUsage ?? {})))], onBoard, note: view.note, counts: countsOf(view, raw), board: { items: view.items, asks: view.asks, points: view.points }, attempts };
+      const record = { run: n, seconds, costUsd, attemptCount: attempts.length, models: [...new Set(attempts.flatMap((attempt) => Object.keys(attempt.modelUsage ?? {})))], onBoard, note: view.note, counts: countsOf(view, raw, { refused, sent: attempts.map((attempt) => attempt.input) }), board: { items: view.items, asks: view.asks, points: view.points }, attempts };
       await fs.writeFile(path.join(out, `run-${n}.json`), `${JSON.stringify(record, null, 2)}\n`);
       summary.runs.push({ run: n, seconds, costUsd, attemptCount: attempts.length, models: record.models, onBoard, note: view.note, counts: record.counts });
       console.log(`  ${seconds.toFixed(1)} 秒、${costUsd.toFixed(4)} USD、起動 ${attempts.length} 回、項目 ${view.items.length}、推測 ${record.counts.guesses}、聞くこと ${view.asks.length}、${onBoard ? '板に出た' : `板に出なかった(${view.note})`}`);

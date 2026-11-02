@@ -6,7 +6,7 @@
 // やり取りは AI の実行の記録に「観察から」の印で残り、entries() で同じ形のまま取り出せる(report の ai)。
 export function createObservationAi(aiSessions, projectId, { connection = 'mock' } = {}) {
   // 使えない接続(ない接続、実モデル)は、観察を始める前に断る
-  aiSessions.observationConnection(connection);
+  aiSessions.observationConnection(connection, projectId);
   let conversation = null;
   let closed = false;
   let last = [];

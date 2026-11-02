@@ -348,6 +348,7 @@ async function refresh() {
     // この画面で閉じた後は、閉じたことを送り終える前の一覧で、もう一度出さない
     firstSteps.dismissed ||= data.firstSteps?.dismissed === true;
     renderFirstSteps(selectedProject());
+    renderMeetingDue(data.meetingsDue ?? []);
     if (!intentUi.startSeen) {
       intentUi.startSeen = true;
       if (data.start?.show) openStart(null);
@@ -377,7 +378,7 @@ function render() {
   if (!selectedProject()) {
     // 目的を聞き出したか、ヒアリングを整理した試作品があれば、最後に触ったものを選ぶ(読み込み直しや起動し直しで、続きに戻れるように)。
     // なければ、AI と話せる試作品(求人相談)を選ぶ(ux-redesign.md 5 節)
-    const touchedAt = (p) => [p.intent?.updatedAt, p.organize?.updatedAt, p.design?.updatedAt].filter(Boolean).sort().at(-1);
+    const touchedAt = (p) => [p.intent?.updatedAt, p.organize?.updatedAt, p.design?.updatedAt, p.meeting?.updatedAt].filter(Boolean).sort().at(-1);
     const latest = projects.filter(touchedAt).sort((a, b) => touchedAt(b).localeCompare(touchedAt(a)))[0];
     selectedId = latest?.id ?? projects.find((p) => p.id === 'sample-job-consult')?.id ?? projects[0]?.id ?? null;
   }
@@ -407,6 +408,19 @@ function render() {
     loadAi(project.id);
   }
   if (!project?.previewUrl && ai.projectId !== null) loadAi(null);
+}
+
+// 選ぶ試作品を変える。前の試作品の表示を持ち込まない
+function switchProject(id) {
+  if (selectedId === id) return;
+  selectedId = id;
+  makeError = null;
+  closeConsent();
+  versions.message = null;
+  render();
+  // 会話を読んでから、前の証拠が古いかを読む(一覧の次の読み込みを待たない)
+  syncConversation().then(() => syncChecks()).then(() => loadEvidence());
+  loadVersions();
 }
 
 function renderList() {
@@ -441,15 +455,8 @@ function renderList() {
       leaveIntent();
       closeOrganize();
       closeDesign();
-      if (selectedId === project.id) return;
-      selectedId = project.id;
-      makeError = null;
-      closeConsent();
-      versions.message = null;
-      render();
-      // 会話を読んでから、前の証拠が古いかを読む(一覧の次の読み込みを待たない)
-      syncConversation().then(() => syncChecks()).then(() => loadEvidence());
-      loadVersions();
+      closeMeeting();
+      switchProject(project.id);
     });
     li.append(button);
     return li;
@@ -3590,6 +3597,7 @@ function renderIntentMark(project) {
   intentEls.mark.textContent = INTENT_MARKS[status] ?? INTENT_MARKS.none;
   intentEls.mark.dataset.state = status === 'decided' ? 'decided' : status === 'draft' || status === 'interviewing' ? 'draft' : 'none';
   renderOrganizeMark(project);
+  renderMeetingMark(project);
   renderDesignMark(project);
 }
 
@@ -3887,8 +3895,10 @@ async function reloadIntent(id) {
 async function openIntentFromMark() {
   const project = selectedProject();
   if (!project || (intentUi.view && intentUi.projectId === project.id)) return;
+  if (project.meeting?.status === 'waiting') return openMeeting(project.id);
   closeOrganize();
   closeDesign();
+  closeMeeting();
   try {
     const { intent } = await api(intentPath(project.id));
     if (intent.thinking) {
@@ -3942,6 +3952,7 @@ $('new-project').addEventListener('click', () => {
   leaveIntent();
   closeOrganize();
   closeDesign();
+  closeMeeting();
   openStart(null);
 });
 intentEls.start.addEventListener('submit', (event) => {
@@ -4041,7 +4052,9 @@ function organizeError(text) {
 }
 
 function organizeFailed(error) {
-  if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) organizeError(`進められませんでした: ${error.message}`);
+  // 記録らしいものの知らせは、断った理由そのもの
+  if (error instanceof ApiError && error.code === 'record') organizeError(error.message);
+  else if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) organizeError(`進められませんでした: ${error.message}`);
   else handleError(error);
 }
 
@@ -4275,6 +4288,7 @@ async function organizeAct(action, body = {}) {
     return organize;
   } catch (error) {
     if (seq !== organizeUi.seq) return null;
+    organizeUi.refusedRecord = error instanceof ApiError && error.code === 'record';
     organizeFailed(error);
     // 板が変わっていたら、読み直す(古い板を読んだまま押さないように)
     if (error instanceof ApiError && ['stale-board', 'no-item', 'no-point', 'no-ask'].includes(error.code)) {
@@ -4322,8 +4336,10 @@ async function runOrganize() {
 async function openOrganize() {
   const project = selectedProject();
   if (!project || (organizeUi.open && organizeUi.projectId === project.id)) return;
+  if (project.meeting?.status === 'waiting') return openMeeting(project.id);
   leaveIntent();
   closeDesign();
+  closeMeeting();
   // 別の試作品の板には、前の試作品のために書いた文を持ち込まない
   if (organizeUi.inputsFor !== project.id) {
     organizeEls.point.value = '';
@@ -4379,9 +4395,12 @@ organizeEls.pointForm.addEventListener('submit', async (event) => {
   // 打ち続けられるように、応答を待たずに欄を空にする。足せなかったら、文を欄に戻す
   organizeEls.point.value = '';
   organizeEls.point.focus();
+  organizeUi.refusedRecord = false;
   if (await organizeAct('point', { text })) return;
-  // 次の要点を打ち始めていたら、上書きせず、足せなかった文を知らせに出す
-  if (organizeEls.point.value) organizeError(`足せなかった要点: ${text}`);
+  // 次の要点を打ち始めていたら、上書きせず、足せなかった文を知らせに出す(記録らしいものは、もう一度は出さない)
+  if (organizeEls.point.value) {
+    if (!organizeUi.refusedRecord) organizeError(`足せなかった要点: ${text}`);
+  }
   else organizeEls.point.value = text;
 });
 organizeEls.addForm.addEventListener('submit', async (event) => {
@@ -4401,6 +4420,330 @@ $('organize-stop').addEventListener('click', () => {
 organizeEls.confirm.addEventListener('click', () => organizeAct('confirm', { rev: organizeUi.board?.rev }));
 $('organize-back').addEventListener('click', closeOrganize);
 $('organize-design').addEventListener('click', () => openDesign());
+
+// 会の始めとお客さんのデータ(field-session.md の段 0、collaboration.md の 7 節、K4)。サーバーは src/server/meeting.js。
+// 目的は外から来た文字なので、ほかと同じく textContent と value でだけ出す。
+// view は 'new'(目的を書く)、'meeting'(会の中身)、'erased'(消した一覧)のどれか
+const MEETING_MARKS = { waiting: '会: 同意の前', agreed: '会: 同意した', trial: '会: お試しの AI だけ' };
+const MEETING_STATES = {
+  waiting: '同意の前です。整理する AI も作る AI も呼びません。次にすること: 中身をお客さんと読み、決める人が同意を押してください。',
+  agreed: '決める人が同意しました。',
+  trial: 'お試しの AI だけで進めます。外の AI には送りません。お客さんが送ってよいと決めたら、「同意して始める」を押せます。',
+};
+const meetingUi = { view: null, projectId: null, record: null, confirming: false, working: false, erased: null, seq: 0 };
+const meetingEls = {
+  section: $('meeting'),
+  heading: $('meeting-heading'),
+  state: $('meeting-state'),
+  newForm: $('meeting-new'),
+  purpose: $('meeting-purpose'),
+  body: $('meeting-body'),
+  facts: $('meeting-facts'),
+  deleteOn: $('meeting-delete-on'),
+  agree: $('meeting-agree'),
+  trial: $('meeting-trial'),
+  organize: $('meeting-organize'),
+  erase: $('meeting-erase'),
+  confirm: $('meeting-confirm'),
+  plan: $('meeting-plan'),
+  erased: $('meeting-erased'),
+  erasedList: $('meeting-erased-list'),
+  left: $('meeting-left'),
+  notErased: $('meeting-not-erased'),
+  error: $('meeting-error'),
+  mark: $('meeting-mark'),
+  due: $('meeting-due'),
+};
+const meetingPath = (id, action = '') => `/api/projects/${encodeURIComponent(id)}/meeting${action ? `/${action}` : ''}`;
+
+function renderMeetingMark(project) {
+  const meeting = project?.meeting;
+  const shown = Boolean(meeting) && meeting.status !== 'none' && !(intentUi.view === 'start' && !intentUi.projectId);
+  meetingEls.mark.hidden = !shown;
+  if (!shown) return;
+  meetingEls.mark.textContent = meeting.overdue ? '会: 消す日を過ぎた' : MEETING_MARKS[meeting.status];
+  meetingEls.mark.dataset.state = meeting.overdue || meeting.status === 'waiting' ? 'none' : meeting.status === 'agreed' ? 'decided' : 'draft';
+}
+
+// 消す日を過ぎた会の知らせ。押すと、その会を開く(消すかは人が決める)。
+// 会の目的は出さない。ほかのお客さんの前で、別の会の目的を見せないため
+function renderMeetingDue(list) {
+  meetingEls.due.hidden = list.length === 0;
+  meetingEls.due.replaceChildren(...list.map((entry) => {
+    const line = element('p');
+    line.append(element('span', `消す日を過ぎた会があります(消す日 ${entry.deleteOn})`), smallButton('開く', () => {
+      leaveIntent();
+      closeOrganize();
+      closeDesign();
+      switchProject(entry.id);
+      openMeeting(entry.id);
+    }));
+    return line;
+  }));
+}
+
+function meetingError(text) {
+  meetingEls.error.hidden = !text;
+  meetingEls.error.textContent = text ?? '';
+}
+
+function meetingFailed(error) {
+  if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) meetingError(error.message);
+  else handleError(error);
+}
+
+function meetingFact(term, ...values) {
+  const dd = element('dd');
+  dd.append(...values);
+  return [element('dt', term), dd];
+}
+
+function bulletList(tag, texts) {
+  const list = element(tag);
+  list.append(...texts.map((text) => element('li', text)));
+  return list;
+}
+
+function erasedLine(row) {
+  const names = row.names?.length > 0 ? `(${row.names.join('、')})` : '';
+  return element('li', `${row.label}: ${row.count} 個${names}`);
+}
+
+function renderMeetingFacts(record) {
+  const { sending } = record;
+  meetingEls.facts.replaceChildren(
+    ...meetingFact('目的', record.purpose),
+    ...meetingFact('流れ', bulletList('ol', record.flow.map((step) => (step.ready ? step.label : `${step.label}(まだ作っていません)`)))),
+    ...meetingFact('何を送るか', sending.outside ? bulletList('ul', sending.items) : '外の AI には送りません。今の起動は、外の AI につながっていません。'),
+    ...(sending.outside ? [...meetingFact('送り先', sending.to ?? '不明'), ...meetingFact('料金', sending.cost ?? '不明')] : []),
+    ...meetingFact('置き場', `この PC の中だけです。${record.place}`),
+    ...meetingFact('見られる人', record.viewers),
+    ...meetingFact('入れないもの', 'お客さんの記録(名前、住所、電話番号、メールアドレス、取引の番号や数字の実物)は入れません。形で見分けて止めますが、漏れることがあります。'),
+    ...meetingFact('同意しないとき', 'お試しの AI だけで進めます。外の AI には送りません。要点は手で振り分け、設計は決まった案で進めます。料金はかかりません。'),
+  );
+}
+
+function renderMeeting() {
+  const { view, record, working, confirming, erased } = meetingUi;
+  meetingEls.section.hidden = !view;
+  if (view) document.body.dataset.meeting = 'open';
+  else delete document.body.dataset.meeting;
+  if (!view) return;
+  meetingEls.newForm.hidden = view !== 'new';
+  meetingEls.body.hidden = view !== 'meeting' || !record;
+  meetingEls.erased.hidden = view !== 'erased';
+  $('meeting-only-fiction').hidden = view === 'erased';
+  if (view === 'new') {
+    meetingEls.heading.textContent = '会の始め';
+    meetingEls.state.textContent = '会の目的を書いて、用意してください。用意しただけでは、どの AI も呼びません。';
+    delete meetingEls.state.dataset.state;
+    return;
+  }
+  if (view === 'erased') {
+    const complete = erased.left.length === 0;
+    meetingEls.heading.textContent = complete ? '会のデータを消しました' : '会のデータの一部を消せませんでした';
+    meetingEls.state.textContent = complete ? '次のものを、この PC から消しました。' : '次のものだけを消しました。残った場所を、手で消してください。';
+    meetingEls.state.dataset.state = complete ? 'decided' : 'draft';
+    meetingEls.erasedList.replaceChildren(...erased.erased.map(erasedLine));
+    meetingEls.left.hidden = erased.left.length === 0;
+    meetingEls.left.textContent = erased.left.length > 0 ? `消せなかったものがあります。手で消してください: ${erased.left.join('、')}` : '';
+    meetingEls.notErased.replaceChildren(...erased.notErased.map((text) => element('li', text)));
+    return;
+  }
+  meetingEls.heading.textContent = '会の始め';
+  if (!record) {
+    meetingEls.state.textContent = '読み込んでいます…';
+    return;
+  }
+  meetingEls.state.textContent = record.overdue ? `消す日(${record.deleteOn})を過ぎました。要らなければ、会のデータを消してください。` : MEETING_STATES[record.status];
+  meetingEls.state.dataset.state = record.status === 'agreed' && !record.overdue ? 'decided' : 'draft';
+  renderMeetingFacts(record);
+  if (document.activeElement !== meetingEls.deleteOn) meetingEls.deleteOn.value = record.deleteOn;
+  meetingEls.agree.hidden = record.status === 'agreed';
+  meetingEls.trial.hidden = record.status !== 'waiting';
+  meetingEls.organize.hidden = record.status === 'waiting';
+  for (const button of [meetingEls.agree, meetingEls.trial, meetingEls.organize, meetingEls.erase, $('meeting-back'), $('meeting-erase-go'), $('meeting-erase-cancel')]) button.disabled = working;
+  meetingEls.confirm.hidden = !confirming;
+  meetingEls.erase.hidden = confirming;
+  meetingEls.plan.replaceChildren(...record.erasable.map(erasedLine));
+}
+
+function openMeetingNew() {
+  meetingUi.seq += 1;
+  Object.assign(meetingUi, { view: 'new', projectId: null, record: null, confirming: false, working: false, erased: null });
+  meetingEls.purpose.value = '';
+  meetingError(null);
+  renderMeeting();
+  meetingEls.purpose.focus();
+}
+
+async function openMeeting(id) {
+  leaveIntent();
+  closeOrganize();
+  closeDesign();
+  meetingUi.seq += 1;
+  const { seq } = meetingUi;
+  Object.assign(meetingUi, { view: 'meeting', projectId: id, record: null, confirming: false, working: false, erased: null });
+  meetingError(null);
+  renderMeeting();
+  meetingEls.heading.focus();
+  try {
+    const { meeting } = await api(meetingPath(id));
+    if (seq !== meetingUi.seq) return;
+    meetingUi.record = meeting;
+    renderMeeting();
+  } catch (error) {
+    if (seq === meetingUi.seq) meetingFailed(error);
+  }
+}
+
+function closeMeeting() {
+  meetingUi.seq += 1;
+  if (!meetingUi.view) return;
+  Object.assign(meetingUi, { view: null, projectId: null, record: null, confirming: false, working: false, erased: null });
+  meetingError(null);
+  renderMeeting();
+}
+
+// 一覧を読み直す。selectedId は呼ぶ側が決める
+async function refreshMeetingList() {
+  lastSnapshot = '';
+  await refresh();
+}
+
+async function createMeeting() {
+  if (meetingUi.working) return;
+  const purpose = meetingEls.purpose.value.trim();
+  if (!purpose) {
+    meetingError('会の目的を書いてください。');
+    return;
+  }
+  meetingUi.working = true;
+  meetingError(null);
+  try {
+    const { project } = await api('/api/meetings', { method: 'POST', json: { purpose } });
+    selectedId = project.id;
+    await refreshMeetingList();
+    await openMeeting(project.id);
+  } catch (error) {
+    meetingUi.working = false;
+    meetingFailed(error);
+  }
+}
+
+// 同意する(agree)か、同意しない道を選ぶ(trial)。人が押したときだけ送る。その後は整理の板を開く
+async function decideMeeting(decision) {
+  const id = meetingUi.projectId;
+  if (!id || meetingUi.working) return;
+  meetingUi.working = true;
+  meetingError(null);
+  renderMeeting();
+  const { seq } = meetingUi;
+  try {
+    const { consent: state } = await api(meetingPath(id, 'decide'), { method: 'POST', json: { decision, deleteOn: meetingEls.deleteOn.value } });
+    setConsentState(state);
+    selectedId = id;
+    await refreshMeetingList();
+    if (seq !== meetingUi.seq) return;
+    closeMeeting();
+    await openOrganize();
+  } catch (error) {
+    if (seq !== meetingUi.seq) return;
+    meetingUi.working = false;
+    renderMeeting();
+    meetingFailed(error);
+  }
+}
+
+async function eraseMeeting() {
+  const id = meetingUi.projectId;
+  if (!id || meetingUi.working) return;
+  meetingUi.working = true;
+  meetingError(null);
+  renderMeeting();
+  const { seq } = meetingUi;
+  try {
+    const erased = await api(meetingPath(id, 'erase'), { method: 'POST', json: { confirm: id } });
+    // 消した後は、会ではない試作品を選ぶ。別のお客さんの会の目的を、帯に出さないため
+    if (selectedId === id) selectedId = projects.find((project) => project.id !== id && project.meeting?.status === 'none')?.id ?? null;
+    // 別の画面へ移っていても、消した結果は必ず見せる
+    meetingUi.seq += 1;
+    Object.assign(meetingUi, { view: 'erased', projectId: null, record: null, confirming: false, working: false, erased });
+    closeOrganize();
+    closeDesign();
+    leaveIntent();
+    renderMeeting();
+    await refreshMeetingList();
+  } catch (error) {
+    if (seq !== meetingUi.seq) return handleError(error);
+    meetingUi.working = false;
+    renderMeeting();
+    meetingFailed(error);
+  }
+}
+
+function startMeetingFromMenu() {
+  setProjectMenu(false);
+  leaveIntent();
+  closeOrganize();
+  closeDesign();
+  openMeetingNew();
+}
+
+$('new-meeting').addEventListener('click', startMeetingFromMenu);
+$('intent-meeting').addEventListener('click', startMeetingFromMenu);
+meetingEls.mark.addEventListener('click', () => {
+  const project = selectedProject();
+  if (project && !(meetingUi.view === 'meeting' && meetingUi.projectId === project.id)) openMeeting(project.id);
+});
+meetingEls.newForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  createMeeting();
+});
+$('meeting-new-cancel').addEventListener('click', closeMeeting);
+$('meeting-delete-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const id = meetingUi.projectId;
+  if (!id) return;
+  meetingError(null);
+  const { seq } = meetingUi;
+  try {
+    const { meeting } = await api(meetingPath(id, 'delete-on'), { method: 'POST', json: { deleteOn: meetingEls.deleteOn.value } });
+    if (seq !== meetingUi.seq) return;
+    meetingUi.record = meeting;
+    renderMeeting();
+    await refreshMeetingList();
+  } catch (error) {
+    if (seq === meetingUi.seq) meetingFailed(error);
+  }
+});
+meetingEls.agree.addEventListener('click', () => decideMeeting('agree'));
+meetingEls.trial.addEventListener('click', () => decideMeeting('trial'));
+meetingEls.organize.addEventListener('click', () => {
+  closeMeeting();
+  openOrganize();
+});
+$('meeting-back').addEventListener('click', closeMeeting);
+meetingEls.erase.addEventListener('click', async () => {
+  const id = meetingUi.projectId;
+  const { seq } = meetingUi;
+  // 押した時の中身を読み直して見せる
+  try {
+    const { meeting } = await api(meetingPath(id));
+    if (seq !== meetingUi.seq) return;
+    meetingUi.record = meeting;
+    meetingUi.confirming = true;
+    renderMeeting();
+  } catch (error) {
+    if (seq === meetingUi.seq) meetingFailed(error);
+  }
+});
+$('meeting-erase-cancel').addEventListener('click', () => {
+  meetingUi.confirming = false;
+  renderMeeting();
+});
+$('meeting-erase-go').addEventListener('click', eraseMeeting);
+$('meeting-erased-close').addEventListener('click', closeMeeting);
 
 // 設計の案内(user-journey.md の段 3、J2)。サーバーは src/server/design.js。
 // 案と場面は外から来た文字なので、ほかと同じく textContent と value でだけ出す。
@@ -4653,8 +4996,10 @@ async function openDesign() {
   const project = selectedProject();
   if (!project) return;
   if (designUi.open && designUi.projectId === project.id) return;
+  if (project.meeting?.status === 'waiting') return openMeeting(project.id);
   leaveIntent();
   closeOrganize();
+  closeMeeting();
   designUi.seq += 1;
   const { seq } = designUi;
   designUi.open = true;
