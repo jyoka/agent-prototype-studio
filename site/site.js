@@ -8,8 +8,8 @@
   const LANG_KEY = 'prototype-studio-site-lang';
   const THEME_KEY = 'prototype-studio-site-theme';
   const TITLES = {
-    ja: 'Prototype Studio: AI エージェントの試作品を、作る前に、構成ごと手元で試して測る。',
-    en: 'Prototype Studio: Try and measure an AI agent prototype, whole setup included, on your machine before you build it.',
+    ja: 'Prototype Studio: 思いつきを AI プロダクトにすると、どんな作りになるか。動かして測り、人が承認してから作る。',
+    en: 'Prototype Studio: See how your idea works as an AI product, test it, and approve the architecture before you build.',
   };
   // 言葉で切り替える属性。HTML には日本語を書き、英語は data-en-<属性> に書く
   const ATTRS = ['alt', 'aria-label', 'title'];

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
   <title id="title">agent-prototype-studio</title>
-  <desc id="desc">AI エージェントの試作品を、作る前に、構成ごと手元で試して測る。 Try and measure an AI agent prototype, whole setup included, on your machine before you build it.</desc>
+  <desc id="desc">思いつきを AI プロダクトにすると、どんな作りになるか。動かして測り、人が承認してから作る。 See how your idea works as an AI product, test it, and approve the architecture before you build.</desc>
   <rect width="1280" height="640" fill="#f6f6f4"/>
   <g font-family="system-ui, -apple-system, &quot;Hiragino Sans&quot;, &quot;Yu Gothic UI&quot;, &quot;Noto Sans JP&quot;, sans-serif">
     <g transform="translate(80 84)">
@@ -9,10 +9,11 @@
       <rect x="0" y="22" width="30" height="8" rx="3" fill="#b42318"/>
       <text x="46" y="25" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="26" fill="#1f1f1d">agent-prototype-studio</text>
     </g>
-    <text x="80" y="262" font-size="38" font-weight="700" fill="#1f1f1d">AI エージェントの試作品を、作る前に、</text>
-    <text x="80" y="318" font-size="38" font-weight="700" fill="#1f1f1d">構成ごと手元で試して測る。</text>
-    <text x="80" y="398" font-size="22" fill="#6b6b66">Try and measure an AI agent prototype, whole setup included,</text>
-    <text x="80" y="430" font-size="22" fill="#6b6b66">on your machine before you build it.</text>
+    <text x="80" y="218" font-size="38" font-weight="700" fill="#1f1f1d">思いつきを AI プロダクトにすると、</text>
+    <text x="80" y="274" font-size="38" font-weight="700" fill="#1f1f1d">どんな作りになるか。</text>
+    <text x="80" y="330" font-size="38" font-weight="700" fill="#1f1f1d">動かして測り、人が承認してから作る。</text>
+    <text x="80" y="398" font-size="22" fill="#6b6b66">See how your idea works as an AI product, test it,</text>
+    <text x="80" y="430" font-size="22" fill="#6b6b66">and approve the architecture before you build.</text>
     <path d="M 864 154 V 538" stroke="#d9d9d4" stroke-width="2" stroke-dasharray="4 6"/>
     <g transform="translate(880 128)">
       <rect width="320" height="52" rx="8" fill="#ffffff" stroke="#d9d9d4" stroke-width="1"/>

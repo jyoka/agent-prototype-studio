@@ -2,7 +2,7 @@
   "name": "agent-prototype-studio",
   "version": "0.1.0",
   "private": true,
-  "description": "Try and measure an AI agent prototype, whole setup included, on your machine before you build it.",
+  "description": "See how your idea works as an AI product, test it, and approve the architecture before you build.",
   "license": "UNLICENSED",
   "type": "module",
   "engines": {

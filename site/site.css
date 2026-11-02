@@ -126,7 +126,7 @@ main > section { padding-top: 5rem; }
 .hero { padding-top: 4rem; }
 .hero-repo { font-family: var(--font-mono); color: var(--muted); font-size: var(--text-sm); margin: 0; }
 .hero-name { font-size: clamp(2.5rem, 7vw, 4.5rem); margin: var(--space-1) 0 var(--space-3); letter-spacing: -0.02em; }
-.hero-line { font-size: clamp(1.25rem, 3vw, 1.75rem); font-weight: 700; max-width: 40rem; margin: 0 0 var(--space-3); }
+.hero-line { font-size: clamp(1.25rem, 3vw, 1.75rem); font-weight: 700; max-width: 50rem; margin: 0 0 var(--space-3); }
 .hero-text { max-width: 42rem; color: var(--muted); }
 .hero-text p { margin: 0; }
 .hero-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-4) 0 var(--space-5); }
@@ -326,7 +326,6 @@ main > section { padding-top: 5rem; }
 .card h3 { font-size: var(--text-md); margin: var(--space-3) 0 var(--space-1); }
 .card p { margin: 0 0 var(--space-1); font-size: var(--text-sm); color: var(--muted); }
 .card-shot { position: relative; aspect-ratio: 16 / 10; }
-.card-shot.pos-fit img { width: 100%; height: 100%; object-fit: contain; padding: var(--space-2); }
 /* 画面の一部を拡大して切り出す。--iw と --ih は画像の大きさ、--cw は切り出す幅、--cx と --cy は左上(どれも画像の px) */
 .card-shot.crop img {
   position: absolute;
@@ -352,6 +351,13 @@ main > section { padding-top: 5rem; }
   text-decoration: none;
 }
 
+/* 3-2. 作っているもの。今できることと見分けられるよう、点線の枠にして絵を置かない */
+.building-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: var(--space-3); }
+.building-item { border: 1px dashed var(--muted); border-radius: var(--radius-xl); padding: var(--space-3); }
+.building-item h3 { font-size: var(--text-md); margin: var(--space-2) 0 var(--space-1); }
+.building-item p { margin: 0; font-size: var(--text-sm); color: var(--muted); }
+.building-tag { display: inline-block; padding: 0 var(--space-2); border: 1px solid var(--warn); border-radius: var(--radius-pill); font-size: var(--text-xs); font-weight: 700; }
+
 /* 4. 3 手で始める */
 .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--space-3); }
 .steps li { background: var(--panel); border: var(--border); border-radius: var(--radius-xl); padding: var(--space-3); }
@@ -369,7 +375,6 @@ thead th { color: var(--muted); font-weight: 700; }
 /* 5. 比べる */
 .vs th[scope="row"] { width: 22%; }
 .vs td { width: 39%; }
-.vs .unknown { color: var(--muted); text-align: center; }
 .vs td:last-child { background: var(--accent-bg); }
 /* スマホの幅では、行ごとに縦に積む。列の名前は data-label で出す */
 @media (max-width: 720px) {
@@ -377,7 +382,6 @@ thead th { color: var(--muted); font-weight: 700; }
   .vs tr { display: grid; border-bottom: var(--border); }
   .vs tbody tr:last-child { border-bottom: 0; }
   .vs th[scope="row"], .vs td { width: auto; border-bottom: 0; }
-  .vs .unknown { text-align: left; }
   .vs td::before { content: attr(data-label); display: block; color: var(--muted); font-size: var(--text-xs); font-weight: 700; }
   :root[lang="en"] .vs td::before { content: attr(data-label-en); }
 }

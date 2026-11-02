@@ -90,4 +90,4 @@ ADR-0003 は構成を測る土台で、この ADR はその上に人の承認を
 
 ## 未決事項
 
-[設計の 12 節](../design/ai-architecture-review.md#12-決めていないこと)に、おすすめつきで書きました。
+[設計の 12 節](../design/ai-architecture-review.md#12-決めたこと)に書きました。
