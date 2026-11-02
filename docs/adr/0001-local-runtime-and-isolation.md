@@ -454,6 +454,15 @@ AiSessions  会話を新しい設定で最初からにし、前の会話を 1 �
 - 整理の板は `.studio/organize.json` に置く。`app/` の外なので、作る AI は書けない。外への通信は足していない。
 - 理由と採らなかった案は [user-journey.md の 7 節](../design/user-journey.md#k1-で決めたことtask-3842026-10-31)。
 
+## #385 で決めたこと(2026-11-02)
+
+設計の案内(J2)のために、Claude Code の起動を 1 つ足した。Studio が `app/` に書くファイルも足した。隔離は弱めない。
+
+- 案を出す AI は、聞き出す AI と同じ形で起動する(`src/server/structured-ai.js`)。ファイルの道具も MCP も渡さない。本物の接続は、作る AI と同じ同意の後だけ呼ぶ。人が「案を作る」を押したときだけ呼ぶ。
+- 選んだ構成と場面は Studio が `app/` に書く([ai-architecture-review.md の 6 節](../design/ai-architecture-review.md#6-ai-構成書))。ファイルの名前は Studio が決め、AI の文はファイルの中の JSON の値にしか入れない。`app/` の中のシンボリックリンクはたどらない。作る AI、ビルド、版の操作のない間だけ書く。
+- 外への通信は足していない。設計の案内は `.studio/design.json` に置く。`app/` の外なので、作る AI は書けない。
+- 理由と採らなかった案は [user-journey.md の 7 節](../design/user-journey.md#j2-で決めたことtask-3852026-11-02)。
+
 ## 未決事項
 
 | 未決事項 | 決める人・場所 |

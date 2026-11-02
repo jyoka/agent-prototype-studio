@@ -41,6 +41,8 @@
 // init には本物と同じ項目(model、plugins、slash_commands、skills、agents)を空で出し、断った呼び出しは result の permission_denials に出す
 // 作る AI の接続の判定(agent-connection.js)のために、`--version` と `auth status` にも答える。
 // auth status は本物(2.1.312)と同じ形で、架空のメールアドレスと組織を含む(Studio が出さないかの確かめ)。
+// 案を出す AI(src/server/design-ai.js。--json-schema に screens がある)には、決まった案を返す。
+//   stdin に [案が遅い]、[案が失敗]、[案が壊れる]、[案が一度壊れる]、[案に理想]、[難しい形]、[印を書く] があれば、その振る舞いをする
 // FAKE_CLAUDE_AUTH=logged-out なら、ログインしていない形を終了コード 1 で返す。
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -115,6 +117,10 @@ function main() {
   }
   if (/"toAsk"/.test(option('--json-schema') ?? '')) {
     organizeAnswer();
+    return;
+  }
+  if (/"screens"/.test(option('--json-schema') ?? '')) {
+    designAnswer();
     return;
   }
   const text = section('新しい発言');
@@ -192,6 +198,38 @@ function intentAnswer() {
         about: fields[count % fields.length],
         draft: { who: count > 0 ? '偽の下書きの人' : '', problem: '', scene: '', success: '', notDoing: [], undecided: [] },
         ...(stdin.includes('[決めた印]') ? { status: 'decided', decidedAt: '2026-10-31T00:00:00.000Z' } : {}),
+      };
+  process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0.0012, result: '', structured_output: output }));
+}
+
+// 案を出す AI の偽物。stdin の 1 文の印で振る舞いを変える
+function designAnswer() {
+  if (stdin.includes('[案が遅い]')) {
+    setInterval(() => {}, 1000);
+    return;
+  }
+  if (stdin.includes('[案が失敗]')) {
+    process.stderr.write('偽の CLI: 途中で止まりました\n');
+    process.exit(2);
+  }
+  const retrying = stdin.includes('<前の出力の問題>');
+  const broken = stdin.includes('[案が壊れる]') || (stdin.includes('[案が一度壊れる]') && !retrying);
+  const banned = stdin.includes('[案に理想]');
+  const marks = stdin.includes('[印を書く]') ? { status: 'decided', decidedAt: '2026-10-31T00:00:00.000Z', file: '../outside.json' } : {};
+  const option = (name) => ({ title: `偽の${name}`, detail: `偽の${name}の中身`, reason: `偽の${name}の理由` });
+  const output = broken
+    ? { problem: '形が壊れています' }
+    : {
+        problem: { recommended: 1, options: banned ? [{ title: '理想の問題', detail: '最適な中身', reason: 'ベストプラクティス' }, option('問題 2')] : [option('問題 1'), option('問題 2'), option('問題 3')] },
+        users: { recommended: 0, options: [option('人 1'), option('人 2')] },
+        // 分からない、遅いを落とした案。足りない種類は Studio が足す
+        scenes: { recommended: 0, options: [
+          { title: '偽の場面の組 1', reason: '偽の理由', scenes: [{ category: 'normal', text: '偽のよくある発言' }, { category: 'refuse', text: '偽の断る発言' }] },
+          { title: '偽の場面の組 2', reason: '偽の理由', scenes: [{ category: 'unknown', text: '偽の分からない発言' }, { category: 'refuse', text: '偽の断る発言' }, { category: 'slow', text: '偽の遅い発言' }] },
+        ] },
+        composition: { recommended: stdin.includes('[難しい形]') ? 'master-sub' : 'single-agent', reason: '偽の構成の理由' },
+        screens: { recommended: 'talk', reason: '偽の画面の理由' },
+        ...marks,
       };
   process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0.0012, result: '', structured_output: output }));
 }
