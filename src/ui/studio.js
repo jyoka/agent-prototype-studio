@@ -32,7 +32,9 @@ const RUN_STATUS = {
   // 新しい関門は、ここと ITEM_LABELS の gate: の行を足すだけで、結果の帯に出る
   'failed:changes': () => `${FIX_AI} が、試作品のファイルを変えませんでした`,
   'failed:inspect': () => '試作品のファイルの名前か大きさに問題があります',
-  'failed:contract': () => 'AI の設定か、確かめ方のファイルの形に誤りがあります',
+  'failed:contract': (gate) => (gate.errors?.some((error) => error.material)
+    ? 'つないだ素材と合わないところがあります'
+    : 'AI の設定か、確かめ方のファイルの形に誤りがあります'),
   'failed:compile': () => '試作品のファイルに誤りがあり、新しい状態を表示できません',
   'failed:launch': () => '試作品を開くと、誤りが出ます',
   'failed:scenarios': () => '決めた手順で試すと、思ったとおりに動きません',
@@ -179,6 +181,18 @@ const els = {
   saveVersion: $('save-version'),
   versionsMessage: $('versions-message'),
   versionList: $('version-list'),
+  tokensForm: $('tokens-form'),
+  tokensFile: $('tokens-file'),
+  tokensConnected: $('tokens-connected'),
+  tokensMessage: $('tokens-message'),
+  tokensProblems: $('tokens-problems'),
+  tokensReview: $('tokens-review'),
+  tokensSummary: $('tokens-summary'),
+  tokensRoles: $('tokens-roles'),
+  tokensMissing: $('tokens-missing'),
+  tokensSource: $('tokens-source'),
+  tokensReason: $('tokens-reason'),
+  tokensConnect: $('tokens-connect'),
   handoffForm: $('handoff-form'),
   handoffNotes: { purpose: $('handoff-purpose'), decided: $('handoff-decided'), undecided: $('handoff-undecided') },
   handoffExport: $('handoff-export'),
@@ -236,6 +250,8 @@ const waitingByProject = new Map();
 const waitingFor = (projectId) => waitingByProject.get(projectId) ?? 0;
 // その他の引き出しの「保存した状態」。保存した版の一覧と、作業中がどの版と同じか
 const versions = { projectId: null, data: null, seq: 0, busy: false, message: null };
+// 自分のトークン(J4)。file は選んだファイルの名前と中身、check はサーバーの検査の結果。つなぐまで何も書かれない
+const tokens = { projectId: null, data: null, seq: 0, busy: false, file: null, check: null, problems: [], message: null };
 // その他の引き出しの「本番開発へ渡す」(#280)。メモは試作品を選んだときだけ読み、書いている途中の文を上書きしない
 // target は読み込みを頼んだ試作品、projectId は読み終えた試作品
 const handoff = { target: undefined, projectId: null, seq: 0, busy: false, result: null, message: null, last: null };
@@ -378,6 +394,8 @@ function render() {
   renderVersions(project);
   if ((project?.id ?? null) !== handoff.target) loadHandoff(project?.id ?? null);
   renderHandoff(project);
+  if ((project?.id ?? null) !== tokens.projectId) loadTokens(project?.id ?? null);
+  renderTokens(project);
   if (!project) {
     showPlaceholder('試作品がありません。');
   } else if (!project.previewUrl) {
@@ -2316,6 +2334,241 @@ async function loadHandoff(projectId) {
   renderHandoff(selectedProject());
 }
 
+async function loadTokens(projectId) {
+  const seq = ++tokens.seq;
+  Object.assign(tokens, { projectId, data: null, file: null, check: null, problems: [], message: null });
+  els.tokensFile.value = '';
+  els.tokensSource.value = '';
+  els.tokensReason.value = '';
+  if (!projectId) return;
+  try {
+    const { materials } = await api(`/api/projects/${encodeURIComponent(projectId)}/materials`);
+    if (seq !== tokens.seq) return;
+    tokens.data = materials;
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    // 次の描画で読み直す
+    if (seq === tokens.seq) tokens.projectId = undefined;
+  }
+  renderTokens(selectedProject());
+}
+
+// 今の役割の選択。まだ選んでいなければ、サーバーの見立て
+function chosenTokenRoles() {
+  const roles = {};
+  for (const select of els.tokensRoles.querySelectorAll('select')) roles[select.name] = select.value || null;
+  return roles;
+}
+
+function renderTokenRoles() {
+  const { check } = tokens;
+  const { candidates } = check;
+  const rows = (tokens.data?.roles ?? []).map((role) => {
+    const row = element('label', null, 'tokens-role');
+    row.append(element('span', role.label));
+    const select = document.createElement('select');
+    select.name = role.id;
+    const none = element('option', '既定の素材のまま');
+    none.value = '';
+    select.append(none);
+    for (const token of candidates.filter((t) => t.type === role.type)) {
+      const option = element('option', token.path);
+      option.value = token.path;
+      select.append(option);
+    }
+    select.value = check.roles[role.id] ?? '';
+    select.addEventListener('change', renderTokenMissing);
+    row.append(select);
+    return row;
+  });
+  els.tokensRoles.replaceChildren(...rows);
+  renderTokenMissing();
+}
+
+function renderTokenMissing() {
+  const roles = chosenTokenRoles();
+  const missing = (tokens.data?.roles ?? []).filter((role) => !roles[role.id]).map((role) => role.label);
+  els.tokensMissing.hidden = missing.length === 0;
+  els.tokensMissing.textContent = missing.length > 0 ? `足りない役割: ${missing.join('、')}。つなぐ先のトークンがなければ、既定の素材のままになります。` : '';
+}
+
+function renderTokens(project) {
+  const lock = !project || tokens.busy || project.running || project.building || project.versioning || project.checking;
+  const { data, check } = tokens;
+  els.tokensFile.disabled = lock || !data;
+  const connected = data?.connected ?? null;
+
+  els.tokensConnected.hidden = !connected && !(data?.problems?.length > 0);
+  if (connected) {
+    const box = [];
+    box.push(element('p', `つないでいます: ${connected.fileName}(トークン ${connected.count} 個)`));
+    box.push(element('p', `誰の素材か: ${connected.source}`));
+    if (connected.reason) box.push(element('p', `つなぐ理由: ${connected.reason}`));
+    if (connected.missingRoles.length > 0) box.push(element('p', `既定の素材のままの役割: ${connected.missingRoles.join('、')}`, 'muted'));
+    box.push(element('p', '既定の素材の部品と、トークンの変数を使う所が変わります。値のまま書いた色は変わりません。', 'muted'));
+    const names = document.createElement('details');
+    names.className = 'tokens-names';
+    // 開いたものは、次の描画でも開いたまま
+    names.open = Boolean(els.tokensConnected.querySelector('.tokens-names')?.open);
+    names.append(element('summary', '直す AI が使う名前'));
+    const list = element('ul', null, 'tokens-list');
+    for (const token of connected.tokens) {
+      for (const variable of token.variables) {
+        const item = document.createElement('li');
+        if (token.type === 'color') {
+          const swatch = element('span', null, 'tokens-swatch');
+          swatch.style.background = variable.value;
+          item.append(swatch);
+        }
+        item.append(element('code', variable.name));
+        list.append(item);
+      }
+    }
+    names.append(list);
+    if (connected.count > connected.tokens.length) names.append(element('p', `ほかに ${connected.count - connected.tokens.length} 個あります。`, 'muted'));
+    box.push(names);
+    const actions = element('div', null, 'tokens-actions');
+    const use = element('button', 'トークンを使うよう直す依頼を入れる');
+    use.type = 'button';
+    use.disabled = lock;
+    use.addEventListener('click', () => {
+      setMorePanel(false);
+      fillRequest('つないだトークンの変数を使うように、色と字を直して');
+    });
+    const remove = element('button', '外す');
+    remove.type = 'button';
+    remove.disabled = lock;
+    remove.addEventListener('click', () => disconnectTokens(project));
+    actions.append(use, remove);
+    box.push(actions);
+    els.tokensConnected.replaceChildren(...box);
+  } else if (data?.problems?.length > 0) {
+    const remove = element('button', '外す');
+    remove.type = 'button';
+    remove.disabled = lock;
+    remove.addEventListener('click', () => disconnectTokens(project));
+    els.tokensConnected.replaceChildren(...data.problems.map((text) => element('p', text)), remove);
+  }
+
+  els.tokensMessage.hidden = !tokens.message;
+  els.tokensMessage.textContent = tokens.message?.text ?? '';
+  els.tokensMessage.dataset.kind = tokens.message?.kind ?? '';
+
+  els.tokensProblems.hidden = tokens.problems.length === 0;
+  if (tokens.problems.length > 0) {
+    const list = element('ul');
+    for (const text of tokens.problems) list.append(element('li', text));
+    els.tokensProblems.replaceChildren(element('p', '次の所を直して、選び直してください。'), list);
+  }
+
+  const reviewing = Boolean(check?.ok && tokens.file);
+  els.tokensReview.hidden = !reviewing;
+  if (reviewing) {
+    const warnings = check.warnings.length > 0 ? `注意: ${check.warnings.slice(0, 3).join('。')}。` : '';
+    els.tokensSummary.textContent = `「${tokens.file.name}」の形を確かめました。トークンが ${check.count} 個あります。${warnings}`;
+    els.tokensConnect.disabled = lock || els.tokensSource.value.trim() === '';
+  }
+}
+
+// ファイルを選んだら検査だけをする。つなぐのは人が押してから
+async function checkTokenFile(file) {
+  const project = selectedProject();
+  if (!project || !file || !tokens.data) return;
+  Object.assign(tokens, { file: null, check: null, problems: [], message: null });
+  if (file.size > tokens.data.limitBytes) {
+    tokens.problems = [`ファイルが大きすぎます(上限 ${tokens.data.limitBytes / 1024} KB)`];
+    renderTokens(project);
+    return;
+  }
+  const seq = ++tokens.seq;
+  tokens.busy = true;
+  renderTokens(project);
+  try {
+    const text = await file.text();
+    const { check } = await api(`/api/projects/${encodeURIComponent(project.id)}/materials/tokens/check`, { method: 'POST', json: { text } });
+    if (seq !== tokens.seq) return;
+    tokens.check = check;
+    if (check.ok) {
+      tokens.file = { name: file.name, text };
+      renderTokenRoles();
+    } else {
+      const more = check.errorCount - check.errors.length;
+      tokens.problems = [...check.errors.map((error) => error.text), ...(more > 0 ? [`ほかに ${more} 件あります`] : [])];
+    }
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    tokens.problems = [`ファイルを確かめられませんでした: ${error.message}`];
+  } finally {
+    tokens.busy = false;
+    renderTokens(selectedProject());
+  }
+}
+
+async function connectTokens() {
+  const project = selectedProject();
+  if (!project || !tokens.file || tokens.busy) return;
+  tokens.busy = true;
+  renderTokens(project);
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(project.id)}/materials/tokens`, {
+      method: 'POST',
+      json: {
+        text: tokens.file.text,
+        fileName: tokens.file.name,
+        roles: chosenTokenRoles(),
+        source: els.tokensSource.value,
+        reason: els.tokensReason.value,
+      },
+    });
+    // 待つ間に試作品を切り替えていたら、前の試作品の結果を出さない
+    if (tokens.projectId !== project.id) return;
+    tokens.data = data.materials;
+    if (!data.connected) {
+      tokens.problems = data.conflicts ?? data.check.errors.map((error) => error.text);
+      return;
+    }
+    Object.assign(tokens, { file: null, check: null, problems: [] });
+    els.tokensFile.value = '';
+    els.tokensSource.value = '';
+    els.tokensReason.value = '';
+    tokens.message = data.build.ok
+      ? { kind: 'ok', text: 'つなぎました。試す欄の試作品に入れました。' }
+      : { kind: 'failed', text: `つなぎましたが、試作品を表示できません。試す欄は前の状態のままです。${data.build.firstError ?? ''}` };
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    if (tokens.projectId === project.id) tokens.message = { kind: 'failed', text: `つなげませんでした: ${error.message}` };
+  } finally {
+    tokens.busy = false;
+    lastSnapshot = '';
+    await refresh();
+    render();
+  }
+}
+
+async function disconnectTokens(project) {
+  if (!project || tokens.busy) return;
+  tokens.busy = true;
+  tokens.message = null;
+  renderTokens(project);
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(project.id)}/materials/tokens/remove`, { method: 'POST' });
+    if (tokens.projectId !== project.id) return;
+    tokens.data = data.materials;
+    const left = data.references > 0 ? `トークンの変数を読む所が ${data.references} か所残っていて、その所には色や字の値がありません。「言葉で直す」で直せます。` : '';
+    tokens.message = data.build.ok
+      ? { kind: left ? 'failed' : 'ok', text: `外しました。既定の素材の部品の見た目に戻しました。${left}` }
+      : { kind: 'failed', text: `外しましたが、試作品を表示できません。試す欄は前の状態のままです。${data.build.firstError ?? ''}` };
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    if (tokens.projectId === project.id) tokens.message = { kind: 'failed', text: `外せませんでした: ${error.message}` };
+  } finally {
+    tokens.busy = false;
+    lastSnapshot = '';
+    await refresh();
+    render();
+  }
+}
+
 async function exportHandoff() {
   const project = selectedProject();
   if (!project || handoff.busy || handoff.projectId !== project.id) return;
@@ -3232,6 +3485,19 @@ els.shotDialog.addEventListener('click', (event) => {
   if (event.target === els.shotDialog) els.shotDialog.close();
 });
 
+// 同じ名前のファイルを直して選び直しても、change が起きるようにする
+els.tokensFile.addEventListener('click', () => {
+  els.tokensFile.value = '';
+});
+els.tokensFile.addEventListener('change', () => {
+  const file = els.tokensFile.files?.[0];
+  if (file) checkTokenFile(file);
+});
+els.tokensSource.addEventListener('input', () => renderTokens(selectedProject()));
+els.tokensForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  connectTokens();
+});
 els.handoffForm.addEventListener('submit', (event) => {
   event.preventDefault();
   exportHandoff();

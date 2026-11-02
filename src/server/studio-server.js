@@ -10,9 +10,12 @@ import { ConsentRequiredError } from './real-ai.js';
 import { BusyError, NotFoundError } from './store.js';
 import { HandoffError } from './handoff.js';
 import { IntentError } from './intent.js';
+import { MaterialError } from './materials.js';
 import { VersionError } from './versions.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
+// トークンのファイルは大きいので、その API だけ広げる(上限は design-tokens.js の TOKEN_LIMITS。JSON の中に入れると伸びる分を見る)
+const MAX_TOKENS_BODY_BYTES = 2 * 1024 * 1024;
 
 const UI_DIR = path.join(STUDIO_ROOT, 'src', 'ui');
 const UI_FILES = {
@@ -67,12 +70,12 @@ export function observeCsp(previewPort) {
 class BodyError extends Error {}
 
 // 中身のない POST(リセットなど)は {} として読む。中身があるときは JSON の Content-Type を求める
-async function readJson(req) {
+async function readJson(req, maxBytes = MAX_BODY_BYTES) {
   let size = 0;
   const chunks = [];
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > MAX_BODY_BYTES) throw new BodyError(`送る内容が大きすぎます(上限 ${MAX_BODY_BYTES} バイト)`);
+    if (size > maxBytes) throw new BodyError(`送る内容が大きすぎます(上限 ${maxBytes} バイト)`);
     chunks.push(chunk);
   }
   if (size === 0) return {};
@@ -132,7 +135,7 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
 // realAi(projectId) は本物の AI を使う前の同意のカードの中身(real-ai.js の consentView)、consent は同意の状態。
 // firstSteps は最初の一歩の案内の進み方と、閉じたこと(first-steps.js)
 // intents は目的の聞き出しと目的の文書(intent.js)。organizes はヒアリングの整理(organize.js)。designs は設計の案内(design.js)
-export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, designs, token, ports, realAi, consent, firstSteps }) {
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, designs, materials, token, ports, realAi, consent, firstSteps }) {
   const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes, designs);
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
@@ -196,6 +199,12 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     // 設計の案内。GET は今の状態。「決めた」の印は decide でだけ付く
     const designMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/design(?:\/(start|choose|scenes|go|decide|skip|cancel))?$/.exec(url.pathname);
     if (designMatch && (designMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleDesign(req, res, designMatch[1], designMatch[2]);
+    // 自分のトークンをつなぐ。GET は今の状態。check は検査だけで何も書かない
+    const materialsMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/materials(?:\/tokens(?:\/(check|remove))?)?$/.exec(url.pathname);
+    if (materialsMatch) {
+      const isRoot = url.pathname.endsWith('/materials');
+      if (isRoot ? req.method === 'GET' : req.method === 'POST') return handleMaterials(req, res, materialsMatch[1], isRoot ? 'view' : (materialsMatch[2] ?? 'connect'));
+    }
     // 最初の一歩の案内。{ dismiss: true } で閉じる。{ touched: 試作品の ID } は、AI のない試作品の画面を触ったこと(画面が送る)
     if (url.pathname === '/api/first-steps' && req.method === 'POST') return handleFirstSteps(req, res);
     // 本物の AI を使う前の同意。GET はカードの中身(?project= で、その試作品の中の AI の「詳しく」も入れる)、
@@ -266,7 +275,7 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
   function sendIntentError(res, error) {
     if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', error.message);
     if (error instanceof BusyError) return sendError(res, 409, 'busy', error.message);
-    if (error instanceof IntentError) return sendError(res, error.status, error.code, error.message);
+    if (error instanceof IntentError || error instanceof MaterialError) return sendError(res, error.status, error.code, error.message);
     if (error instanceof ConsentRequiredError) return sendError(res, 403, error.code, error.message, error.next);
     if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
     throw error;
@@ -300,6 +309,19 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       const body = await readJson(req);
       if (action === 'cancel') return sendJson(res, 200, { cancelled: organizes.cancel(id) });
       return sendJson(res, 200, { organize: await organizes[ORGANIZE_ACTIONS[action]](id, body ?? {}) });
+    } catch (error) {
+      return sendIntentError(res, error);
+    }
+  }
+
+  async function handleMaterials(req, res, id, action) {
+    try {
+      if (action === 'view') return sendJson(res, 200, { materials: await materials.view(id) });
+      const body = await readJson(req, MAX_TOKENS_BODY_BYTES);
+      if (action === 'check') return sendJson(res, 200, await materials.check(id, body ?? {}));
+      const result = action === 'remove' ? await materials.disconnect(id, body ?? {}) : await materials.connect(id, body ?? {});
+      const project = (await store.list()).find((p) => p.id === id);
+      return sendJson(res, 200, { ...result, project: view(project) });
     } catch (error) {
       return sendIntentError(res, error);
     }
@@ -393,7 +415,8 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       }
       consent.agree();
     }
-    return sendJson(res, 200, realAi(projectId));
+    // つないだトークンがあれば、作る AI に足す決まりを「詳しく」にも出す
+    return sendJson(res, 200, realAi(projectId, projectId !== null ? await materials.guide(projectId) : null));
   }
 
   // 版。versionId が null なら一覧、undefined なら保存、文字列ならその版の復元

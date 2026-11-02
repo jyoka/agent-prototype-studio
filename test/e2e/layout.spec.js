@@ -206,12 +206,12 @@ test('U5: 準備の結果、AI のやりとりの記録、AI が覚えている�
     await expect(trace).toBeHidden();
     await expect(state).toBeHidden();
 
-    // その他: 保存した状態、試作品を自動で確かめる、本番開発へ渡す、画面を読み込み直す。開発者向けの詳細は、まだ閉じている
+    // その他: 保存した状態、試作品を自動で確かめる、自分のトークンをつなぐ、本番開発へ渡す、画面を読み込み直す。開発者向けの詳細は、まだ閉じている
     const more = page.getByRole('banner').getByRole('button', { name: 'その他' });
     await expect(more).toHaveAttribute('aria-expanded', 'false');
     const panel = await openMore(page);
     await expect(more).toHaveAttribute('aria-expanded', 'true');
-    await expect(panel.getByRole('heading', { level: 3 })).toHaveText(['保存した状態', '試作品を自動で確かめる', '本番開発へ渡す']);
+    await expect(panel.getByRole('heading', { level: 3 })).toHaveText(['保存した状態', '試作品を自動で確かめる', '自分のトークンをつなぐ', '本番開発へ渡す']);
     await expect(panel.getByRole('button', { name: '画面を読み込み直す' })).toBeVisible();
     await expect(panel.getByText('開発者向けの詳細')).toBeVisible();
     await expect(build).toBeHidden();

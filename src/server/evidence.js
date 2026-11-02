@@ -1,10 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { digestSnapshot, snapshotApp } from './app-snapshot.js';
+import { materialChangedAt } from './materials.js';
 
 // 作るループの証拠(docs/design/harness.md の 7.2、S6)。
 // 証拠が古いかは、関門が確かめた app/ の中身の指紋(run.appDigest)と、今の app/ の指紋を比べて決める。
-// 次の依頼、版の復元、手で変えたときのどれでも、app/ の中身が変われば古くなる
+// 次の依頼、版の復元、手で変えたときのどれでも、app/ の中身が変われば古くなる。
+// つないだ素材は app/ の外なので指紋に入らない。素材を変えた時刻より前の確かめも古い
 
 // 画面に出せる画像の置き場(プロジェクトのフォルダーから)。作る run と、観察(CLI、人の「確かめる」)の結果だけ
 export const EVIDENCE_FOLDERS = ['.studio/runs', '.studio/observations'];
@@ -28,9 +30,11 @@ export async function currentAppDigest(paths) {
 // 動いているものと、指紋のないもの(関門まで進まなかった run)の stale は null
 export async function evidenceState(paths, runs, checks = []) {
   const appDigest = await currentAppDigest(paths);
+  const changedAt = await materialChangedAt(paths.root);
   const stateOf = (item) => {
     const digest = typeof item.appDigest === 'string' ? item.appDigest : null;
-    const stale = item.status === 'running' || digest === null ? null : digest !== appDigest;
+    const older = changedAt !== null && typeof item.finishedAt === 'string' && item.finishedAt < changedAt;
+    const stale = item.status === 'running' || digest === null ? null : digest !== appDigest || older;
     return { id: item.id, appDigest: digest, stale };
   };
   return { appDigest, runs: runs.map(stateOf), checks: checks.map(stateOf) };

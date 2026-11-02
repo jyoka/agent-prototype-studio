@@ -65,6 +65,7 @@
 | `scenarios` | シナリオ。下の「scenarios」 |
 | `evidence` | 最新の証拠の要約。下の「evidence」 |
 | `simulation` | 構成、ツール、前提、プロンプトの枠、場面と、最新の場面の回しの要約。下の「simulation」 |
+| `materials` | つないだトークンがあるときだけ(J4)。下の「materials」。なければ項目がない |
 | `openQuestions[]` | 未決事項。`from` は `person`(書き出した人)か `studio`(Studio が見つけたもの) |
 | `ai` | プロダクト内 AI の設定(`fields`、`initialState`、`mock`)、書き出したときの接続(`real` は実際の AI モデルか)。なければ `null` |
 | `conversation` | 書き出したときの会話と状態。AI の発言には `via`(接続)、`viaLabel`、`real` が付く。`via` が `null` の発言は、設定の固定文(あいさつ) |
@@ -127,6 +128,16 @@
 | `latestRun.failures[]` | 通らなかった確かめ(20 件まで)。`eval`、`file`、`check`、`expected`、`actual` |
 
 場面があるのに回した結果がないとき、最新の回しが古いとき、モックでだけ回したとき、途中で止まったとき、前提(推測)があるときは、Studio が `openQuestions` にも書く。
+
+### materials
+
+| 項目 | 中身 |
+|---|---|
+| `tokens.files` | 書き出しの中のファイル。`tokens`(`materials/tokens.json`。元のファイルの写し)、`css`(`materials/tokens.css`。Studio がビルドで足す CSS)、`source`(`materials/source.json`。つないだ、外したの履歴) |
+| `tokens.spec`、`fileName`、`sha256`、`count` | 形の名前、元のファイルの名前、中身の指紋、トークンの数 |
+| `tokens.source`、`reason`、`connectedAt` | 誰の素材か、つないだ理由、つないだ日時 |
+| `tokens.roles` | 役割(`background`、`text`、`action`、`danger`、`font`)に当てたトークンの場所。既定の素材のままなら `null` |
+| `tokens.variables[]` | CSS の変数の名前 |
 
 ## 決まり
 

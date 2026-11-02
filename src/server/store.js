@@ -151,7 +151,7 @@ export class ProjectStore {
       await fs.mkdir(paths.builds, { recursive: true });
       let result;
       try {
-        result = await buildApp({ appDir: paths.app, buildsDir: paths.builds });
+        result = await buildApp({ appDir: paths.app, buildsDir: paths.builds, projectRoot: paths.root });
       } catch (error) {
         // 読めないファイルなど。1 つのプロジェクトの問題で Studio 全体を止めない
         result = {

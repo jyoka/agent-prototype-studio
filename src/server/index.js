@@ -11,6 +11,7 @@ import { ProjectHandoffs } from './handoff.js';
 import { ProjectIntents } from './intent.js';
 import { createIntentAi, INTENT_SYSTEM_PROMPT } from './intent-ai.js';
 import { ProjectDesigns } from './design.js';
+import { ProjectMaterials } from './materials.js';
 import { createDesignAi, DESIGN_SYSTEM_PROMPT } from './design-ai.js';
 import { ProjectOrganizes } from './organize.js';
 import { createOrganizeAi, ORGANIZE_SYSTEM_PROMPT } from './organize-ai.js';
@@ -193,6 +194,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     log,
   });
   await designs.load();
+  const materials = new ProjectMaterials({ store, log });
   const servers = [];
   const versions = new ProjectVersions({ store, aiSessions, log });
   const handoffs = new ProjectHandoffs({ home: config.home, store, aiSessions, versions, requests, log });
@@ -208,17 +210,18 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       intents,
       organizes,
       designs,
+      materials,
       token,
       ports,
       // 同意のカードの中身(real-ai.js の consentView)。試作品を渡すと、その試作品の中の AI の「詳しく」も入れる
-      realAi: (projectId) =>
+      realAi: (projectId, materialGuide = null) =>
         consentView({
           consent,
           env,
           agent: connection,
           fixBudgetUsd: config.maxBudgetUsd,
           fixLaunches: MAX_FIX_ROUNDS + 1,
-          systemPrompt: STUDIO_SYSTEM_PROMPT,
+          systemPrompt: materialGuide ? `${STUDIO_SYSTEM_PROMPT}\n${materialGuide}` : STUDIO_SYSTEM_PROMPT,
           intentPrompt: INTENT_SYSTEM_PROMPT,
           organizePrompt: ORGANIZE_SYSTEM_PROMPT,
           designPrompt: DESIGN_SYSTEM_PROMPT,

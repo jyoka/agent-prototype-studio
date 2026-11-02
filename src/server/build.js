@@ -5,7 +5,9 @@ import { digestSnapshot, snapshotApp } from './app-snapshot.js';
 import { STUDIO_ROOT } from './config.js';
 import { readScenarios } from '../observer/scenario.js';
 import { inspectApp } from './inspect.js';
+import { checkTokenUse } from './design-tokens.js';
 import { ENTRY_NAMES, readManifest } from './manifest.js';
+import { readTokenMaterial } from './materials.js';
 import { readAiDefinition } from './product-ai/definition.js';
 import { numbersIn } from './product-ai/guards.js';
 import { createBuildId } from './security.js';
@@ -173,7 +175,9 @@ export const BUILD_STAGES = ['inspect', 'contract', 'compile'];
 // 目録(app/prototype.json。なければ既定の値)を manifest で、架空のデータに出てくる数を dataNumbers で、
 // 構成、ツール、前提、モック、場面を simulation で返す(simulation.composition は既定の構成。AI がなければ null)。
 // 失敗したら、止まった段の名前を stage に、各誤りにも stage を付けて返す。
-export async function buildApp({ appDir, buildsDir }) {
+// projectRoot を渡すと、そのプロジェクトのつないだトークンを関門 G3 で確かめ、CSS を app.css の最後に足す(materials.js)。
+// import の名前にしないので、作る AI が読み込みを消せず、書き出したソースも Studio の外の名前を持たない
+export async function buildApp({ appDir, buildsDir, projectRoot = null }) {
   const started = Date.now();
   const appDigest = digestSnapshot(await snapshotApp(appDir));
   const finish = (fields) => ({ ...fields, appDigest, durationMs: Date.now() - started, finishedAt: new Date().toISOString() });
@@ -194,6 +198,13 @@ export async function buildApp({ appDir, buildsDir }) {
   // 構成、ツール、前提、モック、場面(docs/design/agent-simulation.md の 2.7)。composition.json がなければ構成 B として読む
   const { simulation, errors: simulationErrors } = await readSimulation(appDir, manifest, ai.definition);
   if (simulationErrors.length > 0) return fail('contract', withoutPlace(simulationErrors));
+  const material = projectRoot ? await readTokenMaterial(projectRoot) : null;
+  // material の印で、画面の 1 文を素材の話にする(AI の設定や確かめ方の誤りと分ける)
+  if (material?.problems.length > 0) return fail('contract', material.problems.map((problem) => ({ ...problem, material: true })));
+  if (material) {
+    const conflicts = await checkTokenUse(appDir, material.tokens, material.roles);
+    if (conflicts.length > 0) return fail('contract', conflicts.map((problem) => ({ ...problem, material: true })));
+  }
   if (!manifest.entry) {
     return fail('contract', [{
       file: 'app/',
@@ -245,6 +256,11 @@ export async function buildApp({ appDir, buildsDir }) {
     }
     if (relative === 'app.css') hasCss = true;
     await fs.writeFile(path.join(tmpDir, relative), file.contents);
+  }
+  // 最後に足す。部品の CSS より後に読ませ、同じ強さなら素材の値が勝つ
+  if (material) {
+    await fs.appendFile(path.join(tmpDir, 'app.css'), material.css);
+    hasCss = true;
   }
   await fs.copyFile(RUNTIME_FILE, path.join(tmpDir, 'runtime.js'));
   await fs.writeFile(path.join(tmpDir, 'index.html'), indexHtml(hasCss));

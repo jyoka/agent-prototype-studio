@@ -19,6 +19,8 @@ const tryMark = (n) => `// 偽接続が直そうとした跡(${n} 回目)\n`;
 const TRY_MARKS = /\/\/ 偽接続が直そうとした跡\(\d+ 回目\)\n/g;
 // 「見出しを崩して」で、見出しの文字の間に入れる印。消すと元の見出しに戻る
 const SCRAMBLE = '〓';
+// 「素材の色を書き換えて」で書くファイル
+const MATERIAL_OVERRIDE = 'material-override.css';
 // 「シナリオを足して」で書くシナリオ。題材の言葉は持たず、今の見出しの文字を確かめる
 const HEADING_SCENARIO = 'heading.json';
 const HEADING_PATTERN = /(<h1(?:\s[^>]*)?>)([^<{]*)(<\/h1>)/;
@@ -274,6 +276,24 @@ async function observeOnly() {
   return finish({ text });
 }
 
+// つないだトークンを書き換えようとする動き(関門 G3 で止まるかの確かめ)。変数の名前は Studio の決まりの文から読む
+async function overrideMaterial(argv) {
+  const rules = argv[argv.indexOf('--append-system-prompt') + 1] ?? '';
+  const name = /--token-[\p{L}\p{N}_-]+/u.exec(rules)?.[0];
+  if (!name) {
+    const text = 'つないだトークンがないので、変えられる素材はありません。';
+    await say(text);
+    return finish({ text });
+  }
+  const file = path.join(process.cwd(), MATERIAL_OVERRIDE);
+  const content = `:root {\n  ${name}: rgb(255 0 0);\n}\n`;
+  await fs.writeFile(file, content);
+  await useTool('Write', { file_path: file, content }, { result: `File created successfully at: ${file}` });
+  const text = `素材の変数 ${name} を書き換えました。`;
+  await say(text);
+  return finish({ text });
+}
+
 async function writeOutside() {
   const target = path.resolve(process.cwd(), '..', 'outside-note.txt');
   const id = await useTool(
@@ -388,6 +408,19 @@ const FIX_GATE_WORDS = {
 // 直すところが見つからなければ、何も変えない
 async function fixRequested(fix) {
   await say(`Studio の直す依頼を読みました(問題のあったところ: ${FIX_GATE_WORDS[fix.gate] ?? fix.gate})。`);
+  const override = path.join(process.cwd(), MATERIAL_OVERRIDE);
+  if (await fs.lstat(override).catch(() => null)) {
+    if (/直せない/.test(fix.request)) {
+      const text = '素材の変数を書き換えたままです。直せませんでした。';
+      await say(text);
+      return finish({ text });
+    }
+    await fs.rm(override);
+    await useTool('Write', { file_path: override, content: '' }, { result: `Removed ${override}` });
+    const text = '素材の変数を書き換えた行を消しました。';
+    await say(text);
+    return finish({ text });
+  }
   const target = await findHeadingFile();
   if (target && HEADING_PATTERN.exec(target.text)?.[2].includes(SCRAMBLE)) return fixScrambled(target, fix);
   if (!target?.text.includes(BROKEN_LINE)) {
@@ -737,6 +770,7 @@ async function main() {
     await say('依頼を読みました。これから失敗します。');
     return finish({ isError: true, text: '偽接続: 依頼どおりに失敗しました' });
   }
+  if (/素材の色を書き換え/.test(request)) return overrideMaterial(argv);
   if (/外/.test(request)) return writeOutside();
   if (/シナリオ/.test(request)) return addScenarioAndScramble();
   if (/ゆっくり/.test(request)) return slow();

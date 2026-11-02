@@ -1,0 +1,11 @@
+{
+  "formatVersion": 1,
+  "title": "くらし案内の見本(トークンの見本・架空)",
+  "entry": "main.jsx",
+  "intent": {
+    "purpose": "つないだトークンで色と字が変わるかを確かめる",
+    "tryThis": ["予約するの色と、案内の字を見る"]
+  },
+  "constraints": ["データはすべて架空"],
+  "unimplemented": ["本番の案内の処理"]
+}
