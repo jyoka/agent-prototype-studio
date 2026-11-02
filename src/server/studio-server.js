@@ -101,7 +101,7 @@ const ORGANIZE_ACTIONS = {
   cancel: 'cancel',
 };
 
-function projectView(project, previewPort, runs, checks, firstSteps, intents, organizes) {
+function projectView(project, previewPort, runs, checks, firstSteps, intents, organizes, designs) {
   return {
     id: project.id,
     title: project.title,
@@ -120,6 +120,8 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
     intent: intents.summary(project.id),
     // 整理の板の状態(organize.js)。confirmed は「確かめた」の印
     organize: organizes.summary(project.id),
+    // 設計の案内の状態(design.js)。none と skipped は「設計なし」の印
+    design: designs.summary(project.id),
     previewUrl: project.previewBuildId
       ? `http://localhost:${previewPort}/p/${project.id}/${project.previewBuildId}/`
       : null,
@@ -129,9 +131,9 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
 // Studio 画面と API。API はすべてトークンを要求する(ADR-0001 の層 3)。
 // realAi(projectId) は本物の AI を使う前の同意のカードの中身(real-ai.js の consentView)、consent は同意の状態。
 // firstSteps は最初の一歩の案内の進み方と、閉じたこと(first-steps.js)
-// intents は目的の聞き出しと目的の文書(intent.js)。organizes はヒアリングの整理(organize.js)
-export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, token, ports, realAi, consent, firstSteps }) {
-  const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes);
+// intents は目的の聞き出しと目的の文書(intent.js)。organizes はヒアリングの整理(organize.js)。designs は設計の案内(design.js)
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, designs, token, ports, realAi, consent, firstSteps }) {
+  const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes, designs);
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
   // EventSource はヘッダーにトークンを付けられないので、画面は fetch の応答をストリームで読む(ADR-0001)。
@@ -191,6 +193,9 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     // ヒアリングの整理。GET は今の板。「確かめた」の印は confirm でだけ付く
     const organizeMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/organize(?:\/([a-z-]+))?$/.exec(url.pathname);
     if (organizeMatch && (organizeMatch[2] ? req.method === 'POST' && Object.hasOwn(ORGANIZE_ACTIONS, organizeMatch[2]) : req.method === 'GET')) return handleOrganize(req, res, organizeMatch[1], organizeMatch[2]);
+    // 設計の案内。GET は今の状態。「決めた」の印は decide でだけ付く
+    const designMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/design(?:\/(start|choose|scenes|go|decide|skip|cancel))?$/.exec(url.pathname);
+    if (designMatch && (designMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleDesign(req, res, designMatch[1], designMatch[2]);
     // 最初の一歩の案内。{ dismiss: true } で閉じる。{ touched: 試作品の ID } は、AI のない試作品の画面を触ったこと(画面が送る)
     if (url.pathname === '/api/first-steps' && req.method === 'POST') return handleFirstSteps(req, res);
     // 本物の AI を使う前の同意。GET はカードの中身(?project= で、その試作品の中の AI の「詳しく」も入れる)、
@@ -295,6 +300,20 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       const body = await readJson(req);
       if (action === 'cancel') return sendJson(res, 200, { cancelled: organizes.cancel(id) });
       return sendJson(res, 200, { organize: await organizes[ORGANIZE_ACTIONS[action]](id, body ?? {}) });
+    } catch (error) {
+      return sendIntentError(res, error);
+    }
+  }
+
+  async function handleDesign(req, res, id, action) {
+    try {
+      if (!action) return sendJson(res, 200, { design: await designs.view(id) });
+      const body = await readJson(req);
+      if (action === 'cancel') return sendJson(res, 200, { cancelled: designs.cancel(id) });
+      // decide は依頼の文も返す
+      if (action === 'decide') return sendJson(res, 200, await designs.decide(id));
+      const method = action === 'scenes' ? 'saveScenes' : action;
+      return sendJson(res, 200, { design: await designs[method](id, body ?? {}) });
     } catch (error) {
       return sendIntentError(res, error);
     }

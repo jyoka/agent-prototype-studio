@@ -72,6 +72,7 @@ flowchart TB
         handoff["引き継ぎの書き出し<br/>handoff.js"]
         intent["目的の聞き出しと目的の文書<br/>intent.js、intent-ai.js"]
         organize["ヒアリングの整理<br/>organize.js、organize-ai.js"]
+        design["設計の案内<br/>design.js、design-ai.js、review/options.json"]
         redact["伏せる、秘密を探す<br/>redact.js"]
     end
 
@@ -106,6 +107,10 @@ flowchart TB
     api --> organize
     organize -- "読み書き(.studio/organize.json)" --> dotstudio
     organize -- "整理する AI(道具なし、cwd は空のフォルダー)" --> cli
+    api --> design
+    design -- "読み書き(.studio/design.json)" --> dotstudio
+    design -- "案を出す AI(道具なし、cwd は空のフォルダー)" --> cli
+    design -- "選んだ構成と場面を書く(作業のない間だけ)" --> app
     requests --> agent
     agent -- "子プロセス(cwd は app/)" --> cli
     cli -- "読み書き" --> app
@@ -193,6 +198,14 @@ flowchart TB
 ### ヒアリングを整理する(聞き取りの欄と整理の板)
 
 操作役が要点を打ち(`organize.js` の `addPoint`)、「整理する」を押すと、整理する AI に振り分けをもらいます(`organize-ai.js`)。起動の形は聞き出す AI と同じです(`structured-ai.js`)。「推測」の印は Studio が決めます。今ある要点を指す番号がない項目に付き、AI の返事では消せません。「確かめた」の印は、決める人が「この理解で合っている」を押す `confirm` でだけ `.studio/organize.json` に付き、板が変わると外れます。同意の前と AI を使えないときは整理する AI を呼ばず、人が手で振り分けます。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#k1-で決めたことtask-3842026-10-31)にあります。
+
+### 設計の案内(5 つの段)
+
+「案を作る」を押すと、案を出す AI に問題、使う人、場面の案と、構成と画面のおすすめをもらいます(`design.js` の `start`、`design-ai.js`)。起動の形は聞き出す AI と同じです(`structured-ai.js`)。構成の選択肢は Studio のデータです(`review/options.json`)。AI は勧めるだけで、まだ動かない形は勧められません。同意の前と AI を使えないときは AI を呼ばず、Studio の決まった案を出します。
+
+人が案を選ぶと(`choose`)、Studio が場面を `app/evals/design-*.json` に、構成を `app/composition.json` と、それが読むファイルに書きます(`syncFiles`)。ファイルの名前は Studio が決め、AI と人の文は JSON の値にしか入れません。書くのは、作る AI、ビルド、版の操作のない間だけです(`store.claimVersions`)。Studio が書いた覚えのない中身のファイルと、ふつうのファイルでないものには触りません。書いた後に検査と表示の準備を回し、通らなければ元に戻して断ります。
+
+「決めた」の印は、人が「この設計で作る」を押す `decide` でだけ `.studio/design.json` に付きます。`decide` は目的の文書と設計から依頼の文を作って返し、画面は言葉で直す欄と同じ道で作る AI に送ります。本物の AI の同意も、その道で取ります。場面と構成はそのまま作るループの関門(G3、GE)が検査します。AI 構成の審査と AI 構成書は #422 で作ります。今は「審査なし」のまま作ります。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#j2-で決めたことtask-3852026-11-02)にあります。
 
 ### 作る(試作品を変える)
 
@@ -324,6 +337,7 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | `projects/<id>/.studio/handoff-notes.json` | 引き継ぎのメモ | Studio |
 | `projects/<id>/.studio/intent.json` | 目的の文書。1 文、案内の深さ、問いと答え、文書、決めた時刻か飛ばした時刻 | Studio(作る AI と聞き出す AI は書けない) |
 | `projects/<id>/.studio/organize.json` | 整理の板。要点、5 つの欄の項目と元の要点、聞くこと、人が消したもの、確かめた時刻 | Studio(作る AI と整理する AI は書けない) |
+| `projects/<id>/.studio/design.json` | 設計の案内。5 つの段の案、選んだ案、捨てた案、理由、場面の一覧、Studio が書いたファイルの指紋、決めた時刻か飛ばした時刻 | Studio(作る AI と案を出す AI は書けない) |
 | `handoffs/` | 引き継ぎの書き出し | Studio |
 | Studio のメモリー | 作業中の会話と状態、実行の記録、作る欄の会話 | Studio(止めると消える) |
 
@@ -339,6 +353,7 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | Claude Code の CLI(作る AI) | 作る AI が自動(既定)か `STUDIO_AGENT=claude` で、Claude Code が使えるとき。同意の後、作る欄で送るたび | 本人のアカウントの枠か API の従量課金。1 回の起動は 10 分、30 回まで。直すラウンドを合わせて 1 つの依頼で 3 回まで起動する |
 | Claude Code の CLI(聞き出す AI) | はじめの画面で同意した後、1 文か 1 つの答えを送るたび。`STUDIO_ALLOW_CLAUDE_CODE=0` では呼ばない | 同上。1 回の呼び出しは 90 秒、$0.1 まで。1 文か 1 つの答えで 2 回まで。問いの数は深さごとに 2、4、7 まで |
 | Claude Code の CLI(整理する AI) | 整理の板で同意した後、「整理する」を押すたび。`STUDIO_ALLOW_CLAUDE_CODE=0` では呼ばない | 同上。1 回の呼び出しは 120 秒、$0.3 まで。1 回押して 2 回まで |
+| Claude Code の CLI(案を出す AI) | 設計の案内で同意した後、「案を作る」か「案を作り直す」を押すたび。`STUDIO_ALLOW_CLAUDE_CODE=0` では呼ばない | 同上。1 回の呼び出しは 120 秒、$0.3 まで(仮。実モデルでは測っていない)。1 回押して 2 回まで |
 | Playwright の Chromium(観察器) | 観察するとき。`npm run install:chromium` で入れたもの | なし。モデルを呼ばない。AI の要求は、呼ぶ側が渡す関数に渡す |
 | Claude Code の CLI(プロダクト内 AI) | 画面で同意して切り替えたとき。`STUDIO_ALLOW_CLAUDE_CODE=0` では選べない | 同上。1 ターンは抽出と言い方の 2 種の呼び出し。1 回の呼び出しは 90 秒、$0.1 まで。上限は下の 3 つ |
 

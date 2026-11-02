@@ -333,5 +333,6 @@ export default function App() {
 - `app/` の入口は、目録の `entry`。目録がなければ `main.jsx`(または `main.tsx`、`main.js`、`main.ts`)。使えるライブラリは React(`react`、`react-dom`)、会話の枠(`studio-talk`。上の「会話の枠」)、既定の素材(`@radix-ui/themes`、`@radix-ui/themes/styles.css`、`@radix-ui/colors`、`@radix-ui/colors/<色>.css`、`lucide-react`)だけ。出典とライセンスは `materials/default/source.json` にある。
 - 目的の文書は `projects/<試作品の ID>/.studio/intent.json` に置く。1 文、案内の深さ、問いと答え、文書、決めた時刻か飛ばした時刻が入る。目録の `intent`(作る AI が書く 1 文)とは別のもの。
 - 整理の板は `projects/<試作品の ID>/.studio/organize.json` に置く。要点、5 つの欄の項目と元の要点、聞くこと、人が消したもの、確かめた時刻が入る。
+- 設計の案内は `projects/<試作品の ID>/.studio/design.json` に置く。5 つの段の案、選んだ案、捨てた案、理由、場面の一覧、Studio が `app/` に書いたファイルの指紋、決めた時刻か飛ばした時刻が入る。
 - 引き継ぎの書き出しは `~/PrototypeStudio/handoffs/` に置く。書き出すたびに新しいフォルダーを作る。要らなくなったら消してよい。書いたメモは `projects/<試作品の ID>/.studio/handoff-notes.json`。
 - 自分で試作品を足すときは、`~/PrototypeStudio/projects/<英小文字・数字・ハイフンの名前>/app/main.jsx` を置き、画面で選んで、「その他」の「開発者向けの詳細」の「ファイルから作り直す」を押す。
