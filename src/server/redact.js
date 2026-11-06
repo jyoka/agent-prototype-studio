@@ -194,3 +194,57 @@ export function findPersonalData(text) {
     ...(matchesOf(PERSON_NAME_FORMS, line).length > 0 ? ['氏名'] : []),
   ]);
 }
+
+// 整理の板に入れない「記録らしいもの」の種類を返す(docs/design/collaboration.md の 7 節、K4)。値そのものは返さない。
+// 住所と氏名は findPersonalData より狭くする。普通の話(東京都の店舗、お名前は受付で聞く)を止めないため。
+// 数字は打ち方の違い(全角、空白、かっこ、前後の文字)を問わず、区切りを除いた桁で見る。
+// 名字だけの呼び名(宇田さん)は、会に出た人の呼び名でもあるので、記録としない。形で見分けるので、漏れも誤りもあり得る
+const INVISIBLE = /[\u00ad\u200b-\u200d\u2060\ufeff]/g;
+const NUMBER_RUN = /\+?\d(?:[\s.()/・\-\u2010-\u2015\u2212\u30fc]*\d)+/g;
+const DATE_HEAD = /^(?:19|20)\d{2}[\s./\-\u30fc]\d{1,2}[\s./\-\u30fc]\d{1,2}/;
+const MIN_LONG_NUMBER = 9;
+
+function numberKinds(plain) {
+  const kinds = [];
+  for (const [run] of plain.matchAll(NUMBER_RUN)) {
+    const digits = run.replace(DATE_HEAD, '').replace(/^\+81/, '0').replace(/\D/g, '');
+    if (digits.startsWith('0') && (digits.length === 10 || digits.length === 11)) kinds.push('電話番号');
+    else if (digits.length >= MIN_LONG_NUMBER) kinds.push('長い番号');
+  }
+  return kinds;
+}
+
+// 住所は、番地まであるものだけ。都道府県と市区町村だけ(東京都みほん区の店舗)と、番地のない丁目(三丁目の店)は場所の話とみなす
+function hasAddress(plain) {
+  return matchesOf(ADDRESS_FORMS.slice(0, -1), plain).some((match) => !/丁目$/.test(match[0]));
+}
+
+// 敬称や役職の前の、漢字のフルネーム。役職の語は除いて数える(田中太郎部長は名前、業務部長は名前でない)。4 文字未満は名字とみなす
+const ROLE_WORD = /(?:担当者?|責任者|関係者|部長|課長|係長|社長|店長|主任|運転手|配達員|事務員|受付|会員|顧客|利用者|事業者|業者|代理店|取引先)$/u;
+// 組織や立場で終わる語(協力会社、販売店、営業所)は、名前とみなさない
+const ORG_END = /[者員長手店社所局部課係会主業屋士師生校園院]$/u;
+const FULL_NAME = /(?<![\p{Script=Han}\p{Script=Katakana}])(\p{Script=Han}{2,3} ?\p{Script=Han}{1,5})(?:さん|さま|様|氏|先生)/gu;
+const isFullName = (name) => {
+  const plain = name.replace(/\s/g, '').replace(ROLE_WORD, '');
+  return plain.length >= 4 && !ORG_END.test(plain);
+};
+// 名乗りと「氏名:」の後の名前。文(受付で聞いている)、語(不在票、必須項目)、名字だけは名前としない
+const NOT_A_NAME = /(?:必須|任意|項目|確認|入力|記入|不要|欄|番号)/u;
+function hasStatedName(plain) {
+  return matchesOf(PERSON_NAME_FORMS, plain).some((match) => {
+    const stated = match[1].replace(/\s/g, '').replace(/(?:です|でございます)$/, '');
+    // 前に言葉がつく名乗り(大学生の山田太郎)は、最後のひらがなの後を名前とみなす
+    const name = /^\p{Script=Hiragana}+$/u.test(stated) ? stated : (stated.match(NAMED_TAIL)?.[0] ?? stated);
+    if (NOT_A_NAME.test(name) || name.length < 4) return false;
+    return /^\p{Script=Hiragana}+$/u.test(name) || /^[\p{Script=Han}\p{Script=Katakana}ー々・]+$/u.test(name);
+  });
+}
+
+export function findRecords(value) {
+  const plain = String(value).normalize('NFKC').replace(INVISIBLE, '').replace(/\s+/g, ' ');
+  const kinds = new Set(numberKinds(plain));
+  if (plain.match(EMAIL)) kinds.add('メールアドレス');
+  if (hasAddress(plain)) kinds.add('住所');
+  if (hasStatedName(plain) || [...plain.matchAll(FULL_NAME)].some((match) => isFullName(match[1]))) kinds.add('氏名');
+  return [...kinds];
+}

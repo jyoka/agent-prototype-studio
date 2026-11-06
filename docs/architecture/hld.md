@@ -72,6 +72,7 @@ flowchart TB
         handoff["引き継ぎの書き出し<br/>handoff.js"]
         intent["目的の聞き出しと目的の文書<br/>intent.js、intent-ai.js"]
         organize["ヒアリングの整理<br/>organize.js、organize-ai.js"]
+        meeting["会の始めとお客さんのデータ<br/>meeting.js"]
         design["設計の案内<br/>design.js、design-ai.js、review/options.json"]
         redact["伏せる、秘密を探す<br/>redact.js"]
     end
@@ -104,6 +105,9 @@ flowchart TB
     api --> intent
     intent -- "読み書き(.studio/intent.json)" --> dotstudio
     intent -- "聞き出す AI(道具なし、cwd は空のフォルダー)" --> cli
+    api --> meeting
+    meeting -- "読み書き(.studio/meeting.json)、会のデータを消す" --> dotstudio
+    meeting -- "消す" --> handoffs
     api --> organize
     organize -- "読み書き(.studio/organize.json)" --> dotstudio
     organize -- "整理する AI(道具なし、cwd は空のフォルダー)" --> cli
@@ -163,6 +167,7 @@ flowchart TB
 | 起動 | `bin/studio.js`、`src/server/index.js`、`src/server/config.js` | 環境変数を読み、サンプルを写し、途中で止まった復元を戻し、2 つのサーバーを loopback で待ち受ける。起動ごとのトークンを作る |
 | Studio の API と画面 | `src/server/studio-server.js`、`src/server/security.js` | `/api/projects/...`、`/api/real-ai`、`/api/first-steps` の API と、`src/ui/` の画面を出す。Host、Origin、トークンを確かめる |
 | 最初の一歩の案内 | `src/server/first-steps.js` | 画面の上の 3 つの手順(試す → 言葉で直す → 直った結果を試す)の進み方と、案内を閉じたことを、メモリーにだけ持つ(起動し直すと消える)。1 番と 3 番は `ai/messages` と `ai/retry` の成功(AI のない試作品は、画面が送る `POST /api/first-steps` の `touched`)で進む。2 番は、作る run の状態(`BuildRequests.statuses`)が `passed`、`fixed`、`unverified` のどれかなら済み。`/api/projects` の試作品ごとの `firstSteps` と、全体の `firstSteps.dismissed` で返す |
+| 会の始めとお客さんのデータ | `src/server/meeting.js` | `/api/meetings` と `/api/projects/<id>/meeting` で、会を用意し、同意と消す日を `.studio/meeting.json` に持つ。同意の前は AI を呼ぶ口を止める。`erase` で試作品、版、run、引き継ぎの書き出し、メモリーを消す。下の「会の始めとお客さんのデータ」 |
 | 人の「確かめる」 | `src/server/checks.js` | `/api/projects/<id>/checks` で、表示中の試作品を自動で確かめる(P27)。`index.js` の `observeShown` を通して観察の入口を `shown` で呼び、結果を作る run の関門 G5、G6 と同じ形(`launchGate`、`scenarioGate`)にまとめる。作る run、ビルド、版の操作の間は 409(`ProjectStore.claimCheck`)。試作品の中の AI の既定はお試しで、本物は同意の後だけ(`AiSessions.observationConnection`)。確かめの一覧はメモリーにだけ置く |
 | 作るループの証拠 | `src/server/evidence.js` | `/api/projects/<id>/evidence` で、終わった run と人の「確かめる」ごとに証拠が古いか(`stale`)を返す。run が確かめた `app/` の指紋(`run.appDigest`)と、今の `app/` の指紋を比べて決める。`/api/projects/<id>/evidence/screenshot?file=` で、結果の帯のスクリーンショットを返す。読むのは `.studio/runs/` と `.studio/observations/` の中の PNG だけで、シンボリックリンクで外を指していても読まない。ほかの API と同じくトークンを要る |
 | 試作品の配信 | `src/server/preview-server.js` | ビルドしたものを別ポートから CSP つきで出す。API はない |
@@ -196,9 +201,17 @@ flowchart TB
 
 はじめの画面の 1 文で新しい試作品を作り(`intent.js` の `createProject`)、聞き出す AI に次の問いと下書きをもらいます(`intent-ai.js`)。問いの数の上限と「分からない」の扱いは Studio が決め、AI の返事では変わりません。「決めた」の印は、人が「これで決める」を押す `decide` でだけ `.studio/intent.json` に付きます。同意の前と AI を使えないときは、聞き出す AI を呼ばず、決まった問いで進みます。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#j1-で決めたことtask-3822026-10-31)にあります。
 
+### 会の始めとお客さんのデータ
+
+会は 1 つの試作品と同じ長さです(`meeting.js`)。状態は `.studio/meeting.json` に持ち、同意の前(`waiting`)、同意した(`agreed`)、お試しだけ(`trial`)の 3 つです。AI を呼ぶ口は `mayCall` と `require` を通します。同意の前はどの AI も呼ばず、お試しだけの会は外の AI に送りません。本物の AI の同意(`real-ai.js`)とは別で、別の試作品で同意していても会では止まります。「同意して始める」は外の AI に送る接続なら本物の AI の同意も兼ねます。
+
+「会のデータを消す」(`erase`)は、置き場を `.erasing-<ID>-…` へ移してから消します。移した時点で一覧と AI から見えなくなり、途中で止まっても次の起動で続きを消します。引き継ぎの書き出し(`<STUDIO_HOME>/handoffs/<ID>-…`)と、各部品のメモリーも消します。消せるのは会の試作品だけです。消す日を過ぎても自動では消さず、知らせるだけです。
+
+記録らしいもの(`redact.js` の `findRecords`)は整理の板に入れません。人が打った文は `organize.js` が保存せずに断るので、AI に送られず、ファイルにも残りません。AI の返事の項目と聞くことからも捨て、AI が `recordPoints` で記録らしいと言った要点は一覧から消します。形で見分けるので漏れがあります。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#k4-で決めたことtask-3902026-11-02)にあります。
+
 ### ヒアリングを整理する(聞き取りの欄と整理の板)
 
-操作役が要点を打ち(`organize.js` の `addPoint`)、「整理する」を押すと、整理する AI に振り分けをもらいます(`organize-ai.js`)。起動の形は聞き出す AI と同じです(`structured-ai.js`)。「推測」の印は Studio が決めます。今ある要点を指す番号がない項目に付き、AI の返事では消せません。「確かめた」の印は、決める人が「この理解で合っている」を押す `confirm` でだけ `.studio/organize.json` に付き、板が変わると外れます。同意の前と AI を使えないときは整理する AI を呼ばず、人が手で振り分けます。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#k1-で決めたことtask-3842026-10-31)にあります。
+操作役が要点を打ち(`organize.js` の `addPoint`)、「整理する」を押すと、整理する AI に振り分けをもらいます(`organize-ai.js`)。起動の形は聞き出す AI と同じです(`structured-ai.js`)。「推測」の印は Studio が決めます。今ある要点を指す番号がない項目に付き、AI の返事では消せません。「確かめた」の印は、決める人が「この理解で合っている」を押す `confirm` でだけ `.studio/organize.json` に付き、板が変わると外れます。同意の前と AI を使えないときは整理する AI を呼ばず、人が手で振り分けます。記録らしいものは上の節のとおり板に入れません。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#k1-で決めたことtask-3842026-10-31)にあります。
 
 ### 設計の案内(5 つの段)
 

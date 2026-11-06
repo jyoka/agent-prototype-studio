@@ -145,8 +145,9 @@ function titleOf(sentence) {
 }
 
 // 1 文から新しい試作品を作る。app/ の中身は Studio が書く最初の置き場だけ
-export async function createStarterProject(home, sentence) {
-  const id = `idea-${crypto.randomBytes(4).toString('hex')}`;
+// prefix は ID の頭。会の試作品は meeting(ID を見れば、記録のファイルがなくても会と分かる)
+export async function createStarterProject(home, sentence, prefix = 'idea') {
+  const id = `${prefix}-${crypto.randomBytes(4).toString('hex')}`;
   const paths = projectPaths(home, id);
   await fs.mkdir(paths.app, { recursive: true });
   await fs.mkdir(paths.studio, { recursive: true });
@@ -166,15 +167,17 @@ export async function createStarterProject(home, sentence) {
 
 // 聞き出しの状態。ファイルに書いたものを起動のときに読み、以降はメモリーとファイルの両方を直す。
 // ai は聞き出す AI の接続(intent-ai.js)。consent は本物の AI を使う前の同意(real-ai.js)。
-// aiMode() は 'fake'(偽接続。同意なし)、'real'(同意が要る)、null(使えない。決まった問いで進める)のどれか
+// aiMode(id) は 'fake'(偽接続。同意なし)、'real'(同意が要る)、null(使えない。決まった問いで進める)のどれか。id がないのは新しい試作品のとき
 export class ProjectIntents {
   // otherWork() は、ほかに続きのある作業(整理の板)があるか。あれば、はじめの画面を出さない
-  constructor({ home, store, ai, consent, aiMode, startScreen = true, otherWork = () => false, log = () => {} }) {
+  constructor({ home, store, ai, consent, aiMode, talkGate = () => {}, startScreen = true, otherWork = () => false, log = () => {} }) {
     this.home = home;
     this.store = store;
     this.ai = ai;
     this.consent = consent;
     this.aiMode = aiMode;
+    // 会の同意の前と、消している間は断る(meeting.js)
+    this.talkGate = talkGate;
     this.startScreen = startScreen;
     this.otherWork = otherWork;
     this.log = log;
@@ -214,6 +217,8 @@ export class ProjectIntents {
   async write(id, record) {
     // 止めた後に返ってきた呼び出しは書かない(置き場が消されていても、作り直さない)
     if (this.closed) return;
+    // 待つ間に会のデータが消されていたら、書かない(置き場を作り直さない)
+    await this.store.requireProject(id);
     const file = this.file(id);
     record.updatedAt = new Date().toISOString();
     await fs.mkdir(path.dirname(file), { recursive: true });
@@ -221,6 +226,11 @@ export class ProjectIntents {
     await fs.writeFile(tmp, `${JSON.stringify(record, null, 2)}\n`);
     await fs.rename(tmp, file);
     this.records.set(id, record);
+  }
+
+  // 会のデータを消した後に呼ぶ
+  forget(id) {
+    this.records.delete(id);
   }
 
   // 一覧に載せる短い形。文書がなければ none(画面の「目的なし」)
@@ -260,6 +270,7 @@ export class ProjectIntents {
   // 書き換えを 1 つずつにする。動いている間に来た書き換えは断る
   async exclusive(id, work) {
     await this.requireProject(id);
+    this.talkGate(id);
     if (this.locked.has(id)) throw new BusyError(this.calling.has(id) ? '問いを考えているところです。終わるか止めるまで待ってください' : '前の操作の途中です。終わるまで待ってください');
     this.locked.add(id);
     try {
@@ -271,14 +282,14 @@ export class ProjectIntents {
   }
 
   // 本物の AI を使うなら、呼ぶ前に同意を確かめる。同意の前は投げる(consent-required)
-  requireConsent(guide) {
+  requireConsent(guide, id) {
     if (guide !== 'ai' && guide !== 'fixed') throw new IntentError(400, 'invalid', 'guide は ai か fixed です');
-    if (guide === 'ai' && this.aiMode() === 'real') this.consent.require('intent');
+    if (guide === 'ai' && this.aiMode(id) === 'real') this.consent.require('intent');
   }
 
   // 今、聞き出す AI を呼んでよいか。偽接続か、本物で同意の後だけ。保存した聞き出しを続けるときも、ここで確かめる
-  mayCallAi() {
-    const mode = this.aiMode();
+  mayCallAi(id) {
+    const mode = this.aiMode(id);
     return mode === 'fake' || (mode === 'real' && this.consent.agreed);
   }
 
@@ -304,17 +315,17 @@ export class ProjectIntents {
     return this.exclusive(id, async () => {
       const text = this.validSentence(sentence);
       if (typeof depth !== 'string' || !Object.hasOwn(DEPTHS, depth)) throw new IntentError(400, 'invalid', `案内の深さは ${Object.keys(DEPTHS).join('、')} のどれかです`);
-      this.requireConsent(guide);
+      this.requireConsent(guide, id);
       const record = {
         formatVersion: FORMAT,
         status: 'interviewing',
         sentence: text,
         depth,
-        guide: guide === 'ai' && this.aiMode() ? 'ai' : 'fixed',
+        guide: guide === 'ai' && this.aiMode(id) ? 'ai' : 'fixed',
         turns: [],
         pending: null,
         doc: emptyDoc(),
-        note: guide === 'ai' && !this.aiMode() ? 'AI を使えないので、決まった順に聞きます。' : null,
+        note: guide === 'ai' && !this.aiMode(id) ? 'AI を使えないので、決まった順に聞きます。' : null,
         decidedAt: null,
         skippedAt: null,
       };
@@ -346,7 +357,7 @@ export class ProjectIntents {
     let aiOutput = null;
     if (record.guide === 'ai') {
       // 起動し直して同意が消えた後、本物の AI を止めた設定や使えない接続で続けるときは、呼ばずに決まった問いにする
-      if (this.mayCallAi()) {
+      if (this.mayCallAi(id)) {
         aiOutput = await this.callAi(id, record, { label, remaining });
       } else {
         record.guide = 'fixed';

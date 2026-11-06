@@ -18,8 +18,11 @@
       <nav id="project-menu" class="project-menu" aria-label="試作品の一覧" hidden>
         <ul id="project-list"></ul>
         <button type="button" id="new-project" class="new-project">新しく作る</button>
+        <button type="button" id="new-meeting" class="new-project">お客さんとの会を始める</button>
       </nav>
     </div>
+    <!-- 会の印(field-session.md の段 0)。押すと、会の始めの画面を開く。会の試作品のときだけ出す -->
+    <button type="button" id="meeting-mark" class="intent-mark" data-state="none" hidden></button>
     <!-- 目的の文書の印(user-journey.md の段 2)。押すと、聞き出しか目的の文書を開く -->
     <button type="button" id="intent-mark" class="intent-mark" data-state="none" hidden>目的なし</button>
     <!-- 整理の板の印(field-session.md の段 2)。押すと、聞き取りの欄と整理の板を開く -->
@@ -40,6 +43,7 @@
   </div>
   <!-- 最初の一歩の案内(ux-redesign.md 2 節、7-1)。1 行の説明と 3 つの手順。手順は状態で進み、今の手順に aria-current="step" を付ける。
        閉じたことは、Studio を止めるまでサーバーが覚える -->
+  <div id="meeting-due" class="meeting-due" role="status" hidden></div>
   <section id="first-steps" class="first-steps" aria-label="はじめの手順" hidden>
     <p class="first-steps-lead">試作品を試して、気になるところを言葉で直す場所です。</p>
     <button type="button" id="first-steps-close" class="first-steps-close">閉じる</button>
@@ -47,6 +51,55 @@
     <p id="first-steps-hint" class="first-steps-hint" role="status"></p>
   </section>
   <!-- はじめの画面、目的の聞き出し、目的の文書(user-journey.md の段 1、段 2、J1)。出している間は、下の 2 列を隠す -->
+  <!-- 会の始めの画面(field-session.md の段 0、collaboration.md の 7 節)。出している間は、下の 2 列を隠す -->
+  <section id="meeting" class="meeting" aria-labelledby="meeting-heading" hidden>
+    <h2 id="meeting-heading" tabindex="-1">会の始め</h2>
+    <p id="meeting-state" class="intent-doc-state" role="status"></p>
+    <p id="meeting-only-fiction" class="intent-declined">架空の題材で試すための画面です。本物のお客さんの会で使う前に、会社のデータの取り決めが要ります。</p>
+    <form id="meeting-new" class="meeting-new" hidden>
+      <label for="meeting-purpose">会の目的</label>
+      <input id="meeting-purpose" type="text" maxlength="200" autocomplete="off">
+      <p class="muted">架空の題材で書いてください。お客さんの名前や電話番号は書かないでください。</p>
+      <div class="organize-actions">
+        <button type="submit" class="primary">会を用意する</button>
+        <button type="button" id="meeting-new-cancel">やめる</button>
+      </div>
+    </form>
+    <div id="meeting-body" hidden>
+      <dl id="meeting-facts" class="meeting-facts"></dl>
+      <form id="meeting-delete-form" class="organize-line">
+        <label for="meeting-delete-on">消す日</label>
+        <input id="meeting-delete-on" type="date">
+        <button type="submit">消す日を変える</button>
+      </form>
+      <p class="muted">消す日を過ぎると、Studio が知らせます。勝手には消しません。</p>
+      <div class="organize-actions">
+        <button type="button" id="meeting-agree" class="primary">同意して始める</button>
+        <button type="button" id="meeting-trial">お試しの AI だけで始める</button>
+        <button type="button" id="meeting-organize" class="primary" hidden>ヒアリングの整理へ</button>
+        <button type="button" id="meeting-back">試作品の画面に戻る</button>
+        <button type="button" id="meeting-erase">会のデータを消す</button>
+      </div>
+      <div id="meeting-confirm" class="meeting-confirm" role="group" aria-label="会のデータを消す前に" hidden>
+        <p>次のものを消します。元に戻せません。</p>
+        <ul id="meeting-plan" class="organize-list" aria-label="消すものの一覧"></ul>
+        <div class="organize-actions">
+          <button type="button" id="meeting-erase-go" class="primary">消す</button>
+          <button type="button" id="meeting-erase-cancel">やめる</button>
+        </div>
+      </div>
+    </div>
+    <div id="meeting-erased" hidden>
+      <ul id="meeting-erased-list" class="organize-list" aria-label="消した一覧"></ul>
+      <p id="meeting-left" class="intent-error" role="alert" hidden></p>
+      <h3>消せないもの</h3>
+      <ul id="meeting-not-erased" class="meeting-notes"></ul>
+      <div class="organize-actions">
+        <button type="button" id="meeting-erased-close">閉じる</button>
+      </div>
+    </div>
+    <p id="meeting-error" class="intent-error" role="alert" hidden></p>
+  </section>
   <section id="intent" class="intent" aria-labelledby="intent-heading" hidden>
     <h2 id="intent-heading" tabindex="-1"></h2>
     <form id="intent-start" class="intent-form" hidden>
@@ -70,6 +123,7 @@
       <div class="intent-actions">
         <button type="submit" id="intent-send" class="primary">送る</button>
         <button type="button" id="intent-skip">飛ばす</button>
+        <button type="button" id="intent-meeting">お客さんとの会を始める</button>
       </div>
       <p class="muted">飛ばすと、目的を決めずに進みます。「目的なし」の印が付きます。上の帯の印から、あとで聞き出せます。</p>
       <p class="muted">架空の題材で試してください。実在の人や会社の情報は入れないでください。</p>
