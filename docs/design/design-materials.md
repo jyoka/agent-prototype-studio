@@ -42,7 +42,7 @@
 | Roboto | OFL-1.1 | https://github.com/googlefonts/roboto-3-classic | できる | できる | 日本語の字はない |
 | Material の色の作り方(`@material/material-color-utilities`) | Apache-2.0 | https://github.com/material-foundation/material-color-utilities | できる | できる | 1 つの色から、役割ごとの色を作れる |
 | Material 3 の指針の文 | 未確認 | https://m3.material.io/ | 未確認 | 未確認 | 検索の抜き出しに「Apache 2.0 か CC BY 4.0」とあったが、ページの本文では確かめられなかった。確かめるまでは、文を写さず、自分の言葉で要約する |
-| Fluent UI React v9(`@fluentui/react-components`) | MIT | https://github.com/microsoft/fluentui | できる | できる | 参照する字とアイコンは別のライセンス(下の「使えないもの」)。Replica の見本の 1 つが使っている(5 節) |
+| Fluent UI React v9(`@fluentui/react-components`) | MIT | https://github.com/microsoft/fluentui | できる | できる | 参照する字とアイコンは別のライセンス(下の「使えないもの」) |
 | Fluent System Icons | MIT | https://github.com/microsoft/fluentui-system-icons | できる | できる | |
 | Primer(`@primer/react`、Primer Primitives) | MIT | https://github.com/primer/react 、https://github.com/primer/primitives | できる | できる | GitHub の見た目 |
 | Carbon(`@carbon/react`) | Apache-2.0 | https://github.com/carbon-design-system/carbon | できる | できる | IBM の見た目 |
@@ -95,7 +95,7 @@ Apple の見た目を求める人には、次の代わりを使います。ど�
 |---|---|---|---|---|---|---|
 | Radix Themes + Radix Colors + Lucide(決めた) | MIT、ISC | React の部品 | 字は OS の字で済む(J3 で確かめた) | 続いている見込み(Themes 3.3.0。頻度は確かめていない) | 中立 | 既定にする |
 | Material Web + Material Symbols + Roboto | Apache-2.0、OFL-1.1 | Web Components。React 19 は custom elements を扱えるが、Studio では確かめていない | 字とアイコンの同梱が要る | maintenance mode | Google の見た目 | 「Google の見た目」を選べる素材として足す。既定にはしない |
-| Fluent UI React v9 + Fluent System Icons | MIT | React の部品 | Segoe を同梱できない。OS の字に落とす | 続いている(9.75.0) | Microsoft の見た目 | 第 3 の候補。Replica と比べるときの見本にもなる |
+| Fluent UI React v9 + Fluent System Icons | MIT | React の部品 | Segoe を同梱できない。OS の字に落とす | 続いている(9.75.0) | Microsoft の見た目 | 第 3 の候補 |
 | shadcn/ui | MIT | React の部品 | Tailwind の CSS を作る手順が要る | 続いている | 中立 | 今のビルドに Tailwind がないので、後にする |
 
 ### 決めたこと
@@ -213,26 +213,13 @@ Material 3 は J3 では同梱しない。選ぶ画面と「手入れが止ま�
 
 有効にした後は、作る AI への依頼に指針の要約が入り、質の見直し(J6)が「素材に合っているか」を数えます。
 
-### Replica と比べる
+### 取り込みの形で決めたこと
 
-GitHub の Replica は、GitHub Design が作った、AI で試作品を作る道具です(MIT。https://github.com/github/replica)。GitHub Copilot のアプリの中で動きます。Studio と同じく、デザインシステムの指針を入れて試作品を作ります。
+ほかの道具とは比べず、Studio の形だけを書く。個人のプロジェクトには、企業名とサービス名を書かない決まりがあるため(2026-11-06 に運営者が決めた)。
 
-| 点 | Replica | Studio(この案) |
-|---|---|---|
-| 誰が素材を入れるか | チームが、`/setup-skills` で「承認された出典」(製品の文書、デザインシステムの文書、部品やトークンのパッケージ)を渡す。Copilot が出典を見て、試作品を作る指示を下書きする(https://github.com/github/replica/blob/main/docs/local-prototyping.md) | 利用者本人かデザイナーが、取り込みの案内で渡す。検査は Studio が決まった手順で行い、AI に任せない |
-| 指針の置き場所 | リポジトリのファイル。見本(starters/coreai)では `.agents/context/` に `DESIGN-SYSTEM.md`、`ACCESSIBILITY.md`、`BROWSER-VALIDATION.md` など、`.agents/skills/` に部品ごとの skill がある | `app/design/` の写しと、Studio が持つ素材。写しが変わっていないかを関門で確かめる |
-| 部品のパッケージ | Copilot がパッケージを入れる前に許可を聞く | 作る AI はパッケージを入れられない。Studio が検査して、import を許す |
-| 既定の素材 | 見本が 2 つ。Minimal(自分のデザインシステムに合わせる小さな例)と CoreAI Sandbox(できあいの配置と部品。skill の名前から Fluent UI React を使う) | Radix Themes(既定)と、選べる Material 3 |
-| 隔離 | 確かめていない(不明) | ADR 0001 のまま。試作品は外へ通信しない |
-| 質の確かめ | ブラウザで確かめる指針のファイルがある。中身は読んでいない(不明) | 関門、観察器、質の見直し(J6)で数を出す |
-
-Replica から学ぶこと:
-
-- 指針をファイルにして、作る AI が毎回読む形。Studio の `app/design/` と同じ考え
-- 素材を入れる人(デザイナー)と、それで作る人を分ける形。Studio でも、素材を「これからの試作品全部」に有効にすれば同じになる
-
-Studio が違えること:
-
+- 指針をファイルにして、作る AI が毎回読む。置き場所は `app/design/` の写しと、Studio が持つ素材。写しが変わっていないかを関門で確かめる
+- 素材を入れる人(デザイナー)と、それで作る人を分けられる。素材を「これからの試作品全部」に有効にすれば、そうなる
+- 作る AI はパッケージを入れられない。Studio が検査して、import を許す
 - 素材の検査とライセンスの確かめを、AI ではなく決まった手順で行う(原則 7)
 - 素材に合っているかを、見直しで数として出す(原則 4)
 - 素材より前に、目的の聞き出しと設計の案内がある(原則 1)

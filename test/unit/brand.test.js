@@ -6,8 +6,8 @@ import { STUDIO_ROOT } from '../../src/server/config.js';
 
 // 伝え方の土台(docs/brand.md)が、README、package.json、バナー、画面の色と食い違わないことを確かめる
 
-const JA = 'AI エージェントの試作品を、作る前に、構成ごと手元で試して測る。';
-const EN = 'Try and measure an AI agent prototype, whole setup included, on your machine before you build it.';
+const JA = '思いつきを AI プロダクトにすると、どんな作りになるか。動かして測り、人が承認してから作る。';
+const EN = 'See how your idea works as an AI product, test it, and approve the architecture before you build.';
 const BANNERS = ['assets/brand/banner-dark.svg', 'assets/brand/banner-light.svg'];
 
 const read = (file) => fs.readFile(path.join(STUDIO_ROOT, file), 'utf8');
@@ -27,6 +27,10 @@ test('1 文は README の太字、package.json の description、バナー、bra
     const svg = await read(file);
     assert.ok(svg.includes(`<desc id="desc">${JA} ${EN}</desc>`), file);
     assert.ok(svg.includes('agent-prototype-studio'), file);
+    // 見える文も同じ。<desc> だけを直して、絵の文が古いまま残らないように
+    const lines = (size) => [...svg.matchAll(new RegExp(`<text x="80" y="\\d+" font-size="${size}"[^>]*>([^<]+)</text>`, 'g'))].map((m) => m[1]);
+    assert.equal(lines(38).join(''), JA, file);
+    assert.equal(lines(22).join(' '), EN, file);
   }
 });
 
@@ -102,7 +106,7 @@ test('tokens.css はダークと動きを止める設定を持ち、バナーと
 test('見本のデータ、画面の文、README に、仕事の POC の名前が出ない(brand.md の 7 節)', async () => {
   // dipSees は前提の鍵(コードの名前)なので、このカードでは残す。\b で切れるので当たらない
   const poc = /\b(LINE|DIP|dip|dipAIAG)\b|バイトル/;
-  const files = ['README.md'];
+  const files = ['README.md', 'package.json', ...BANNERS];
   for (const dir of ['samples', 'src/ui', 'site']) {
     for (const entry of await fs.readdir(path.join(STUDIO_ROOT, dir), { recursive: true, withFileTypes: true })) {
       if (entry.isFile()) files.push(path.relative(STUDIO_ROOT, path.join(entry.parentPath, entry.name)));
@@ -114,6 +118,47 @@ test('見本のデータ、画面の文、README に、仕事の POC の名前�
     const hit = lines.findIndex((line) => poc.test(line));
     assert.equal(hit, -1, `${file}:${hit + 1}: ${lines[hit]}`);
   }
+});
+
+test('README は「今できること」と「作っているもの」を分け、作っているものに画像を載せない', async () => {
+  const readme = await read('README.md');
+  const today = readme.indexOf('### 今できること');
+  const building = readme.indexOf('### 作っているもの');
+  const start = readme.indexOf('## はじめる');
+  assert.ok(readme.indexOf('## 特長') < today && today < building && building < start);
+  assert.doesNotMatch(readme.slice(building, start), /<img|<picture|!\[/);
+  for (const word of ['AI 構成の審査', '3 つの形の比べ', 'データの棚と RAG の判定', '記録と比べる表を主の画面に', '質の見直し', 'みんなで作る']) {
+    assert.ok(readme.slice(building, start).includes(word), word);
+  }
+  // 動くもの(設計の案内、ツールを呼ぶ固定の流れ)を、作っているものに「まだない」と書かない
+  assert.ok(readme.slice(today, building).includes('設計の案内'));
+  assert.doesNotMatch(readme.slice(building, start), /設計の案内|固定の流れからツールを呼ぶことと/);
+  // 1 文の後の 2〜3 行で、承認の段がまだ使えないと言う(1 文だけを読んで、できると思わせない)
+  const lead = readme.slice(readme.indexOf(`**${JA}**`), readme.indexOf('## しくみ'));
+  assert.match(lead, /承認する段は作っているところで、まだ使えません/);
+});
+
+test('README と LP は「理想の構成」と言わず、日付と根拠のある今日の一番良い推測と書く', async () => {
+  const llms = await read('site/llms.txt');
+  for (const file of ['README.md', 'site/index.html', 'site/llms.txt']) {
+    const text = await read(file);
+    assert.doesNotMatch(text, /理想の構成|最適な構成|ベストプラクティス|ideal (architecture|setup)|best practice/i, file);
+    assert.ok(text.includes('日付と根拠のある、今日の一番良い推測'), file);
+  }
+  assert.ok((await read('site/index.html')).includes("today's best guess, with a date and evidence"));
+  assert.ok(llms.includes('## 今できること') && llms.includes('## 作っているもの'));
+});
+
+test('README、LP、伝え方の文書は、比べる相手の道具の名前を出さない(2026-11-06 の運営者の決定)', async () => {
+  // 名前そのものをこのファイルにも書かないため、文字の組で探す。名前を伏せた比べる欄も LP に置かない
+  const names = /r[e]plica|c[o]pilot/i;
+  const files = ['README.md', 'package.json', 'site/index.html', 'site/llms.txt', 'docs/brand.md', 'docs/vision.md', 'docs/design/design-materials.md'];
+  for (const file of files) {
+    const lines = (await read(file)).split('\n');
+    const hit = lines.findIndex((line) => names.test(line));
+    assert.equal(hit, -1, `${file}:${hit + 1}: ${lines[hit]}`);
+  }
+  assert.doesNotMatch(await read('site/index.html'), /ほかの道具の欄|一般的な道具の欄|記載なし/);
 });
 
 // GitHub の見出しのリンク名(小文字にし、記号を除き、空白を - にする)
@@ -160,7 +205,7 @@ test('README の上: バナー、1 文、動く画像の順。特長の画面 4 
   // 特長の画面 4 枚。押すと docs の該当の節に飛ぶ
   const features = readme.slice(at('## 特長'), at('## はじめる'));
   const links = [...features.matchAll(/<a href="([^"#]+)#([^"]+)"><picture><source media="\(prefers-color-scheme: dark\)" srcset="assets\/media\/([\w-]+)-dark\.png"><img [^>]*src="assets\/media\/([\w-]+)-light\.png"><\/picture><\/a><br>\s*<b>[^<]+<\/b><br>/g)];
-  assert.deepEqual(links.map((m) => m[3]), ['try-and-fix', 'sim-choice', 'sim-trace', 'evals-compare']);
+  assert.deepEqual(links.map((m) => m[3]), ['sim-choice', 'sim-trace', 'evals-compare', 'try-and-fix']);
   for (const [, doc, anchor, dark, light] of links) {
     assert.equal(dark, light);
     const headings = (await read(doc)).split('\n').filter((line) => /^#{1,6} /.test(line)).map((line) => slug(line.replace(/^#+ /, '')));

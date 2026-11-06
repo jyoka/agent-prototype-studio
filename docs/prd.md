@@ -109,6 +109,7 @@ StripeのHarbor、Drydock、Minions、Kaiは単なる参考事例ではなく、
 | 2026-10-28 | harness の観察器のブラウザは Playwright の Chromium だけにする。作る AI が観察器を自分で使う形を今回入れる。直すラウンドは 2 回まで(作る AI の起動は 1 つの依頼で 3 回まで) | [docs/design/harness.md の「決めたこと」](design/harness.md#決めたこと)、jyoka/tasks#297 |
 | 2026-10-29 | 目的の正は [docs/vision.md](vision.md) にする。この PRD は本文を直さず、vision.md の下に置き、「最初の段の要件」と読む | [vision.md の 8 節](vision.md#8-prd-との関係)、jyoka/tasks#381 |
 | 2026-10-29 | 何人もで使う形は、まず 1 台の PC でみんなで使う形(コメント、反応、承認、直した記録)にする。お客さんの話は同意の後に扱い、記録(個人情報、取引の実データ)は入れない。本文の「スコープ外・未決定」の「複数人コメント、共有公開」のうち、1 台の PC の中のコメントだけを範囲に入れる。共有の場は範囲外のまま | [ADR 0004](adr/0004-shared-session-and-customer-data.md) の段 1、jyoka/tasks#381 |
+| 2026-10-31 | 中心を「AI の作りを見せて、人が承認する」にする。AI プロダクトに絞る。本文は直さない | [vision.md の 9 節](vision.md#task-416-で決めたこと)、[AI 構成の審査](design/ai-architecture-review.md)、jyoka/tasks#416 |
 
 ## 子タスク
 

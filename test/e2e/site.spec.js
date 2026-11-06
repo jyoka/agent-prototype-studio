@@ -10,8 +10,8 @@ import { ROOT } from './studio.js';
 // スマホの幅で横にはみ出さない、外への通信がない
 
 const REPO = 'https://github.com/jyoka/agent-prototype-studio';
-const JA = 'AI エージェントの試作品を、作る前に、構成ごと手元で試して測る。';
-const EN = 'Try and measure an AI agent prototype, whole setup included, on your machine before you build it.';
+const JA = '思いつきを AI プロダクトにすると、どんな作りになるか。動かして測り、人が承認してから作る。';
+const EN = 'See how your idea works as an AI product, test it, and approve the architecture before you build.';
 const DESKTOP = { width: 1440, height: 900 };
 const PHONE = { width: 390, height: 844 };
 // 日本語と英語の両方を書いてあるので、文は見えている方(innerText)で比べる
@@ -124,9 +124,9 @@ test.describe('LP', () => {
     expect(demo.status()).toBe(200);
     expect(demo.headers()['content-type']).toBe('video/webm');
 
-    // 機能のカードと見出しの絵は、押すと docs に飛ぶ
+    // 機能のカード 9 枚と見出しの絵 1 枚は、押すと docs に飛ぶ
     const shots = await page.locator('.card-shot, .hero-shot').evaluateAll((links) => links.map((a) => a.href));
-    expect(shots).toHaveLength(9);
+    expect(shots).toHaveLength(10);
     for (const href of shots) expect(href.startsWith(`${REPO}/blob/main/docs/`), href).toBe(true);
 
     const hrefs = await page.locator('a[href]').evaluateAll((links) => links.map((a) => a.href));
@@ -270,6 +270,59 @@ test.describe('LP', () => {
       }
     });
   }
+
+  test('今できることと作っているものが分かれて出る。作っているものには絵も押す先もない', async ({ page }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto(site.url);
+
+    await expect(page.locator('#features h2')).toHaveText('今できること', SHOWN);
+    await expect(page.locator('#building h2')).toHaveText('作っているもの', SHOWN);
+    await expect(page.locator('#features .card')).toHaveCount(9);
+    // 設計の案内(J2)は動くので、今できることに置き、作っているものに残さない
+    await expect(page.locator('#features .card h3', { hasText: '設計の案内' })).toHaveCount(1);
+    await expect(page.locator('#building')).not.toContainText('設計の案内');
+    const building = page.locator('#building .building-item');
+    await expect(building).toHaveCount(6);
+    const names = ['AI 構成の審査', '3 つの形の比べ', 'データの棚と RAG の判定', '記録と比べる表を主の画面に', '質の見直し', 'みんなで作る'];
+    await expect(building.locator('h3')).toHaveText(names, SHOWN);
+    // どの項目にも「作っている」の印があり、絵と押す先はない(想像図を本物の画面として載せない)
+    await expect(page.locator('#building .building-tag')).toHaveText(Array(6).fill('作っている'), SHOWN);
+    await expect(page.locator('#building img')).toHaveCount(0);
+    await expect(page.locator('#building a')).toHaveCount(0);
+    // 今できることの方に、作っているものの名前を混ぜない
+    for (const name of names) await expect(page.locator('#features')).not.toContainText(name);
+
+    // 見出しの下の文で、承認の段がまだ使えないと言い、作っているものへ飛べる
+    await expect(page.locator('.hero-text')).toContainText('承認する段は作っているところで、まだ使えません', SHOWN);
+    await page.locator('.hero-text a[href="#building"]:visible').click();
+    await expect(page).toHaveURL(/#building$/);
+
+    await page.locator('#lang-toggle').click();
+    await expect(page.locator('#features h2')).toHaveText('What it does today', SHOWN);
+    await expect(page.locator('#building h2')).toHaveText('In progress', SHOWN);
+    await expect(building.first().locator('h3')).toHaveText('AI architecture review', SHOWN);
+    await expect(page.locator('.hero-text')).toContainText('is not ready yet', SHOWN);
+  });
+
+  test('3 つの問いは Studio だけの欄で答え、ほかの道具と比べない。承認は作っていると言う', async ({ page }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto(site.url);
+    const rows = page.locator('.axes tbody tr');
+    await expect(page.locator('#questions h2')).toHaveText('3 つの問い', SHOWN);
+    await expect(page.locator('.axes tbody th')).toHaveText(['AI の作りを見せるか', '人が承認するか', '測るか'], SHOWN);
+    // 列は「問い」と Studio の 2 つだけ。名前を伏せたほかの道具の欄も置かない
+    await expect(page.locator('.axes thead th')).toHaveText(['問い', 'Prototype Studio'], SHOWN);
+    for (let i = 0; i < 3; i += 1) await expect(rows.nth(i).locator('td')).toHaveCount(1);
+    await expect(page.locator('#questions')).not.toContainText(/ほかの道具|一般的な道具|記載なし/, SHOWN);
+    await expect(rows.nth(1).locator('td')).toContainText('作っている', SHOWN);
+    await page.locator('.bar-nav a[href="#questions"]').click();
+    await expect(page).toHaveURL(/#questions$/);
+
+    await page.locator('#lang-toggle').click();
+    await expect(page.locator('#questions h2')).toHaveText('Three questions', SHOWN);
+    await expect(page.locator('.axes tbody th')).toHaveText(['Does it show the AI architecture?', 'Does a person approve it?', 'Does it measure?'], SHOWN);
+    await expect(rows.nth(1).locator('td')).toContainText('In progress', SHOWN);
+  });
 
   test('日本語と英語、ダークとライトを切り替えられ、読み込み直しても残る', async ({ page }) => {
     await page.setViewportSize(DESKTOP);
