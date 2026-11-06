@@ -72,6 +72,7 @@ flowchart TB
         handoff["引き継ぎの書き出し<br/>handoff.js"]
         intent["目的の聞き出しと目的の文書<br/>intent.js、intent-ai.js"]
         organize["ヒアリングの整理<br/>organize.js、organize-ai.js"]
+        design["設計の案内<br/>design.js、design-ai.js、review/options.json"]
         redact["伏せる、秘密を探す<br/>redact.js"]
     end
 
@@ -106,6 +107,10 @@ flowchart TB
     api --> organize
     organize -- "読み書き(.studio/organize.json)" --> dotstudio
     organize -- "整理する AI(道具なし、cwd は空のフォルダー)" --> cli
+    api --> design
+    design -- "読み書き(.studio/design.json)" --> dotstudio
+    design -- "案を出す AI(道具なし、cwd は空のフォルダー)" --> cli
+    design -- "選んだ構成と場面を書く(作業のない間だけ)" --> app
     requests --> agent
     agent -- "子プロセス(cwd は app/)" --> cli
     cli -- "読み書き" --> app
@@ -165,7 +170,7 @@ flowchart TB
 | 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1〜G4、GE、G5、G6 を安い順に回す。失敗したら直す依頼(`fix-prompt.js`)を作って作る AI に返し、2 回まで直させる。`run.json` に残す |
 | プロダクト内 AI | `src/server/product-ai/` | 試作品ごとの会話、状態、実行の記録を持つ。1 ターンは harness(`harness.js`)が抽出 → 決定 → 言い方で回し、何を聞くか、段の遷移、終わるかはコードが決める。言い方の返事は `rules` で確かめる(`guards.js`)。接続はモックか Claude Code(抽出と言い方の 2 種の呼び出し)。実モデルの呼び出しの上限を数える(`limits.js`)。`app/ai.json` を検査する |
 | 構成 | `src/server/sim/` | `app/composition.json`、`compositions/`、`tools.json`、`assumptions/`、`mocks/`、`evals/` を検査する(G3)。`composition.json` がなければ、`ai.json` の harness 1 つの構成(構成 B)として読む。作る run の後に、構成とガードレールの変化を作る会話に出す(`changes.js`)。ツールの口(`tool-gate.js`)は、宣言のツールを形の検査、ツールの守り、実行の順に動かし、記録の店を値で返す。ファイルを書かず、外へ通信しない。ツールの MCP サーバーと、モックの模擬のエージェント(会話の進め方の中)が同じ関数を呼ぶ |
-| 会話の進め方と模擬のエージェント | `src/server/sim/orchestrator.js`、`agent-mock.js`、`agent-claude-code.js`、`parts.js` | `composition.json` のある試作品の 1 ターンを、決まった節の並び(受け付け → 話す参加者 → 引き継ぎ → 返事)で回し、通った節を記録に残す(`sim-turn`)。誰が話すか、引き継ぎ(辺、1 ターン 1 回、`limits.maxHandoffs`)、受け渡す値の検査、上限、出口の確かめ(`enforce` でやり直しと型の文か、記録だけ)はコードが決める。harness の参加者は `harness.js` の `turn()` をそのまま使う。模擬のエージェントは、モック(`mocks/*.json`。ツールは同じプロセスのツールの口)か Claude Code(返事ごとに `claude -p` を 1 回。ツールは MCP サーバーを通す。`--safe-mode` の代わりに作る AI と同じ組み合わせと `--tools ""`、許可は構成の名前だけ、cwd は空の一時フォルダー)。返事の部品は前提の `messageTypes` から作り、合わない部品は文に落とす(`parts.js`)。会話と記録は `AiSessions`(`product-ai/session.js`)が持つ。設計は [agent-simulation.md の 3.2、3.3](../design/agent-simulation.md#32-1-ターンの進め方) |
+| 会話の進め方と模擬のエージェント | `src/server/sim/orchestrator.js`、`agent-mock.js`、`agent-claude-code.js`、`parts.js` | `composition.json` のある試作品の 1 ターンを、決まった節の並び(受け付け → 話す参加者 → 引き継ぎ → 返事)で回し、通った節を記録に残す(`sim-turn`)。誰が話すか、引き継ぎ(辺、1 ターン 1 回、`limits.maxHandoffs`)、受け渡す値の検査、上限、出口の確かめ(`enforce` でやり直しと型の文か、記録だけ)はコードが決める。harness の参加者は `harness.js` の `turn()` をそのまま使う。`flow` と `escalate` を書いた参加者(固定の流れ。設計の 2.8)は、決定の後、言い方の前に、コードが段の順にツールの口を呼び、条件で人に渡す。モデルにはツールを渡さない。模擬のエージェントは、モック(`mocks/*.json`。ツールは同じプロセスのツールの口)か Claude Code(返事ごとに `claude -p` を 1 回。ツールは MCP サーバーを通す。`--safe-mode` の代わりに作る AI と同じ組み合わせと `--tools ""`、許可は構成の名前だけ、cwd は空の一時フォルダー)。返事の部品は前提の `messageTypes` から作り、合わない部品は文に落とす(`parts.js`)。会話と記録は `AiSessions`(`product-ai/session.js`)が持つ。設計は [agent-simulation.md の 3.2、3.3](../design/agent-simulation.md#32-1-ターンの進め方) |
 | 場面の回し | `src/server/sim/eval-run.js`、`bin/evals.js` | 場面(`app/evals/`)を、構成 × 前提 × 接続 × 回数で回す。場面ごとに新しい会話と記録の店で、会話の進め方(`runTurn`)かツールの口(`kind: tool`)を通す。確かめはコードが決め、当てはまらないものは `n/a`。`judge` はモックでは未採点で、実モデルの回しでは採点の接続(`judge.js`。道具なしの `claude -p` を 2 回)が採点する。危ない場面は、止まったかを結果の確かめ(`noToolRun`、`noRecord`、`replyNotContains`)と出口の確かめの違反で決め、止めた層(ツール、出口の確かめ、プロンプトかモデル)を別に出す。前の回しの結果は、`eval-recount.js` で今の場面の確かめで数え直せる(`scripts/sim-compare.js --recount`)。結果(`result.json`、`report.md`、`traces/`)は `app/` と構成と前提の指紋を持つ。作る run の関門 GE はモックだけで回す。CLI(`npm run evals`)は作業中の `app/` を一時フォルダーにビルドして回し、`--real` は `STUDIO_ALLOW_CLAUDE_CODE=1` と `--limit-usd` のときだけ。台帳(`.studio/evals/ledger.jsonl`)の累計が上限に達したら次の返事と採点を始めない([agent-simulation.md の 4.3](../design/agent-simulation.md#43-場面の回し))。jyoka/tasks#327 の場面は `eval-import.js`(`npm run evals:import`)で変換して取り込み、回しを並べた比べる表は `scripts/sim-compare.js` で作る |
 | 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する |
 | 引き継ぎ | `src/server/handoff.js` | 作業中の試作品と、目録、シナリオ、最新の証拠の要約、構成とツールと前提と場面、最新の場面の回しの要約を `handoffs/` に書き出す。形は [handoff.md](../handoff.md) |
@@ -176,6 +181,7 @@ flowchart TB
 | runtime | `src/runtime/runtime.js` | 試作品に配る。試作品のエラーを画面に知らせ、`window.studio.ai` を配る |
 | 会話の枠 | `src/runtime/studio-talk/` | 試作品が `import { Talk } from 'studio-talk'` で使える、同梱のトーク風の部品(文、ボタン、カード、カルーセル、知らせ。見た目 3 つ)。ビルドが React と一緒に試作品の束に入れ、iframe の中で動く。`window.studio.ai` だけを呼ぶ。ボタンは `action` も送る([agent-simulation.md の 3.8](../design/agent-simulation.md#38-会話の枠)) |
 | 既定の素材 | `materials/default/`、`scripts/material-sources.js` | 試作品が import できる Radix Themes、Radix Colors、Lucide の一覧と指針。部品はビルドが試作品の束に入れ、iframe の中で動く。字は OS の字で、同梱しない。`guide.md` は作る AI の決まりに入る(`src/server/claude-args.js`)。`source.json` と `licenses/` は、同梱した全部の版、ライセンス、出典、原文で、`npm run materials:sources` で作る([design-materials.md の 3 節](../design/design-materials.md#3-既定の素材)) |
+| 自分の素材 | `src/server/design-tokens.js`、`src/server/materials.js` | W3C の Design Tokens 2025.10 の形の JSON を検査し、CSS の変数にする。置き場所は `.studio/materials/`(`tokens.json`、`source.json`)。`buildApp` が `app.css` の最後に足し、関門 G3 で作る AI の上書きと指紋を確かめる。変数の名前と役割は作る AI の決まりに足す(`buildClaudeArgs` の `materialGuide`)。外への通信はない([design-materials.md の 4 節](../design/design-materials.md#j4-で決めたこと)) |
 | 観察器 | `src/observer/observe.js`、`src/observer/browser.js` | 表示中のビルドをヘッドレスの Playwright の Chromium で開き、読み込み、エラー、スクリーンショット、シナリオの結果、最後の画面、合否を report で返す。ブラウザは Studio の中で 1 つ。観察は 1 つずつ、毎回新しい文脈で回す。文脈は観察用の親ページと観察するビルドにだけ要求を出せ、名前の解決は loopback だけ([ADR 0002](../adr/0002-observer-and-harness.md))。作る AI、画面、版、会話の実装は import しない。設計は [harness.md の 3](../design/harness.md#3-観察) |
 | 観察の入口 | `src/server/observe-entry.js` | 観察を呼ぶ所が、どれも通る `observeProject`。同じ形の report を返す。モードは 2 つ。`shown` は Studio の表示中のビルドを見る。`working` は作業中の `app/` を一時フォルダーにビルドし、loopback の空いているポートに自分の試作品の配信と観察用の親ページを立てて見る。`working` の AI は、その観察だけのモックの会話。観察器は会話の実装を import しないので、入口は `src/server/` に置く |
 | 観察の CLI | `bin/observe.js` | `npm run observe -- <プロジェクト>`。入口を `working` で呼び、結果をターミナルに出す。終了コードは `passed` で 0 |
@@ -194,6 +200,14 @@ flowchart TB
 
 操作役が要点を打ち(`organize.js` の `addPoint`)、「整理する」を押すと、整理する AI に振り分けをもらいます(`organize-ai.js`)。起動の形は聞き出す AI と同じです(`structured-ai.js`)。「推測」の印は Studio が決めます。今ある要点を指す番号がない項目に付き、AI の返事では消せません。「確かめた」の印は、決める人が「この理解で合っている」を押す `confirm` でだけ `.studio/organize.json` に付き、板が変わると外れます。同意の前と AI を使えないときは整理する AI を呼ばず、人が手で振り分けます。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#k1-で決めたことtask-3842026-10-31)にあります。
 
+### 設計の案内(5 つの段)
+
+「案を作る」を押すと、案を出す AI に問題、使う人、場面の案と、構成と画面のおすすめをもらいます(`design.js` の `start`、`design-ai.js`)。起動の形は聞き出す AI と同じです(`structured-ai.js`)。構成の選択肢は Studio のデータです(`review/options.json`)。AI は勧めるだけで、まだ動かない形は勧められません。同意の前と AI を使えないときは AI を呼ばず、Studio の決まった案を出します。
+
+人が案を選ぶと(`choose`)、Studio が場面を `app/evals/design-*.json` に、構成を `app/composition.json` と、それが読むファイルに書きます(`syncFiles`)。ファイルの名前は Studio が決め、AI と人の文は JSON の値にしか入れません。書くのは、作る AI、ビルド、版の操作のない間だけです(`store.claimVersions`)。Studio が書いた覚えのない中身のファイルと、ふつうのファイルでないものには触りません。書いた後に検査と表示の準備を回し、通らなければ元に戻して断ります。
+
+「決めた」の印は、人が「この設計で作る」を押す `decide` でだけ `.studio/design.json` に付きます。`decide` は目的の文書と設計から依頼の文を作って返し、画面は言葉で直す欄と同じ道で作る AI に送ります。本物の AI の同意も、その道で取ります。場面と構成はそのまま作るループの関門(G3、GE)が検査します。AI 構成の審査と AI 構成書は #422 で作ります。今は「審査なし」のまま作ります。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#j2-で決めたことtask-3852026-11-02)にあります。
+
 ### 作る(試作品を変える)
 
 作る run は、コードで定義した節の並び(blueprint、`BLUEPRINT`)です。節には、モデルが判断する節(作る AI)と、決まった手順の節があります。決まった節は、作る AI の接続に触れません。設計は [harness.md の 2](../design/harness.md#2-作るループ)。
@@ -204,7 +218,7 @@ flowchart TB
 | 前の指紋(`fingerprint`) | コード | `app/` の指紋(`snapshotApp`)と、表示中のプロダクト内 AI の設定を取る |
 | 作る AI(`agent`) | モデル | `startAgentProcess` が偽接続か Claude Code を `app/` で起動する。引数は `buildClaudeArgs`、依頼は標準入力。観察の道具の MCP の設定を、run ごとに `.studio/runs/<run-id>/mcp.json`(`app/` の外)に書き、`--mcp-config` で渡す。stream-json を `readMessage` で項目に直して画面に流し、道具の呼び出しを数える。道具の項目には、名前の入った文(`text`、開発者向け)と、ファイルや道具の名前を入れない短い文(`summary`、利用者向け)を持たせる。直すラウンドでも、引数(MCP の設定のファイルを含む)、cwd、時間の上限、止め方は同じで、標準入力が直す依頼になるだけ |
 | G1 変更の確認(`changes`) | コード | 指紋を取り直し、変わったファイルを出す。変わっていなければ、ここで終わる(`unchanged`)。直すラウンドで変わっていなければ、直せなかったとして `failed` で終わる |
-| G2 検査、G3 契約、G4 ビルド(`inspect`、`contract`、`compile`) | コード | `ProjectStore.build` の 1 回の呼び出し。`buildApp` が誤りに段の名前を付けるので、どの関門で止まったかが分かる。G3 は目録、`ai.json`、目録が指すシナリオ(`readScenarios`)、構成とツール、前提、モック、場面(`readSimulation`)の形を検査し、シナリオの誤りはファイル、シナリオ、手順で返す。失敗したら、試す画面は前のビルドのまま |
+| G2 検査、G3 契約、G4 ビルド(`inspect`、`contract`、`compile`) | コード | `ProjectStore.build` の 1 回の呼び出し。`buildApp` が誤りに段の名前を付けるので、どの関門で止まったかが分かる。G3 は目録、`ai.json`、目録が指すシナリオ(`readScenarios`)、構成とツール、前提、モック、場面(`readSimulation`)の形を検査し、シナリオの誤りはファイル、シナリオ、手順で返す。つないだトークンがあれば、指紋と、`app/` の中の変数の上書きも確かめる。失敗したら、試す画面は前のビルドのまま |
 | GE 場面(`evals`) | コード | G4 が通ったら入る。`app/evals/` の場面を、既定の構成と既定の前提で、模擬のエージェントも harness もモックにして回す(`runEvals`)。ブラウザを使わないので G5 より前。実モデルは呼ばない。場面がなければ「場面なし」で通る。通らなかった確かめごとに、場面の `id`、確かめ、期待と実際、ツールの呼び出しの要約を残す。結果は `.studio/runs/<run-id>/rounds/<ラウンド>/evals/` |
 | G5 起動の確認(`launch`) | コード | 新しいビルドを観察器で開く。基本のシナリオなしで、3 つの画面幅を撮る。読み込みが 15 秒以内に終わり、エラーと `console.error` がなく、画面が空でなければ通る。ビルドが失敗したら行わない |
 | G6 シナリオ(`scenarios`) | コード | G5 が通ったら入る。`app/scenarios/` の各シナリオと、Studio の基本のシナリオを観察器で回す。プロダクト内 AI は、利用者が選んだ接続によらず、いつもモックの観察用の会話(`createObservationAi`)。時間の上限は 1 本 60 秒、関門の全体で 3 分。超えたら G6 の失敗。失敗したシナリオごとに、名前、失敗した手順、期待と実際、そのときの画面の文字を残す |
@@ -324,6 +338,7 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | `projects/<id>/.studio/handoff-notes.json` | 引き継ぎのメモ | Studio |
 | `projects/<id>/.studio/intent.json` | 目的の文書。1 文、案内の深さ、問いと答え、文書、決めた時刻か飛ばした時刻 | Studio(作る AI と聞き出す AI は書けない) |
 | `projects/<id>/.studio/organize.json` | 整理の板。要点、5 つの欄の項目と元の要点、聞くこと、人が消したもの、確かめた時刻 | Studio(作る AI と整理する AI は書けない) |
+| `projects/<id>/.studio/design.json` | 設計の案内。5 つの段の案、選んだ案、捨てた案、理由、場面の一覧、Studio が書いたファイルの指紋、決めた時刻か飛ばした時刻 | Studio(作る AI と案を出す AI は書けない) |
 | `handoffs/` | 引き継ぎの書き出し | Studio |
 | Studio のメモリー | 作業中の会話と状態、実行の記録、作る欄の会話 | Studio(止めると消える) |
 
@@ -339,6 +354,7 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | Claude Code の CLI(作る AI) | 作る AI が自動(既定)か `STUDIO_AGENT=claude` で、Claude Code が使えるとき。同意の後、作る欄で送るたび | 本人のアカウントの枠か API の従量課金。1 回の起動は 10 分、30 回まで。直すラウンドを合わせて 1 つの依頼で 3 回まで起動する |
 | Claude Code の CLI(聞き出す AI) | はじめの画面で同意した後、1 文か 1 つの答えを送るたび。`STUDIO_ALLOW_CLAUDE_CODE=0` では呼ばない | 同上。1 回の呼び出しは 90 秒、$0.1 まで。1 文か 1 つの答えで 2 回まで。問いの数は深さごとに 2、4、7 まで |
 | Claude Code の CLI(整理する AI) | 整理の板で同意した後、「整理する」を押すたび。`STUDIO_ALLOW_CLAUDE_CODE=0` では呼ばない | 同上。1 回の呼び出しは 120 秒、$0.3 まで。1 回押して 2 回まで |
+| Claude Code の CLI(案を出す AI) | 設計の案内で同意した後、「案を作る」か「案を作り直す」を押すたび。`STUDIO_ALLOW_CLAUDE_CODE=0` では呼ばない | 同上。1 回の呼び出しは 120 秒、$0.3 まで(仮。実モデルでは測っていない)。1 回押して 2 回まで |
 | Playwright の Chromium(観察器) | 観察するとき。`npm run install:chromium` で入れたもの | なし。モデルを呼ばない。AI の要求は、呼ぶ側が渡す関数に渡す |
 | Claude Code の CLI(プロダクト内 AI) | 画面で同意して切り替えたとき。`STUDIO_ALLOW_CLAUDE_CODE=0` では選べない | 同上。1 ターンは抽出と言い方の 2 種の呼び出し。1 回の呼び出しは 90 秒、$0.1 まで。上限は下の 3 つ |
 

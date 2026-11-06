@@ -127,9 +127,12 @@ test('README は「今できること」と「作っているもの」を分け�
   const start = readme.indexOf('## はじめる');
   assert.ok(readme.indexOf('## 特長') < today && today < building && building < start);
   assert.doesNotMatch(readme.slice(building, start), /<img|<picture|!\[/);
-  for (const word of ['AI 構成の審査', '3 つの形の比べ', 'データの棚と RAG の判定', '記録と比べる表を主の画面に', '設計の案内と質の見直し', 'みんなで作る']) {
+  for (const word of ['AI 構成の審査', '3 つの形の比べ', 'データの棚と RAG の判定', '記録と比べる表を主の画面に', '質の見直し', 'みんなで作る']) {
     assert.ok(readme.slice(building, start).includes(word), word);
   }
+  // 動くもの(設計の案内、ツールを呼ぶ固定の流れ)を、作っているものに「まだない」と書かない
+  assert.ok(readme.slice(today, building).includes('設計の案内'));
+  assert.doesNotMatch(readme.slice(building, start), /設計の案内|固定の流れからツールを呼ぶことと/);
   // 1 文の後の 2〜3 行で、承認の段がまだ使えないと言う(1 文だけを読んで、できると思わせない)
   const lead = readme.slice(readme.indexOf(`**${JA}**`), readme.indexOf('## しくみ'));
   assert.match(lead, /承認する段は作っているところで、まだ使えません/);
@@ -144,6 +147,18 @@ test('README と LP は「理想の構成」と言わず、日付と根拠のあ
   }
   assert.ok((await read('site/index.html')).includes("today's best guess, with a date and evidence"));
   assert.ok(llms.includes('## 今できること') && llms.includes('## 作っているもの'));
+});
+
+test('README、LP、伝え方の文書は、比べる相手の道具の名前を出さない(2026-11-06 の運営者の決定)', async () => {
+  // 名前そのものをこのファイルにも書かないため、文字の組で探す。名前を伏せた比べる欄も LP に置かない
+  const names = /r[e]plica|c[o]pilot/i;
+  const files = ['README.md', 'package.json', 'site/index.html', 'site/llms.txt', 'docs/brand.md', 'docs/vision.md', 'docs/design/design-materials.md'];
+  for (const file of files) {
+    const lines = (await read(file)).split('\n');
+    const hit = lines.findIndex((line) => names.test(line));
+    assert.equal(hit, -1, `${file}:${hit + 1}: ${lines[hit]}`);
+  }
+  assert.doesNotMatch(await read('site/index.html'), /ほかの道具の欄|一般的な道具の欄|記載なし/);
 });
 
 // GitHub の見出しのリンク名(小文字にし、記号を除き、空白を - にする)

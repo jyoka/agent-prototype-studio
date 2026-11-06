@@ -13,7 +13,7 @@ Prototype Studio を外に伝えるときの土台です。README の絵、LP �
 - 1 文は「**思いつきを AI プロダクトにすると、どんな作りになるか。動かして測り、人が承認してから作る。**」。英語は「**See how your idea works as an AI product, test it, and approve the architecture before you build.**」
 - この 1 文を、README の冒頭、LP の見出し、フッター、GitHub の説明、バナーで、同じ文のまま使う。変えるときは全部を一度に変える
 - 1 文は目的を言う。「人が承認してから作る」の段はまだないので、伝えるものには必ず「今できること」と「作っているもの」を分けて書く。全部のカードが終わったら jyoka/tasks#394 が「作っているもの」を畳む
-- 機能は、名詞の見出しと 2 行の説明のカードで伝える。今できること 8 枚と、作っているもの 6 つ(3 節)
+- 機能は、名詞の見出しと 2 行の説明のカードで伝える。今できること 9 枚と、作っているもの 6 つ(3 節)
 - 分解の絵は、AI の作りを 1 回のトークで見せる。本物の画面だけを使い、承認の段は絵にしない(4 節)
 - 「理想の構成」と言わない。出すのは、日付と根拠のある、今日の一番良い推測と書く
 - 見た目は `assets/brand/tokens.css` の CSS の変数で決める。ライトの色は今の画面(`src/ui/studio.css`)と同じ値にした
@@ -119,13 +119,14 @@ Studio が何で、何が違うかを 1 文で言い切る。運営者が 2026-1
 | # | 見出し | 説明(日本語) | Heading | Description | 詳しく |
 |---|---|---|---|---|---|
 | 1 | 目的の聞き出し | 思いつきを 1 文書くと、問いが 1 つずつ返り、目的の文書になる。<br>決まるのは「これで決める」を押したときだけ。文書は `.studio/intent.json` に残る。 | Purpose interview | Write your idea in one sentence. Studio asks one question at a time and turns the answers into a purpose document.<br>Nothing is decided until you press the button. The document stays in `.studio/intent.json`. | [usage.md の「目的を聞き出す」](usage.md#目的を聞き出すはじめの画面) |
-| 2 | ヒアリングの整理 | 打った要点を AI が 5 つの欄に振り分け、決める人が確かめる。<br>本物の AI は同意の後だけ動き、同意しないときは手で振り分ける。本物のお客さんの会には、まだ使わない。板は `.studio/organize.json` に残る。 | Hearing notes | The AI sorts the notes you type into five columns, and the person who decides checks them.<br>The real model runs only after you consent. Without consent, you sort the notes by hand. Do not use it in real customer sessions yet. The board stays in `.studio/organize.json`. | [usage.md の「ヒアリングを整理する」](usage.md#ヒアリングを整理する聞き取りの欄と整理の板) |
-| 3 | 構成の模擬 | 構成と前提を選ぶと、同じ試作品が別の組み方で話す。模擬のエージェントがツールを自分で選んで呼ぶ。<br>構成はデータで、`app/composition.json` に書く。 | Simulated setups | Pick a setup and assumptions, and the same prototype talks in a different arrangement. A simulated agent picks and calls the tools itself.<br>A setup is data, written in `app/composition.json`. | [design/agent-simulation.md](design/agent-simulation.md) |
-| 4 | 守りの層 | どの層の守りが止めたかと、その理由を実行の記録で読む。<br>層はツールの守り、プロンプトの頼み、出口の確かめの 3 つ。記録は「開発者向けの詳細」にある。 | Guardrail layers | Read in the trace which guardrail layer stopped a turn, and why.<br>The layers are tool guards, prompt asks, and output checks. The trace is under developer details. | [design/agent-simulation.md](design/agent-simulation.md) |
-| 5 | 場面の比較 | 同じ場面の一覧を構成と前提ごとに回し、1 つの表で比べる。<br>今はターミナルで回す(`npm run evals`)。モックの数は形の確かめで、振る舞いの差は実モデルで測る。 | Eval runs | Run the same evals across setups and assumptions, and compare them in one table.<br>Run it in the terminal today (`npm run evals`). Mock numbers only check the shape. Differences in behavior need the real model. | [usage.md の「場面を回す」](usage.md#場面を回すnpm-run-evals) |
-| 6 | 言葉で直す欄 | 試しながら、画面や AI の振る舞いの直したい所を言葉で頼む。<br>作る AI が書けるのは、試作品の `app/` だけ。 | Plain-word edits | While you try the prototype, ask in plain words for changes to the screens or the AI's behavior.<br>The maker AI can write only to the prototype's `app/`. | [usage.md](usage.md) |
-| 7 | 版と引き継ぎ | 良い状態を版として保存し、いつでも戻す。本番開発に渡すものを 1 つのフォルダーに書き出す。<br>ソース、AI の設定、試した会話、証拠の要約が入る。 | Versions and handoff | Save a good state as a version and restore it any time. Export what the production team needs to one folder.<br>It holds the source, AI settings, tried conversations, and an evidence summary. | [handoff.md](handoff.md) |
-| 8 | 作るループの関門 | 作る AI が直すたびに、Studio が決まった順に確かめる。落ちたら失敗を返し、2 回まで直させる。<br>順は検査、ビルド、場面、起動、シナリオ。 | Build-loop gates | After each edit by the maker AI, Studio runs its checks in a fixed order. On failure, it sends the result back for up to two fix rounds.<br>The order is checks, build, evals, launch, and scenarios. | [architecture/hld.md](architecture/hld.md) |
+| 2 | 設計の案内 | 問題、使う人、場面、構成、画面の 5 つの段で、2〜3 の案から選ぶ。<br>案は出した日付つきの今日の推測で、まだ測っていない。選んだ場面と構成を Studio が書き、設計は `.studio/design.json` に残る。 | Design guide | Pick from two or three proposals at each of five steps: problem, users, scenes, setup, and screens.<br>Each proposal is today's guess, dated, and not measured yet. Studio writes the chosen scenes and setup, and the design stays in `.studio/design.json`. | [usage.md の「設計の案内」](usage.md#設計の案内5-つの段) |
+| 3 | ヒアリングの整理 | 打った要点を AI が 5 つの欄に振り分け、決める人が確かめる。<br>本物の AI は同意の後だけ動き、同意しないときは手で振り分ける。本物のお客さんの会には、まだ使わない。板は `.studio/organize.json` に残る。 | Hearing notes | The AI sorts the notes you type into five columns, and the person who decides checks them.<br>The real model runs only after you consent. Without consent, you sort the notes by hand. Do not use it in real customer sessions yet. The board stays in `.studio/organize.json`. | [usage.md の「ヒアリングを整理する」](usage.md#ヒアリングを整理する聞き取りの欄と整理の板) |
+| 4 | 構成の模擬 | 構成と前提を選ぶと、同じ試作品が別の組み方で話す。模擬のエージェントがツールを自分で選んで呼ぶ。<br>構成はデータで、`app/composition.json` に書く。 | Simulated setups | Pick a setup and assumptions, and the same prototype talks in a different arrangement. A simulated agent picks and calls the tools itself.<br>A setup is data, written in `app/composition.json`. | [design/agent-simulation.md](design/agent-simulation.md) |
+| 5 | 守りの層 | どの層の守りが止めたかと、その理由を実行の記録で読む。<br>層はツールの守り、プロンプトの頼み、出口の確かめの 3 つ。記録は「開発者向けの詳細」にある。 | Guardrail layers | Read in the trace which guardrail layer stopped a turn, and why.<br>The layers are tool guards, prompt asks, and output checks. The trace is under developer details. | [design/agent-simulation.md](design/agent-simulation.md) |
+| 6 | 場面の比較 | 同じ場面の一覧を構成と前提ごとに回し、1 つの表で比べる。<br>今はターミナルで回す(`npm run evals`)。モックの数は形の確かめで、振る舞いの差は実モデルで測る。 | Eval runs | Run the same evals across setups and assumptions, and compare them in one table.<br>Run it in the terminal today (`npm run evals`). Mock numbers only check the shape. Differences in behavior need the real model. | [usage.md の「場面を回す」](usage.md#場面を回すnpm-run-evals) |
+| 7 | 言葉で直す欄 | 試しながら、画面や AI の振る舞いの直したい所を言葉で頼む。<br>作る AI が書けるのは、試作品の `app/` だけ。 | Plain-word edits | While you try the prototype, ask in plain words for changes to the screens or the AI's behavior.<br>The maker AI can write only to the prototype's `app/`. | [usage.md](usage.md) |
+| 8 | 版と引き継ぎ | 良い状態を版として保存し、いつでも戻す。本番開発に渡すものを 1 つのフォルダーに書き出す。<br>ソース、AI の設定、試した会話、証拠の要約が入る。 | Versions and handoff | Save a good state as a version and restore it any time. Export what the production team needs to one folder.<br>It holds the source, AI settings, tried conversations, and an evidence summary. | [handoff.md](handoff.md) |
+| 9 | 作るループの関門 | 作る AI が直すたびに、Studio が決まった順に確かめる。落ちたら失敗を返し、2 回まで直させる。<br>順は検査、ビルド、場面、起動、シナリオ。 | Build-loop gates | After each edit by the maker AI, Studio runs its checks in a fixed order. On failure, it sends the result back for up to two fix rounds.<br>The order is checks, build, evals, launch, and scenarios. | [architecture/hld.md](architecture/hld.md) |
 
 前のカードのうち、「データだけの流用」と「モックと実モデル」を LP のカードから外した。流用は開発者に向けた話で、AI の作りを読む人の判断に要らない。モックと実モデルは、LP の見出しの下の文と README の特長に残した。
 
@@ -136,19 +137,20 @@ Studio が何で、何が違うかを 1 文で言い切る。運営者が 2026-1
 | 見出し | 説明(日本語) | Heading | Description | カード |
 |---|---|---|---|---|
 | AI 構成の審査 | エージェントの構成、harness、データと RAG、技術の組の案を見せる。人が 4 つを承認するまで、作る AI を起動しない。結果は AI 構成書に残す。 | AI architecture review | Shows a proposal for the agent setup, harness, data and RAG, and tech stack. The maker AI does not start until a person approves all four. The result stays in an AI architecture record. | #422 |
-| 3 つの形の比べ | 固定の流れ、単一エージェント、マスターとサブを、同じ場面の一覧で比べる。簡単な方から問い、足りたら止まる。今は単一エージェントを書ける。固定の流れからツールを呼ぶことと、親子の委任は、まだない。 | Three architecture shapes | Compares a fixed flow, a single agent, and a master with sub-agents on the same evals. It asks about the simplest shape first and stops when that is enough. Today you can write the single agent. Calling tools from a fixed flow and parent-to-child delegation do not exist yet. | #419、#420 |
+| 3 つの形の比べ | 固定の流れ、単一エージェント、マスターとサブを、同じ場面の一覧で比べる。簡単な方から問い、足りたら止まる。今は単一エージェントと、ツールを呼ぶ固定の流れを書ける。親子の委任は、まだない。 | Three architecture shapes | Compares a fixed flow, a single agent, and a master with sub-agents on the same evals. It asks about the simplest shape first and stops when that is enough. Today you can write the single agent and a fixed flow that calls tools. Parent-to-child delegation does not exist yet. | #420 |
 | データの棚と RAG の判定 | AI が何をどう読むかを見せ、RAG が要るかを判定する。「要らない」とも言える。 | Data shelf and RAG check | Shows what the AI reads and how, and checks whether RAG is needed. The answer can be no. | #421 |
 | 記録と比べる表を主の画面に | 今、記録は開発者向けの詳細に、比べる表はターミナルにある。主の画面で読めるようにする。 | Traces and tables on the main screen | Today the trace is under developer details and the comparison table is in the terminal. This moves them to the main screen. | #423 |
-| 設計の案内と質の見直し | 問題、使う人、場面、構成、画面の 5 つの段を案内する。使いやすさ、アクセシビリティ、場面の結果をまとめて見る。 | Design guide and quality review | Guides you through five steps: problem, users, scenes, setup, and screens. Then it reviews usability, accessibility, and eval results together. | J2、J6 |
+| 質の見直し | 使いやすさ、アクセシビリティ、素材に合っているか、場面の結果をまとめて見る。 | Quality review | Reviews usability, accessibility, fit with the design materials, and eval results together. | J6 |
 | みんなで作る | コメントと反応を付け、承認したコメントだけを作る AI が直す。まず 1 台の PC でみんなで使う形から作る。 | Building together | People comment and react, and the maker AI acts only on approved comments. It starts with a group sharing one PC. | K3 |
 
-### 比べる
+### 3 つの問い
 
-LP の「比べる」は、GitHub の Replica と次の 3 つの軸で比べる。ほかの道具の欄は、読んで確かめた事実だけを書く。書いていないことを「ない」と書かない。
+LP の「3 つの問い」は、Studio が何をするかを自分の言葉で書く。ほかの道具とは比べない。
+個人のプロジェクトには、企業名とサービス名を書かない決まりがあるため(2026-11-06 に運営者が決めた)。
 
-- 軸: AI の作りを見せるか、人が承認するか、測るか
-- Replica の欄は、2026-11-02 に README を読み、入門の docs 3 本(`local-prototyping.md`、`getting-started.md`、`prototype-environment.md`)を語で探して書いた
-- Studio の欄も、今できることと作っているものを分ける
+- 問い: AI の作りを見せるか、人が承認するか、測るか
+- 答えも、今できることと作っているものを分ける
+- 「ほかの道具」「一般的な道具」のような、名前を伏せた比べる欄も作らない
 
 ## 4. 分解の絵の台本
 

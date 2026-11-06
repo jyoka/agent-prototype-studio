@@ -27,6 +27,7 @@ import {
   unique,
 } from './check.js';
 import { readEvals } from './evals.js';
+import { checkFlowParts, parseFlowParts } from './flow-check.js';
 import { DEFAULT_MOCKS, readMocks } from './mocks.js';
 import { loadToolData } from './tool-gate.js';
 import { TOOLS_FILE, readTools } from './tools.js';
@@ -60,7 +61,7 @@ export const DEFAULT_LIMITS = { maxTurns: 30, maxHandoffs: 3 };
 const TOP_KEYS = ['formatVersion', 'name', 'driver', 'participants', 'tools', 'handoffs', 'guards', 'surface', 'assumptions', 'limits'];
 const PARTICIPANT_KEYS = {
   agent: ['id', 'kind', 'label', 'owner', 'prompt', 'tools', 'mock'],
-  harness: ['id', 'kind', 'label', 'owner', 'ai', 'returnTo'],
+  harness: ['id', 'kind', 'label', 'owner', 'ai', 'returnTo', 'model', 'flow', 'escalate'],
   human: ['id', 'kind', 'label', 'owner', 'mock'],
 };
 const GUARD_KEYS = {
@@ -125,6 +126,8 @@ function parseParticipant(problems, where, raw) {
   if (kind === 'harness') {
     participant.ai = raw.ai;
     participant.returnTo = idOf(problems, `${where}.returnTo`, raw.returnTo, { required: false }) ?? null;
+    // 固定の流れ(2.8)。書いた参加者にだけ項目を足す(今の構成の指紋と記録を変えないため。R2)
+    Object.assign(participant, parseFlowParts(problems, where, raw));
   }
   if (kind === 'human') {
     participant.mock = null;
@@ -173,6 +176,9 @@ function parseGuard(problems, where, raw) {
   }
   return guard;
 }
+
+// この構成が前提を使うか。agent の参加者と、モデルを前提から読む harness の参加者が使う(今の harness の参加者は使わない。R2)
+export const usesAssumptions = (composition) => composition.participants.some((p) => p.kind === 'agent' || p.model?.from === 'assumptions');
 
 // 構成の形だけを検査する(ほかのファイルを指す所は crossCheck で確かめる)
 function parseComposition(raw, problems) {
@@ -301,6 +307,8 @@ async function crossCheck(problems, composition, ctx) {
     }
   } else if (agents.length > 0) {
     problems.add('assumptions', 'agent の参加者がいるときは、前提の置き場所と既定の前提を書いてください');
+  } else if (usesAssumptions(composition)) {
+    problems.add('assumptions', 'harness の参加者のモデルを前提から読むときは、前提の置き場所と既定の前提を書いてください');
   }
 
   for (const participant of composition.participants) {
@@ -355,6 +363,7 @@ async function crossCheck(problems, composition, ctx) {
           problems.add(`${at}.returnTo`, `戻るのも引き継ぎです。handoffs に { "from": "${participant.id}", "to": "${participant.returnTo}" } を書いてください`);
         }
       }
+      if (file !== undefined) await checkFlowParts(problems, at, participant, { definition: await ctx.aiOf(file), composition, toolset, toolByName, byId, edge });
     }
   }
 

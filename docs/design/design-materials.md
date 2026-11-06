@@ -2,7 +2,7 @@
 
 試作品の見た目と使いやすさを、誰でも少しの「良い味」から始められるようにする作戦です。既定の素材の候補とライセンス、自分の素材をつなぐ形、取り込みの案内を書きます。
 
-- 状態: 案(task 378)。書いた日: 2026-10-29。既定の素材(3 節)は、運営者が 2026-10-29 に決めた(task 381)。実装は [user-journey.md の 6 節](user-journey.md#6-実装のカードの分け方)の J3〜J5。J3 の結果は 3 節の「J3 で確かめたこと」(2026-10-31)
+- 状態: 案(task 378)。書いた日: 2026-10-29。既定の素材(3 節)は、運営者が 2026-10-29 に決めた(task 381)。実装は [user-journey.md の 6 節](user-journey.md#6-実装のカードの分け方)の J3〜J5。J3 の結果は 3 節の「J3 で確かめたこと」(2026-10-31)。J4 の結果は 4 節の「J4 で決めたこと」(2026-11-02)
 - 前提: [vision.md](../vision.md) の原則 6「素材を流用できる」、[ADR 0001](../adr/0001-local-runtime-and-isolation.md)。隔離は弱めない
 - 出典はどれも 2026-10-29 に読んだ。ライセンスは一次資料(リポジトリの LICENSE、公式の規約、npm の登録)で確かめた。確かめられなかったものは「未確認」と書いた
 - ライセンスの読み方は、法律の助言ではない。同梱を決める前に、運営者が原文を読む
@@ -14,6 +14,7 @@
 - 既定の素材は、Radix Themes + Radix Colors(MIT)、Lucide(ISC)、OS の字に決めた(3 節)
 - Material 3 は「Google の見た目」として選べる素材にする。Material Web は既定にしない。同梱の前に、運営者がライセンスの原文を読む(J3 で止まって確かめる)
 - 自分の素材は、つなぎやすい順に、トークン、指針の文、Storybook、npm のパッケージ、Figma にする(4 節)
+- 自分のトークンは J4 でつなげるようになった。Studio が検査して `.studio/materials/` に置き、ビルドで CSS の変数にする。作る AI が書き換えると関門 G3 で止まる(4 節)
 - 作る AI は `app/` の外を読めず、MCP は Studio の観察の道具だけ。だから素材は Studio が受け取り、検査し、作る AI に渡す。作る AI に外の Figma や Storybook を直接つながない(4 節)
 - 取り込みの案内は、聞く、確かめる、見本で試す、有効にするの 4 歩(5 節)
 
@@ -26,7 +27,7 @@
 | CSS の中の外の URL はビルドで残すが、CSP が止める | `src/server/build.js` | 外の字を読む部品は、見た目が崩れる。検査で知らせる |
 | サーバーで `npm install` も package.json の scripts も動かさない | ADR 0001 の 149 行 | 利用者のパッケージを入れるときも、スクリプトは動かさない |
 | 作る AI は `--restricted` で、ファイルの道具は `app/` の中だけ。Web の道具はない。MCP は観察の道具のサーバーだけ(`--strict-mcp-config`)。skills はない | `src/server/claude-args.js` の `buildClaudeArgs` | 作る AI は、Figma や Storybook の MCP、Web の指針を直接読めない。指針は `app/` の中か、Studio の決まり(`--append-system-prompt`)で渡す |
-| 同梱するライブラリの範囲は、既定の素材まで | [ADR 0001 の「J3 で決めたこと」](../adr/0001-local-runtime-and-isolation.md#j3-で決めたこと2026-10-31) | 自分の素材は、J5 で ADR 0001 を直してから足す |
+| 同梱するライブラリの範囲は、既定の素材まで | [ADR 0001 の「J3 で決めたこと」](../adr/0001-local-runtime-and-isolation.md#j3-で決めたこと2026-10-31) | 自分の部品のパッケージは、J5 で ADR 0001 を直してから足す。トークンはコードではなく CSS の値だけなので、J4 では ADR 0001 を直さない |
 
 ## 2. 既定の素材の候補とライセンス
 
@@ -41,7 +42,7 @@
 | Roboto | OFL-1.1 | https://github.com/googlefonts/roboto-3-classic | できる | できる | 日本語の字はない |
 | Material の色の作り方(`@material/material-color-utilities`) | Apache-2.0 | https://github.com/material-foundation/material-color-utilities | できる | できる | 1 つの色から、役割ごとの色を作れる |
 | Material 3 の指針の文 | 未確認 | https://m3.material.io/ | 未確認 | 未確認 | 検索の抜き出しに「Apache 2.0 か CC BY 4.0」とあったが、ページの本文では確かめられなかった。確かめるまでは、文を写さず、自分の言葉で要約する |
-| Fluent UI React v9(`@fluentui/react-components`) | MIT | https://github.com/microsoft/fluentui | できる | できる | 参照する字とアイコンは別のライセンス(下の「使えないもの」)。Replica の見本の 1 つが使っている(5 節) |
+| Fluent UI React v9(`@fluentui/react-components`) | MIT | https://github.com/microsoft/fluentui | できる | できる | 参照する字とアイコンは別のライセンス(下の「使えないもの」) |
 | Fluent System Icons | MIT | https://github.com/microsoft/fluentui-system-icons | できる | できる | |
 | Primer(`@primer/react`、Primer Primitives) | MIT | https://github.com/primer/react 、https://github.com/primer/primitives | できる | できる | GitHub の見た目 |
 | Carbon(`@carbon/react`) | Apache-2.0 | https://github.com/carbon-design-system/carbon | できる | できる | IBM の見た目 |
@@ -94,7 +95,7 @@ Apple の見た目を求める人には、次の代わりを使います。ど�
 |---|---|---|---|---|---|---|
 | Radix Themes + Radix Colors + Lucide(決めた) | MIT、ISC | React の部品 | 字は OS の字で済む(J3 で確かめた) | 続いている見込み(Themes 3.3.0。頻度は確かめていない) | 中立 | 既定にする |
 | Material Web + Material Symbols + Roboto | Apache-2.0、OFL-1.1 | Web Components。React 19 は custom elements を扱えるが、Studio では確かめていない | 字とアイコンの同梱が要る | maintenance mode | Google の見た目 | 「Google の見た目」を選べる素材として足す。既定にはしない |
-| Fluent UI React v9 + Fluent System Icons | MIT | React の部品 | Segoe を同梱できない。OS の字に落とす | 続いている(9.75.0) | Microsoft の見た目 | 第 3 の候補。Replica と比べるときの見本にもなる |
+| Fluent UI React v9 + Fluent System Icons | MIT | React の部品 | Segoe を同梱できない。OS の字に落とす | 続いている(9.75.0) | Microsoft の見た目 | 第 3 の候補 |
 | shadcn/ui | MIT | React の部品 | Tailwind の CSS を作る手順が要る | 続いている | 中立 | 今のビルドに Tailwind がないので、後にする |
 
 ### 決めたこと
@@ -140,7 +141,8 @@ Material 3 は J3 では同梱しない。選ぶ画面と「手入れが止ま�
 
 | もの | 置き場所 | 作る AI | 理由 |
 |---|---|---|---|
-| トークンの CSS、部品のパッケージ | Studio が持つ場所(試作品の `.studio/` の下か、データの置き場)。ビルドが決まった名前の import(例: `studio:design/tokens.css`)で解く | 読めない。import の名前で使う | 書き換えられない |
+| トークン | `.studio/materials/`(J4 で決めた)。ビルドが CSS の変数にして `app.css` の最後に足す | 読めない。変数の名前を Studio の決まりで受け取り、`var()` で読む | 書き換えられない |
+| 部品のパッケージ | Studio が持つ場所(試作品の `.studio/` の下か、データの置き場)。ビルドが決まった名前の import(例: `studio:design/...`)で解く(案。J5) | 読めない。import の名前で使う | 書き換えられない |
 | 指針の文、部品の一覧の文 | `app/design/` に写す | 読める | 作る AI は `app/` の外を読めない |
 | 写しが変わっていないか | 関門(検査の G3 の仲間)で写しのハッシュを確かめる | | 作る AI が指針を書き換えても気づける |
 | 出典とライセンス | 素材ごとの一覧(`source.json`。既定の素材は `materials/default/source.json`) | 読める | 引き継ぎと見直しで使う |
@@ -156,7 +158,47 @@ Material 3 は J3 では同梱しない。選ぶ画面と「手入れが止ま�
 | npm のパッケージ(自分の部品) | パッケージのファイル(`npm pack` で作った tgz)か、フォルダー | 展開するだけで、スクリプトは動かさない。ライセンスの欄、依存の数、外への URL(字の CDN など)、大きさを検査する。試作品ごとに import を許す一覧に足す | 許された名前で import する | 部品のコードは、試作品の `sandbox` の iframe の中だけで動く。外へ通信できない。ビルド(esbuild)はコードを動かさない。ADR 0001 の「同梱するライブラリだけ」を「同梱するものと、検査して許したもの」に直す | 4 |
 | Figma | 変数を書き出した JSON(トークンの道へ)、画面の絵(PNG) | トークンの道に乗せる。絵は見本として `app/design/` に置く | 見本の絵を見る(作る AI が絵を読めるかは、作る AI の道具しだい。未確認) | Studio は Figma を呼ばない。Figma の MCP サーバー(https://developers.figma.com/docs/figma-mcp-server/)は、リモートは外への通信と Figma のログインが要る。デスクトップは有料のプランの Dev か Full の席が要る。変数の REST API は Enterprise の Full の席が要る(https://developers.figma.com/docs/rest-api/variables/)。多くの利用者には、書き出しの道が現実的 | 5 |
 
-Figma の変数を W3C の形で書き出す道具(プラグインなど)があるかは、確かめていない(不明)。J4 で確かめる。
+### J4 で決めたこと
+
+カードに書いていなかったことを、エージェントが決めた。運営者の確かめは PR で受ける。
+
+| 決めたこと | 中身 | 理由 | 採らなかった案 |
+|---|---|---|---|
+| どう試作品に入れるか | ビルドが `app.css` の最後に足す。import の名前(上の表の前の案 `studio:design/tokens.css`)はやめた | 作る AI が読み込みを消せない。今ある試作品も、ソースを変えずに既定の素材の部品の色と字が変わる。書き出したソースが Studio だけの名前を持たない | import の名前。消されると素材が効かない。Studio の外でビルドできなくなる |
+| 既定の素材とのつなぎ | 役割(地、字、押せる所、失敗、字の種類)に当てたトークンを、Radix Themes の変数に当てる。段のある色は 1 色から `color-mix` で作る | 既定の素材の部品が、そのまま自分の色になる。「部品の色を直して」を頼まなくて済む | `--token-*` だけを出す。部品が変わらず、受け入れ条件の「見本の色と字」が自分で書いた所だけになる |
+| 変換 | 自前の小さな変換(`src/server/design-tokens.js`)。Style Dictionary を使わない | 2025.10 の全部にはまだ対応していないと書いてある(4 節の表)。依存を増やさない。誤りを利用者の言葉で返せる | Style Dictionary |
+| 作る AI が素材を変えたか | 関門 G3 で 2 つを確かめる。(1) `app/` の CSS、JS、HTML の中で `--token-*` と、役割に当てた既定の素材の変数を定義していないか。(2) `.studio/materials/tokens.json` が、つないだときの指紋と同じか。ほかに、つないでいない `--token-*` を読むと止める | 作る AI のファイルの道具は `app/` の外に書けないので、変える道は `app/` の中の上書きが主。(2) は手で変えたときと、万一の守り | 写しを `app/design/` に置いてハッシュで確かめる。写しは J5 の指針の文で使う。トークンは写さなくても名前を渡せる |
+| 作る AI に何を渡すか | 変数の名前、種類、役割だけ。値とトークンの説明の文は渡さない | 値を写して書かせないため。説明の文はファイルの持ち主の文で、指示として読ませたくない | 値も渡す |
+| 古い書き方の色と大きさ | 文字列(`#ff0000`、`16px`)は誤りにし、2025.10 の形を案内する | カードは 2025.10 の形。仕様は種類を値から推測しないよう求めている | 文字列も受ける。形がゆるみ、受けた値の検査が増える |
+| 役割が足りないとき | 既定の素材のままにできる。足りない役割を画面に出し、選び直せる | 5 節の「既定の素材で補うかを聞く」に合わせた | 足りないと断る |
+| 誰の素材か | 書かないとつなげない。理由は書かなくても進める | 引き継ぎの出典になる。J5 の「ライセンスが分からないと有効にできない」の手前 | どちらも任意 |
+| 届く範囲 | この試作品だけ。「これからの試作品全部」は J5 の案内で足す | J4 は案内の 4 歩の前の段 | Studio 全体に置く |
+| 版との関係 | 版で戻しても素材は戻らない。素材を変えたら、前の確かめは「古い」と出る | 目的の文書や設計と同じ扱い。`app/` の指紋に素材は入らないので、時刻で比べる | 版に素材を入れる |
+| 引き継ぎ | 形式 3 のまま、つないでいるときだけ `materials` と `materials/` のファイルを足す | J8 が形式 4 にする。ソースだけでは同じ見た目にならないので、先に足す | J8 まで入れない |
+
+作って決めた細かいこと:
+
+- 変数の名前は `--token-` にトークンの場所をハイフンでつないだもの(`color.brandPrimary` は `--token-color-brand-primary`)。`typography` は `--token-x-font-size` のように分ける。別の場所から同じ名前になると誤りにする
+- 値は種類ごとに形を確かめてから Studio が CSS の文を組み立てる。字の名前だけは引用符の中の文字列にする。`url()` や別の宣言は値に混ざらない(外への通信なしを保つ)。`$extensions` は読まない
+- `{a.b}`、`$ref`(このファイルの中だけ)、`$extends`、`$root` を解く。輪は誤り。重ねて倍々に膨らむファイルは、たどる回数の上限で断る
+- 上限はファイル 512 KB、トークン 2000 個、入れ子 20 段、変数の名前 120 文字(仮)
+- 定義の検査は形で探す。行をまたぐ形は見つけるが、文字列を組み立てた名前、CSS のエスケープやコメントを挟んだ形は見つけない。わざと隠す相手の守りではなく、うっかりの上書きを止めるもの。逆に `cond ? '--token-a' : 'b'` のような文は止まることがある。値のまま書いた色を数えるのは J6 で、J4 は作る AI への決まりだけ
+- 読む所は `var(--token-x)` の形だけを見る。`.badge--token-count` のような語や、文の中の名前では止めない
+- 素材のファイル自体の問題(指紋が違う、ない、形が壊れた)は `app/` の外にあり、作る AI には直せない。関門で止めたら直すラウンドに回さず、人に「外して、つなぎ直す」を案内する。料金をかけないため
+- 外すと、`var(--token-x)` を読む所には値がなくなる。止めず、残りの数を画面で知らせる(後の値を書いていれば、それで描く)。外した状態の版を戻すときは知らせない
+- 秘密らしい文字列と、個人の情報らしい文字列があると断る。素材のファイルは引き継ぎにそのまま入るため。探すのは名前と文字列の値で、色の成分などの数は探さない
+- 仕様より緩く受ける所: `shadow` の `blur` と `spread` は、なければ 0 にする。`typography` は項目が欠けていても、ある分だけ変数にする。仕様にない `$` の項目は使わないと知らせて進む
+- 仕様の `$ref` は、トークンの値の中のほかに、`$value` のない `$ref` も受ける(トークンを指せば別名、グループを指せば `$extends` と同じ)
+- グラデーションの変数は色の並びだけ。仕様に種類の項目がないので、`linear-gradient(var(--token-x))` のように読む
+- 試作品がつないでいない変数を読んでいると、つなぐ前に場所を出して断る。読んでいない変数が足りないだけなら断らない
+- 場面の回し(`npm run evals`)のビルドは素材を見ない。見た目を使わないため
+
+確かめていないこと:
+
+- Figma の変数を W3C の形で書き出す道具: 検索では、TokensBruecke(README に 2025.10 と互換と書いてある。https://cdn.jsdelivr.net/npm/tokens-bruecke@3.15.1/README.md )、Token Forge(https://figma-web.pages.dev/plugins/1560757977662930693 )、`@tfk-samf/figma-to-dtcg`(https://npmjs.com/package/@tfk-samf/figma-to-dtcg )が見つかった。どれも動かしていない。Figma の標準の書き出しは、フォーラムに一部のアカウントで出たとの書き込みがあるだけで、一般に使えるかと 2025.10 の形かは不明(https://forum.figma.com/ask-the-community-7/native-variable-export-feature-47831/index2.html )。古い形の色の文字列を出す道具があるので、誤りの文で 2025.10 の形を案内する
+- 本物の書き出しのファイルで通るか: 架空のファイルだけで確かめた
+- 明るい地と暗い地を切り替える素材: 1 つの値だけを扱う。2025.10 の Resolver の仕組みは読んでいない。暗い地の Theme では、淡い段が合わない見込み(推測)
+- 字と地の差: 検査していない。J5 の「見本で試す」と J6
 
 ## 5. 取り込みを案内する流れ
 
@@ -171,26 +213,13 @@ Figma の変数を W3C の形で書き出す道具(プラグインなど)があ�
 
 有効にした後は、作る AI への依頼に指針の要約が入り、質の見直し(J6)が「素材に合っているか」を数えます。
 
-### Replica と比べる
+### 取り込みの形で決めたこと
 
-GitHub の Replica は、GitHub Design が作った、AI で試作品を作る道具です(MIT。https://github.com/github/replica)。GitHub Copilot のアプリの中で動きます。Studio と同じく、デザインシステムの指針を入れて試作品を作ります。
+ほかの道具とは比べず、Studio の形だけを書く。個人のプロジェクトには、企業名とサービス名を書かない決まりがあるため(2026-11-06 に運営者が決めた)。
 
-| 点 | Replica | Studio(この案) |
-|---|---|---|
-| 誰が素材を入れるか | チームが、`/setup-skills` で「承認された出典」(製品の文書、デザインシステムの文書、部品やトークンのパッケージ)を渡す。Copilot が出典を見て、試作品を作る指示を下書きする(https://github.com/github/replica/blob/main/docs/local-prototyping.md) | 利用者本人かデザイナーが、取り込みの案内で渡す。検査は Studio が決まった手順で行い、AI に任せない |
-| 指針の置き場所 | リポジトリのファイル。見本(starters/coreai)では `.agents/context/` に `DESIGN-SYSTEM.md`、`ACCESSIBILITY.md`、`BROWSER-VALIDATION.md` など、`.agents/skills/` に部品ごとの skill がある | `app/design/` の写しと、Studio が持つ素材。写しが変わっていないかを関門で確かめる |
-| 部品のパッケージ | Copilot がパッケージを入れる前に許可を聞く | 作る AI はパッケージを入れられない。Studio が検査して、import を許す |
-| 既定の素材 | 見本が 2 つ。Minimal(自分のデザインシステムに合わせる小さな例)と CoreAI Sandbox(できあいの配置と部品。skill の名前から Fluent UI React を使う) | Radix Themes(既定)と、選べる Material 3 |
-| 隔離 | 確かめていない(不明) | ADR 0001 のまま。試作品は外へ通信しない |
-| 質の確かめ | ブラウザで確かめる指針のファイルがある。中身は読んでいない(不明) | 関門、観察器、質の見直し(J6)で数を出す |
-
-Replica から学ぶこと:
-
-- 指針をファイルにして、作る AI が毎回読む形。Studio の `app/design/` と同じ考え
-- 素材を入れる人(デザイナー)と、それで作る人を分ける形。Studio でも、素材を「これからの試作品全部」に有効にすれば同じになる
-
-Studio が違えること:
-
+- 指針をファイルにして、作る AI が毎回読む。置き場所は `app/design/` の写しと、Studio が持つ素材。写しが変わっていないかを関門で確かめる
+- 素材を入れる人(デザイナー)と、それで作る人を分けられる。素材を「これからの試作品全部」に有効にすれば、そうなる
+- 作る AI はパッケージを入れられない。Studio が検査して、import を許す
 - 素材の検査とライセンスの確かめを、AI ではなく決まった手順で行う(原則 7)
 - 素材に合っているかを、見直しで数として出す(原則 4)
 - 素材より前に、目的の聞き出しと設計の案内がある(原則 1)
@@ -204,6 +233,7 @@ Studio が違えること:
 | 2026-10-29 | 既定の素材は Radix Themes + Radix Colors + Lucide + OS の字。Material 3 は「Google の見た目」として選べる素材にする。Material Web は既定にしない | 3 節 |
 | 2026-10-29 | 同梱の前に、運営者がライセンスの原文を読む。J3 は止まって確かめる | 3 節 |
 | 2026-10-31 | J3 では Material 3 を同梱しない。選ぶ画面と一緒に別のカードで足す(J3 の担当が決めた。運営者が PR で確かめる) | 3 節 |
+| 2026-11-02 | トークンは `.studio/materials/` に置き、ビルドが `app.css` の最後に足す。import の名前の案をやめた(J4 の担当が決めた。運営者が PR で確かめる) | 4 節 |
 
 ### 決めていないこと、確かめていないこと
 

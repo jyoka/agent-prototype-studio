@@ -214,7 +214,7 @@ export class ProjectVersions {
     try {
       await copyTree(paths.app, appCopy);
       // 写しをビルドして確かめる。表示中の版と会話には触れない
-      const build = await buildApp({ appDir: appCopy, buildsDir: path.join(tmp, 'builds') }).catch((error) => ({
+      const build = await buildApp({ appDir: appCopy, buildsDir: path.join(tmp, 'builds'), projectRoot: paths.root }).catch((error) => ({
         ok: false,
         errors: [{ file: 'app/', text: error.message }],
       }));

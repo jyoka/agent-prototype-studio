@@ -24,6 +24,8 @@
     <button type="button" id="intent-mark" class="intent-mark" data-state="none" hidden>目的なし</button>
     <!-- 整理の板の印(field-session.md の段 2)。押すと、聞き取りの欄と整理の板を開く -->
     <button type="button" id="organize-mark" class="intent-mark" data-state="none" hidden>ヒアリングの整理</button>
+    <!-- 設計の案内の印(user-journey.md の段 3、J2)。押すと、5 つの段の帯と案の比べを開く -->
+    <button type="button" id="design-mark" class="intent-mark" data-state="none" hidden>設計なし</button>
     <div class="topbar-end">
       <!-- STUDIO_AGENT=fake で起動したときだけ出す(ux-redesign.md 4 節) -->
       <span id="dev-agent-mark" class="dev-agent-mark" hidden>開発用: 偽の直す AI</span>
@@ -110,7 +112,8 @@
       <textarea id="intent-doc-undecided" rows="3" maxlength="3000"></textarea>
       <div class="intent-actions">
         <button type="submit" id="intent-decide" class="primary">これで決める</button>
-        <button type="button" id="intent-begin" class="primary">この目的で試作品を作り始める</button>
+        <button type="button" id="intent-design" class="primary">この目的で設計に進む</button>
+        <button type="button" id="intent-begin">この目的で試作品を作り始める</button>
         <button type="button" id="intent-reopen">直す</button>
         <button type="button" id="intent-back">試作品の画面に戻る</button>
         <button type="button" id="intent-doc-skip">飛ばす</button>
@@ -124,12 +127,75 @@
     <p id="intent-note" class="intent-note" role="status" hidden></p>
     <p id="intent-error" class="intent-error" role="alert" hidden></p>
   </section>
+  <!-- 設計の案内(user-journey.md の段 3、J2)。5 つの段の帯と、各段の案の比べ。出している間は、下の 2 列を隠す -->
+  <section id="design" class="design" aria-labelledby="design-heading" hidden>
+    <h2 id="design-heading" tabindex="-1">設計の案内</h2>
+    <p id="design-state" class="intent-doc-state" role="status"></p>
+    <ol id="design-band" class="design-band" aria-label="設計の段"></ol>
+    <div id="design-waiting" class="intent-waiting" role="status" hidden>
+      <p>案を作っています…</p>
+      <button type="button" id="design-stop">止める</button>
+    </div>
+    <div id="design-consent"></div>
+    <div id="design-declined" class="intent-declined" hidden>
+      <p>AI には送りませんでした。Studio の決まった案で進められます。料金はかかりません。</p>
+      <button type="button" id="design-use-fixed">決まった案で進める</button>
+    </div>
+    <div id="design-begin" class="design-begin" hidden>
+      <p>問題、使う人、場面、エージェントの構成、画面の 5 つを順に決めます。各段に案を並べ、おすすめと理由を出します。決めるのはあなたです。</p>
+      <p id="design-no-ai" class="muted" hidden>今は AI を使えないので、Studio の決まった案を出します。料金はかかりません。</p>
+      <div class="design-actions">
+        <button type="button" id="design-start" class="primary">案を作る</button>
+      </div>
+    </div>
+    <section id="design-step" class="design-step" aria-labelledby="design-step-heading" hidden>
+      <h3 id="design-step-heading"></h3>
+      <p id="design-step-lead" class="muted"></p>
+      <p id="design-stale" class="intent-declined" hidden>前の段を変えました。この案のままでよいか確かめて、もう一度選んでください。</p>
+      <p id="design-basis" class="muted"></p>
+      <ul id="design-options" class="design-options" aria-label="案の比べ"></ul>
+      <form id="design-custom" class="design-line" hidden>
+        <label for="design-custom-text">自分の言葉で書く</label>
+        <input id="design-custom-text" type="text" maxlength="300" autocomplete="off">
+        <button type="submit">これを選ぶ</button>
+      </form>
+      <section id="design-scenes-box" class="design-scenes" aria-labelledby="design-scenes-heading" hidden>
+        <h4 id="design-scenes-heading">場面の一覧</h4>
+        <p class="muted">使う人が言いそうな 1 文を直せます。分からない、断る、遅いの場面は 1 つずつ以上残します。直した分は、次の段へ進むときに保存します。</p>
+        <ol id="design-scenes" class="organize-list" aria-label="場面の一覧"></ol>
+        <form id="design-scene-add" class="design-line">
+          <label for="design-scene-category">足す種類</label>
+          <select id="design-scene-category"></select>
+          <label for="design-scene-text">足す場面</label>
+          <input id="design-scene-text" type="text" maxlength="200" autocomplete="off">
+          <button type="submit">場面を足す</button>
+        </form>
+      </section>
+      <p id="design-owner" class="muted" hidden>この試作品には今の構成があります。Studio は書き換えません。</p>
+      <p id="design-review" class="muted" hidden>AI 構成の審査(4 つの承認)の画面は、まだありません。今は審査なしで作ります。記録にも「審査なし」と残します。</p>
+      <div id="design-note-box" class="design-line" hidden>
+        <label for="design-note">選んだ理由(書かなくても進めます)</label>
+        <input id="design-note" type="text" maxlength="300" autocomplete="off">
+      </div>
+    </section>
+    <div class="design-actions">
+      <button type="button" id="design-prev" hidden>前の段へ</button>
+      <button type="button" id="design-next" class="primary" hidden>次の段へ</button>
+      <button type="button" id="design-build" class="primary" hidden>この設計で作る</button>
+      <button type="button" id="design-again" hidden>案を作り直す</button>
+      <button type="button" id="design-back">試作品の画面に戻る</button>
+      <button type="button" id="design-skip">飛ばす</button>
+    </div>
+    <p id="design-note-message" class="intent-note" role="status" hidden></p>
+    <p id="design-error" class="intent-error" role="alert" hidden></p>
+  </section>
   <!-- ヒアリングの整理(user-journey.md の K1、field-session.md の段 1、段 2)。左に聞き取りの欄、右に整理の板。出している間は、下の 2 列を隠す -->
   <section id="organize" class="organize" aria-labelledby="organize-heading" hidden>
     <h2 id="organize-heading" tabindex="-1">ヒアリングの整理</h2>
     <p id="organize-state" class="intent-doc-state" role="status"></p>
     <div class="organize-actions">
       <button type="button" id="organize-confirm" class="primary">この理解で合っている</button>
+      <button type="button" id="organize-design" hidden>この理解で設計に進む</button>
       <button type="button" id="organize-back">試作品の画面に戻る</button>
     </div>
     <p class="muted">「この理解で合っている」は、決める人が板を読んでから押します。</p>
@@ -283,6 +349,31 @@
       <div id="check-consent" class="check-consent" hidden></div>
       <button type="button" id="check-run" disabled>試作品を自動で確かめる</button>
       <p id="check-message" class="check-message" role="status" hidden></p>
+    </section>
+    <!-- 自分のトークンをつなぐ(user-journey.md の J4)。形を確かめてから、Studio の持つ場所に置く -->
+    <section aria-labelledby="tokens-heading">
+      <h3 id="tokens-heading">自分のトークンをつなぐ</h3>
+      <p class="muted">色と字の決まりを書いたファイル(W3C の Design Tokens 2025.10 の形の JSON)を選びます。Studio が形を確かめ、この試作品に入れます。素材は Studio が持つので、直す AI は書き換えられません。直す AI への決まりには、値ではなく名前だけを書きます。</p>
+      <div id="tokens-connected" class="tokens-connected" hidden></div>
+      <p id="tokens-message" class="versions-message" role="status" hidden></p>
+      <form id="tokens-form" class="handoff-form">
+        <label for="tokens-file">トークンのファイル</label>
+        <input id="tokens-file" type="file" accept=".json,.tokens,application/json,application/design-tokens+json" disabled>
+        <div id="tokens-problems" class="tokens-problems" hidden></div>
+        <div id="tokens-review" class="tokens-review" hidden>
+          <p id="tokens-summary"></p>
+          <fieldset class="tokens-roles">
+            <legend>どのトークンを、どの役割に使うか</legend>
+            <div id="tokens-roles"></div>
+            <p id="tokens-missing" class="muted" hidden></p>
+          </fieldset>
+          <label for="tokens-source">誰の素材か(引き継ぎの出典になります)</label>
+          <input id="tokens-source" type="text" maxlength="200" autocomplete="off">
+          <label for="tokens-reason">つなぐ理由(書かなくても進めます)</label>
+          <input id="tokens-reason" type="text" maxlength="300" autocomplete="off">
+          <button type="submit" id="tokens-connect" disabled>つなぐ</button>
+        </div>
+      </form>
     </section>
     <section aria-labelledby="handoff-heading">
       <h3 id="handoff-heading">本番開発へ渡す</h3>

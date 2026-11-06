@@ -10,6 +10,7 @@ import { baseScenarios, describeStep, readScenarios } from '../observer/scenario
 import { VersionError, copyTree } from './versions.js';
 import { extractPrompt, extractSchema, phrasePrompt, phraseSchema } from './product-ai/claude-code.js';
 import { formatValue } from './product-ai/definition.js';
+import { materialChangedAt, readTokenMaterial } from './materials.js';
 import { findPersonalData, findSecrets, redact, redactDeep } from './redact.js';
 import { BusyError } from './store.js';
 import { EVAL_RUN_FORMAT, failuresOf, outcomeOf, riskyText } from './sim/eval-run.js';
@@ -204,7 +205,9 @@ async function latestEvidence(paths, appDigest) {
     if (!record || found.startedAt > record.startedAt) record = found;
   }
   if (!record) return { appDigest, run: null };
-  const staleOf = (digest) => (typeof digest === 'string' ? digest !== appDigest : null);
+  // つないだ素材は app/ の外なので、指紋に入らない。素材を変えた時刻より前の確かめも古い
+  const changedAt = await materialChangedAt(paths.root);
+  const staleOf = (digest, at) => (typeof digest === 'string' ? digest !== appDigest || (changedAt !== null && typeof at === 'string' && at < changedAt) : null);
   const gates = Array.isArray(record.gates) ? record.gates : [];
   const reports = [];
   for (const gate of gates) {
@@ -220,7 +223,7 @@ async function latestEvidence(paths, appDigest) {
       verdict: report.verdict ?? null,
       startedAt: report.startedAt ?? null,
       appDigest: report.appDigest ?? null,
-      stale: staleOf(report.appDigest),
+      stale: staleOf(report.appDigest, report.startedAt),
       errorCount: Array.isArray(report.errors) ? report.errors.length : 0,
       scenarios: (Array.isArray(report.scenarios) ? report.scenarios : []).map((s) => ({ name: s.name, base: s.base === true, file: s.file ?? null, verdict: s.verdict })),
     });
@@ -236,7 +239,7 @@ async function latestEvidence(paths, appDigest) {
       finishedAt: record.finishedAt ?? null,
       rounds: Array.isArray(record.rounds) ? record.rounds.length : 1,
       appDigest: digest,
-      stale: staleOf(digest),
+      stale: staleOf(digest, record.finishedAt ?? record.startedAt),
       gates: gates.map((g) => ({
         id: g.id,
         label: g.label,
@@ -310,6 +313,10 @@ function describeSimulation(simulation, latestRun) {
       owner: p.owner,
       ...(p.kind === 'agent' ? { prompt: p.prompt, tools: p.tools ?? [], mock: p.mock ? `app/${p.mock}` : null } : {}),
       ...(p.kind === 'harness' ? { ai: `app/${p.ai}`, returnTo: p.returnTo ?? null } : {}),
+      // 固定の流れ(コードがツールを呼ぶ段、人に渡す条件、モデルの指定)。書いた参加者だけ
+      ...(p.kind === 'harness' && p.flow ? { flow: p.flow, tools: p.tools ?? [] } : {}),
+      ...(p.kind === 'harness' && p.escalate ? { escalate: p.escalate } : {}),
+      ...(p.kind === 'harness' && p.model ? { model: p.model } : {}),
       ...(p.kind === 'human' ? { mock: p.mock ?? null } : {}),
     })),
     tools: composition.tools ? `app/${composition.tools}` : null,
@@ -696,6 +703,47 @@ function simulationLines(simulation) {
   return lines;
 }
 
+// 書き出しの中の素材のファイル。ソースの外に置く(app/ には素材の値を入れない)
+const MATERIAL_FILES = { tokens: 'materials/tokens.json', css: 'materials/tokens.css', source: 'materials/source.json' };
+
+function describeTokens(material) {
+  const { record, tokens } = material;
+  // 人が書いた文だけを伏せる。指紋は長い符号の形なので、伏せると照合できなくなる
+  return {
+    files: MATERIAL_FILES,
+    spec: record.spec,
+    fileName: redact(record.fileName),
+    source: redact(record.source),
+    reason: redact(record.reason),
+    connectedAt: record.connectedAt,
+    sha256: record.sha256,
+    count: tokens.length,
+    roles: record.roles,
+    variables: tokens.flatMap((token) => token.variables.map((variable) => variable.name)),
+  };
+}
+
+// source.json の写し。人が書いた文だけを伏せる
+function materialSourceCopy(source) {
+  const clean = (entry) => ({ ...entry, ...Object.fromEntries(['fileName', 'source', 'reason'].filter((key) => typeof entry?.[key] === 'string').map((key) => [key, redact(entry[key])])) });
+  return { ...source, tokens: source.tokens ? clean(source.tokens) : null, history: (source.history ?? []).map(clean) };
+}
+
+function materialLines(materials) {
+  const tokens = materials?.tokens;
+  if (!tokens) return [];
+  return [
+    '## 素材(自分のトークン)',
+    '',
+    `- 出典: ${oneLine(tokens.source)}`,
+    `- つないだ理由: ${tokens.reason ? oneLine(tokens.reason) : '(書いていません)'}`,
+    `- 元のファイル: ${oneLine(tokens.fileName)}(${tokens.spec}、トークン ${tokens.count} 個)。写しは ${code(tokens.files.tokens)}`,
+    `- 変数の CSS: ${code(tokens.files.css)}。試作品の CSS の最後に読むと、Studio と同じ見た目になる。Studio がビルドのときに足すので、ソースには入っていない`,
+    `- 記録: ${code(tokens.files.source)}(つないだ、外したの履歴)`,
+    '',
+  ];
+}
+
 function renderReadme(h) {
   const lines = [];
   const push = (...items) => lines.push(...items);
@@ -781,7 +829,7 @@ function renderReadme(h) {
     push('## プロダクト内 AI', '', 'この試作品は、プロダクト内 AI を使っていません(`app/ai.json` がありません)。', '');
   }
 
-  push(...simulationLines(h.simulation), ...scenarioLines(h.scenarios), ...evidenceLines(h.evidence));
+  push(...simulationLines(h.simulation), ...scenarioLines(h.scenarios), ...evidenceLines(h.evidence), ...materialLines(h.materials));
   push(
     '## ソース',
     '',
@@ -926,7 +974,7 @@ export class ProjectHandoffs {
         throw error;
       }
       // 写しをビルドして確かめる。写しの AI の設定を、書き出す設定にする
-      const build = await buildApp({ appDir: appCopy, buildsDir: path.join(tmp, 'builds') }).catch((error) => ({
+      const build = await buildApp({ appDir: appCopy, buildsDir: path.join(tmp, 'builds'), projectRoot: paths.root }).catch((error) => ({
         ok: false,
         errors: [{ file: 'app/', text: error.message }],
       }));
@@ -959,6 +1007,7 @@ export class ProjectHandoffs {
         ? describeConversation(definition, this.aiSessions.snapshot(id, definition), this.aiSessions.connections)
         : null;
       const selected = this.aiSessions.connectionOf(id);
+      const material = await readTokenMaterial(paths.root);
       const { versions: versionList, working } = await this.versions.list(id);
       const manifest = {
         format: HANDOFF_FORMAT,
@@ -1008,6 +1057,8 @@ export class ProjectHandoffs {
           redactDeep({ request: run.request, status: run.status, startedAt: run.startedAt, changedFiles: run.changedFiles ?? [] }),
         ),
         excluded,
+        // つないだトークンがあるときだけ(J4)。素材の出典と、つないだ理由を残す
+        ...(material ? { materials: { tokens: describeTokens(material) } } : {}),
       };
 
       const readme = renderReadme({
@@ -1018,6 +1069,13 @@ export class ProjectHandoffs {
       const outputs = [
         ['README.md', readme],
         ['handoff.json', `${JSON.stringify(manifest, null, 2)}\n`],
+        ...(material
+          ? [
+              [MATERIAL_FILES.tokens, material.text],
+              [MATERIAL_FILES.css, material.css],
+              [MATERIAL_FILES.source, `${JSON.stringify(materialSourceCopy(material.source), null, 2)}\n`],
+            ]
+          : []),
         ...(definition
           ? [
               // 実モデルは抽出と言い方の 2 種の呼び出しで動く。それぞれの指示と応答の形を書く

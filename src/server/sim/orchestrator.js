@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { ConnectionError } from '../product-ai/claude-code.js';
 import { normalizeValue } from '../product-ai/definition.js';
 import { numbersIn } from '../product-ai/guards.js';
-import { startProgress, turn } from '../product-ai/harness.js';
+import { startFlowMemory, startProgress, turn } from '../product-ai/harness.js';
 import { agentPrompt, agentStdin, maxPerReplyOf } from './agent-claude-code.js';
 import { isPlainObject } from './check.js';
 import { describeParts, fitParts, partKindsOf, partsToCheckedText, partsToText, replySchema } from './parts.js';
@@ -10,6 +11,7 @@ import { callTool, refusedEntry } from './tool-gate.js';
 // 会話の進め方(orchestrator。docs/design/agent-simulation.md の 3.1、3.2)。構成(composition.json)のある試作品の 1 ターンを回す。
 // 誰が話すか、引き継ぎを通すか(辺、1 ターン 1 回、limits.maxHandoffs)、上限、受け渡す値の検査、出口の確かめは、
 // どれもここのコードが決める(S16 の構成 A、C)。モデルが決めるのは、返事の中身とツールの選び方だけ。
+// 固定の流れ(harness の参加者の flow と escalate。2.8)では、harness の節の中でコードがツールを呼ぶ。モデルにはツールを渡さない。
 // 1 ターンは決まった節の並びで回り、通った節を記録の nodes に残す(S9):
 //   accept → (harness:<id> | prompt:<id> → agent:<id> → surface:<id> → output:<id> | human:<id>) → handoff → (引き継いだ先の 1 回) → reply
 // モデル(接続)を呼ぶのは harness:<id> と agent:<id> の節の中だけ。ほかの節はコードだけで進む。
@@ -310,15 +312,43 @@ export async function runTurn({
   }
 
   // harness の参加者が 1 回話す。harness の turn() をそのまま使う(抽出 → 決定 → 言い方 → rules)
-  async function speakHarness(participant) {
+  async function speakHarness(participant, handedOff = null) {
     const { id } = participant;
     node(`harness:${id}`);
     const definition = sim.ais.get(id);
     const own = next.harness[id];
     const stages = {};
-    const step = { participant: id, kind: 'harness', connection: harnessConnection.kind, real: Boolean(harnessConnection.billing), harness: stages };
+    // モデルの指定は、書いた参加者だけ前提から読む(構成 B と今の構成の harness は接続の既定のまま。R2)
+    const model = participant.model?.from === 'assumptions' ? assumption?.model?.name ?? null : null;
+    const step = { participant: id, kind: 'harness', connection: harnessConnection.kind, real: Boolean(harnessConnection.billing), ...(model ? { model } : {}), harness: stages };
     record.steps.push(step);
     const started = Date.now();
+    const flow = participant.flow || participant.escalate
+      ? {
+          spec: { flow: participant.flow ?? [], escalate: participant.escalate ?? [] },
+          memory: own.flow ?? startFlowMemory(),
+          // 1 ターンに引き継げるのは 1 回、1 つの会話では limits.maxHandoffs 回まで
+          canEscalate: !handedOff && next.handoffs < composition.limits.maxHandoffs,
+          isWrite: (name) => sim.toolset?.tools.find((tool) => tool.name === name)?.do.op === 'record',
+          // ツールの口を呼ぶのは、ここのコードだけ。記録には via: 'flow' を残す
+          call: async (name, args) => {
+            if (signal?.aborted) throw new ConnectionError('cancelled', '応答を止めました');
+            const outcome = await callToolImpl({
+              tools: sim.toolset,
+              data: sim.toolData,
+              store: next.store,
+              context: { conversationId: next.id, userId: context.userId, by: id, via: 'flow', calls: next.calls, assumption, handoffs: composition.handoffs },
+              name,
+              args,
+            });
+            next.store = outcome.store;
+            next.calls = outcome.calls;
+            record.steps.push(outcome.entry);
+            if (outcome.ok) toolResults.push(outcome.result);
+            return outcome;
+          },
+        }
+      : null;
     const result = await turn({
       connection: harnessConnection,
       definition,
@@ -331,10 +361,16 @@ export async function runTurn({
       trace: stages,
       dataNumbers: sim.dataNumbers ?? [],
       deadlineMs,
+      flow,
+      model,
     });
     step.ms = Date.now() - started;
-    next.harness[id] = { state: result.state, progress: result.progress };
-    return { message: { role: 'assistant', from: id, text: result.reply, parts: [{ kind: 'text', text: result.reply }] }, handoffs: [] };
+    next.harness[id] = { state: result.state, progress: result.progress, ...(result.flow ? { flow: result.flow.memory } : {}) };
+    // 人に渡す条件を満たしたら、辺の carry の名前の値を渡す。通すかは、下の引き継ぎの節がほかの引き継ぎと同じく決める
+    const escalate = result.flow?.escalate;
+    const edge = escalate ? composition.handoffs.find((item) => item.from === id && item.to === escalate.to) : null;
+    const carry = Object.fromEntries((edge?.carry ?? []).filter((key) => (result.state[key] ?? null) !== null).map((key) => [key, result.state[key]]));
+    return { message: { role: 'assistant', from: id, text: result.reply, parts: [{ kind: 'text', text: result.reply }] }, handoffs: escalate ? [{ to: escalate.to, carry }] : [] };
   }
 
   function speakHuman(participant) {
@@ -346,7 +382,7 @@ export async function runTurn({
 
   const speak = (participant, handedOff = null) => {
     if (participant.kind === 'agent') return speakAgent(participant, handedOff);
-    if (participant.kind === 'harness') return speakHarness(participant);
+    if (participant.kind === 'harness') return speakHarness(participant, handedOff);
     return speakHuman(participant);
   };
 
@@ -370,7 +406,11 @@ export async function runTurn({
       accepted.push(key);
     }
     // 終わった相談役にもう一度引き継いだら、入った値はそのままに、最初の段から始める(聞き直さない。未定の項目だけを聞く)
-    if (definition && next.harness[target.id].progress.done) next.harness[target.id].progress = startProgress(definition);
+    if (definition && next.harness[target.id].progress.done) {
+      next.harness[target.id].progress = startProgress(definition);
+      // 固定の流れは、呼んだ段と結果も最初からにする
+      delete next.harness[target.id].flow;
+    }
     return { accepted, rejected };
   }
 

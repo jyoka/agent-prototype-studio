@@ -224,10 +224,13 @@ export function phraseInput({ definition, decision, state, messages, text = '', 
   const say = [];
   if (decision.corrected.length > 0) say.push(`- 本人が直した項目(直した内容に合わせると伝える): ${decision.corrected.map(shown).join('、')}`);
   if (decision.changes.length > 0) say.push(`- 今の発言から読み取った値(理解したと伝える): ${decision.changes.map((change) => shown(change.key)).join('、')}`);
-  else if (decision.corrected.length === 0 && (decision.intent === null || decision.intent === 'answer')) say.push('- 今の発言からは、条件を読み取れなかった(そう伝える)');
+  else if (decision.corrected.length === 0 && (decision.intent === null || decision.intent === 'answer') && !decision.tell?.length) say.push('- 今の発言からは、条件を読み取れなかった(そう伝える)');
+  // 固定の流れがツールの結果から作った文。モデルにはツールも結果の全体も渡さない(docs/design/agent-simulation.md の 2.8)
+  for (const fact of decision.tell ?? []) say.push(`- 伝えること(この文をそのまま入れる): ${fact}`);
   if (decision.say === 'summary') say.push('- まとめる: 今の状態をまとめ、これでよいか確かめる');
-  if (decision.done) say.push('- 会話を終える: 今の状態でまとめて終える。新しく聞かない');
-  for (const question of decision.mustInclude) say.push(`- 聞く問い(この文をそのまま入れる): ${question}`);
+  if (decision.escalate) say.push('- 担当者に渡す: この後は担当者が話す。新しく聞かない');
+  else if (decision.done) say.push('- 会話を終える: 今の状態でまとめて終える。新しく聞かない');
+  for (const question of decision.mustInclude) if (!decision.tell?.includes(question)) say.push(`- 聞く問い(この文をそのまま入れる): ${question}`);
   if (say.length === 0) say.push('- 発言を受け止める');
   return [
     ...conversation(messages),
@@ -245,8 +248,9 @@ export function phraseInput({ definition, decision, state, messages, text = '', 
 }
 
 // 起動の引数。偽接続でも実接続でも同じにする(ADR-0001)。発言は argv に入れず stdin で渡す。
-// kind は呼び出しの種類(extract か phrase)。違うのは --json-schema と --system-prompt だけ
-export function buildArgs(definition, kind = 'extract') {
+// kind は呼び出しの種類(extract か phrase)。違うのは --json-schema と --system-prompt だけ。
+// model は harness の参加者が前提から読んだモデルの名前(形は assumptions.js の MODEL_NAME_PATTERN で検査済み)。書かなければ --model を付けない
+export function buildArgs(definition, kind = 'extract', { model = null } = {}) {
   if (!CALL_KINDS.includes(kind)) throw new Error(`知らない呼び出しの種類です: ${kind}`);
   const args = [
     '-p',
@@ -266,6 +270,7 @@ export function buildArgs(definition, kind = 'extract') {
     '--max-budget-usd',
     String(CLAUDE_CODE_LIMITS.maxBudgetUsd),
   ];
+  if (model) args.push(`--model=${model}`);
   return args;
 }
 
@@ -586,7 +591,7 @@ export function createClaudeCodeConnection({ env = process.env, allowed = false,
       return { stdin: phraseInput(input) };
     },
     // CLI を 1 回起動する。起動する前に上限を数え(meter。上限なら投げてモデルを呼ばない)、待ち時間と結果を残す
-    async call(kind, { definition, input, signal, meter }) {
+    async call(kind, { definition, input, signal, meter, model = null }) {
       const bin = findExecutable(binName, env);
       if (!bin) throw new ConnectionError('not-found', NOT_FOUND);
       // 止められた後と、作業フォルダーを作れないときは、数えずに終える
@@ -594,7 +599,7 @@ export function createClaudeCodeConnection({ env = process.env, allowed = false,
       if (!workDir || !fs.existsSync(workDir)) workDir = emptyWorkDir();
       const metered = meter?.start(kind);
       try {
-        const parsed = await runCli({ bin, args: buildArgs(definition, kind), input, cwd: workDir, env, signal, limits, running });
+        const parsed = await runCli({ bin, args: buildArgs(definition, kind, { model }), input, cwd: workDir, env, signal, limits, running });
         return { ...parsed, metered };
       } catch (error) {
         metered?.end({ error: error.code ?? 'failed' });
@@ -603,13 +608,13 @@ export function createClaudeCodeConnection({ env = process.env, allowed = false,
     },
     // 出力の形が壊れていたら 1 回やり直す。2 回とも壊れていたら fallback に理由を入れて返す(代わりの値は呼ぶ側が決める)。
     // 1 ターンの呼び出しの上限を使い切っていたら(守ることのやり直しで使ったとき)、やり直さずに fallback で返す
-    async attempts(kind, { definition, signal, meter, inputOf, problemOf }) {
+    async attempts(kind, { definition, signal, meter, inputOf, problemOf, model = null }) {
       const problems = [];
       for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
         if (attempt > 1 && meter && meter.remaining(kind) === 0) {
           return { output: null, fallback: `出力が壊れていて(${problems[0]})、1 ターンの呼び出しの上限でやり直せなかった` };
         }
-        const { output, format, meta, metered } = await this.call(kind, { definition, input: inputOf(problems.at(-1) ?? null), signal, meter });
+        const { output, format, meta, metered } = await this.call(kind, { definition, input: inputOf(problems.at(-1) ?? null), signal, meter, model });
         const problem = problemOf(output);
         metered?.end({ ...meta, format: problem ? 'broken' : format, problem });
         const retry = problems.length > 0 ? `1 回目の出力は${problems[0]}ので、やり直した` : null;
@@ -620,11 +625,12 @@ export function createClaudeCodeConnection({ env = process.env, allowed = false,
       return { output: null, retry: `1 回目の出力は${problems[0]}ので、やり直した`, fallback: `2 回とも出力が壊れていた(${problems.join('、')})` };
     },
     // 抽出。2 回とも壊れていたら「変更なし」で返す
-    async extract({ definition, state, messages, text, signal, meter }) {
+    async extract({ definition, state, messages, text, signal, meter, model = null }) {
       const { output, retry, fallback } = await this.attempts('extract', {
         definition,
         signal,
         meter,
+        model,
         inputOf: (problem) => extractInput({ definition, state, messages, text, problem }),
         problemOf: extractionProblem,
       });
@@ -633,11 +639,12 @@ export function createClaudeCodeConnection({ env = process.env, allowed = false,
     },
     // 言い方。2 回とも壊れていたら reply を null で返す。harness がモックの言い方の型で返事を作る
     // guardProblem は、守ることに合わなかった前の返事の問題(harness がやり直すときに渡す)
-    async phrase({ definition, decision, state, messages, text, signal, meter, guardProblem = null }) {
+    async phrase({ definition, decision, state, messages, text, signal, meter, guardProblem = null, model = null }) {
       const { output, retry, fallback } = await this.attempts('phrase', {
         definition,
         signal,
         meter,
+        model,
         inputOf: (problem) => phraseInput({ definition, decision, state, messages, text, problem, guardProblem }),
         problemOf: replyProblem,
       });

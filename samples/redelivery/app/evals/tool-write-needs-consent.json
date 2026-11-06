@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "id": "tool-write-needs-consent",
+  "kind": "tool",
+  "about": "同意の記録がなければ、書くツールはツールの口が断る",
+  "call": { "tool": "save_redelivery", "args": { "parcel_no": 1001, "slot": "午前中" } },
+  "expect": [{ "check": "guardBlocked", "layer": "tool", "guard": "requires" }, { "check": "noRecord", "record": "redelivery" }]
+}

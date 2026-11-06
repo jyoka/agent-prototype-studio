@@ -32,7 +32,9 @@ const RUN_STATUS = {
   // 新しい関門は、ここと ITEM_LABELS の gate: の行を足すだけで、結果の帯に出る
   'failed:changes': () => `${FIX_AI} が、試作品のファイルを変えませんでした`,
   'failed:inspect': () => '試作品のファイルの名前か大きさに問題があります',
-  'failed:contract': () => 'AI の設定か、確かめ方のファイルの形に誤りがあります',
+  'failed:contract': (gate) => (gate.errors?.some((error) => error.material)
+    ? 'つないだ素材と合わないところがあります'
+    : 'AI の設定か、確かめ方のファイルの形に誤りがあります'),
   'failed:compile': () => '試作品のファイルに誤りがあり、新しい状態を表示できません',
   'failed:launch': () => '試作品を開くと、誤りが出ます',
   'failed:scenarios': () => '決めた手順で試すと、思ったとおりに動きません',
@@ -179,6 +181,18 @@ const els = {
   saveVersion: $('save-version'),
   versionsMessage: $('versions-message'),
   versionList: $('version-list'),
+  tokensForm: $('tokens-form'),
+  tokensFile: $('tokens-file'),
+  tokensConnected: $('tokens-connected'),
+  tokensMessage: $('tokens-message'),
+  tokensProblems: $('tokens-problems'),
+  tokensReview: $('tokens-review'),
+  tokensSummary: $('tokens-summary'),
+  tokensRoles: $('tokens-roles'),
+  tokensMissing: $('tokens-missing'),
+  tokensSource: $('tokens-source'),
+  tokensReason: $('tokens-reason'),
+  tokensConnect: $('tokens-connect'),
   handoffForm: $('handoff-form'),
   handoffNotes: { purpose: $('handoff-purpose'), decided: $('handoff-decided'), undecided: $('handoff-undecided') },
   handoffExport: $('handoff-export'),
@@ -236,6 +250,8 @@ const waitingByProject = new Map();
 const waitingFor = (projectId) => waitingByProject.get(projectId) ?? 0;
 // その他の引き出しの「保存した状態」。保存した版の一覧と、作業中がどの版と同じか
 const versions = { projectId: null, data: null, seq: 0, busy: false, message: null };
+// 自分のトークン(J4)。file は選んだファイルの名前と中身、check はサーバーの検査の結果。つなぐまで何も書かれない
+const tokens = { projectId: null, data: null, seq: 0, busy: false, file: null, check: null, problems: [], message: null };
 // その他の引き出しの「本番開発へ渡す」(#280)。メモは試作品を選んだときだけ読み、書いている途中の文を上書きしない
 // target は読み込みを頼んだ試作品、projectId は読み終えた試作品
 const handoff = { target: undefined, projectId: null, seq: 0, busy: false, result: null, message: null, last: null };
@@ -361,7 +377,7 @@ function render() {
   if (!selectedProject()) {
     // 目的を聞き出したか、ヒアリングを整理した試作品があれば、最後に触ったものを選ぶ(読み込み直しや起動し直しで、続きに戻れるように)。
     // なければ、AI と話せる試作品(求人相談)を選ぶ(ux-redesign.md 5 節)
-    const touchedAt = (p) => [p.intent?.updatedAt, p.organize?.updatedAt].filter(Boolean).sort().at(-1);
+    const touchedAt = (p) => [p.intent?.updatedAt, p.organize?.updatedAt, p.design?.updatedAt].filter(Boolean).sort().at(-1);
     const latest = projects.filter(touchedAt).sort((a, b) => touchedAt(b).localeCompare(touchedAt(a)))[0];
     selectedId = latest?.id ?? projects.find((p) => p.id === 'sample-job-consult')?.id ?? projects[0]?.id ?? null;
   }
@@ -378,6 +394,8 @@ function render() {
   renderVersions(project);
   if ((project?.id ?? null) !== handoff.target) loadHandoff(project?.id ?? null);
   renderHandoff(project);
+  if ((project?.id ?? null) !== tokens.projectId) loadTokens(project?.id ?? null);
+  renderTokens(project);
   if (!project) {
     showPlaceholder('試作品がありません。');
   } else if (!project.previewUrl) {
@@ -422,6 +440,7 @@ function renderList() {
       setProjectMenu(false);
       leaveIntent();
       closeOrganize();
+      closeDesign();
       if (selectedId === project.id) return;
       selectedId = project.id;
       makeError = null;
@@ -1527,6 +1546,17 @@ function consentDetails(view, key) {
       element('pre', details.organize.systemPrompt),
     );
   }
+  if (details.design) {
+    part(
+      '設計の案を出すとき',
+      ...labeledList('設計の案を出すときに送るもの', details.design.items),
+      element('p', details.design.notSent),
+      element('p', details.design.tools),
+      element('p', details.design.limits),
+      element('p', '案を出す AI への指示の全文:'),
+      element('pre', details.design.systemPrompt),
+    );
+  }
   part('1 回の上限', element('p', summary.cost.limits));
   part('記録の扱い', ...(details.records ?? []).map((text) => element('p', text)));
   return box;
@@ -1600,6 +1630,7 @@ async function agreeConsent() {
   renderAi();
   renderIntentConsent();
   renderOrganizeConsent();
+  renderDesignConsent();
   let agreed = false;
   // 待つ間に、別のカードに入れ替わったか、試作品を切り替えて閉じたときは、同意だけをして送らない
   let still = false;
@@ -1617,6 +1648,11 @@ async function agreeConsent() {
     renderAi();
     renderIntentConsent();
     renderOrganizeConsent();
+    renderDesignConsent();
+  }
+  if (card.use === 'design') {
+    if (agreed && still) await startDesign('ai');
+    return;
   }
   if (card.use === 'intent') {
     if (agreed && still) await sendSentence();
@@ -1641,11 +1677,13 @@ function declineConsent() {
   if (card?.use === 'fix') consent.declined = true;
   if (card?.use === 'intent') intentUi.declined = true;
   if (card?.use === 'organize') organizeUi.declined = true;
+  if (card?.use === 'design') designUi.declined = true;
   if (card?.use === 'check') checks.message = { projectId: card.projectId, text: '本物の AI で確かめるには、同意が要ります。お試しの AI なら、同意なしで確かめられます。' };
   renderMake(selectedProject());
   renderAi();
   renderIntentConsent();
   renderOrganize();
+  renderDesign();
 }
 
 // 本物の AI を使っている間の小さな印(試す欄の上と直す欄の上)。押すと、カードの中身をもう一度見られる。
@@ -2294,6 +2332,241 @@ async function loadHandoff(projectId) {
   }
   handoff.projectId = projectId;
   renderHandoff(selectedProject());
+}
+
+async function loadTokens(projectId) {
+  const seq = ++tokens.seq;
+  Object.assign(tokens, { projectId, data: null, file: null, check: null, problems: [], message: null });
+  els.tokensFile.value = '';
+  els.tokensSource.value = '';
+  els.tokensReason.value = '';
+  if (!projectId) return;
+  try {
+    const { materials } = await api(`/api/projects/${encodeURIComponent(projectId)}/materials`);
+    if (seq !== tokens.seq) return;
+    tokens.data = materials;
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    // 次の描画で読み直す
+    if (seq === tokens.seq) tokens.projectId = undefined;
+  }
+  renderTokens(selectedProject());
+}
+
+// 今の役割の選択。まだ選んでいなければ、サーバーの見立て
+function chosenTokenRoles() {
+  const roles = {};
+  for (const select of els.tokensRoles.querySelectorAll('select')) roles[select.name] = select.value || null;
+  return roles;
+}
+
+function renderTokenRoles() {
+  const { check } = tokens;
+  const { candidates } = check;
+  const rows = (tokens.data?.roles ?? []).map((role) => {
+    const row = element('label', null, 'tokens-role');
+    row.append(element('span', role.label));
+    const select = document.createElement('select');
+    select.name = role.id;
+    const none = element('option', '既定の素材のまま');
+    none.value = '';
+    select.append(none);
+    for (const token of candidates.filter((t) => t.type === role.type)) {
+      const option = element('option', token.path);
+      option.value = token.path;
+      select.append(option);
+    }
+    select.value = check.roles[role.id] ?? '';
+    select.addEventListener('change', renderTokenMissing);
+    row.append(select);
+    return row;
+  });
+  els.tokensRoles.replaceChildren(...rows);
+  renderTokenMissing();
+}
+
+function renderTokenMissing() {
+  const roles = chosenTokenRoles();
+  const missing = (tokens.data?.roles ?? []).filter((role) => !roles[role.id]).map((role) => role.label);
+  els.tokensMissing.hidden = missing.length === 0;
+  els.tokensMissing.textContent = missing.length > 0 ? `足りない役割: ${missing.join('、')}。つなぐ先のトークンがなければ、既定の素材のままになります。` : '';
+}
+
+function renderTokens(project) {
+  const lock = !project || tokens.busy || project.running || project.building || project.versioning || project.checking;
+  const { data, check } = tokens;
+  els.tokensFile.disabled = lock || !data;
+  const connected = data?.connected ?? null;
+
+  els.tokensConnected.hidden = !connected && !(data?.problems?.length > 0);
+  if (connected) {
+    const box = [];
+    box.push(element('p', `つないでいます: ${connected.fileName}(トークン ${connected.count} 個)`));
+    box.push(element('p', `誰の素材か: ${connected.source}`));
+    if (connected.reason) box.push(element('p', `つなぐ理由: ${connected.reason}`));
+    if (connected.missingRoles.length > 0) box.push(element('p', `既定の素材のままの役割: ${connected.missingRoles.join('、')}`, 'muted'));
+    box.push(element('p', '既定の素材の部品と、トークンの変数を使う所が変わります。値のまま書いた色は変わりません。', 'muted'));
+    const names = document.createElement('details');
+    names.className = 'tokens-names';
+    // 開いたものは、次の描画でも開いたまま
+    names.open = Boolean(els.tokensConnected.querySelector('.tokens-names')?.open);
+    names.append(element('summary', '直す AI が使う名前'));
+    const list = element('ul', null, 'tokens-list');
+    for (const token of connected.tokens) {
+      for (const variable of token.variables) {
+        const item = document.createElement('li');
+        if (token.type === 'color') {
+          const swatch = element('span', null, 'tokens-swatch');
+          swatch.style.background = variable.value;
+          item.append(swatch);
+        }
+        item.append(element('code', variable.name));
+        list.append(item);
+      }
+    }
+    names.append(list);
+    if (connected.count > connected.tokens.length) names.append(element('p', `ほかに ${connected.count - connected.tokens.length} 個あります。`, 'muted'));
+    box.push(names);
+    const actions = element('div', null, 'tokens-actions');
+    const use = element('button', 'トークンを使うよう直す依頼を入れる');
+    use.type = 'button';
+    use.disabled = lock;
+    use.addEventListener('click', () => {
+      setMorePanel(false);
+      fillRequest('つないだトークンの変数を使うように、色と字を直して');
+    });
+    const remove = element('button', '外す');
+    remove.type = 'button';
+    remove.disabled = lock;
+    remove.addEventListener('click', () => disconnectTokens(project));
+    actions.append(use, remove);
+    box.push(actions);
+    els.tokensConnected.replaceChildren(...box);
+  } else if (data?.problems?.length > 0) {
+    const remove = element('button', '外す');
+    remove.type = 'button';
+    remove.disabled = lock;
+    remove.addEventListener('click', () => disconnectTokens(project));
+    els.tokensConnected.replaceChildren(...data.problems.map((text) => element('p', text)), remove);
+  }
+
+  els.tokensMessage.hidden = !tokens.message;
+  els.tokensMessage.textContent = tokens.message?.text ?? '';
+  els.tokensMessage.dataset.kind = tokens.message?.kind ?? '';
+
+  els.tokensProblems.hidden = tokens.problems.length === 0;
+  if (tokens.problems.length > 0) {
+    const list = element('ul');
+    for (const text of tokens.problems) list.append(element('li', text));
+    els.tokensProblems.replaceChildren(element('p', '次の所を直して、選び直してください。'), list);
+  }
+
+  const reviewing = Boolean(check?.ok && tokens.file);
+  els.tokensReview.hidden = !reviewing;
+  if (reviewing) {
+    const warnings = check.warnings.length > 0 ? `注意: ${check.warnings.slice(0, 3).join('。')}。` : '';
+    els.tokensSummary.textContent = `「${tokens.file.name}」の形を確かめました。トークンが ${check.count} 個あります。${warnings}`;
+    els.tokensConnect.disabled = lock || els.tokensSource.value.trim() === '';
+  }
+}
+
+// ファイルを選んだら検査だけをする。つなぐのは人が押してから
+async function checkTokenFile(file) {
+  const project = selectedProject();
+  if (!project || !file || !tokens.data) return;
+  Object.assign(tokens, { file: null, check: null, problems: [], message: null });
+  if (file.size > tokens.data.limitBytes) {
+    tokens.problems = [`ファイルが大きすぎます(上限 ${tokens.data.limitBytes / 1024} KB)`];
+    renderTokens(project);
+    return;
+  }
+  const seq = ++tokens.seq;
+  tokens.busy = true;
+  renderTokens(project);
+  try {
+    const text = await file.text();
+    const { check } = await api(`/api/projects/${encodeURIComponent(project.id)}/materials/tokens/check`, { method: 'POST', json: { text } });
+    if (seq !== tokens.seq) return;
+    tokens.check = check;
+    if (check.ok) {
+      tokens.file = { name: file.name, text };
+      renderTokenRoles();
+    } else {
+      const more = check.errorCount - check.errors.length;
+      tokens.problems = [...check.errors.map((error) => error.text), ...(more > 0 ? [`ほかに ${more} 件あります`] : [])];
+    }
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    tokens.problems = [`ファイルを確かめられませんでした: ${error.message}`];
+  } finally {
+    tokens.busy = false;
+    renderTokens(selectedProject());
+  }
+}
+
+async function connectTokens() {
+  const project = selectedProject();
+  if (!project || !tokens.file || tokens.busy) return;
+  tokens.busy = true;
+  renderTokens(project);
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(project.id)}/materials/tokens`, {
+      method: 'POST',
+      json: {
+        text: tokens.file.text,
+        fileName: tokens.file.name,
+        roles: chosenTokenRoles(),
+        source: els.tokensSource.value,
+        reason: els.tokensReason.value,
+      },
+    });
+    // 待つ間に試作品を切り替えていたら、前の試作品の結果を出さない
+    if (tokens.projectId !== project.id) return;
+    tokens.data = data.materials;
+    if (!data.connected) {
+      tokens.problems = data.conflicts ?? data.check.errors.map((error) => error.text);
+      return;
+    }
+    Object.assign(tokens, { file: null, check: null, problems: [] });
+    els.tokensFile.value = '';
+    els.tokensSource.value = '';
+    els.tokensReason.value = '';
+    tokens.message = data.build.ok
+      ? { kind: 'ok', text: 'つなぎました。試す欄の試作品に入れました。' }
+      : { kind: 'failed', text: `つなぎましたが、試作品を表示できません。試す欄は前の状態のままです。${data.build.firstError ?? ''}` };
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    if (tokens.projectId === project.id) tokens.message = { kind: 'failed', text: `つなげませんでした: ${error.message}` };
+  } finally {
+    tokens.busy = false;
+    lastSnapshot = '';
+    await refresh();
+    render();
+  }
+}
+
+async function disconnectTokens(project) {
+  if (!project || tokens.busy) return;
+  tokens.busy = true;
+  tokens.message = null;
+  renderTokens(project);
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(project.id)}/materials/tokens/remove`, { method: 'POST' });
+    if (tokens.projectId !== project.id) return;
+    tokens.data = data.materials;
+    const left = data.references > 0 ? `トークンの変数を読む所が ${data.references} か所残っていて、その所には色や字の値がありません。「言葉で直す」で直せます。` : '';
+    tokens.message = data.build.ok
+      ? { kind: left ? 'failed' : 'ok', text: `外しました。既定の素材の部品の見た目に戻しました。${left}` }
+      : { kind: 'failed', text: `外しましたが、試作品を表示できません。試す欄は前の状態のままです。${data.build.firstError ?? ''}` };
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    if (tokens.projectId === project.id) tokens.message = { kind: 'failed', text: `外せませんでした: ${error.message}` };
+  } finally {
+    tokens.busy = false;
+    lastSnapshot = '';
+    await refresh();
+    render();
+  }
 }
 
 async function exportHandoff() {
@@ -3212,6 +3485,19 @@ els.shotDialog.addEventListener('click', (event) => {
   if (event.target === els.shotDialog) els.shotDialog.close();
 });
 
+// 同じ名前のファイルを直して選び直しても、change が起きるようにする
+els.tokensFile.addEventListener('click', () => {
+  els.tokensFile.value = '';
+});
+els.tokensFile.addEventListener('change', () => {
+  const file = els.tokensFile.files?.[0];
+  if (file) checkTokenFile(file);
+});
+els.tokensSource.addEventListener('input', () => renderTokens(selectedProject()));
+els.tokensForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  connectTokens();
+});
 els.handoffForm.addEventListener('submit', (event) => {
   event.preventDefault();
   exportHandoff();
@@ -3304,6 +3590,7 @@ function renderIntentMark(project) {
   intentEls.mark.textContent = INTENT_MARKS[status] ?? INTENT_MARKS.none;
   intentEls.mark.dataset.state = status === 'decided' ? 'decided' : status === 'draft' || status === 'interviewing' ? 'draft' : 'none';
   renderOrganizeMark(project);
+  renderDesignMark(project);
 }
 
 function intentError(text) {
@@ -3328,12 +3615,13 @@ function turnItems(turns) {
 function renderIntentDocState(record) {
   const decided = record.status === 'decided';
   intentEls.docState.dataset.state = record.status;
-  if (decided) intentEls.docState.textContent = `${formatTime(record.decidedAt)}に決めました。次にすること: この目的で試作品を作り始めてください。`;
+  if (decided) intentEls.docState.textContent = `${formatTime(record.decidedAt)}に決めました。次にすること: この目的で設計に進んでください。`;
   else if (record.status === 'skipped') intentEls.docState.textContent = `${formatTime(record.skippedAt)}に飛ばしました。「目的なし」のまま進めています。決めるときは、中身を確かめて「これで決める」を押してください。`;
   else intentEls.docState.textContent = 'まだ決めていません。答えから下書きを作りました。次にすること: 違うところを直して、「これで決める」を押してください。';
   intentEls.decide.hidden = decided;
   intentEls.docSkip.hidden = decided || record.status === 'skipped';
   intentEls.begin.hidden = !decided;
+  $('intent-design').hidden = !decided;
   intentEls.reopen.hidden = !decided;
   for (const field of [...INTENT_TEXT_FIELDS, ...INTENT_LIST_FIELDS]) intentDocField(field).readOnly = decided;
 }
@@ -3600,6 +3888,7 @@ async function openIntentFromMark() {
   const project = selectedProject();
   if (!project || (intentUi.view && intentUi.projectId === project.id)) return;
   closeOrganize();
+  closeDesign();
   try {
     const { intent } = await api(intentPath(project.id));
     if (intent.thinking) {
@@ -3652,6 +3941,7 @@ $('new-project').addEventListener('click', () => {
   setProjectMenu(false);
   leaveIntent();
   closeOrganize();
+  closeDesign();
   openStart(null);
 });
 intentEls.start.addEventListener('submit', (event) => {
@@ -3688,7 +3978,7 @@ intentEls.doc.addEventListener('submit', async (event) => {
   // 決めるときに足した「書いていません」の行を、欄に出す
   fillIntentDoc(intent.doc);
   showIntent(intent);
-  intentEls.begin.focus();
+  $('intent-design').focus();
 });
 // 決めた後に直す。「決めた」の印を外し、もう一度押すまで付かない
 intentEls.reopen.addEventListener('click', async () => {
@@ -3705,6 +3995,7 @@ intentEls.begin.addEventListener('click', () => {
   closeIntent();
   fillRequest(text);
 });
+$('intent-design').addEventListener('click', () => openDesign());
 
 // ヒアリングの整理(user-journey.md の K1、field-session.md の段 1、段 2)。サーバーは src/server/organize.js。
 // 要点と項目は外から来た文字なので、ほかと同じく textContent と value でだけ出す。
@@ -3911,6 +4202,7 @@ function renderOrganize() {
   organizeEls.note.hidden = !board.note;
   organizeEls.note.textContent = board.note ?? '';
   organizeEls.confirm.disabled = thinking || board.items.length === 0 || board.status === 'confirmed';
+  $('organize-design').hidden = board.status !== 'confirmed';
   organizeEls.run.hidden = thinking;
   organizeEls.run.disabled = !board.ai || board.points.length === 0;
   organizeEls.waiting.hidden = !thinking;
@@ -4031,6 +4323,7 @@ async function openOrganize() {
   const project = selectedProject();
   if (!project || (organizeUi.open && organizeUi.projectId === project.id)) return;
   leaveIntent();
+  closeDesign();
   // 別の試作品の板には、前の試作品のために書いた文を持ち込まない
   if (organizeUi.inputsFor !== project.id) {
     organizeEls.point.value = '';
@@ -4107,6 +4400,451 @@ $('organize-stop').addEventListener('click', () => {
 // 読んでいた板の版を送る。読んだ後に板が変わっていたら、サーバーが断る
 organizeEls.confirm.addEventListener('click', () => organizeAct('confirm', { rev: organizeUi.board?.rev }));
 $('organize-back').addEventListener('click', closeOrganize);
+$('organize-design').addEventListener('click', () => openDesign());
+
+// 設計の案内(user-journey.md の段 3、J2)。サーバーは src/server/design.js。
+// 案と場面は外から来た文字なので、ほかと同じく textContent と value でだけ出す。
+// record はサーバーの状態。sceneDraft は直している場面の一覧(次の段へ進むときに保存する)
+const DESIGN_MARKS = { none: '設計なし', skipped: '設計なし', drafting: '設計: 下書き', decided: '設計: 決めた' };
+const designUi = { open: false, projectId: null, record: null, waiting: false, declined: false, sceneDraft: null, seq: 0, timer: null };
+const designEls = {
+  section: $('design'),
+  heading: $('design-heading'),
+  state: $('design-state'),
+  band: $('design-band'),
+  waiting: $('design-waiting'),
+  begin: $('design-begin'),
+  noAi: $('design-no-ai'),
+  consent: $('design-consent'),
+  declined: $('design-declined'),
+  start: $('design-start'),
+  step: $('design-step'),
+  stepHeading: $('design-step-heading'),
+  stepLead: $('design-step-lead'),
+  stale: $('design-stale'),
+  basis: $('design-basis'),
+  options: $('design-options'),
+  custom: $('design-custom'),
+  customText: $('design-custom-text'),
+  scenesBox: $('design-scenes-box'),
+  scenes: $('design-scenes'),
+  sceneCategory: $('design-scene-category'),
+  sceneText: $('design-scene-text'),
+  owner: $('design-owner'),
+  review: $('design-review'),
+  noteBox: $('design-note-box'),
+  note: $('design-note'),
+  prev: $('design-prev'),
+  next: $('design-next'),
+  build: $('design-build'),
+  again: $('design-again'),
+  skip: $('design-skip'),
+  message: $('design-note-message'),
+  error: $('design-error'),
+  mark: $('design-mark'),
+};
+const designPath = (id, action = '') => `/api/projects/${encodeURIComponent(id)}/design${action ? `/${action}` : ''}`;
+
+function renderDesignMark(project) {
+  const status = project?.design?.status ?? 'none';
+  designEls.mark.hidden = !project || (intentUi.view === 'start' && !intentUi.projectId);
+  designEls.mark.textContent = DESIGN_MARKS[status] ?? DESIGN_MARKS.none;
+  designEls.mark.dataset.state = status === 'decided' ? 'decided' : status === 'drafting' ? 'draft' : 'none';
+}
+
+function designError(text) {
+  designEls.error.hidden = !text;
+  designEls.error.textContent = text ?? '';
+}
+
+function designFailed(error) {
+  if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) designError(`進められませんでした: ${error.message}`);
+  else handleError(error);
+}
+
+function renderDesignConsent() {
+  const card = consent.card?.use === 'design' ? consent.card : null;
+  designEls.consent.replaceChildren(...(card ? [consentCard(card.view, { card })] : []));
+  designEls.declined.hidden = !designUi.declined || Boolean(card);
+}
+
+const designStepOf = (record, id) => record.steps.find((step) => step.id === id);
+const designCurrent = (record) => designStepOf(record, record.current) ?? record.steps[0];
+const designChosen = (step) => step.options.find((option) => option.id === step.chosen) ?? null;
+const designChosenLabel = (step) => (step.chosen === 'custom' ? step.text : designChosen(step)?.title ?? '');
+// 先へ進めるのは、ここまでの段を選んだ分だけ
+const designOpenIndex = (record) => {
+  const at = record.steps.findIndex((step) => !step.chosen);
+  return at === -1 ? record.steps.length - 1 : at;
+};
+
+function designStateText(record) {
+  const staleAfter = record.status === 'decided' && record.steps.find((step) => step.stale);
+  if (staleAfter) return `${formatTime(record.decidedAt)}に決めた後に、構成のファイルが変わりました。次にすること: 「${staleAfter.label}」の案を確かめ直してください。`;
+  if (record.status === 'decided') return `${formatTime(record.decidedAt)}に決めました。次にすること: 作った試作品を試してください。`;
+  if (record.status === 'skipped') return `${formatTime(record.skippedAt)}に飛ばしました。「設計なし」のまま進めています。設計に戻るときは、案を選んでください。`;
+  const stale = record.steps.find((step) => step.stale);
+  if (stale) return `前の段を変えました。次にすること: 「${stale.label}」の案を確かめ直してください。`;
+  if (record.ready) return '5 つの段を選びました。次にすること: 「この設計で作る」を押してください。';
+  const step = designCurrent(record);
+  if (!step.chosen) return `次にすること: 「${step.label}」の案を読んで、1 つ選んでください。`;
+  return '次にすること: 「次の段へ」を押してください。';
+}
+
+function designOptionItem(option, step, record) {
+  const li = element('li', undefined, 'design-option');
+  const chosen = step.chosen === option.id;
+  li.dataset.chosen = String(chosen);
+  li.dataset.available = String(option.available !== false);
+  const head = element('div');
+  head.append(element('span', option.title, 'design-option-title'));
+  if (option.recommended) head.append(' ', element('span', 'おすすめ', 'organize-badge'));
+  if (chosen) head.append(' ', element('span', '選んだ案', 'organize-badge'));
+  li.append(head);
+  if (option.detail) li.append(element('p', option.detail));
+  if (option.question) {
+    const facts = element('dl');
+    const fact = (name, value) => facts.append(element('dt', name), element('dd', value));
+    fact('問い', option.question);
+    fact('順番を決めるもの', option.decidedBy);
+    fact('モデルに任せること', option.modelRole);
+    fact('数', 'まだ測っていない');
+    li.append(facts);
+  }
+  if (option.scenes) {
+    const list = element('ul');
+    for (const scene of option.scenes) list.append(element('li', `${record.categories[scene.category]}: ${scene.text}`));
+    li.append(list);
+  }
+  if (option.reason) li.append(element('p', `${option.recommended ? 'おすすめの理由' : '理由'}: ${option.reason}`, 'design-reason'));
+  if (option.limitation) li.append(element('p', option.limitation, 'muted'));
+  const button = element('button', `「${option.title}」を選ぶ`);
+  button.type = 'button';
+  button.disabled = option.available === false;
+  button.setAttribute('aria-pressed', String(chosen));
+  button.addEventListener('click', () => chooseDesign(step.id, option.id));
+  li.append(button);
+  return li;
+}
+
+function designSceneItem(scene, index, record) {
+  const li = element('li', undefined, 'design-scene');
+  const label = record.categories[scene.category];
+  li.append(element('span', label, 'organize-badge'));
+  const input = element('input');
+  input.type = 'text';
+  input.maxLength = 200;
+  input.value = scene.text;
+  input.setAttribute('aria-label', `場面 ${index + 1}(${label})の文`);
+  input.addEventListener('input', () => {
+    designUi.sceneDraft ??= structuredClone(record.scenes);
+    designUi.sceneDraft[index].text = input.value;
+  });
+  const remove = element('button', '消す');
+  remove.type = 'button';
+  remove.setAttribute('aria-label', `場面 ${index + 1}(${label})を消す`);
+  remove.addEventListener('click', () => {
+    designUi.sceneDraft ??= structuredClone(record.scenes);
+    designUi.sceneDraft.splice(index, 1);
+    designError(null);
+    renderDesign();
+  });
+  li.append(input, remove);
+  return li;
+}
+
+function renderDesign() {
+  const { open, record, waiting } = designUi;
+  designEls.section.hidden = !open;
+  if (open) document.body.dataset.design = 'open';
+  else delete document.body.dataset.design;
+  renderDesignConsent();
+  if (!open) return;
+  const hasOptions = Boolean(record?.steps?.length);
+  const thinking = waiting || Boolean(record?.thinking);
+  designEls.waiting.hidden = !thinking;
+  designEls.begin.hidden = thinking || hasOptions;
+  designEls.noAi.hidden = Boolean(agent?.ready);
+  designEls.start.disabled = thinking;
+  designEls.step.hidden = !hasOptions || thinking;
+  designEls.band.hidden = !hasOptions;
+  designEls.message.hidden = !record?.note;
+  designEls.message.textContent = record?.note ?? '';
+  for (const button of [designEls.prev, designEls.next, designEls.build, designEls.again]) button.hidden = true;
+  designEls.skip.hidden = record?.status === 'skipped' || record?.status === 'decided' || thinking;
+  if (!hasOptions) {
+    designEls.state.textContent = record?.hasIntent === false
+      ? '目的の文書をまだ決めていません。このまま進めると、最初の 1 文か試作品の名前を材料にします。次にすること: 「案を作る」を押してください。'
+      : '次にすること: 「案を作る」を押してください。';
+    designEls.state.dataset.state = 'draft';
+    designEls.band.replaceChildren();
+    return;
+  }
+  designEls.state.textContent = designStateText(record);
+  designEls.state.dataset.state = record.status === 'decided' ? 'decided' : 'draft';
+  const openAt = designOpenIndex(record);
+  designEls.band.replaceChildren(...record.steps.map((step, index) => {
+    const li = element('li');
+    if (step.id === record.current) li.setAttribute('aria-current', 'step');
+    li.dataset.state = step.stale ? 'stale' : step.chosen ? 'done' : 'open';
+    const button = element('button', `${index + 1}. ${step.label}`);
+    button.type = 'button';
+    button.disabled = index > openAt || thinking;
+    button.append(element('small', step.stale ? '確かめ直す' : step.chosen ? designChosenLabel(step) : 'まだ選んでいません'));
+    button.addEventListener('click', () => goDesign(step.id));
+    li.append(button);
+    return li;
+  }));
+  if (thinking) return;
+  const step = designCurrent(record);
+  const index = record.steps.indexOf(step);
+  designEls.stepHeading.textContent = `${index + 1}. ${step.label}: ${step.question}`;
+  designEls.stepLead.textContent = step.lead;
+  designEls.stale.hidden = !step.stale;
+  designEls.basis.textContent = `案は今日の一番良い推測です(出した日: ${record.optionsDate}。${step.source === 'ai' ? 'AI が出した案' : 'Studio の決まった案'})。どの案も、まだ測っていません。`;
+  designEls.options.replaceChildren(...step.options.map((option) => designOptionItem(option, step, record)));
+  designEls.custom.hidden = step.id !== 'problem' && step.id !== 'users';
+  if (step.id !== designUi.customFor) designEls.customText.value = step.chosen === 'custom' ? step.text ?? '' : '';
+  designUi.customFor = step.id;
+  const showScenes = step.id === 'scenes' && Boolean(step.chosen);
+  designEls.scenesBox.hidden = !showScenes;
+  if (showScenes) {
+    const scenes = designUi.sceneDraft ?? record.scenes;
+    designEls.scenes.replaceChildren(...scenes.map((scene, at) => designSceneItem(scene, at, record)));
+  }
+  designEls.owner.hidden = step.id !== 'composition' || !record.ownerComposition;
+  designEls.review.hidden = step.id !== 'composition' && !record.ready;
+  designEls.noteBox.hidden = !step.chosen;
+  if (document.activeElement !== designEls.note) designEls.note.value = step.note ?? '';
+  designEls.prev.hidden = index === 0;
+  const last = index === record.steps.length - 1;
+  designEls.next.hidden = last;
+  designEls.next.disabled = !step.chosen;
+  designEls.build.hidden = !last;
+  designEls.build.disabled = !record.ready;
+  designEls.again.hidden = false;
+}
+
+function showDesign(record) {
+  designUi.record = record;
+  renderDesign();
+  // 別のタブや読み込み直しで案を作っている最中なら、終わるまで読み直す
+  clearTimeout(designUi.timer);
+  if (designUi.open && !designUi.waiting && record?.thinking) {
+    const { seq } = designUi;
+    designUi.timer = setTimeout(async () => {
+      try {
+        const { design } = await api(designPath(designUi.projectId));
+        if (seq === designUi.seq) showDesign(design);
+      } catch (error) {
+        if (seq === designUi.seq) handleError(error);
+      }
+    }, 1000);
+  }
+}
+
+async function refreshDesignList() {
+  if (designUi.open && designUi.projectId) selectedId = designUi.projectId;
+  lastSnapshot = '';
+  await refresh();
+}
+
+async function openDesign() {
+  const project = selectedProject();
+  if (!project) return;
+  if (designUi.open && designUi.projectId === project.id) return;
+  leaveIntent();
+  closeOrganize();
+  designUi.seq += 1;
+  const { seq } = designUi;
+  designUi.open = true;
+  designUi.projectId = project.id;
+  designUi.record = null;
+  designUi.waiting = false;
+  designUi.declined = false;
+  designUi.sceneDraft = null;
+  designError(null);
+  renderDesign();
+  try {
+    const { design } = await api(designPath(project.id));
+    if (seq !== designUi.seq) return;
+    showDesign(design);
+    designEls.heading.focus();
+  } catch (error) {
+    if (seq === designUi.seq) handleError(error);
+  }
+}
+
+function closeDesign() {
+  designUi.seq += 1;
+  clearTimeout(designUi.timer);
+  if (!designUi.open) return;
+  if (consent.card?.use === 'design') consent.card = null;
+  designUi.open = false;
+  designUi.projectId = null;
+  designUi.record = null;
+  designUi.waiting = false;
+  designUi.declined = false;
+  designUi.sceneDraft = null;
+  designUi.customFor = null;
+  designEls.customText.value = '';
+  designError(null);
+  renderDesign();
+}
+
+// 案を作る。本物の AI は、同意の前はサーバーが断る。guide が fixed なら AI を呼ばない
+async function startDesign(guide) {
+  const id = designUi.projectId;
+  if (!id || designUi.waiting) return;
+  designError(null);
+  designUi.waiting = true;
+  designUi.declined = false;
+  renderDesign();
+  const { seq } = designUi;
+  try {
+    const { design } = await api(designPath(id, 'start'), { method: 'POST', json: { guide } });
+    if (seq !== designUi.seq) return;
+    designUi.waiting = false;
+    showDesign(design);
+    await refreshDesignList();
+  } catch (error) {
+    if (seq !== designUi.seq) return;
+    designUi.waiting = false;
+    renderDesign();
+    if (error instanceof ApiError && error.code === 'consent-required') {
+      const view = await api('/api/real-ai');
+      if (seq !== designUi.seq) return;
+      setConsentState(view.consent);
+      if (view.consent.agreed) return startDesign(guide);
+      openConsentDetails.delete('card');
+      consent.card = { use: 'design', projectId: null, view };
+      renderDesignConsent();
+      return;
+    }
+    designFailed(error);
+  }
+}
+
+// 1 回の POST で、返った状態を出す
+async function designAct(action, body) {
+  const id = designUi.projectId;
+  if (!id) return null;
+  designError(null);
+  const { seq } = designUi;
+  try {
+    const { design } = await api(designPath(id, action), { method: 'POST', json: body ?? {} });
+    if (seq !== designUi.seq) return null;
+    showDesign(design);
+    await refreshDesignList();
+    return design;
+  } catch (error) {
+    if (seq === designUi.seq) designFailed(error);
+    return null;
+  }
+}
+
+// 書きかけの場面と理由を保存する。保存できなければ false(次の段へ進まない)
+async function saveDesignDrafts() {
+  const record = designUi.record;
+  const step = designCurrent(record);
+  if (designUi.sceneDraft) {
+    const saved = await designAct('scenes', { scenes: designUi.sceneDraft });
+    if (!saved) return false;
+    designUi.sceneDraft = null;
+  }
+  const note = designEls.note.value.trim();
+  if (step.chosen && note !== (step.note ?? '')) {
+    if (!(await designAct('choose', { step: step.id, option: step.chosen, text: step.text ?? undefined, note }))) return false;
+  }
+  return true;
+}
+
+// 案を選ぶ。同じ案を押し直すときは、直している場面を一緒に保存する。別の案を選ぶと、その案の場面に入れ替わる
+async function chooseDesign(step, option) {
+  const same = designCurrent(designUi.record).chosen === option;
+  const scenes = same && designUi.sceneDraft ? designUi.sceneDraft : undefined;
+  const design = await designAct('choose', { step, option, note: designEls.noteBox.hidden ? undefined : designEls.note.value.trim(), scenes });
+  if (!design) return;
+  designUi.sceneDraft = null;
+  renderDesign();
+}
+
+async function goDesign(step) {
+  if (!(await saveDesignDrafts())) return;
+  if (await designAct('go', { step })) {
+    designEls.note.value = designCurrent(designUi.record).note ?? '';
+    designEls.stepHeading.scrollIntoView?.({ block: 'nearest' });
+  }
+}
+
+// 「この設計で作る」。「決めた」の印を付け、目的と設計を入れた依頼を、言葉で直す欄と同じ道で送る(本物の AI の同意もその道で取る)
+async function buildFromDesign() {
+  const id = designUi.projectId;
+  if (!id || !(await saveDesignDrafts())) return;
+  designError(null);
+  try {
+    const { request } = await api(designPath(id, 'decide'), { method: 'POST' });
+    selectedId = id;
+    closeDesign();
+    lastSnapshot = '';
+    await refresh();
+    els.requestText.value = request;
+    await submitRequest();
+  } catch (error) {
+    designFailed(error);
+  }
+}
+
+designEls.sceneCategory.append(...Object.entries({ normal: 'うまくいく', unknown: '分からない', refuse: '断る', slow: '遅い', human: '人に渡す' }).map(([value, label]) => {
+  const option = element('option', label);
+  option.value = value;
+  return option;
+}));
+designEls.mark.addEventListener('click', openDesign);
+designEls.start.addEventListener('click', () => startDesign('ai'));
+$('design-use-fixed').addEventListener('click', () => startDesign('fixed'));
+$('design-stop').addEventListener('click', () => {
+  if (designUi.projectId) api(designPath(designUi.projectId, 'cancel'), { method: 'POST' }).catch(designFailed);
+});
+designEls.custom.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const text = designEls.customText.value.trim();
+  if (!text) {
+    designError('自分の言葉を書いてください。');
+    return;
+  }
+  await designAct('choose', { step: designUi.record.current, option: 'custom', text });
+});
+$('design-scene-add').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const text = designEls.sceneText.value.trim();
+  if (!text) {
+    designError('足す場面の文を書いてください。');
+    return;
+  }
+  designError(null);
+  designUi.sceneDraft ??= structuredClone(designUi.record.scenes);
+  designUi.sceneDraft.push({ category: designEls.sceneCategory.value, text });
+  designEls.sceneText.value = '';
+  renderDesign();
+});
+designEls.prev.addEventListener('click', () => {
+  const { record } = designUi;
+  goDesign(record.steps[record.steps.indexOf(designCurrent(record)) - 1].id);
+});
+designEls.next.addEventListener('click', () => {
+  const { record } = designUi;
+  goDesign(record.steps[record.steps.indexOf(designCurrent(record)) + 1].id);
+});
+designEls.build.addEventListener('click', buildFromDesign);
+designEls.again.addEventListener('click', () => startDesign('ai'));
+// 戻るときは、書きかけの場面と理由を残す。保存できなければ、画面に残る
+$('design-back').addEventListener('click', async () => {
+  if (!designUi.record?.steps?.length || (await saveDesignDrafts())) closeDesign();
+});
+designEls.skip.addEventListener('click', async () => {
+  if (await designAct('skip')) closeDesign();
+});
 
 // 案内のとおり同じタブに URL を貼ると、フラグメントだけが変わり、画面は読み直されない。
 // 新しい鍵を覚えてから読み直し、はじめからつなぎ直す。

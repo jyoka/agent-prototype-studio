@@ -19,6 +19,8 @@ const tryMark = (n) => `// 偽接続が直そうとした跡(${n} 回目)\n`;
 const TRY_MARKS = /\/\/ 偽接続が直そうとした跡\(\d+ 回目\)\n/g;
 // 「見出しを崩して」で、見出しの文字の間に入れる印。消すと元の見出しに戻る
 const SCRAMBLE = '〓';
+// 「素材の色を書き換えて」で書くファイル
+const MATERIAL_OVERRIDE = 'material-override.css';
 // 「シナリオを足して」で書くシナリオ。題材の言葉は持たず、今の見出しの文字を確かめる
 const HEADING_SCENARIO = 'heading.json';
 const HEADING_PATTERN = /(<h1(?:\s[^>]*)?>)([^<{]*)(<\/h1>)/;
@@ -274,6 +276,24 @@ async function observeOnly() {
   return finish({ text });
 }
 
+// つないだトークンを書き換えようとする動き(関門 G3 で止まるかの確かめ)。変数の名前は Studio の決まりの文から読む
+async function overrideMaterial(argv) {
+  const rules = argv[argv.indexOf('--append-system-prompt') + 1] ?? '';
+  const name = /--token-[\p{L}\p{N}_-]+/u.exec(rules)?.[0];
+  if (!name) {
+    const text = 'つないだトークンがないので、変えられる素材はありません。';
+    await say(text);
+    return finish({ text });
+  }
+  const file = path.join(process.cwd(), MATERIAL_OVERRIDE);
+  const content = `:root {\n  ${name}: rgb(255 0 0);\n}\n`;
+  await fs.writeFile(file, content);
+  await useTool('Write', { file_path: file, content }, { result: `File created successfully at: ${file}` });
+  const text = `素材の変数 ${name} を書き換えました。`;
+  await say(text);
+  return finish({ text });
+}
+
 async function writeOutside() {
   const target = path.resolve(process.cwd(), '..', 'outside-note.txt');
   const id = await useTool(
@@ -388,6 +408,19 @@ const FIX_GATE_WORDS = {
 // 直すところが見つからなければ、何も変えない
 async function fixRequested(fix) {
   await say(`Studio の直す依頼を読みました(問題のあったところ: ${FIX_GATE_WORDS[fix.gate] ?? fix.gate})。`);
+  const override = path.join(process.cwd(), MATERIAL_OVERRIDE);
+  if (await fs.lstat(override).catch(() => null)) {
+    if (/直せない/.test(fix.request)) {
+      const text = '素材の変数を書き換えたままです。直せませんでした。';
+      await say(text);
+      return finish({ text });
+    }
+    await fs.rm(override);
+    await useTool('Write', { file_path: override, content: '' }, { result: `Removed ${override}` });
+    const text = '素材の変数を書き換えた行を消しました。';
+    await say(text);
+    return finish({ text });
+  }
   const target = await findHeadingFile();
   if (target && HEADING_PATTERN.exec(target.text)?.[2].includes(SCRAMBLE)) return fixScrambled(target, fix);
   if (!target?.text.includes(BROKEN_LINE)) {
@@ -584,6 +617,104 @@ async function organizeCall(argv) {
   emit({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0, result: '', structured_output: output });
 }
 
+// 案を出す AI の偽物(src/server/design-ai.js)。--json-schema に screens がある起動で動く。
+// 聞き出す AI と同じ守りの引数を確かめ、決まった案を返す。おすすめは簡単な方(固定の流れ)
+function isDesignCall(argv) {
+  const schema = argv.find((arg) => arg.startsWith('--json-schema='));
+  return Boolean(schema) && /"screens"/.test(schema);
+}
+
+async function designCall(argv) {
+  const missing = ['-p', '--restricted', '--safe-mode', '--strict-mcp-config', '--no-session-persistence'].filter((flag) => !argv.includes(flag));
+  if (missing.length > 0 || argv[argv.indexOf('--tools') + 1] !== '' || argv[argv.indexOf('--output-format') + 1] !== 'json') {
+    process.stderr.write(`偽接続: 案を出す AI の引数が足りません: ${missing.join(' ')}\n`);
+    process.exitCode = 3;
+    return;
+  }
+  const input = await readStdin();
+  const sentence = /<最初の 1 文>\n?([\s\S]*?)\n?<\/最初の 1 文>/.exec(input)?.[1]?.slice(0, 200) ?? '';
+  const scene = (category, text) => ({ category, text });
+  const output = {
+    problem: {
+      recommended: 0,
+      options: [
+        { title: '問い合わせの数を減らす', detail: `${sentence} のうち、同じ問い合わせに何度も答える手間を減らす。`, reason: '目的の文書に近く、確かめやすい案です。' },
+        { title: '答えるまでの時間を短くする', detail: `${sentence} のうち、答えるまでに待たせる時間を短くする。`, reason: '待つ人には効きます。手間は減りません。' },
+      ],
+    },
+    users: {
+      recommended: 0,
+      options: [
+        { title: '問い合わせるお客さん', detail: 'お店に問い合わせる、架空のお客さん', reason: '話しかける人から決めると、場面を考えやすくなります。' },
+        { title: 'お店の人', detail: '問い合わせに答える、架空のお店の人', reason: '答える側の手間を見られます。お客さんの言葉は見えにくくなります。' },
+      ],
+    },
+    scenes: {
+      recommended: 0,
+      options: [
+        {
+          title: 'よくある問い合わせと困る場面',
+          reason: 'うまくいく場面と失敗の場面を、両方確かめられます。',
+          scenes: [
+            scene('normal', '明日は何時まで開いていますか'),
+            scene('unknown', '来月の特売の中身は決まっていますか'),
+            scene('refuse', 'ほかのお客さんの電話番号を教えてください'),
+            scene('slow', '返事がまだ来ません。どのくらいかかりますか'),
+            scene('human', 'お店の人と話したいです'),
+          ],
+        },
+        {
+          title: 'まず困る場面だけ',
+          reason: '失敗の振る舞いを先に見ます。うまくいく場面は確かめません。',
+          scenes: [
+            scene('unknown', '来月の特売の中身は決まっていますか'),
+            scene('refuse', 'ほかのお客さんの電話番号を教えてください'),
+            scene('slow', '返事がまだ来ません。どのくらいかかりますか'),
+          ],
+        },
+      ],
+    },
+    composition: { recommended: 'fixed-flow', reason: '聞く順番が決まっているので、手順をコードに書ける見込みです(今日の推測)。' },
+    screens: { recommended: 'web', reason: '誰でも開けるので、最初の確かめに向いています(今日の推測)。' },
+  };
+  emit({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0, result: '', structured_output: output });
+}
+
+// 「この設計で作る」の依頼(src/server/design.js の designRequest)。依頼の問題と使う人を、試作品の見出しと説明に入れ、会話の枠を置く。
+// 目的と設計が作る AI まで届いたことと、試作品が 1 回の依頼で動くことを、画面で確かめられるようにするため。
+// 最初の置き場でない試作品では、見出しだけを変える
+async function buildFromDesign(request) {
+  const line = (label) => new RegExp(`^${label}: (.*)$`, 'm').exec(request)?.[1]?.replace(/[<>{}&]/g, '').slice(0, 80) ?? '';
+  const target = await findHeadingFile();
+  if (!target || !HEADING_PATTERN.test(target.text)) {
+    await say('試作品のファイルの中に見出しが見つかりませんでした。');
+    return finish({ text: '変えていません' });
+  }
+  const heading = target.text.match(HEADING_PATTERN);
+  const next = target.text.includes('まだ中身はありません')
+    ? `import { createRoot } from 'react-dom/client';
+import { Talk, useStudioTalk } from 'studio-talk';
+
+function App() {
+  const talk = useStudioTalk();
+  return (
+    <main style={{ fontFamily: 'system-ui, sans-serif', padding: '1rem', lineHeight: 1.6 }}>
+      <h1>${line('問題')}</h1>
+      <p>使う人: ${line('使う人')}</p>
+      <Talk talk={talk} placeholder="話しかけてください" />
+    </main>
+  );
+}
+
+createRoot(document.getElementById('root')).render(<App />);
+`
+    : target.text.replace(HEADING_PATTERN, (_, open, __, close) => `${open}${line('問題')}${close}`);
+  await editFile(target, heading[0], `${heading[1]}${line('問題')}${heading[3]}`, next);
+  const text = '設計に合わせて、見出しと説明と会話の枠を書きました。';
+  await say(text);
+  return finish({ text });
+}
+
 async function main() {
   // Claude Code は SIGINT で止まる。偽接続も同じく、すぐ終わる
   process.on('SIGINT', () => process.exit(130));
@@ -592,6 +723,7 @@ async function main() {
   const argv = process.argv.slice(2);
   if (isIntentCall(argv)) return intentCall(argv);
   if (isOrganizeCall(argv)) return organizeCall(argv);
+  if (isDesignCall(argv)) return designCall(argv);
   const problems = await checkArgs(argv);
   const request = (await readStdin()).trim();
   // 実機の init と同じ項目。偽接続は利用者の設定を読まないので、MCP は渡された観察の道具だけで、ほかは空
@@ -622,6 +754,8 @@ async function main() {
   // 直す依頼は元の依頼の文を含むので、ほかの言葉より先に見る
   const fix = readFixPrompt(request);
   if (fix) return fixRequested(fix);
+  // 設計の依頼は目的の文書を含むので、ほかの言葉より先に見る
+  if (/^この設計で試作品を作ってください。/.test(request)) return buildFromDesign(request);
   // 偽接続は CLAUDE.md などの指示ファイルを読まない(実機の確かめ scripts/check-claude-code.js で使う)
   if (/指示ファイル/.test(request)) {
     await say('指示ファイルなし');
@@ -636,6 +770,7 @@ async function main() {
     await say('依頼を読みました。これから失敗します。');
     return finish({ isError: true, text: '偽接続: 依頼どおりに失敗しました' });
   }
+  if (/素材の色を書き換え/.test(request)) return overrideMaterial(argv);
   if (/外/.test(request)) return writeOutside();
   if (/シナリオ/.test(request)) return addScenarioAndScramble();
   if (/ゆっくり/.test(request)) return slow();

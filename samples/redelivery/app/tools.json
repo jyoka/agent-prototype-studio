@@ -1,0 +1,36 @@
+{
+  "formatVersion": 1,
+  "owner": "shiokaze",
+  "tools": [
+    {
+      "name": "get_parcel",
+      "description": "架空の荷物を 1 つ、番号で引く",
+      "inputSchema": { "type": "object", "properties": { "parcel_no": { "type": "integer", "minimum": 1000, "maximum": 9999 } }, "required": ["parcel_no"] },
+      "do": { "op": "get", "data": "data/parcels.json", "key": "parcel_no" },
+      "guards": { "hideFields": ["recipient"], "maxCallsPerConversation": 10 }
+    },
+    {
+      "name": "record_consent",
+      "description": "再配達を書いてよいと本人が言ったことを記録する",
+      "inputSchema": { "type": "object", "properties": { "agreed": { "type": "boolean" } }, "required": ["agreed"] },
+      "do": { "op": "record", "into": "consent" }
+    },
+    {
+      "name": "save_redelivery",
+      "description": "再配達の希望を書く。同意の記録がなければ動かない",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "parcel_no": { "type": "integer", "minimum": 1000, "maximum": 9999 }, "slot": { "type": "string", "enum": ["午前中", "昼すぎ", "夕方", "夜"] } },
+        "required": ["parcel_no", "slot"]
+      },
+      "do": { "op": "record", "into": "redelivery" },
+      "guards": { "requires": [{ "recorded": "consent", "equals": { "agreed": true } }] }
+    },
+    {
+      "name": "handoff_to_staff",
+      "description": "担当者(人)に引き継ぐ",
+      "inputSchema": { "type": "object", "properties": {} },
+      "do": { "op": "handoff", "to": "staff" }
+    }
+  ]
+}

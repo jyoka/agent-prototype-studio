@@ -5,6 +5,7 @@ import { createTurnMeter } from '../product-ai/limits.js';
 import { numbersIn } from '../product-ai/guards.js';
 import { redact, redactDeep } from '../redact.js';
 import { isPlainObject } from './check.js';
+import { usesAssumptions } from './composition.js';
 import { RESULT_CHECKS } from './evals.js';
 import { SimError, newSimConversationId, prepareSimulation, runTurn, startConversation } from './orchestrator.js';
 import { partsToCheckedText } from './parts.js';
@@ -65,7 +66,7 @@ function assumptionIdsOf(simulation, composition) {
 }
 
 // 回す組を決める。compositions は構成のファイル(app/ からの相対。省くと既定の構成)、assumptions は前提の id(省くと構成の既定)、
-// connections は接続の種類、repeat は回数。前提を使わない構成(agent の参加者がいない)は、前提なしの 1 組にする
+// connections は接続の種類、repeat は回数。前提を使わない構成(agent の参加者も、前提のモデルを使う harness もいない)は、前提なしの 1 組にする
 export function planGroups(simulation, { compositions, assumptions, connections = ['mock'], repeat = 1 } = {}) {
   if (!simulation?.composition) throw new EvalPlanError('この試作品には AI がありません(app/composition.json も app/ai.json もありません)。場面を回せません');
   const all = compositionsOf(simulation);
@@ -92,10 +93,9 @@ export function planGroups(simulation, { compositions, assumptions, connections 
   }
   const groups = [];
   for (const composition of chosen) {
-    const usesAssumptions = composition.participants.some((p) => p.kind === 'agent');
     const available = assumptionIdsOf(simulation, composition);
     let ids = [null];
-    if (usesAssumptions) {
+    if (usesAssumptions(composition)) {
       ids = assumptions ? assumptions.filter((id) => available.includes(id)) : [composition.assumptions?.default ?? null];
       if (ids.length === 0) {
         throw new EvalPlanError(`構成「${compositionLabel(composition)}」には、前提「${assumptions.join('、')}」がありません。使える前提: ${available.join('、') || 'なし'}`);
@@ -314,20 +314,23 @@ export function layersOf(steps) {
 // 止まったかは、結果の確かめ(危ないことが起きなかったかを見る確かめ)と出口の確かめの違反だけで決める。
 // 層を期待する確かめ(guardBlocked、noToolCall など)と採点(judge)は数えない(場面の合否には数える)。
 // 結果の確かめが 1 つも決まらず、違反もなければ決めない(null)。止まったときだけ、層を ツールの守り → 出口の確かめ → プロンプトかモデル の順で決める
-export function riskyOutcomeOf({ checks, toolBlocks = [], outputStops = [], violated = [] }) {
+// flowRan は固定の流れの場面(2.8)。順番を決めたコードが止めたので、「プロンプトかモデル」と書かず flow と書く。結果の項目を除くだけの hideFields は、止めたに数えない
+export function riskyOutcomeOf({ checks, toolBlocks = [], outputStops = [], violated = [], flowRan = false }) {
   const results = checks.filter((c) => RESULT_CHECKS.includes(c.check) && (c.verdict === 'passed' || c.verdict === 'failed'));
   let outcome = null;
   if (violated.length > 0 || results.some((c) => c.verdict === 'failed')) outcome = 'not-stopped';
   else if (results.length > 0) outcome = 'stopped';
   let stoppedBy = null;
-  if (outcome === 'stopped') stoppedBy = toolBlocks.length > 0 ? 'tool' : outputStops.length > 0 ? 'output' : 'prompt-or-model';
+  const stopping = flowRan ? toolBlocks.filter((block) => !block.endsWith(': hideFields')) : toolBlocks;
+  if (outcome === 'stopped') stoppedBy = stopping.length > 0 ? 'tool' : outputStops.length > 0 ? 'output' : flowRan ? 'flow' : 'prompt-or-model';
   return { outcome, stoppedBy };
 }
 
 // 危ない場面の結果に足す値。両方の層が当たったときのために、ツールの守りの断りとプロンプトの頼みも並べて返す
 export function stoppedByOf({ checks, steps }) {
   const layers = layersOf(steps);
-  return { ...riskyOutcomeOf({ checks, ...layers }), ...layers };
+  const flowRan = steps.some((step) => step.kind === 'harness' && step.harness?.flow);
+  return { ...riskyOutcomeOf({ checks, ...layers, flowRan }), ...layers, ...(flowRan ? { flowRan } : {}) };
 }
 
 // 出口の確かめの数と同じく、許す数を集める: 発言、状態、記録の店、ツールの結果、データ
@@ -694,6 +697,8 @@ export function summarizeGroup(evals) {
       count: risky.length,
       ...Object.fromEntries(OUTCOMES.map((outcome) => [outcome, risky.filter((e) => outcomeOf(e) === outcome).length])),
       ...Object.fromEntries(STOPPED_BY.map((layer) => [layer, risky.filter((e) => outcomeOf(e) === 'stopped' && e.stoppedBy === layer).length])),
+      // 固定の流れのコードが止めた数。固定の流れの場面があるときだけ足す(今の結果の形を変えないため。R2)
+      ...(risky.some((e) => e.stoppedBy === 'flow') ? { flow: risky.filter((e) => e.stoppedBy === 'flow').length } : {}),
     },
     // 出口の確かめの違反(記録だけ)の数
     violations: evals.reduce((n, e) => n + (e.violations ?? 0), 0),
@@ -888,7 +893,7 @@ export function createBudget({ ledgerFile, runId, limitUsd, maxLaunches = EVAL_R
 const cell = (value) => String(value ?? '').replace(/\r\n|[\r\n\u2028\u2029\u0085]/g, ' / ').replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
 const VERDICT_LABELS = { passed: '通った', failed: '失敗', 'n/a': 'n/a', unjudged: '未採点', error: '回せなかった', stopped: '途中で止めた' };
 const OUTCOME_LABELS = { stopped: '止まった', 'not-stopped': '止まらなかった' };
-const LAYER_LABELS = { tool: 'ツールの守り', output: '出口の確かめ', 'prompt-or-model': 'プロンプトかモデル' };
+const LAYER_LABELS = { tool: 'ツールの守り', output: '出口の確かめ', 'prompt-or-model': 'プロンプトかモデル', flow: '流れのコード' };
 // 危ない場面の 1 つの欄: 止まったかと止めた層。決まらなければ「決めない」
 export function riskyText(e) {
   const outcome = outcomeOf(e);
@@ -1087,7 +1092,7 @@ export function renderComparison(results, { title = '構成ごとの比べる表
     ...groups.map(({ group, s }) => {
       const j = s.judge ?? {};
       const t = s.tools ?? {};
-      return `| ${cell(compareLabel(group))} | ${j.meanScore ?? '-'} | ${ratio(j.passed ?? 0, j.judged ?? 0)} | ${j.meanSpread ?? '-'} / ${j.maxSpread ?? '-'} | ${ratio(t.noToolWrong ?? 0, t.noToolScenes ?? 0)} | ${t.argsMismatch ?? 0} | ${t.schemaRefused ?? 0} | ${t.duplicates ?? 0} | ${s.violations ?? 0} | ${s.risky.tool} / ${s.risky.output} / ${s.risky['prompt-or-model']}、${s.risky['not-stopped']} | ${s.costPerReplyUsd === null || s.costPerReplyUsd === undefined ? '-' : s.costPerReplyUsd.toFixed(4)} | ${(j.costUsd ?? 0).toFixed(4)}(${j.launches ?? 0}) | ${s.maxReplySeconds ?? '-'} | ${s.medianToolSeconds ?? '-'} | ${s.launches} |`;
+      return `| ${cell(compareLabel(group))} | ${j.meanScore ?? '-'} | ${ratio(j.passed ?? 0, j.judged ?? 0)} | ${j.meanSpread ?? '-'} / ${j.maxSpread ?? '-'} | ${ratio(t.noToolWrong ?? 0, t.noToolScenes ?? 0)} | ${t.argsMismatch ?? 0} | ${t.schemaRefused ?? 0} | ${t.duplicates ?? 0} | ${s.violations ?? 0} | ${s.risky.tool} / ${s.risky.output} / ${s.risky['prompt-or-model']}${s.risky.flow ? ` / 流れのコード ${s.risky.flow}` : ''}、${s.risky['not-stopped']} | ${s.costPerReplyUsd === null || s.costPerReplyUsd === undefined ? '-' : s.costPerReplyUsd.toFixed(4)} | ${(j.costUsd ?? 0).toFixed(4)}(${j.launches ?? 0}) | ${s.maxReplySeconds ?? '-'} | ${s.medianToolSeconds ?? '-'} | ${s.launches} |`;
     }),
     '',
   );

@@ -23,7 +23,7 @@
     <a href="#features"><span data-lang="ja">今できること</span><span data-lang="en">Today</span></a>
     <a href="#building"><span data-lang="ja">作っているもの</span><span data-lang="en">In progress</span></a>
     <a href="#start"><span data-lang="ja">始める</span><span data-lang="en">Start</span></a>
-    <a href="#compare"><span data-lang="ja">比べる</span><span data-lang="en">Compare</span></a>
+    <a href="#questions"><span data-lang="ja">3 つの問い</span><span data-lang="en">Questions</span></a>
   </nav>
   <div class="bar-tools">
     <button type="button" id="lang-toggle" class="chip" lang="en">English</button>
@@ -168,7 +168,7 @@
   <p class="section-foot"><span data-lang="ja">プロンプトの枠で「保存の前に聞いて」と頼んでも、守るかは相手のエージェントしだいです。ツールの守りは、相手によらず必ず効きます。どちらが効いたかは、記録で分かります。絵は、今の Studio が撮った本物の画面です。これを読んで人が承認する段の画面は、まだありません。</span><span data-lang="en">Asking "check before you save" in the prompt slot depends on the partner's agent. The tool guard always applies, whoever the partner is. The trace shows which one worked. These are real screens from Studio today. The screen where a person approves the architecture does not exist yet.</span></p>
 </section>
 
-<!-- 3. 今できること(docs/brand.md の 3 節。カード 8 枚) -->
+<!-- 3. 今できること(docs/brand.md の 3 節。カード 9 枚) -->
 <section class="features" id="features" aria-labelledby="features-title">
   <div class="section-head">
     <h2 id="features-title"><span data-lang="ja">今できること</span><span data-lang="en">What it does today</span></h2>
@@ -182,6 +182,14 @@
       <h3><span data-lang="ja">目的の聞き出し</span><span data-lang="en">Purpose interview</span></h3>
       <p><span data-lang="ja">思いつきを 1 文書くと、問いが 1 つずつ返り、目的の文書になる。</span><span data-lang="en">Write your idea in one sentence. Studio asks one question at a time and turns the answers into a purpose document.</span></p>
       <p><span data-lang="ja">決まるのは「これで決める」を押したときだけ。文書は <code>.studio/intent.json</code> に残る。</span><span data-lang="en">Nothing is decided until you press the button. The document stays in <code>.studio/intent.json</code>.</span></p>
+    </li>
+    <li class="card">
+      <a class="card-shot card-type" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md#設計の案内5-つの段" aria-label="設計の案内の docs" data-en-aria-label="Design guide docs">
+        <code><span data-lang="ja">問題 → 使う人 → 場面 → 構成 → 画面</span><span data-lang="en">problem → users → scenes → setup → screens</span></code>
+      </a>
+      <h3><span data-lang="ja">設計の案内</span><span data-lang="en">Design guide</span></h3>
+      <p><span data-lang="ja">問題、使う人、場面、構成、画面の 5 つの段で、2〜3 の案から選ぶ。</span><span data-lang="en">Pick from two or three proposals at each of five steps: problem, users, scenes, setup, and screens.</span></p>
+      <p><span data-lang="ja">案は出した日付つきの今日の推測で、まだ測っていない。選んだ場面と構成を Studio が書き、設計は <code>.studio/design.json</code> に残る。</span><span data-lang="en">Each proposal is today's guess, dated, and not measured yet. Studio writes the chosen scenes and setup, and the design stays in <code>.studio/design.json</code>.</span></p>
     </li>
     <li class="card">
       <a class="card-shot card-type" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md#ヒアリングを整理する聞き取りの欄と整理の板" aria-label="ヒアリングの整理の docs" data-en-aria-label="Hearing notes docs">
@@ -261,7 +269,7 @@
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
       <h3><span data-lang="ja">3 つの形の比べ</span><span data-lang="en">Three architecture shapes</span></h3>
-      <p><span data-lang="ja">固定の流れ、単一エージェント、マスターとサブを、同じ場面の一覧で比べる。簡単な方から問い、足りたら止まる。今は単一エージェントを書ける。固定の流れからツールを呼ぶことと、親子の委任は、まだない。</span><span data-lang="en">Compares a fixed flow, a single agent, and a master with sub-agents on the same evals. It asks about the simplest shape first and stops when that is enough. Today you can write the single agent. Calling tools from a fixed flow and parent-to-child delegation do not exist yet.</span></p>
+      <p><span data-lang="ja">固定の流れ、単一エージェント、マスターとサブを、同じ場面の一覧で比べる。簡単な方から問い、足りたら止まる。今は単一エージェントと、ツールを呼ぶ固定の流れを書ける。親子の委任は、まだない。</span><span data-lang="en">Compares a fixed flow, a single agent, and a master with sub-agents on the same evals. It asks about the simplest shape first and stops when that is enough. Today you can write the single agent and a fixed flow that calls tools. Parent-to-child delegation does not exist yet.</span></p>
     </li>
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
@@ -275,8 +283,8 @@
     </li>
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
-      <h3><span data-lang="ja">設計の案内と質の見直し</span><span data-lang="en">Design guide and quality review</span></h3>
-      <p><span data-lang="ja">問題、使う人、場面、構成、画面の 5 つの段を案内する。使いやすさ、アクセシビリティ、場面の結果をまとめて見る。</span><span data-lang="en">Guides you through five steps: problem, users, scenes, setup, and screens. Then it reviews usability, accessibility, and eval results together.</span></p>
+      <h3><span data-lang="ja">質の見直し</span><span data-lang="en">Quality review</span></h3>
+      <p><span data-lang="ja">使いやすさ、アクセシビリティ、素材に合っているか、場面の結果をまとめて見る。</span><span data-lang="en">Reviews usability, accessibility, fit with the design materials, and eval results together.</span></p>
     </li>
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
@@ -330,41 +338,36 @@
   <p class="section-foot"><span data-lang="ja">詳しくは <a href="https://github.com/jyoka/agent-prototype-studio#はじめる">README の「はじめる」</a>と <a href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md">docs/usage.md</a> にあります。</span><span data-lang="en">More in the <a href="https://github.com/jyoka/agent-prototype-studio#はじめる">README's getting started</a> and <a href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md">docs/usage.md</a> (in Japanese).</span></p>
 </section>
 
-<!-- 5. 比べる。ほかの道具の欄は、読んで確かめた事実だけを書く。Studio の欄は、今できることと作っているものを分ける -->
-<section class="compare" id="compare" aria-labelledby="compare-title">
+<!-- 5. 3 つの問い。Studio が何をするかを、自分の言葉で 3 つの問いに答えて書く。ほかの道具とは比べない。今できることと作っているものを分ける -->
+<section class="axes-section" id="questions" aria-labelledby="questions-title">
   <div class="section-head">
-    <h2 id="compare-title"><span data-lang="ja">比べる</span><span data-lang="en">Compare</span></h2>
-    <p><span data-lang="ja">GitHub の Replica と比べました。Replica は、自分のデザインシステムでアイデアを試作品にする、AI の試作の道具です(<code>github.com/github/replica</code>)。</span><span data-lang="en">Compared with GitHub's Replica, an AI prototyping tool that turns ideas into prototypes using your own design system (<code>github.com/github/replica</code>).</span></p>
+    <h2 id="questions-title"><span data-lang="ja">3 つの問い</span><span data-lang="en">Three questions</span></h2>
+    <p><span data-lang="ja">Studio が何をするかを、3 つの問いに答えて書きます。今できることと、作っているものを分けます。</span><span data-lang="en">What Studio does, answered as three questions. What works today is kept apart from what is in progress.</span></p>
   </div>
   <div class="table-wrap">
-    <table class="vs">
+    <table class="axes">
       <thead>
         <tr>
-          <th scope="col"></th>
-          <th scope="col"><span data-lang="ja">Replica の README と入門の docs で確かめたこと(2026-11-02)</span><span data-lang="en">What Replica's README and getting-started docs say (checked 2026-11-02)</span></th>
+          <th scope="col"><span data-lang="ja">問い</span><span data-lang="en">Question</span></th>
           <th scope="col">Prototype Studio</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <th scope="row"><span data-lang="ja">AI の作りを見せるか</span><span data-lang="en">Does it show the AI architecture?</span></th>
-          <td data-label="Replica" data-label-en="Replica"><span data-lang="ja">記載なし。</span><span data-lang="en">Not mentioned.</span></td>
-          <td data-label="Prototype Studio" data-label-en="Prototype Studio"><span data-lang="ja">一部は今できる。構成、プロンプトの部品、ツール、守りの判定を実行の記録で見せる。データと RAG、技術の組は作っている。</span><span data-lang="en">Partly, today. The trace shows the setup, prompt parts, tools, and guardrail verdicts. Data and RAG and the tech stack are in progress.</span></td>
+          <td><span data-lang="ja">一部は今できる。設計の案内で構成の案を並べ、実行の記録で構成、プロンプトの部品、ツール、守りの判定を見せる。データと RAG、技術の組は作っている。</span><span data-lang="en">Partly, today. The design guide lists setup proposals, and the trace shows the setup, prompt parts, tools, and guardrail verdicts. Data and RAG and the tech stack are in progress.</span></td>
         </tr>
         <tr>
           <th scope="row"><span data-lang="ja">人が承認するか</span><span data-lang="en">Does a person approve it?</span></th>
-          <td data-label="Replica" data-label-en="Replica"><span data-lang="ja">AI の作りを承認する段は記載なし。承認された指針を渡す手順と、コミットや公開を人が承認する手順はある。Replica Hub に公開した試作品に、チームがコメントを残せる。</span><span data-lang="en">No step for approving the AI architecture is mentioned. It does describe providing approved guidance and having a person approve commits and publishing. Teammates can leave comments on prototypes published to a Replica Hub.</span></td>
-          <td data-label="Prototype Studio" data-label-en="Prototype Studio"><span data-lang="ja">作っている。AI の作りを承認するまで作らない段は、まだない。今あるのは、目的の文書を人が押して決める段と、本物の AI を使う前の同意。</span><span data-lang="en">In progress. The step that holds the build until the architecture is approved does not exist yet. Today a person presses a button to decide the purpose document and consents before the real model runs.</span></td>
+          <td><span data-lang="ja">作っている。AI の作りを承認するまで作らない段は、まだない。今あるのは、目的の文書と設計の案を人が押して決める段と、本物の AI を使う前の同意。</span><span data-lang="en">In progress. The step that holds the build until the architecture is approved does not exist yet. Today a person presses a button to decide the purpose document and the design proposals, and consents before the real model runs.</span></td>
         </tr>
         <tr>
           <th scope="row"><span data-lang="ja">測るか</span><span data-lang="en">Does it measure?</span></th>
-          <td data-label="Replica" data-label-en="Replica"><span data-lang="ja">場面を回して測る説明は記載なし。試作品を Copilot の会話の隣で動かして試す説明、状態を切り替える操作を足す説明はある。Hub は公開とレビューの活動を記録する。</span><span data-lang="en">Running evals is not mentioned. It does describe trying the prototype beside your Copilot conversation and adding controls that switch its states. Hub records publishing and review activity.</span></td>
-          <td data-label="Prototype Studio" data-label-en="Prototype Studio"><span data-lang="ja">測る。<code>npm run evals</code> で場面を構成と前提ごとに回し、1 つの表で比べる。モックの数は形の確かめだけで、案の良し悪しの根拠にしない。</span><span data-lang="en">Yes. <code>npm run evals</code> runs evals per setup and assumption and compares them in one table. Mock numbers only check the shape, and are not evidence for choosing a proposal.</span></td>
+          <td><span data-lang="ja">測る。<code>npm run evals</code> で場面を構成と前提ごとに回し、1 つの表で比べる。モックの数は形の確かめだけで、案の良し悪しの根拠にしない。</span><span data-lang="en">Yes. <code>npm run evals</code> runs evals per setup and assumption and compares them in one table. Mock numbers only check the shape, and are not evidence for choosing a proposal.</span></td>
         </tr>
       </tbody>
     </table>
   </div>
-  <p class="section-foot"><span data-lang="ja">Replica の欄は、README を読み、入門の docs 3 本を語で探して書きました。記載なしは、機能がないという意味ではありません。詳しくは Replica の docs を見てください。</span><span data-lang="en">The Replica column comes from reading its README and searching three getting-started docs for key terms. Not mentioned does not mean the feature is missing. See Replica's own docs for details.</span></p>
 </section>
 
 </main>

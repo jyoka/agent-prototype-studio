@@ -1,0 +1,44 @@
+{
+  "formatVersion": 1,
+  "compositions": [
+    {
+      "id": "fixed-flow",
+      "label": "固定の流れ",
+      "plain": "手順はコードが決める形",
+      "order": 1,
+      "question": "手順をコードに書けるか",
+      "decidedBy": "コード",
+      "modelRole": "読み取りと言い方だけ",
+      "participantKinds": ["harness"],
+      "available": true,
+      "limitation": "Studio が書く構成には、道具(ツール)を呼ぶ段はまだ入りません。要るときは、後から構成に足します。",
+      "addedOn": "2026-11-02"
+    },
+    {
+      "id": "single-agent",
+      "label": "単一エージェント",
+      "plain": "1 つの AI が道具を選んで進む形",
+      "order": 2,
+      "question": "1 つの AI が道具を選べば足りるか",
+      "decidedBy": "モデル",
+      "modelRole": "順番、読み取り、言い方",
+      "participantKinds": ["agent"],
+      "available": true,
+      "limitation": null,
+      "addedOn": "2026-11-02"
+    },
+    {
+      "id": "master-sub",
+      "label": "マスターとサブ",
+      "plain": "親の AI が子の AI に仕事を任せる形",
+      "order": 3,
+      "question": "分けると、通らない場面が通るか",
+      "decidedBy": "モデル。深さと回数はコード",
+      "modelRole": "順番、任せる先、読み取り、言い方",
+      "participantKinds": [],
+      "available": false,
+      "limitation": "今の Studio では動かせないので、まだ選べません。",
+      "addedOn": "2026-11-02"
+    }
+  ]
+}

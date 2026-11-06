@@ -94,7 +94,8 @@ button { font: inherit; }
   border-bottom: 1px solid var(--line);
 }
 .topbar h1 { white-space: nowrap; }
-.topbar-end { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; }
+.topbar-end { margin-left: auto; display: flex; flex: none; align-items: center; gap: 0.5rem; }
+.topbar-end button { white-space: nowrap; }
 .topbar button, .toolbar button, .detail-button {
   padding: 0.35rem 0.8rem;
   border: 1px solid var(--line);
@@ -245,6 +246,47 @@ body[data-organize] .layout, body[data-organize] .first-steps { display: none; }
 .organize-edit { display: flex; flex-direction: column; gap: 0.3rem; }
 .organize-edit textarea { width: 100%; }
 .organize-asks { padding: 0.5rem; border: 1px solid var(--line); border-radius: 8px; }
+
+/* 設計の案内。5 つの段の帯と、案の比べ。出している間は、2 列と最初の一歩の案内を隠す */
+body[data-design] .layout, body[data-design] .first-steps { display: none; }
+.design { flex: 1 1 0; width: min(64rem, 100%); margin: 0 auto; padding: 1rem; box-sizing: border-box; overflow-y: auto; }
+.design[hidden], .design [hidden] { display: none; }
+.design h2 { margin: 0 0 0.5rem; font-size: 1.4rem; }
+.design h2:focus { outline: none; }
+.design h3 { margin: 0.6rem 0 0.2rem; font-size: 1.15rem; }
+.design h4 { margin: 0 0 0.3rem; font-size: 1rem; }
+.design p { margin: 0.3rem 0; }
+.design button, .design select, .design input { font: inherit; }
+.design button { padding: 0.35rem 0.8rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
+.design button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.design button:disabled { opacity: 0.5; cursor: default; }
+.design input, .design select { padding: 0.35rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); box-sizing: border-box; }
+.design-band { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.4rem; margin: 0.6rem 0; padding: 0; list-style: none; }
+.design-band button { width: 100%; height: 100%; text-align: left; overflow-wrap: anywhere; }
+.design-band small { display: block; color: var(--muted); font-size: 0.8rem; }
+.design-band li[aria-current="step"] button { border-color: var(--accent); background: var(--accent-bg); font-weight: 600; }
+.design-band li[data-state="done"] small { color: var(--ok); }
+.design-band li[data-state="stale"] small { color: var(--warn-text); }
+.design-begin, .design-step { margin-top: 0.4rem; }
+.design-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.6rem; margin: 0.5rem 0; padding: 0; list-style: none; }
+.design-option { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.6rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); min-width: 0; overflow-wrap: anywhere; }
+.design-option[data-chosen="true"] { border: 2px solid var(--accent); }
+.design-option[data-available="false"] { background: var(--bg); color: var(--muted); }
+.design-option-title { font-weight: 600; }
+.design-option dl { display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.5rem; margin: 0; font-size: 0.85rem; }
+.design-option dt { color: var(--muted); }
+.design-option dd { margin: 0; }
+.design-option ul { margin: 0; padding-left: 1.1rem; font-size: 0.85rem; }
+.design-option button { margin-top: auto; align-self: flex-start; }
+.design-reason { font-size: 0.9rem; }
+.design-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-top: 0.4rem; }
+.design-line label { font-weight: 600; }
+.design-line input { flex: 1 1 12rem; min-width: 0; }
+.design-scenes { margin-top: 0.6rem; padding: 0.5rem; border: 1px solid var(--line); border-radius: 8px; }
+.design-scene { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.design-scene input { flex: 1 1 14rem; min-width: 0; }
+.design-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.7rem; }
+@media (max-width: 640px) { .design-band { grid-template-columns: 1fr; } }
 
 /* はじめの画面、目的の聞き出し、目的の文書。出している間は、2 列と最初の一歩の案内を隠す */
 body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
@@ -641,6 +683,22 @@ body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
 .save-form input { flex: 1; min-width: 0; font: inherit; padding: 0.25rem 0.4rem; }
 .versions-message { margin: 0.5rem 0 0; padding: 0.4rem 0.6rem; border-radius: 4px; background: var(--ok-bg); }
 .versions-message[data-kind="failed"] { background: var(--error-bg); color: var(--error); }
+.tokens-problems { margin: 0.3rem 0; padding: 0.4rem 0.6rem; border-radius: 4px; background: var(--error-bg); color: var(--error); }
+.tokens-problems ul, .tokens-list { margin: 0.2rem 0 0; padding-left: 1.1rem; }
+.tokens-warnings { color: var(--muted); }
+.tokens-review { display: flex; flex-direction: column; gap: 0.25rem; }
+.tokens-review[hidden] { display: none; }
+.tokens-review p { margin: 0.2rem 0; }
+.tokens-review input[type="text"] { font: inherit; padding: 0.25rem 0.4rem; border: 1px solid var(--line); border-radius: 6px; }
+.tokens-review button { align-self: flex-start; margin-top: 0.2rem; }
+.tokens-roles { border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.6rem 0.5rem; }
+.tokens-role { display: grid; grid-template-columns: 6rem 1fr; align-items: center; gap: 0.4rem; margin-top: 0.25rem; }
+.tokens-role select { font: inherit; min-width: 0; }
+.tokens-connected { margin: 0.3rem 0 0.6rem; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid var(--line); }
+.tokens-connected p { margin: 0.2rem 0; }
+.tokens-connected .tokens-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.35rem; }
+.tokens-swatch { display: inline-block; width: 0.8rem; height: 0.8rem; margin-right: 0.3rem; border: 1px solid var(--line); border-radius: 3px; vertical-align: -1px; }
+.tokens-names { margin-top: 0.3rem; }
 .handoff-form { display: flex; flex-direction: column; gap: 0.25rem; }
 .handoff-form label { font-size: 0.8rem; color: var(--muted); }
 .handoff-form textarea { font: inherit; padding: 0.25rem 0.4rem; border: 1px solid var(--line); border-radius: 6px; resize: vertical; }

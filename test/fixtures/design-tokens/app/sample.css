@@ -1,0 +1,6 @@
+/* つなぐ前は、後ろの値で描く */
+.own-note {
+  color: var(--token-color-accent, rgb(120 120 120));
+  font-family: var(--token-font-body, serif);
+  padding: var(--token-size-gap, 0);
+}

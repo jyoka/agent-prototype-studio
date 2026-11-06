@@ -1,11 +1,12 @@
 import { describeBilling, needsBudget } from './claude-args.js';
 import { CLAUDE_CODE_LIMITS, PROVIDER_ENV } from './product-ai/claude-code.js';
 import { CALL_LIMITS } from './product-ai/limits.js';
+import { DESIGN_AI_LIMITS } from './design-ai.js';
 import { INTENT_AI_LIMITS } from './intent-ai.js';
 import { ORGANIZE_AI_LIMITS } from './organize-ai.js';
 
 // 本物の AI(利用者の Claude Code)を使う前の同意(docs/design/ux-redesign.md の 6 節、ADR-0001 の T6)。
-// 同意は 1 つで、直す AI の送信、試作品の中の AI の本物への切り替え、人の「確かめる」、目的の聞き出し、ヒアリングの整理の全部に効く。
+// 同意は 1 つで、直す AI の送信、試作品の中の AI の本物への切り替え、人の「確かめる」、目的の聞き出し、ヒアリングの整理、設計の案の全部に効く。
 // Studio のメモリーにだけ持ち、Studio を起動し直すと消える(ディスクには覚えない。ux-redesign.md の 11 節)。
 // 偽接続とお試しの AI(モック)は、同意なしで使える。
 
@@ -19,6 +20,7 @@ const USES = {
   check: '本物の AI で確かめる',
   intent: '本物の AI で目的を聞き出す',
   organize: '本物の AI でヒアリングを整理する',
+  design: '本物の AI で設計の案を出す',
 };
 
 export class ConsentRequiredError extends Error {
@@ -96,7 +98,7 @@ export class RealAiConsent {
     return { agreed: this.agreed, agreedAt: this.agreedAt };
   }
 
-  // 本物の AI を使う前に呼ぶ。同意の前は投げる。use は fix、product、check、intent、organize のどれか
+  // 本物の AI を使う前に呼ぶ。同意の前は投げる。use は fix、product、check、intent、organize、design のどれか
   require(use) {
     if (!this.agreed) throw new ConsentRequiredError(use);
   }
@@ -106,7 +108,7 @@ export class RealAiConsent {
 function fixDetails({ agent, systemPrompt }) {
   if (agent.kind !== 'claude') return null;
   return {
-    items: ['頼んだ文', '試作品のファイル(直す AI が読み書きするもの)', '自動の確かめで見つかった問題(直し直すとき)'],
+    items: ['頼んだ文', '試作品のファイル(直す AI が読み書きするもの)', '自動の確かめで見つかった問題(直し直すとき)', 'つないだトークンの名前(つないでいるとき)'],
     notSent: 'PC のほかのファイル、ほかの試作品は送りません。直す AI は試作品のフォルダーの外を読み書きできません。',
     tools: '試作品のファイルの読み書きと検索、試作品の画面を見る道具だけを渡します。コマンドの実行と Web は渡しません。',
     systemPrompt,
@@ -135,17 +137,29 @@ function organizeDetails({ organizePrompt }) {
   };
 }
 
+// 設計の案の「詳しく」。送るものと、渡す道具と、案を出す AI への指示の全文
+function designDetails({ designPrompt }) {
+  return {
+    items: ['書いた 1 文(なければ、試作品の名前と目的の 1 文)', '決めた目的の文書', '整理の板の項目'],
+    notSent: '試作品の画面のソース、PC のほかのファイル、ほかの試作品は送りません。',
+    tools: '案を出す AI には道具を渡しません。ファイル、コマンド、Web は使えません。',
+    limits: `1 回の呼び出しで ${DESIGN_AI_LIMITS.maxBudgetUsd} ドルまで、案を作るごとに多くて ${DESIGN_AI_LIMITS.attempts} 回呼びます。Studio が勝手には呼びません。`,
+    systemPrompt: designPrompt,
+  };
+}
+
 // 「詳しく」の記録の扱い。直す AI の結果は build-requests.js の evidence、試作品の中の AI の記録は AiSessions の trace(ADR-0001 の #277)
 const RECORDS = [
   '言葉で直したときの結果(変えたファイル、確かめた結果、かかった時間と費用)は、試作品のフォルダーの中の .studio/runs に残ります。',
   '試作品の中の AI とのやりとりの記録は、Studio のメモリーにだけ置き、Studio を止めると消えます。記録では、メールアドレスや API キーらしい文字列を伏せます。',
   '目的の聞き出しの 1 文、問いと答え、目的の文書は、試作品のフォルダーの中の .studio/intent.json に残ります。',
   'ヒアリングの要点と整理の板は、試作品のフォルダーの中の .studio/organize.json に残ります。',
+  '設計の案と選んだ案は、試作品のフォルダーの中の .studio/design.json に残ります。',
 ];
 
 // 同意のカード(画面は P25)に出す中身。product は試作品の中の AI の「詳しく」(AiSessions.realDetails)で、試作品を選んだときだけ
 // fixLaunches は、1 つの依頼で直す AI を起動する回数の上限(build-requests.js の MAX_FIX_ROUNDS + 1)
-export function consentView({ consent, env, agent, fixBudgetUsd, fixLaunches, systemPrompt, intentPrompt, organizePrompt, productAllowed, product = null }) {
+export function consentView({ consent, env, agent, fixBudgetUsd, fixLaunches, systemPrompt, intentPrompt, organizePrompt, designPrompt, productAllowed, product = null }) {
   const cost = describeCost({ env, auth: agent.auth, fixBudgetUsd, fixLaunches });
   return {
     consent: consent.state(),
@@ -156,12 +170,12 @@ export function consentView({ consent, env, agent, fixBudgetUsd, fixLaunches, sy
     },
     summary: {
       runsOn: 'AI は、あなたの Claude Code で動きます。',
-      sends: ['頼んだ文と試作品のファイル(言葉で直すとき)', '試作品の中の会話と AI の設定(本物の AI と話すとき)', '書いた 1 文と問いへの答え(目的を聞き出すとき)', '打った要点と整理の板の項目(ヒアリングを整理するとき)'],
+      sends: ['頼んだ文と試作品のファイル(言葉で直すとき)', '試作品の中の会話と AI の設定(本物の AI と話すとき)', '書いた 1 文と問いへの答え(目的を聞き出すとき)', '打った要点と整理の板の項目(ヒアリングを整理するとき)', '書いた 1 文、目的の文書、整理の板の項目(設計の案を出すとき)'],
       notSent: 'PC のほかのファイル、ほかの試作品',
       to: cost.to,
       cost,
       note: '架空のデータだけで試してください。実在の人や会社の情報は入れないでください。',
     },
-    details: { fix: fixDetails({ agent, systemPrompt }), intent: agent.kind === 'claude' && intentPrompt ? intentDetails({ intentPrompt }) : null, organize: agent.kind === 'claude' && organizePrompt ? organizeDetails({ organizePrompt }) : null, product, records: RECORDS },
+    details: { fix: fixDetails({ agent, systemPrompt }), intent: agent.kind === 'claude' && intentPrompt ? intentDetails({ intentPrompt }) : null, organize: agent.kind === 'claude' && organizePrompt ? organizeDetails({ organizePrompt }) : null, design: agent.kind === 'claude' && designPrompt ? designDetails({ designPrompt }) : null, product, records: RECORDS },
   };
 }

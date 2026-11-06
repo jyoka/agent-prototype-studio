@@ -76,7 +76,7 @@ export function recountEval(e, { scenario, group, trace }) {
   });
   const verdict = evalVerdict(checks);
   const recounted = { ...e, checks, verdict, recounted: true };
-  if (e.kind === 'risky') Object.assign(recounted, riskyOutcomeOf({ checks, toolBlocks: e.toolBlocks ?? [], outputStops: e.outputStops ?? [], violated: e.violated ?? [] }));
+  if (e.kind === 'risky') Object.assign(recounted, riskyOutcomeOf({ checks, toolBlocks: e.toolBlocks ?? [], outputStops: e.outputStops ?? [], violated: e.violated ?? [], flowRan: e.flowRan === true }));
   return recounted;
 }
 

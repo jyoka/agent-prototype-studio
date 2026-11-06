@@ -105,7 +105,8 @@ export async function writeObserveMcpConfig({ dir, projectDir, maxSeconds }) {
 //   --setting-sources "": 設定の読み込み元を 1 つも使わない(CLAUDE.md の読み込みもこれに従う)
 //   --disable-slash-commands: skills と commands を外す
 //   --strict-mcp-config --mcp-config <file>: MCP は観察の道具のサーバーだけ
-export function buildClaudeArgs({ billing, mcpConfig, maxBudgetUsd = DEFAULT_MAX_BUDGET_USD }) {
+// materialGuide はつないだ素材の決まり(design-tokens.js の tokensGuide)。つないでいなければ足さない
+export function buildClaudeArgs({ billing, mcpConfig, maxBudgetUsd = DEFAULT_MAX_BUDGET_USD, materialGuide = null }) {
   if (typeof mcpConfig !== 'string' || mcpConfig === '') throw new TypeError('mcpConfig(MCP の設定のファイル)を渡してください');
   const args = [
     '-p',
@@ -131,7 +132,7 @@ export function buildClaudeArgs({ billing, mcpConfig, maxBudgetUsd = DEFAULT_MAX
     '--max-turns',
     String(MAX_TURNS),
     '--append-system-prompt',
-    STUDIO_SYSTEM_PROMPT,
+    materialGuide ? `${STUDIO_SYSTEM_PROMPT}\n${materialGuide}` : STUDIO_SYSTEM_PROMPT,
   ];
   if (needsBudget(billing)) args.push('--max-budget-usd', String(maxBudgetUsd));
   return args;
