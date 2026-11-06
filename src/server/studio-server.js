@@ -11,6 +11,7 @@ import { BusyError, NotFoundError } from './store.js';
 import { HandoffError } from './handoff.js';
 import { IntentError } from './intent.js';
 import { MaterialError } from './materials.js';
+import { MeetingRefusedError } from './meeting.js';
 import { VersionError } from './versions.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -104,7 +105,7 @@ const ORGANIZE_ACTIONS = {
   cancel: 'cancel',
 };
 
-function projectView(project, previewPort, runs, checks, firstSteps, intents, organizes, designs) {
+function projectView(project, previewPort, runs, checks, firstSteps, intents, organizes, designs, meetings) {
   return {
     id: project.id,
     title: project.title,
@@ -125,6 +126,8 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
     organize: organizes.summary(project.id),
     // 設計の案内の状態(design.js)。none と skipped は「設計なし」の印
     design: designs.summary(project.id),
+    // 会の状態(meeting.js)。none は会ではない試作品
+    meeting: meetings.summary(project.id),
     previewUrl: project.previewBuildId
       ? `http://localhost:${previewPort}/p/${project.id}/${project.previewBuildId}/`
       : null,
@@ -135,8 +138,8 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
 // realAi(projectId) は本物の AI を使う前の同意のカードの中身(real-ai.js の consentView)、consent は同意の状態。
 // firstSteps は最初の一歩の案内の進み方と、閉じたこと(first-steps.js)
 // intents は目的の聞き出しと目的の文書(intent.js)。organizes はヒアリングの整理(organize.js)。designs は設計の案内(design.js)
-export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, designs, materials, token, ports, realAi, consent, firstSteps }) {
-  const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes, designs);
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, designs, materials, meetings, token, ports, realAi, consent, firstSteps }) {
+  const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes, designs, meetings);
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
   // EventSource はヘッダーにトークンを付けられないので、画面は fetch の応答をストリームで読む(ADR-0001)。
@@ -150,7 +153,7 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       if (error instanceof BusyError) return sendError(res, 409, 'busy', error.message);
       if (error instanceof RequestError || error instanceof BodyError) return sendError(res, 400, 'request', error.message);
       if (error instanceof AgentUnavailableError) return sendError(res, 503, 'agent', error.message);
-      if (error instanceof ConsentRequiredError) return sendError(res, 403, error.code, error.message, error.next);
+      if (error instanceof ConsentRequiredError || error instanceof MeetingRefusedError) return sendError(res, 403, error.code, error.message, error.next);
       throw error;
     }
     res.writeHead(200, {
@@ -182,7 +185,8 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       // consent は本物の AI を使う前の同意の状態。画面は、本物の AI を使っている間の印を、これで出す。
       // firstSteps は最初の一歩の案内を閉じたか(手順の済みは、試作品ごとの firstSteps)
       // start ははじめの画面を出すか
-      return sendJson(res, 200, { projects: projects.map(view), agent, consent: consent.state(), firstSteps: firstSteps.state(), start: intents.startState() });
+      // meetingsDue は消す日を過ぎた会の一覧(知らせるだけで、Studio は勝手に消さない)
+      return sendJson(res, 200, { projects: projects.map(view), agent, consent: consent.state(), firstSteps: firstSteps.state(), start: intents.startState(), meetingsDue: meetings.due(projects) });
     }
     // はじめの画面。1 文から新しい試作品を作る({ sentence, guide })。本物の AI は、同意の前は 403(consent-required)で断り、試作品を作らない
     if (req.method === 'POST' && url.pathname === '/api/projects') return handleNewProject(req, res);
@@ -190,6 +194,11 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     if (req.method === 'POST' && url.pathname === '/api/start') {
       return sendJson(res, 200, { start: intents.dismissStart() });
     }
+    // 会の始め。{ purpose } で新しい試作品と会を作る。同意はまだ
+    if (req.method === 'POST' && url.pathname === '/api/meetings') return handleNewMeeting(req, res);
+    // 会の中身と同意と消す日。erase は会のデータを消す({ confirm: 試作品の ID })
+    const meetingMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/meeting(?:\/(decide|delete-on|erase))?$/.exec(url.pathname);
+    if (meetingMatch && (meetingMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleMeeting(req, res, meetingMatch[1], meetingMatch[2]);
     // 目的の聞き出しと目的の文書。GET は今の状態。「決めた」の印は decide でだけ付く
     const intentMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/intent(?:\/(start|answer|finish|edit|decide|skip|cancel))?$/.exec(url.pathname);
     if (intentMatch && (intentMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleIntent(req, res, intentMatch[1], intentMatch[2]);
@@ -276,9 +285,31 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', error.message);
     if (error instanceof BusyError) return sendError(res, 409, 'busy', error.message);
     if (error instanceof IntentError || error instanceof MaterialError) return sendError(res, error.status, error.code, error.message);
-    if (error instanceof ConsentRequiredError) return sendError(res, 403, error.code, error.message, error.next);
+    if (error instanceof ConsentRequiredError || error instanceof MeetingRefusedError) return sendError(res, 403, error.code, error.message, error.next);
     if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
     throw error;
+  }
+
+  async function handleNewMeeting(req, res) {
+    try {
+      const body = await readJson(req);
+      const id = await meetings.create({ purpose: body?.purpose });
+      return sendJson(res, 200, { project: view((await store.list()).find((p) => p.id === id)), meeting: await meetings.view(id) });
+    } catch (error) {
+      return sendIntentError(res, error);
+    }
+  }
+
+  async function handleMeeting(req, res, id, action) {
+    try {
+      if (!action) return sendJson(res, 200, { meeting: await meetings.view(id) });
+      const body = (await readJson(req)) ?? {};
+      if (action === 'erase') return sendJson(res, 200, await meetings.erase(id, body));
+      const meeting = action === 'decide' ? await meetings.decide(id, body) : await meetings.setDeleteOn(id, body);
+      return sendJson(res, 200, { meeting, consent: consent.state() });
+    } catch (error) {
+      return sendIntentError(res, error);
+    }
   }
 
   async function handleNewProject(req, res) {

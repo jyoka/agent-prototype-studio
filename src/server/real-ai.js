@@ -155,6 +155,7 @@ const RECORDS = [
   '目的の聞き出しの 1 文、問いと答え、目的の文書は、試作品のフォルダーの中の .studio/intent.json に残ります。',
   'ヒアリングの要点と整理の板は、試作品のフォルダーの中の .studio/organize.json に残ります。',
   '設計の案と選んだ案は、試作品のフォルダーの中の .studio/design.json に残ります。',
+  '会の目的、同意、消す日は、試作品のフォルダーの中の .studio/meeting.json に残ります。',
 ];
 
 // 同意のカード(画面は P25)に出す中身。product は試作品の中の AI の「詳しく」(AiSessions.realDetails)で、試作品を選んだときだけ

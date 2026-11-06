@@ -425,14 +425,16 @@ export function desiredFiles(record, { needsAi = true, evalsDir = DEFAULT_EVALS 
 }
 
 // 設計の案内の状態。ファイルに書いたものを起動のときに読み、以降はメモリーとファイルの両方を直す。
-// aiMode() は intent.js と同じ。intentOf(id) は決めた目的の文書の材料、boardOf(id) は整理の板の項目
+// aiMode(id) は intent.js と同じ。intentOf(id) は決めた目的の文書の材料、boardOf(id) は整理の板の項目
 export class ProjectDesigns {
-  constructor({ home, store, ai, consent, aiMode, intentOf = () => null, boardOf = () => [], log = () => {} }) {
+  constructor({ home, store, ai, consent, aiMode, talkGate = () => {}, intentOf = () => null, boardOf = () => [], log = () => {} }) {
     this.home = home;
     this.store = store;
     this.ai = ai;
     this.consent = consent;
     this.aiMode = aiMode;
+    // 会の同意の前と、消している間は断る(meeting.js)
+    this.talkGate = talkGate;
     this.intentOf = intentOf;
     this.boardOf = boardOf;
     this.log = log;
@@ -459,6 +461,8 @@ export class ProjectDesigns {
 
   async write(id, record) {
     if (this.closed) return;
+    // 待つ間に会のデータが消されていたら、書かない(置き場を作り直さない)
+    await this.store.requireProject(id);
     const file = this.file(id);
     record.updatedAt = new Date().toISOString();
     await fsp.mkdir(path.dirname(file), { recursive: true });
@@ -481,6 +485,7 @@ export class ProjectDesigns {
 
   async exclusive(id, work) {
     await this.requireProject(id);
+    this.talkGate(id);
     if (this.locked.has(id)) throw new BusyError(this.calling.has(id) ? '案を作っているところです。終わるか止めるまで待ってください' : '前の操作の途中です。終わるまで待ってください');
     this.locked.add(id);
     try {
@@ -594,25 +599,30 @@ export class ProjectDesigns {
     };
   }
 
-  mayCallAi() {
-    const mode = this.aiMode();
+  // 会のデータを消した後に呼ぶ
+  forget(id) {
+    this.records.delete(id);
+  }
+
+  mayCallAi(id) {
+    const mode = this.aiMode(id);
     return mode === 'fake' || (mode === 'real' && this.consent.agreed);
   }
 
   // 案を作る(作り直すときも、ここから)。選んだ案は残し、新しい案と並べる
   async start(id, { guide = 'ai' } = {}) {
     if (guide !== 'ai' && guide !== 'fixed') throw new IntentError(400, 'invalid', 'guide は ai か fixed です');
-    if (guide === 'ai' && this.aiMode() === 'real') this.consent.require('design');
+    if (guide === 'ai' && this.aiMode(id) === 'real') this.consent.require('design');
     return this.exclusive(id, async () => {
       const previous = this.records.get(id) ?? null;
       const gen = (previous?.gen ?? 0) + 1;
       const material = this.material(id);
       const fixed = fixedOptions(material, gen);
-      let note = guide === 'ai' && !this.aiMode() ? 'AI を使えないので、Studio の決まった案を出します。料金はかかりません。' : null;
+      let note = guide === 'ai' && !this.aiMode(id) ? 'AI を使えないので、Studio の決まった案を出します。料金はかかりません。' : null;
       let usedGuide = 'fixed';
       let output = null;
-      if (guide === 'ai' && this.aiMode()) {
-        if (this.mayCallAi()) {
+      if (guide === 'ai' && this.aiMode(id)) {
+        if (this.mayCallAi(id)) {
           const called = await this.callAi(id, material);
           output = called.output;
           note = called.note;

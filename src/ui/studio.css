@@ -74,7 +74,7 @@
 * { box-sizing: border-box; }
 /* 上の帯、知らせ、最初の一歩の案内、2 列を縦に並べ、2 列が残りの高さを使う */
 body { margin: 0; display: flex; flex-direction: column; height: 100vh; }
-body > .topbar, body > .banner, body > .first-steps { flex: none; }
+body > .topbar, body > .banner, body > .meeting-due, body > .first-steps { flex: none; }
 h1, h2, h3 { margin: 0; }
 h1 { font-size: 1.1rem; }
 h2 { font-size: 1rem; }
@@ -210,6 +210,30 @@ button { font: inherit; }
 .new-project { width: 100%; margin-top: 0.3rem; padding: 0.4rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); text-align: left; cursor: pointer; }
 
 /* ヒアリングの整理。左に聞き取りの欄、右に整理の板。大きな画面に映して読む */
+body[data-meeting] .layout, body[data-meeting] .first-steps { display: none; }
+.meeting { flex: 1 1 0; width: 100%; max-width: 56rem; margin: 0 auto; padding: 1rem; box-sizing: border-box; overflow-y: auto; }
+.meeting[hidden], .meeting [hidden] { display: none; }
+.meeting h2 { margin: 0 0 0.5rem; font-size: 1.4rem; }
+.meeting h2:focus { outline: none; }
+.meeting h3 { margin: 0.8rem 0 0.3rem; font-size: 1.1rem; }
+.meeting p { margin: 0.3rem 0; }
+.meeting button, .meeting input { font: inherit; }
+.meeting button { flex: none; white-space: nowrap; padding: 0.3rem 0.7rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
+.meeting button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.meeting input { padding: 0.35rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); box-sizing: border-box; }
+.meeting button:disabled { opacity: 0.5; cursor: default; }
+.meeting-new { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.6rem; }
+.meeting-new label { font-weight: 600; }
+.meeting-facts { display: grid; grid-template-columns: minmax(6rem, 10rem) minmax(0, 1fr); gap: 0.4rem 0.8rem; margin: 0.8rem 0; }
+.meeting-facts dt { font-weight: 600; }
+.meeting-facts dd { margin: 0; overflow-wrap: anywhere; }
+.meeting-facts ul, .meeting-facts ol { margin: 0; padding-left: 1.2rem; }
+.meeting-notes { margin: 0; padding-left: 1.2rem; }
+.meeting-confirm { margin-top: 0.8rem; padding: 0.6rem 0.8rem; border: 1px solid var(--warn); border-radius: 8px; }
+.meeting-due { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.5rem 1rem; border-bottom: 1px solid var(--warn); }
+.meeting-due[hidden] { display: none; }
+.meeting-due p { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0; }
+@media (max-width: 480px) { .meeting-facts { grid-template-columns: minmax(0, 1fr); } .meeting button { white-space: normal; } }
 body[data-organize] .layout, body[data-organize] .first-steps { display: none; }
 .organize { flex: 1 1 0; width: 100%; padding: 1rem; box-sizing: border-box; overflow-y: auto; }
 .organize[hidden], .organize [hidden] { display: none; }
@@ -727,7 +751,7 @@ body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
   /* 印が増えても横にはみ出さず、下の中身にも重ならないように、折り返して帯を伸ばす */
   .topbar { flex-wrap: wrap; height: auto; min-height: 3.2rem; padding-block: 0.4rem; gap: 0.4rem 0.6rem; }
   /* 体の高さが決まらないので、中身の高さで広げて、ページごとスクロールする */
-  .intent, .organize { flex: none; }
+  .intent, .organize, .meeting { flex: none; }
   .organize-body { grid-template-columns: 1fr; }
 }
 

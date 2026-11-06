@@ -184,6 +184,27 @@ export class ProjectStore {
     }
   }
 
+  // 会のデータを消し始める印。動いているものがあれば断る。印の後は、新しい書き換えを始めない(checkNotErasing)
+  claimErase(id) {
+    this.claimVersions(id);
+    this.entry(id).erasing = true;
+  }
+
+  releaseErase(id) {
+    const entry = this.entry(id);
+    entry.versioning = false;
+    entry.erasing = false;
+  }
+
+  checkNotErasing(id) {
+    if (this.state.get(id)?.erasing) throw new BusyError('この会のデータを消しているところです');
+  }
+
+  // 会のデータを消した後に呼ぶ。ビルドの結果と目録を捨てる
+  forget(id) {
+    this.state.delete(id);
+  }
+
   async buildAll() {
     for (const project of await listProjects(this.home)) {
       try {

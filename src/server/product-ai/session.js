@@ -229,6 +229,7 @@ export class AiSessions {
     projectCalls = new ProjectCallWindow(),
     turnDeadlineMs = TURN_LIMITS.deadlineMs,
     consent = new RealAiConsent(),
+    meetingGate = () => {},
     simulationOf = () => null,
     agents = [createMockAgent()],
     projectDirOf = () => null,
@@ -243,6 +244,8 @@ export class AiSessions {
     // プロジェクトのフォルダー(模擬のエージェントの Claude Code の接続が .studio/sim/ に書く)
     this.projectDirOf = projectDirOf;
     this.consent = consent;
+    // 会の同意の前と、お試しだけの会では、本物の接続を断る(meeting.js)
+    this.meetingGate = meetingGate;
     this.dataNumbersOf = dataNumbersOf;
     this.turnDeadlineMs = turnDeadlineMs;
     this.connections = new Map(connections.map((connection) => [connection.kind, connection]));
@@ -323,11 +326,12 @@ export class AiSessions {
   // 試作品の中の AI を本物の接続(費用のかかる接続)で使う前の、ただ 1 つの口。利用者の切り替え(select)と、
   // 人の「確かめる」の観察(observationConnection)が通る。選べるか(STUDIO_ALLOW_CLAUDE_CODE=0 でないか、Claude Code があるか)と、
   // 同意(real-ai.js)を確かめ、だめなら理由のコードつきで断る。モックは何も確かめない。use は同意の断りの文に使う
-  useReal(connection, use = 'product') {
+  useReal(connection, use = 'product', projectId = null) {
     if (!connection.billing) return;
     const { available, code, reason } = connection.availability?.() ?? { available: true };
     if (!available) throw new AiError(403, code ?? 'unavailable', reason);
     try {
+      if (projectId) this.meetingGate(projectId, 'real');
       this.consent.require(use);
     } catch (error) {
       throw Object.assign(new AiError(403, error.code, error.message), { nextText: error.next });
@@ -335,17 +339,17 @@ export class AiSessions {
   }
 
   // 観察に使う接続。既定はモック。本物の接続は、切り替えと同じ口(useReal)で、選べるかと同意を確かめる
-  observationConnection(kind = 'mock') {
+  observationConnection(kind = 'mock', projectId = null) {
     const connection = this.connections.get(kind);
     if (!connection) throw new AiError(400, 'invalid', `「${String(kind)}」という接続はありません`);
-    this.useReal(connection, 'check');
+    this.useReal(connection, 'check', projectId);
     return connection;
   }
 
   // 観察用の新しい会話を作り、その ID を返す
   openObservation(projectId, { connection: kind = 'mock' } = {}) {
     this.definition(projectId);
-    const connection = this.observationConnection(kind);
+    const connection = this.observationConnection(kind, projectId);
     const conversation = `observation-${++this.observationSeq}`;
     const slot = slotOf(projectId, conversation);
     const session = this.sessionSource(projectId, conversation).create();
@@ -455,7 +459,7 @@ export class AiSessions {
     if (!connection) throw new AiError(400, 'invalid', `「${String(kind)}」という接続はありません`);
     if (session.busy) throw new AiError(409, 'busy', 'AI が応答しています。止めるか、終わってから切り替えてください');
     // 模擬のエージェントを本物に切り替えるときも、プロダクト内 AI と同じ口(useReal)で、選べるかと同意を確かめる
-    this.useReal(connection, 'product');
+    this.useReal(connection, 'product', projectId);
     if (session.sim && !this.agents.has(kind)) throw new AiError(400, 'invalid', `「${String(kind)}」では模擬のエージェントを動かせません`);
     const before = this.connectionOf(projectId);
     this.selected.set(projectId, kind);
@@ -624,6 +628,19 @@ export class AiSessions {
       assumptions: sim.assumption ? { id: sim.assumption.id, name: sim.assumption.name ?? null, file: sim.assumptionFile } : null,
     });
     return view;
+  }
+
+  // その試作品の会話のどれかが応答を待っているか(会のデータを消す前に確かめる)
+  busyFor(projectId) {
+    return [...this.sessions.entries()].some(([slot, session]) => JSON.parse(slot)[0] === projectId && (session.busy || session.retrying));
+  }
+
+  // 会のデータを消した後に呼ぶ。メモリーの会話と記録を捨てる
+  forgetProject(projectId) {
+    for (const map of [this.sessions, this.observations]) {
+      for (const slot of map.keys()) if (JSON.parse(slot)[0] === projectId) map.delete(slot);
+    }
+    for (const map of [this.selected, this.simChoices, this.previous, this.traces]) map.delete(projectId);
   }
 
   // 構成の会話の作業の場所(.studio/sim/<会話の ID>/)を消す。会話を最初からにしたとき、版を戻したとき、観察が終わったとき

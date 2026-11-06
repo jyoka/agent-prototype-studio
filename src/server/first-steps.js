@@ -20,6 +20,11 @@ export class FirstSteps {
     return this.state();
   }
 
+  // 会のデータを消した後に呼ぶ
+  forget(id) {
+    this.projects.delete(id);
+  }
+
   state() {
     return { dismissed: this.dismissed };
   }

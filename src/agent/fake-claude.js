@@ -613,7 +613,7 @@ async function organizeCall(argv) {
   const points = [...input.matchAll(/^\[要点 (\d+)\] (.*)$/gm)].map((match) => ({ n: Number(match[1]), text: match[2] }));
   const items = points.map(({ n, text }) => ({ column: ORGANIZE_WORDS.find(([, words]) => words.test(text))?.[0] ?? 'requirement', text, sources: [n] }));
   items.push({ column: 'rule', text: '答えられないときは、人に渡す', sources: [] });
-  const output = { items, toAsk: [{ kind: 'unasked', text: 'うまくいかなかったときに、誰に渡すかを聞いていません。', sources: [] }] };
+  const output = { items, toAsk: [{ kind: 'unasked', text: 'うまくいかなかったときに、誰に渡すかを聞いていません。', sources: [] }], recordPoints: [] };
   emit({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0, result: '', structured_output: output });
 }
 
