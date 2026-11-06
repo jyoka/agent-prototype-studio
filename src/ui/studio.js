@@ -5071,7 +5071,9 @@ async function startDesign(guide) {
 }
 
 // 1 回の POST で、返った状態を出す
-async function designAct(action, body) {
+// dropScenes は、送った場面の書きかけを、返事を描く前に捨てる。
+// 一覧の読み直しを待つ間に打った文を、後から捨てないため
+async function designAct(action, body, { dropScenes = false } = {}) {
   const id = designUi.projectId;
   if (!id) return null;
   designError(null);
@@ -5079,6 +5081,7 @@ async function designAct(action, body) {
   try {
     const { design } = await api(designPath(id, action), { method: 'POST', json: body ?? {} });
     if (seq !== designUi.seq) return null;
+    if (dropScenes) designUi.sceneDraft = null;
     showDesign(design);
     await refreshDesignList();
     return design;
@@ -5093,9 +5096,8 @@ async function saveDesignDrafts() {
   const record = designUi.record;
   const step = designCurrent(record);
   if (designUi.sceneDraft) {
-    const saved = await designAct('scenes', { scenes: designUi.sceneDraft });
+    const saved = await designAct('scenes', { scenes: designUi.sceneDraft }, { dropScenes: true });
     if (!saved) return false;
-    designUi.sceneDraft = null;
   }
   const note = designEls.note.value.trim();
   if (step.chosen && note !== (step.note ?? '')) {
@@ -5108,10 +5110,7 @@ async function saveDesignDrafts() {
 async function chooseDesign(step, option) {
   const same = designCurrent(designUi.record).chosen === option;
   const scenes = same && designUi.sceneDraft ? designUi.sceneDraft : undefined;
-  const design = await designAct('choose', { step, option, note: designEls.noteBox.hidden ? undefined : designEls.note.value.trim(), scenes });
-  if (!design) return;
-  designUi.sceneDraft = null;
-  renderDesign();
+  await designAct('choose', { step, option, note: designEls.noteBox.hidden ? undefined : designEls.note.value.trim(), scenes }, { dropScenes: true });
 }
 
 async function goDesign(step) {

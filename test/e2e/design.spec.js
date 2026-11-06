@@ -311,6 +311,42 @@ test('前の段を選び直すと、後ろの段は確かめ直しになり、�
   }
 });
 
+test('案を選んだ直後に打った場面の文は、一覧の読み直しが遅くても消えない', async ({ page, home }) => {
+  test.setTimeout(60_000);
+  const studio = await launchStudio(home);
+  try {
+    const id = await decidedProject(studio);
+    const d = await openDesign(page, studio, id);
+    await d.choose('問い合わせの数を減らす').click();
+    await d.next.click();
+    await d.choose('問い合わせるお客さん').click();
+    await d.next.click();
+
+    // 混んだ手元のように、案を選んだ後の一覧の読み直しを遅らせる
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    await page.route('**/api/projects', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      await held;
+      await route.continue();
+    });
+    const reloaded = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/projects' && response.request().method() === 'GET');
+    await d.choose('よくある問い合わせと困る場面').click();
+    const firstScene = page.getByLabel(/場面 1(.*)の文/);
+    await firstScene.fill('読み直しの間に打った文');
+    release();
+    await reloaded;
+    await page.unroute('**/api/projects');
+    await expect(firstScene).toHaveValue('読み直しの間に打った文');
+    // 次の段へ進むと、打った文が保存される
+    await d.next.click();
+    await expect(d.heading).toContainText('エージェントの構成');
+    await expect.poll(async () => (await readJson(appFile(home, id, 'evals/design-normal-1.json'))).turns[0].user).toBe('読み直しの間に打った文');
+  } finally {
+    await studio.stop();
+  }
+});
+
 test('直している場面は、同じ案を押し直しても、試作品の画面に戻っても消えない。別の試作品に書きかけを持ち込まない', async ({ page, home }) => {
   test.setTimeout(60_000);
   const studio = await launchStudio(home);
