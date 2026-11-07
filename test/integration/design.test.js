@@ -28,7 +28,7 @@ const appOf = (home, id, ...name) => path.join(home, 'projects', id, 'app', ...n
 const stepOf = (view, id) => view.steps.find((step) => step.id === id);
 
 async function chooseAll(designs, id, composition) {
-  for (const step of ['problem', 'users', 'scenes', 'composition', 'screens']) {
+  for (const step of ['problem', 'users', 'scenes', 'data', 'composition', 'screens']) {
     const view = await designs.view(id);
     const option = step === 'composition' ? composition : stepOf(view, step).options[0].id;
     await designs.choose(id, { step, option });
@@ -172,6 +172,7 @@ test('持ち主のファイル: 持ち主が直した場面と構成は書き換
   assert.equal(stepOf(await studio.designs.view(id), 'scenes').stale, true);
   view = await studio.designs.choose(id, { step: 'scenes', option: stepOf(view, 'scenes').chosen });
   assert.ok(view.scenes.some((scene) => scene.text === '足した場面'));
+  await studio.designs.choose(id, { step: 'data', option: stepOf(view, 'data').options[0].id });
   await studio.designs.choose(id, { step: 'composition', option: 'fixed-flow' });
   await studio.designs.choose(id, { step: 'screens', option: 'web' });
   const compositionFile = appOf(home, id, 'composition.json');
@@ -356,5 +357,133 @@ test('版を戻してファイルが選んだ案と違っても、作る前に�
   const again = new ProjectDesigns({ home, store: studio.store, ai: { close: async () => {} }, consent: studio.consent, aiMode: () => null });
   await again.load();
   assert.equal(again.summary(id).status, 'decided');
+  assert.equal((await again.view(id)).ready, true);
+});
+
+// データの段(K2)。整理の板のデータの欄を材料にする
+async function boardWithData(studio, id) {
+  await studio.organizes.addItem(id, { column: 'data', text: '架空の注文の中身' });
+  await studio.organizes.addItem(id, { column: 'data', text: '架空の受け取りの日' });
+  await studio.organizes.addItem(id, { column: 'user', text: '架空の常連さん' });
+  return (await studio.organizes.view(id)).items.filter((item) => item.column === 'data');
+}
+
+test('データの段: AI の案の崩れた形を Studio が整え、整理の板のデータの欄を全部載せ、選んだ案の架空のデータを書く', posixOnly, async (t) => {
+  const { studio, home, designCalls } = await boot(t, { STUDIO_AGENT: 'claude' });
+  studio.consent.agree();
+  const id = await studio.intents.createProject({ sentence: '架空の 1 文', guide: 'fixed' });
+  const items = await boardWithData(studio, id);
+  let view = await studio.designs.start(id, { guide: 'ai' });
+  // 整理の板のデータの欄は、印つきで AI に渡る
+  const input = (await designCalls())[0].stdin;
+  for (const item of items) assert.ok(input.includes(`[data ${item.id}] ${item.text}`), item.text);
+
+  const data = stepOf(view, 'data');
+  assert.equal(data.source, 'ai');
+  assert.deepEqual(data.options.map((option) => option.title), ['偽のデータの案 1', '偽のデータの案 2']);
+  assert.equal(data.options[1].recommended, true);
+  const [first] = data.options;
+  // 先のないつながりと自分へのつながりを捨て、重なる項目と番号の名前の項目を捨て、記録らしい例を捨てる
+  assert.deepEqual(first.links, [{ from: '偽の店', to: '偽の注文', label: '受ける' }]);
+  const shop = first.entities.find((entity) => entity.name === '偽の店');
+  assert.deepEqual(shop.fields.map((field) => field.name), ['番号', '名前']);
+  assert.deepEqual(shop.fields[1].examples, ['偽の店 A']);
+  assert.deepEqual(first.entities.find((entity) => entity.name === '偽の注文').fields.map((field) => [field.name, field.kind]), [['番号', 'key'], ['偽の店の番号', 'link'], ['中身', 'text']]);
+  // どの案にも、整理の板のデータの欄が全部載る。AI が落とした欄は Studio が足す
+  for (const option of data.options) {
+    assert.deepEqual(option.coverage.map((entry) => entry.text), items.map((item) => item.text), option.title);
+    assert.ok(option.coverage.every((entry) => entry.where.length > 0), option.title);
+  }
+  assert.deepEqual(first.added, [items[1].id]);
+
+  // 選ぶと、Studio が架空のデータを書き、検査が通る
+  view = await studio.designs.choose(id, { step: 'data', option: first.id });
+  const written = JSON.parse(await fs.readFile(appOf(home, id, 'data', 'design-data.json'), 'utf8'));
+  assert.deepEqual(written.tables.map((table) => table.name), first.entities.map((entity) => entity.name));
+  const shops = new Set(written.tables[0].rows.map((row) => row['番号']));
+  assert.ok(written.tables[1].rows.every((row) => shops.has(row['偽の店の番号'])));
+  assert.equal((await studio.store.list()).find((p) => p.id === id).lastBuild.ok, true);
+
+  // 別の案に替えると書き直し、飛ばすと消す
+  await studio.designs.choose(id, { step: 'data', option: data.options[1].id });
+  assert.deepEqual(JSON.parse(await fs.readFile(appOf(home, id, 'data', 'design-data.json'), 'utf8')).tables.map((table) => table.name), data.options[1].entities.map((entity) => entity.name));
+  await studio.designs.skip(id);
+  await assert.rejects(fs.stat(appOf(home, id, 'data', 'design-data.json')));
+
+  // 案を作った後に足した欄は、載っていないと出る
+  await studio.designs.choose(id, { step: 'data', option: data.options[1].id });
+  await studio.organizes.addItem(id, { column: 'data', text: '架空の後から聞いたこと' });
+  const later = stepOf(await studio.designs.view(id), 'data').options[1].coverage;
+  assert.deepEqual(later.find((entry) => entry.text === '架空の後から聞いたこと').where, []);
+  // 案を作り直すと、前に選んだ案にも載り、確かめ直しになる
+  const again = stepOf(await studio.designs.start(id, { guide: 'ai' }), 'data');
+  const kept = again.options.find((option) => option.id === data.options[1].id);
+  assert.ok(kept.coverage.every((entry) => entry.where.length > 0));
+  assert.equal(again.stale, true);
+  await studio.designs.choose(id, { step: 'data', option: kept.id });
+  assert.ok(JSON.parse(await fs.readFile(appOf(home, id, 'data', 'design-data.json'), 'utf8')).tables.at(-1).columns.includes('架空の後から聞いたこと'));
+
+  // 試作品が架空のデータを読むようになった後(目録が宣言した後)は、飛ばしても消さない
+  const manifestFile = appOf(home, id, 'prototype.json');
+  const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8'));
+  await fs.writeFile(manifestFile, JSON.stringify({ ...manifest, data: [{ file: 'data/design-data.json', about: '架空のデータ' }] }));
+  await studio.designs.skip(id);
+  await fs.stat(appOf(home, id, 'data', 'design-data.json'));
+});
+
+test('データの段: 持ち主が直した架空のデータは書き換えず、依頼でも Studio が書いたと言わない', async (t) => {
+  const { studio, home } = await boot(t, { STUDIO_AGENT: 'fake' });
+  const id = await studio.intents.createProject({ sentence: '架空の 1 文', guide: 'fixed' });
+  await studio.designs.start(id, { guide: 'fixed' });
+  await fs.mkdir(appOf(home, id, 'data'), { recursive: true });
+  await fs.writeFile(appOf(home, id, 'data', 'design-data.json'), '{"mine":true}\n');
+  await chooseAll(studio.designs, id, 'fixed-flow');
+  assert.equal(await fs.readFile(appOf(home, id, 'data', 'design-data.json'), 'utf8'), '{"mine":true}\n');
+  const { request } = await studio.designs.decide(id);
+  assert.match(request, /\[データ設計\]/);
+  assert.doesNotMatch(request, /Studio が書きました。試作品の画面は/);
+  assert.match(request, /持ち主が直したので/);
+});
+
+test('データの段: AI の案が 2 つそろわなければ、データの段だけ決まった案にする', posixOnly, async (t) => {
+  const { studio } = await boot(t, { STUDIO_AGENT: 'claude' });
+  studio.consent.agree();
+  const sentence = '[データが理想] 架空の 1 文';
+  const id = await studio.intents.createProject({ sentence, guide: 'fixed' });
+  const items = await boardWithData(studio, id);
+  const view = await studio.designs.start(id, { guide: 'ai' });
+  assert.equal(stepOf(view, 'problem').source, 'ai');
+  const data = stepOf(view, 'data');
+  assert.equal(data.source, 'fixed');
+  assert.equal(data.options[0].title, '聞いたデータごとに分ける');
+  // 決まった案にも、整理の板のデータの欄が全部載る
+  for (const option of data.options) assert.deepEqual(option.coverage.filter((entry) => entry.where.length === 0), [], option.title);
+  assert.equal(data.options.length, 3);
+  assert.ok(items.length > 0);
+});
+
+test('データの段のない前の設計は、読むときに決まった案を足す。選ぶまで作れない', async (t) => {
+  const { studio, home } = await boot(t, { STUDIO_AGENT: 'fake' });
+  const id = await studio.intents.createProject({ sentence: '架空の 1 文', guide: 'fixed' });
+  await studio.designs.start(id, { guide: 'fixed' });
+  await chooseAll(studio.designs, id, 'fixed-flow');
+  await studio.designs.close();
+  const file = path.join(home, 'projects', id, '.studio', 'design.json');
+  const old = JSON.parse(await fs.readFile(file, 'utf8'));
+  delete old.steps.data;
+  await fs.writeFile(file, JSON.stringify(old));
+  const { ProjectDesigns } = await import('../../src/server/design.js');
+  const again = new ProjectDesigns({ home, store: studio.store, ai: { close: async () => {} }, consent: studio.consent, aiMode: () => null });
+  await again.load();
+  const view = await again.view(id);
+  assert.deepEqual(view.steps.map((step) => step.id), ['problem', 'users', 'scenes', 'data', 'composition', 'screens']);
+  assert.equal(stepOf(view, 'data').chosen, null);
+  assert.equal(view.ready, false);
+  await assert.rejects(again.decide(id), { code: 'not-ready' });
+  // 選ぶと、ほかの段と同じく、後ろの段は確かめ直しになる
+  await again.choose(id, { step: 'data', option: stepOf(view, 'data').options[0].id });
+  assert.equal(stepOf(await again.view(id), 'composition').stale, true);
+  await again.choose(id, { step: 'composition', option: 'fixed-flow' });
+  await again.choose(id, { step: 'screens', option: stepOf(view, 'screens').chosen });
   assert.equal((await again.view(id)).ready, true);
 });

@@ -271,7 +271,7 @@ body[data-organize] .layout, body[data-organize] .first-steps { display: none; }
 .organize-edit textarea { width: 100%; }
 .organize-asks { padding: 0.5rem; border: 1px solid var(--line); border-radius: 8px; }
 
-/* 設計の案内。5 つの段の帯と、案の比べ。出している間は、2 列と最初の一歩の案内を隠す */
+/* 設計の案内。6 つの段の帯と、案の比べ。出している間は、2 列と最初の一歩の案内を隠す */
 body[data-design] .layout, body[data-design] .first-steps { display: none; }
 .design { flex: 1 1 0; width: min(64rem, 100%); margin: 0 auto; padding: 1rem; box-sizing: border-box; overflow-y: auto; }
 .design[hidden], .design [hidden] { display: none; }
@@ -285,7 +285,7 @@ body[data-design] .layout, body[data-design] .first-steps { display: none; }
 .design button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .design button:disabled { opacity: 0.5; cursor: default; }
 .design input, .design select { padding: 0.35rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); box-sizing: border-box; }
-.design-band { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.4rem; margin: 0.6rem 0; padding: 0; list-style: none; }
+.design-band { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.4rem; margin: 0.6rem 0; padding: 0; list-style: none; }
 .design-band button { width: 100%; height: 100%; text-align: left; overflow-wrap: anywhere; }
 .design-band small { display: block; color: var(--muted); font-size: 0.8rem; }
 .design-band li[aria-current="step"] button { border-color: var(--accent); background: var(--accent-bg); font-weight: 600; }
@@ -310,6 +310,25 @@ body[data-design] .layout, body[data-design] .first-steps { display: none; }
 .design-scene { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
 .design-scene input { flex: 1 1 14rem; min-width: 0; }
 .design-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.7rem; }
+/* データの段(K2)。表と図 */
+.design-data { margin-top: 0.6rem; padding: 0.5rem; border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; gap: 0.4rem; }
+.design-data table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+.design-data caption { text-align: left; font-weight: 600; padding: 0.2rem 0; }
+.design-data th, .design-data td { border: 1px solid var(--line); padding: 0.2rem 0.4rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.design-data th { background: var(--bg); font-weight: 600; }
+.design-data-coverage { margin: 0; padding-left: 1.1rem; font-size: 0.9rem; }
+.design-data-coverage li[data-placed="false"] { color: var(--warn-text); }
+.data-figure { width: 100%; height: auto; max-height: 28rem; }
+.data-figure .entity-box { fill: var(--panel); stroke: var(--text); stroke-width: 1.2; }
+.data-figure .entity-head { fill: var(--accent-bg); stroke: var(--text); stroke-width: 1.2; }
+.data-figure .entity-name { font-weight: 600; font-size: 13px; fill: var(--text); }
+.data-figure .entity-field { font-size: 11px; fill: var(--text); }
+.data-figure .entity-key { font-size: 11px; fill: var(--muted); }
+.data-figure .link-line { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+.data-figure .link-arrow { fill: var(--muted); }
+.data-figure .link-label { font-size: 11px; fill: var(--text); paint-order: stroke; stroke: var(--panel); stroke-width: 4px; }
+.design-option .data-figure { max-height: 14rem; }
+.design-data-note { font-size: 0.85rem; }
 @media (max-width: 640px) { .design-band { grid-template-columns: 1fr; } }
 
 /* はじめの画面、目的の聞き出し、目的の文書。出している間は、2 列と最初の一歩の案内を隠す */
