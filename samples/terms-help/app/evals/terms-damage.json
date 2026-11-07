@@ -1,0 +1,14 @@
+{
+  "formatVersion": 1,
+  "id": "terms-damage",
+  "kind": "question",
+  "about": "壊れた荷物の補償の上限を聞かれ、約款の条を探して、見出しを書いて答える",
+  "turns": [{ "user": "荷物が壊れていたら、補償はいくらまでですか" }],
+  "expect": [
+    { "check": "retrieved", "docs": ["terms-7"] },
+    { "check": "cited" },
+    { "check": "replyContains", "text": "30 万円", "only": "mock" },
+    { "check": "noNewNumbers" },
+    { "check": "judge", "aspect": "grounded", "rubric": "約款の条に書いてあることだけで答え、読んだ条の見出しを示しているか", "passAtLeast": 4 }
+  ]
+}

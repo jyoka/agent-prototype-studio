@@ -1,3 +1,4 @@
+import { documentProblems } from './retrieve.js';
 import {
   KEY_PATTERN,
   Problems,
@@ -22,10 +23,12 @@ import {
   unique,
 } from './check.js';
 
-// 試作品のツールの宣言(app/tools.json)。決まった 6 つの処理(op)の組み合わせだけで書き、Studio のコード(ツールの口)が解釈する。
+// 試作品のツールの宣言(app/tools.json)。決まった 7 つの処理(op)の組み合わせだけで書き、Studio のコード(ツールの口)が解釈する。
 // 生成コードをサーバーで読まない、動かさない(ADR-0001、ADR-0003)。形は docs/design/agent-simulation.md の 2.4 と 3.5。
 export const TOOLS_FILE = 'tools.json';
-export const TOOL_OPS = ['search', 'get', 'record', 'fixed', 'handoff', 'delegate'];
+export const TOOL_OPS = ['search', 'get', 'record', 'fixed', 'handoff', 'delegate', 'retrieve'];
+// 文書の検索(op: retrieve)。文書のデータから、問いに近い文書を返す(src/server/sim/retrieve.js。手元で動かし、外へ通信しない)
+export const RETRIEVE_DEFAULT_LIMIT = 3;
 // 委任のツール(op: delegate。2.9)が必ず持つ引数。サブに渡す依頼の文
 export const DELEGATE_TASK_ARG = 'task';
 export const TOOL_GUARDS = ['requires', 'deny', 'hideFields', 'maxCallsPerConversation', 'maxResultChars'];
@@ -58,6 +61,7 @@ const OP_KEYS = {
   fixed: ['op', 'data', 'value'],
   handoff: ['op', 'to'],
   delegate: ['op', 'to'],
+  retrieve: ['op', 'data', 'query', 'limit'],
 };
 // inputSchema は、決まった部分だけを使える JSON Schema(2.7)
 const SCHEMA_TYPES = ['object', 'string', 'number', 'integer', 'boolean', 'array'];
@@ -124,8 +128,8 @@ function checkSchema(problems, where, schema, depth) {
   return schema;
 }
 
-// ツールが読むデータ。app/ の中の JSON だけを、JSON として読む。search と get は配列のデータを読む
-async function checkData(problems, where, value, appDir, { array }) {
+// ツールが読むデータ。app/ の中の JSON だけを、JSON として読む。search と get は配列のデータを、retrieve は文書のデータを読む
+async function checkData(problems, where, value, appDir, { array, documents = false }) {
   const file = await appFile(problems, where, value, appDir, { extensions: DATA_EXTENSIONS });
   if (file === undefined) return undefined;
   const { value: data, error } = await readAppJson(appDir, file, SIM_LIMITS.maxDataBytes);
@@ -136,6 +140,11 @@ async function checkData(problems, where, value, appDir, { array }) {
   if (array && (!Array.isArray(data) || data.some((item) => !isPlainObject(item)))) {
     problems.add(where, `app/${file} は、オブジェクトの配列([{ … }, …])にしてください`);
     return undefined;
+  }
+  if (documents) {
+    const found = documentProblems(data);
+    for (const problem of found.slice(0, 10)) problems.add(where, `app/${file}: ${problem}`);
+    if (found.length > 0) return undefined;
   }
   return file;
 }
@@ -189,6 +198,16 @@ async function checkDo(problems, where, raw, appDir, properties) {
     result.limit = integer(problems, `${where}.limit`, raw.limit, { min: 1, max: TOOL_LIMITS.maxSearchLimit }) ?? TOOL_LIMITS.maxSearchLimit;
   }
   if (op === 'get') result.key = text(problems, `${where}.key`, raw.key, { required: true, max: 40 });
+  if (op === 'retrieve') {
+    result.data = await checkData(problems, `${where}.data`, raw.data, appDir, { array: true, documents: true });
+    // 問いの引数。モデルが書く文なので、文字列で長さの上限のある引数にする
+    result.query = text(problems, `${where}.query`, raw.query, { required: true, max: 40 });
+    const query = result.query === undefined ? undefined : properties[result.query];
+    if (result.query !== undefined && (!isPlainObject(query) || query.type !== 'string' || !Number.isInteger(query.maxLength))) {
+      problems.add(`${where}.query`, `「${result.query}」は、inputSchema の properties に { "type": "string", "maxLength": … } で書いてください(問いの文)`);
+    }
+    result.limit = integer(problems, `${where}.limit`, raw.limit, { min: 1, max: TOOL_LIMITS.maxSearchLimit }) ?? RETRIEVE_DEFAULT_LIMIT;
+  }
   if (op === 'record') {
     result.into = toolNameOf(problems, `${where}.into`, raw.into);
     result.mode = oneOf(problems, `${where}.mode`, raw.mode, ['replace', 'append'], { required: false, label: '書き方' }) ?? 'replace';

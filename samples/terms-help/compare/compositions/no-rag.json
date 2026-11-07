@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "name": "RAG なし: 約款を読まない(架空)",
+  "driver": "terms-agent",
+  "participants": [
+    {
+      "id": "terms-agent",
+      "kind": "agent",
+      "label": "約款の相談(模擬、RAG なし)",
+      "owner": "shiokaze",
+      "prompt": [
+        { "from": "assumptions", "key": "hostPrompt", "owner": "shiokaze" },
+        { "slot": "terms-guide", "owner": "shiokaze", "file": "prompts/no-rag-guide.md" }
+      ],
+      "tools": [],
+      "mock": "mocks/no-rag.json"
+    }
+  ],
+  "tools": "tools.json",
+  "surface": { "kind": "talk", "theme": "talk" },
+  "assumptions": { "dir": "assumptions", "default": "stand-in" },
+  "limits": { "maxTurns": 12 }
+}

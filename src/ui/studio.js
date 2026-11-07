@@ -4792,6 +4792,12 @@ const designEls = {
   dataTables: $('design-data-tables'),
   dataCoverage: $('design-data-coverage'),
   dataSample: $('design-data-sample'),
+  shelf: $('design-shelf'),
+  shelfTable: $('design-shelf-table'),
+  ragVerdict: $('design-rag-verdict'),
+  ragReason: $('design-rag-reason'),
+  ragSteps: $('design-rag-steps'),
+  ragDecide: $('design-rag-decide'),
   owner: $('design-owner'),
   review: $('design-review'),
   noteBox: $('design-note-box'),
@@ -5005,6 +5011,7 @@ function dataTable(entity, textOf) {
 function renderDataBox(step) {
   const option = designChosen(step);
   designEls.dataBox.hidden = !option;
+  designEls.shelf.hidden = !option;
   if (!option) return;
   const coverage = option.coverage ?? [];
   const textOf = (id) => coverage.find((entry) => entry.id === id)?.text ?? '';
@@ -5018,6 +5025,53 @@ function renderDataBox(step) {
     return li;
   }) : [element('li', '整理の板にデータの欄はありません。')]));
   designEls.dataSample.textContent = `${dataCoverageText(option)}選んだ案から、試作品の架空のデータを表ごとに 3 行作りました。「この設計で作る」で、作る AI はこのデータを読んで画面を描きます。`;
+  renderShelf(option);
+}
+
+// AI が読むデータの棚と RAG の判定(task 421)。技術の言葉は平たい言葉と並べる(ai-architecture-review.md の 8 節)
+const SHELF_SHAPE_LABELS = { table: '表', rules: '短い決まり', document: '長い文書' };
+const SHELF_READ_LABELS = { tool: 'ツールで引く', prompt: 'プロンプトに入れる', rag: 'RAG(文書を探して読む)', none: '使わない' };
+const SHELF_CHANGE_LABELS = { minutes: '毎分', daily: '毎日', rarely: '年に数回', unknown: 'まだ決めていない' };
+const shelfPersonalText = (item) => (item.personal === true ? `あり${item.personalKinds?.length ? `(${item.personalKinds.join('、')})` : ''}` : item.personal === false ? 'なし' : '不明(確かめてください)');
+
+function shelfTable(shelf) {
+  const table = element('table');
+  table.setAttribute('aria-label', 'AI が読むデータの棚');
+  const headRow = element('tr');
+  for (const name of ['データ', '形', 'AI の読み方', '変わる速さ', '個人情報', '試作品での扱い']) headRow.append(element('th', name));
+  const thead = element('thead');
+  thead.append(headRow);
+  const tbody = element('tbody');
+  for (const item of shelf) {
+    const row = element('tr');
+    row.dataset.read = item.read;
+    row.append(element('th', item.name), element('td', SHELF_SHAPE_LABELS[item.shape] ?? item.shape), element('td', SHELF_READ_LABELS[item.read] ?? item.read), element('td', SHELF_CHANGE_LABELS[item.change] ?? item.change), element('td', shelfPersonalText(item)), element('td', item.prototype));
+    row.firstChild.setAttribute('scope', 'row');
+    tbody.append(row);
+  }
+  table.append(thead, tbody);
+  return table;
+}
+
+function renderShelf(option) {
+  const shelf = option.shelf ?? [];
+  const rag = option.rag;
+  designEls.shelfTable.replaceChildren(shelf.length > 0 ? shelfTable(shelf) : element('p', 'AI が読むデータは、まだありません。', 'muted'));
+  if (!rag) return;
+  designEls.ragVerdict.dataset.needed = String(rag.needed);
+  designEls.ragVerdict.textContent = `RAG: ${rag.verdict}(${rag.note})`;
+  designEls.ragReason.replaceChildren(element('p', `理由: ${rag.reason}。`), ...(rag.addWhen ? [element('p', `足す条件: ${rag.addWhen}。`)] : []));
+  designEls.ragSteps.replaceChildren(...rag.steps.map((step) => {
+    const answer = step.read === 'rag'
+      ? (rag.needed === false ? '問わない(ここまでで足りた)' : `長い文書: ${step.items.join('、') || 'なし'}`)
+      : `${SHELF_READ_LABELS[step.read]}: ${step.items.join('、') || 'なし'}`;
+    return element('li', `${step.question} → ${answer}`);
+  }));
+  if (rag.decide) {
+    const list = element('ul');
+    for (const item of rag.decide) list.append(element('li', `${item.label}: ${item.question}(試作品では: ${item.prototype})`));
+    designEls.ragDecide.replaceChildren(element('p', 'RAG を足すなら決めること'), list);
+  } else designEls.ragDecide.replaceChildren();
 }
 
 function designSceneItem(scene, index, record) {
@@ -5106,7 +5160,10 @@ function renderDesign() {
     designEls.scenes.replaceChildren(...scenes.map((scene, at) => designSceneItem(scene, at, record)));
   }
   if (step.id === 'data') renderDataBox(step);
-  else designEls.dataBox.hidden = true;
+  else {
+    designEls.dataBox.hidden = true;
+    designEls.shelf.hidden = true;
+  }
   designEls.owner.hidden = step.id !== 'composition' || !record.ownerComposition;
   designEls.review.hidden = step.id !== 'composition' && !record.ready;
   designEls.noteBox.hidden = !step.chosen;

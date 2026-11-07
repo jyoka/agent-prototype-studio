@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "id": "no-tool-greeting",
+  "kind": "no-tool",
+  "about": "あいさつだけなら、約款を探さない",
+  "turns": [{ "user": "こんにちは" }],
+  "expect": [{ "check": "noToolCall" }]
+}

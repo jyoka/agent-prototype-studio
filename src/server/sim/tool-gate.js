@@ -2,6 +2,7 @@ import path from 'node:path';
 import { appPath } from '../manifest.js';
 import { findPersonalData, redact } from '../redact.js';
 import { Problems, SIM_LIMITS, isPlainObject, readAppJson } from './check.js';
+import { documentProblems, searchDocuments } from './retrieve.js';
 
 // ツールの口(docs/design/agent-simulation.md の 3.5)。試作品のツールを、決まった手順で動かす Studio のコード。
 // 形の検査 → ツールの守り → 実行 → 記録の順に進む。MCP サーバー、モックの模擬のエージェント、ツールだけの場面の
@@ -39,10 +40,12 @@ export async function loadToolData(appDir, toolset) {
   const data = {};
   const problems = new Problems('app/tools.json');
   const uses = new Map();
+  const documents = new Set();
   for (const tool of toolset?.tools ?? []) {
     if (typeof tool.do?.data !== 'string') continue;
-    const array = tool.do.op === 'search' || tool.do.op === 'get';
+    const array = tool.do.op === 'search' || tool.do.op === 'get' || tool.do.op === 'retrieve';
     uses.set(tool.do.data, (uses.get(tool.do.data) ?? false) || array);
+    if (tool.do.op === 'retrieve') documents.add(tool.do.data);
   }
   for (const [file, array] of [...uses].sort(([a], [b]) => (a < b ? -1 : 1))) {
     const relative = appPath(problems, file, file);
@@ -54,7 +57,9 @@ export async function loadToolData(appDir, toolset) {
     const { value, error } = await readAppJson(appDir, relative, SIM_LIMITS.maxDataBytes);
     if (error) problems.add(relative, error);
     else if (array && (!Array.isArray(value) || value.some((item) => !isPlainObject(item)))) {
-      problems.add(relative, 'search と get のデータは、オブジェクトの配列([{ … }, …])にしてください');
+      problems.add(relative, 'search、get、retrieve のデータは、オブジェクトの配列([{ … }, …])にしてください');
+    } else if (documents.has(file) && documentProblems(value).length > 0) {
+      problems.add(relative, `文書のデータの形が違います: ${documentProblems(value)[0]}`);
     } else data[file] = value;
   }
   return { data, errors: problems.list };
@@ -178,7 +183,7 @@ function run(tool, args, data, store, context) {
   if (action.data !== undefined && source === undefined) {
     return { ok: false, error: `データ app/${action.data} が読めていません` };
   }
-  if ((action.op === 'search' || action.op === 'get') && !Array.isArray(source)) {
+  if ((action.op === 'search' || action.op === 'get' || action.op === 'retrieve') && !Array.isArray(source)) {
     return { ok: false, error: `データ app/${action.data} が配列ではありません` };
   }
   switch (action.op) {
@@ -204,6 +209,12 @@ function run(tool, args, data, store, context) {
     }
     case 'fixed':
       return { ok: true, result: clone(action.data === undefined ? action.value : source) };
+    case 'retrieve': {
+      // 文書の検索(retrieve.js)。問いに近い文書を、引用の文(cite)を付けて返す
+      const query = own(args, action.query);
+      if (typeof query !== 'string' || query.trim() === '') return { ok: false, error: `「${action.query}」に、探したいことを書いてください` };
+      return { ok: true, result: searchDocuments(source, query, { limit: action.limit }) };
+    }
     case 'handoff': {
       // 辺があれば、辺の carry の名前の引数だけを渡す(carry がなければ何も渡さない)。
       // 辺が渡されなければ(会話の進め方の外から呼ぶとき)、引数をそのまま返し、絞るのは呼ぶ側に任せる
@@ -261,6 +272,12 @@ function summarize(outcome) {
   if (isPlainObject(result) && typeof result.count === 'number' && Array.isArray(result.items)) summary.count = result.count;
   else if (Array.isArray(result)) summary.count = result.length;
   if (isPlainObject(result)) summary.keys = Object.keys(result);
+  // 文書の検索は、返した文書の id と引用の文を残す(検索の再現率と引用の有無を、記録から確かめるため。4.2)
+  if (outcome.retrieved && isPlainObject(result) && Array.isArray(result.items)) {
+    const strings = (key) => result.items.map((item) => (isPlainObject(item) ? item[key] : undefined)).filter((value) => typeof value === 'string');
+    summary.docs = strings('id');
+    summary.cites = strings('cite');
+  }
   return summary;
 }
 
@@ -413,6 +430,7 @@ function gate(tool, { args, data, store, context, count, calling, mark }) {
 
   const outcome = run(tool, args, data, store, context);
   if (!outcome.ok) return outcome;
+  if (tool.do.op === 'retrieve') outcome.retrieved = true;
 
   // hideFields(結果から決まった項目を除く。除いた項目があれば blocked として残す)
   let { result } = outcome;

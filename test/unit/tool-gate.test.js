@@ -515,9 +515,13 @@ test('データに .js を指すと検査の誤りになり、loadToolData も .
 test('ツールの口が読み込むのは、決まったモジュールだけ(S21)', async () => {
   const source = await fs.readFile(new URL('../../src/server/sim/tool-gate.js', import.meta.url), 'utf8');
   const imports = [...source.matchAll(/^import .* from '([^']+)';$/gm)].map((match) => match[1]);
-  assert.deepEqual(imports, ['node:path', '../manifest.js', '../redact.js', './check.js']);
+  assert.deepEqual(imports, ['node:path', '../manifest.js', '../redact.js', './check.js', './retrieve.js']);
   // 動的な import、require、プロセス、ワーカーを使わない
   assert.doesNotMatch(source, /\bimport\(|\brequire\(|process\.|worker_threads|child_process|fetch\(/);
+  // 文書の検索(op: retrieve)は、何も読み込まない(task 421。手元で動かし、外へ通信しない)
+  const retrieve = await fs.readFile(new URL('../../src/server/sim/retrieve.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(retrieve, /^import /m);
+  assert.doesNotMatch(retrieve, /\bimport\(|\brequire\(|process\.|worker_threads|child_process|fetch\(|globalThis/);
 });
 
 // node:fs の読み書きと、外への通信の口を、呼ぶと例外を出すものに替えて run を動かす。呼ばれた口の名前を返す
