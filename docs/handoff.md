@@ -65,7 +65,7 @@
 | `scenarios` | シナリオ。下の「scenarios」 |
 | `evidence` | 最新の証拠の要約。下の「evidence」 |
 | `simulation` | 構成、ツール、前提、プロンプトの枠、場面と、最新の場面の回しの要約。下の「simulation」 |
-| `materials` | つないだトークンがあるときだけ(J4)。下の「materials」。なければ項目がない |
+| `materials` | つないだトークンか、有効にした部品と指針があるときだけ(J4、J5)。下の「materials」。なければ項目がない |
 | `openQuestions[]` | 未決事項。`from` は `person`(書き出した人)か `studio`(Studio が見つけたもの) |
 | `ai` | プロダクト内 AI の設定(`fields`、`initialState`、`mock`)、書き出したときの接続(`real` は実際の AI モデルか)。なければ `null` |
 | `conversation` | 書き出したときの会話と状態。AI の発言には `via`(接続)、`viaLabel`、`real` が付く。`via` が `null` の発言は、設定の固定文(あいさつ) |
@@ -138,6 +138,13 @@
 | `tokens.source`、`reason`、`connectedAt` | 誰の素材か、つないだ理由、つないだ日時 |
 | `tokens.roles` | 役割(`background`、`text`、`action`、`danger`、`font`)に当てたトークンの場所。既定の素材のままなら `null` |
 | `tokens.variables[]` | CSS の変数の名前 |
+| `guides[]` | 有効にした部品と指針(J5)。1 つの種類に 1 つ。写しは `app/design/` にあり、ソースに入っている |
+| `guides[].kind` | `guides`(指針の文)か `storybook`(Storybook の部品の一覧) |
+| `guides[].source`、`license`、`reason`、`scope`、`enabledAt` | 誰の素材か、使ってよいか(ライセンスの答え)、有効にした理由、範囲(`project` か `all`)、有効にした日時 |
+| `guides[].files[]` | 写しの場所(`copy`)と中身の指紋(`sha256`) |
+| `guides[].componentCount`、`externalUrls` | 部品の数、外への URL の数 |
+
+`materials/source.json` には、トークンと部品と指針の、つないだ・外したの履歴が入る。人が書いた文(誰の素材か、理由、ライセンスの名前)は伏せる。
 
 ## 決まり
 

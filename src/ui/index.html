@@ -439,6 +439,93 @@
         </div>
       </form>
     </section>
+    <!-- 部品と指針をつなぐ(user-journey.md の J5)。案内の 4 歩: 聞く、確かめる、見本で試す、有効にする(design-materials.md の 5 節)。
+         検査とライセンスの確かめは、AI ではなく決まった手順で行う。写しは試作品のフォルダーの design/ に置く -->
+    <section aria-labelledby="guides-heading">
+      <h3 id="guides-heading">部品と指針をつなぐ</h3>
+      <p class="muted">会社の指針の文や、Storybook の部品の一覧を、直す AI が読めるようにします。4 歩で進みます。Studio が決まった手順で確かめ、写しを試作品のフォルダーに置きます。写しは Studio だけが書きます。</p>
+      <div id="guides-enabled" class="guides-enabled" hidden></div>
+      <p id="guides-message" class="versions-message" role="status" hidden></p>
+      <ol id="guides-steps" class="guides-steps" aria-label="取り込みの案内の歩">
+        <li data-step="1">聞く</li>
+        <li data-step="2">確かめる</li>
+        <li data-step="3">見本で試す</li>
+        <li data-step="4">有効にする</li>
+      </ol>
+      <form id="guides-ask" class="handoff-form guides-step" aria-labelledby="guides-ask-heading">
+        <h4 id="guides-ask-heading">1. 聞く</h4>
+        <fieldset class="guides-have">
+          <legend>何を持っていますか</legend>
+          <label><input type="radio" name="guides-have" value="guides"> 指針の文(Markdown のファイル)</label>
+          <label><input type="radio" name="guides-have" value="storybook"> Storybook を書き出したフォルダー(storybook build で作ったもの)</label>
+          <label><input type="radio" name="guides-have" value="tokens"> 色と字のトークン</label>
+          <label><input type="radio" name="guides-have" value="npm"> npm のパッケージ(部品のコード)</label>
+          <label><input type="radio" name="guides-have" value="none"> まだ持っていない</label>
+          <label><input type="radio" name="guides-have" value="unknown"> 分からない</label>
+        </fieldset>
+        <p id="guides-have-note" class="guides-note" hidden></p>
+        <div id="guides-owner" class="guides-owner" hidden>
+          <label for="guides-source">誰の素材か(引き継ぎの出典になります)</label>
+          <input id="guides-source" type="text" maxlength="200" autocomplete="off">
+          <label for="guides-license">使ってよいか</label>
+          <select id="guides-license">
+            <option value="">選んでください</option>
+            <option value="listed">公開のライセンスがある</option>
+            <option value="internal">社内の素材で、使う許可がある</option>
+            <option value="unknown">分からない</option>
+          </select>
+          <div id="guides-license-name-box" hidden>
+            <label for="guides-license-name">ライセンスの名前(例: MIT)</label>
+            <input id="guides-license-name" type="text" maxlength="100" autocomplete="off">
+          </div>
+        </div>
+        <button type="submit" id="guides-ask-next" disabled>次へ(確かめる)</button>
+      </form>
+      <div id="guides-check" class="handoff-form guides-step" role="group" aria-labelledby="guides-check-heading" hidden>
+        <h4 id="guides-check-heading">2. 確かめる</h4>
+        <div id="guides-files-box">
+          <label for="guides-files">指針の文のファイル(.md。いくつでも選べます)</label>
+          <input id="guides-files" type="file" multiple accept=".md,.markdown,text/markdown">
+        </div>
+        <div id="guides-folder-box">
+          <label for="guides-folder">Storybook を書き出したフォルダー</label>
+          <input id="guides-folder" type="file" webkitdirectory>
+          <p class="muted">読むのは部品の一覧(index.json)と使い方の文だけです。部品のコードは読みません。1 つ上のフォルダーを選んでも読めます。</p>
+        </div>
+        <div id="guides-problems" class="tokens-problems" hidden></div>
+        <div id="guides-checked" class="guides-checked" hidden></div>
+        <div class="guides-actions">
+          <button type="button" id="guides-check-back" class="detail-button">戻る</button>
+          <button type="button" id="guides-check-next" disabled>次へ(見本で試す)</button>
+        </div>
+      </div>
+      <div id="guides-try" class="handoff-form guides-step" role="group" aria-labelledby="guides-try-heading" hidden>
+        <h4 id="guides-try-heading">3. 見本で試す</h4>
+        <p class="muted">有効にすると、直す AI が読む写しと、直す AI への決まりです。見本は文だけで描くので、外へは通信しません。</p>
+        <div id="guides-urls" class="guides-warning" role="alert" hidden></div>
+        <div id="guides-preview" class="guides-preview"></div>
+        <div class="guides-actions">
+          <button type="button" id="guides-try-back" class="detail-button">戻る</button>
+          <button type="button" id="guides-try-next">次へ(有効にする)</button>
+        </div>
+      </div>
+      <form id="guides-enable-form" class="handoff-form guides-step" aria-labelledby="guides-enable-heading" hidden>
+        <h4 id="guides-enable-heading">4. 有効にする</h4>
+        <fieldset class="guides-scope">
+          <legend>どこで使うか</legend>
+          <label><input type="radio" name="guides-scope" value="project" checked> この試作品だけ</label>
+          <label><input type="radio" name="guides-scope" value="all"> これからの試作品全部(この試作品にも入れます)</label>
+        </fieldset>
+        <label for="guides-reason">有効にする理由(書かなくても進めます)</label>
+        <input id="guides-reason" type="text" maxlength="300" autocomplete="off">
+        <div id="guides-summary" class="guides-summary"></div>
+        <p id="guides-blocked" class="guides-warning" hidden></p>
+        <div class="guides-actions">
+          <button type="button" id="guides-enable-back" class="detail-button">戻る</button>
+          <button type="submit" id="guides-enable" disabled>有効にする</button>
+        </div>
+      </form>
+    </section>
     <section aria-labelledby="handoff-heading">
       <h3 id="handoff-heading">本番開発へ渡す</h3>
       <p class="muted">今の試作品を、本番開発の担当者に渡すフォルダーにまとめます。試作品のファイル、AI の設定、会話と状態、本物につないだもの・お試しのもの・つないでいないものの区別、未決事項が入ります。秘密情報らしい文字列があると作りません。</p>

@@ -105,7 +105,7 @@ export async function writeObserveMcpConfig({ dir, projectDir, maxSeconds }) {
 //   --setting-sources "": 設定の読み込み元を 1 つも使わない(CLAUDE.md の読み込みもこれに従う)
 //   --disable-slash-commands: skills と commands を外す
 //   --strict-mcp-config --mcp-config <file>: MCP は観察の道具のサーバーだけ
-// materialGuide はつないだ素材の決まり(design-tokens.js の tokensGuide)。つないでいなければ足さない
+// materialGuide はつないだ素材の決まり(design-tokens.js の tokensGuide と guides.js の guidesRule。materials.js の materialRule)。つないでいなければ足さない
 export function buildClaudeArgs({ billing, mcpConfig, maxBudgetUsd = DEFAULT_MAX_BUDGET_USD, materialGuide = null }) {
   if (typeof mcpConfig !== 'string' || mcpConfig === '') throw new TypeError('mcpConfig(MCP の設定のファイル)を渡してください');
   const args = [

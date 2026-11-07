@@ -10,7 +10,8 @@ import { baseScenarios, describeStep, readScenarios } from '../observer/scenario
 import { VersionError, copyTree } from './versions.js';
 import { extractPrompt, extractSchema, phrasePrompt, phraseSchema } from './product-ai/claude-code.js';
 import { formatValue } from './product-ai/definition.js';
-import { materialChangedAt, readTokenMaterial } from './materials.js';
+import { licenseLabel } from './guides.js';
+import { materialChangedAt, readGuideMaterial, readTokenMaterial } from './materials.js';
 import { findPersonalData, findSecrets, redact, redactDeep } from './redact.js';
 import { BusyError } from './store.js';
 import { EVAL_RUN_FORMAT, failuresOf, outcomeOf, riskyText } from './sim/eval-run.js';
@@ -723,15 +724,48 @@ function describeTokens(material) {
   };
 }
 
+// 有効にした部品と指針(J5)。写しは app/design/ にあるので、ソースに入っている
+function describeGuides(records) {
+  return records.map((record) => ({
+    kind: record.kind,
+    source: redact(record.source),
+    license: redact(licenseLabel(record)),
+    reason: redact(record.reason ?? ''),
+    scope: record.scope,
+    enabledAt: record.enabledAt,
+    componentCount: record.componentCount ?? 0,
+    externalUrls: record.urlCount ?? 0,
+    files: record.files.map((file) => ({ copy: `app/${file.copy}`, sha256: file.sha256 })),
+  }));
+}
+
+const GUIDE_TITLES = { guides: '指針の文', storybook: 'Storybook の部品の一覧' };
+
 // source.json の写し。人が書いた文だけを伏せる
 function materialSourceCopy(source) {
-  const clean = (entry) => ({ ...entry, ...Object.fromEntries(['fileName', 'source', 'reason'].filter((key) => typeof entry?.[key] === 'string').map((key) => [key, redact(entry[key])])) });
-  return { ...source, tokens: source.tokens ? clean(source.tokens) : null, history: (source.history ?? []).map(clean) };
+  const clean = (entry) => ({ ...entry, ...Object.fromEntries(['fileName', 'source', 'reason', 'licenseName', 'license', 'from'].filter((key) => typeof entry?.[key] === 'string').map((key) => [key, redact(entry[key])])) });
+  const guides = Object.fromEntries(Object.keys(GUIDE_TITLES).map((kind) => [kind, source[kind] ? { ...clean(source[kind]), files: (source[kind].files ?? []).map(clean) } : null]));
+  return { ...source, tokens: source.tokens ? clean(source.tokens) : null, ...guides, history: (source.history ?? []).map(clean) };
+}
+
+function guideLines(guides) {
+  if (!Array.isArray(guides) || guides.length === 0) return [];
+  const lines = ['## 素材(部品と指針)', ''];
+  for (const guide of guides) {
+    lines.push(
+      `- ${GUIDE_TITLES[guide.kind] ?? guide.kind}: 出典 ${oneLine(guide.source)}、${oneLine(guide.license)}${guide.reason ? `、理由 ${oneLine(guide.reason)}` : ''}`,
+      `  - 写し: ${guide.files.map((file) => code(file.copy)).join('、')}。作る AI はこれを読んで作った`,
+    );
+    if (guide.externalUrls > 0) lines.push(`  - 外への URL が ${guide.externalUrls} 個あった。試作品からは読めないので、本番で使うなら置き場所を決める`);
+  }
+  lines.push('');
+  return lines;
 }
 
 function materialLines(materials) {
+  const guideText = guideLines(materials?.guides);
   const tokens = materials?.tokens;
-  if (!tokens) return [];
+  if (!tokens) return guideText;
   return [
     '## 素材(自分のトークン)',
     '',
@@ -741,6 +775,7 @@ function materialLines(materials) {
     `- 変数の CSS: ${code(tokens.files.css)}。試作品の CSS の最後に読むと、Studio と同じ見た目になる。Studio がビルドのときに足すので、ソースには入っていない`,
     `- 記録: ${code(tokens.files.source)}(つないだ、外したの履歴)`,
     '',
+    ...guideText,
   ];
 }
 
@@ -1008,6 +1043,7 @@ export class ProjectHandoffs {
         : null;
       const selected = this.aiSessions.connectionOf(id);
       const material = await readTokenMaterial(paths.root);
+      const guides = await readGuideMaterial(paths.root);
       const { versions: versionList, working } = await this.versions.list(id);
       const manifest = {
         format: HANDOFF_FORMAT,
@@ -1058,7 +1094,10 @@ export class ProjectHandoffs {
         ),
         excluded,
         // つないだトークンがあるときだけ(J4)。素材の出典と、つないだ理由を残す
-        ...(material ? { materials: { tokens: describeTokens(material) } } : {}),
+        // 有効にした部品と指針があるときだけ(J5)。出典、ライセンス、写しの指紋を残す
+        ...(material || guides
+          ? { materials: { ...(material ? { tokens: describeTokens(material) } : {}), ...(guides ? { guides: describeGuides(guides.records) } : {}) } }
+          : {}),
       };
 
       const readme = renderReadme({
@@ -1073,9 +1112,9 @@ export class ProjectHandoffs {
           ? [
               [MATERIAL_FILES.tokens, material.text],
               [MATERIAL_FILES.css, material.css],
-              [MATERIAL_FILES.source, `${JSON.stringify(materialSourceCopy(material.source), null, 2)}\n`],
             ]
           : []),
+        ...(material || guides ? [[MATERIAL_FILES.source, `${JSON.stringify(materialSourceCopy(material?.source ?? guides?.source ?? {}), null, 2)}\n`]] : []),
         ...(definition
           ? [
               // 実モデルは抽出と言い方の 2 種の呼び出しで動く。それぞれの指示と応答の形を書く

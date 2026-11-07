@@ -17,6 +17,8 @@ import { VersionError } from './versions.js';
 const MAX_BODY_BYTES = 64 * 1024;
 // トークンのファイルは大きいので、その API だけ広げる(上限は design-tokens.js の TOKEN_LIMITS。JSON の中に入れると伸びる分を見る)
 const MAX_TOKENS_BODY_BYTES = 2 * 1024 * 1024;
+// 部品と指針の取り込み。Storybook の index.json(上限 4 MB)と、JSON に入れたときに増える分
+const MAX_GUIDES_BODY_BYTES = 8 * 1024 * 1024;
 
 const UI_DIR = path.join(STUDIO_ROOT, 'src', 'ui');
 const UI_FILES = {
@@ -208,11 +210,12 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     // 設計の案内。GET は今の状態。「決めた」の印は decide でだけ付く
     const designMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/design(?:\/(start|choose|scenes|go|decide|skip|cancel))?$/.exec(url.pathname);
     if (designMatch && (designMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleDesign(req, res, designMatch[1], designMatch[2]);
-    // 自分のトークンをつなぐ。GET は今の状態。check は検査だけで何も書かない
-    const materialsMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/materials(?:\/tokens(?:\/(check|remove))?)?$/.exec(url.pathname);
-    if (materialsMatch) {
+    // 自分のトークンをつなぐ(J4)、部品と指針をつなぐ(J5)。GET は今の状態。check は検査だけで何も書かない
+    const materialsMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/materials(?:\/(tokens|guides)(?:\/(check|remove|restore))?)?$/.exec(url.pathname);
+    if (materialsMatch && !(materialsMatch[2] === 'tokens' && materialsMatch[3] === 'restore')) {
       const isRoot = url.pathname.endsWith('/materials');
-      if (isRoot ? req.method === 'GET' : req.method === 'POST') return handleMaterials(req, res, materialsMatch[1], isRoot ? 'view' : (materialsMatch[2] ?? 'connect'));
+      const action = isRoot ? 'view' : `${materialsMatch[2]}:${materialsMatch[3] ?? 'connect'}`;
+      if (isRoot ? req.method === 'GET' : req.method === 'POST') return handleMaterials(req, res, materialsMatch[1], action);
     }
     // 最初の一歩の案内。{ dismiss: true } で閉じる。{ touched: 試作品の ID } は、AI のない試作品の画面を触ったこと(画面が送る)
     if (url.pathname === '/api/first-steps' && req.method === 'POST') return handleFirstSteps(req, res);
@@ -348,9 +351,18 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
   async function handleMaterials(req, res, id, action) {
     try {
       if (action === 'view') return sendJson(res, 200, { materials: await materials.view(id) });
-      const body = await readJson(req, MAX_TOKENS_BODY_BYTES);
-      if (action === 'check') return sendJson(res, 200, await materials.check(id, body ?? {}));
-      const result = action === 'remove' ? await materials.disconnect(id, body ?? {}) : await materials.connect(id, body ?? {});
+      const guides = action.startsWith('guides:');
+      const body = await readJson(req, guides ? MAX_GUIDES_BODY_BYTES : MAX_TOKENS_BODY_BYTES);
+      if (action === 'tokens:check') return sendJson(res, 200, await materials.check(id, body ?? {}));
+      if (action === 'guides:check') return sendJson(res, 200, await materials.checkGuides(id, body ?? {}));
+      const run = {
+        'tokens:connect': () => materials.connect(id, body ?? {}),
+        'tokens:remove': () => materials.disconnect(id, body ?? {}),
+        'guides:connect': () => materials.enableGuides(id, body ?? {}),
+        'guides:remove': () => materials.disableGuides(id, body ?? {}),
+        'guides:restore': () => materials.restoreGuides(id),
+      }[action];
+      const result = await run();
       const project = (await store.list()).find((p) => p.id === id);
       return sendJson(res, 200, { ...result, project: view(project) });
     } catch (error) {

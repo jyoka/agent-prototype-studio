@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { isValidProjectId, listProjects, projectPaths, projectsDir } from './projects.js';
 import { BusyError, NotFoundError } from './store.js';
+import { applyStudioMaterials } from './materials.js';
 
 // 目的の聞き出しと目的の文書(docs/design/user-journey.md の段 1、段 2、J1)。
 // 置き場所は .studio/intent.json(目録の intent は広げない)。.studio/ は Studio だけが書く場所で、作る AI は読み書きできない。
@@ -162,6 +163,8 @@ export async function createStarterProject(home, sentence, prefix = 'idea') {
   await fs.writeFile(path.join(paths.app, 'prototype.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   await fs.writeFile(path.join(paths.app, 'main.jsx'), STARTER_MAIN);
   await fs.writeFile(paths.meta, `${JSON.stringify({ title }, null, 2)}\n`);
+  // 「これからの試作品全部」に有効にした部品と指針を写す(J5)
+  await applyStudioMaterials(home, paths.root);
   return id;
 }
 
