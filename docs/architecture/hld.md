@@ -73,7 +73,7 @@ flowchart TB
         intent["目的の聞き出しと目的の文書<br/>intent.js、intent-ai.js"]
         organize["ヒアリングの整理<br/>organize.js、organize-ai.js"]
         meeting["会の始めとお客さんのデータ<br/>meeting.js"]
-        design["設計の案内<br/>design.js、design-ai.js、review/options.json"]
+        design["設計の案内<br/>design.js、design-ai.js、data-design.js、review/options.json"]
         redact["伏せる、秘密を探す<br/>redact.js"]
     end
 
@@ -213,13 +213,15 @@ flowchart TB
 
 操作役が要点を打ち(`organize.js` の `addPoint`)、「整理する」を押すと、整理する AI に振り分けをもらいます(`organize-ai.js`)。起動の形は聞き出す AI と同じです(`structured-ai.js`)。「推測」の印は Studio が決めます。今ある要点を指す番号がない項目に付き、AI の返事では消せません。「確かめた」の印は、決める人が「この理解で合っている」を押す `confirm` でだけ `.studio/organize.json` に付き、板が変わると外れます。同意の前と AI を使えないときは整理する AI を呼ばず、人が手で振り分けます。記録らしいものは上の節のとおり板に入れません。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#k1-で決めたことtask-3842026-10-31)にあります。
 
-### 設計の案内(5 つの段)
+### 設計の案内(6 つの段)
 
-「案を作る」を押すと、案を出す AI に問題、使う人、場面の案と、構成と画面のおすすめをもらいます(`design.js` の `start`、`design-ai.js`)。起動の形は聞き出す AI と同じです(`structured-ai.js`)。構成の選択肢は Studio のデータです(`review/options.json`)。AI は勧めるだけで、まだ動かない形は勧められません。同意の前と AI を使えないときは AI を呼ばず、Studio の決まった案を出します。
+「案を作る」を押すと、案を出す AI に問題、使う人、場面、データの案と、構成と画面のおすすめをもらいます(`design.js` の `start`、`design-ai.js`)。起動の形は聞き出す AI と同じです(`structured-ai.js`)。構成の選択肢は Studio のデータです(`review/options.json`)。AI は勧めるだけで、まだ動かない形は勧められません。同意の前と AI を使えないときは AI を呼ばず、Studio の決まった案を出します。
 
-人が案を選ぶと(`choose`)、Studio が場面を `app/evals/design-*.json` に、構成を `app/composition.json` と、それが読むファイルに書きます(`syncFiles`)。ファイルの名前は Studio が決め、AI と人の文は JSON の値にしか入れません。書くのは、作る AI、ビルド、版の操作のない間だけです(`store.claimVersions`)。Studio が書いた覚えのない中身のファイルと、ふつうのファイルでないものには触りません。書いた後に検査と表示の準備を回し、通らなければ元に戻して断ります。
+データの段の案は `data-design.js` が整えます。番号(主キー)とつながりの番号(外部キー)を付け、先のないつながりと重なる名前を捨て、整理の板のデータの欄で載っていないものを「聞いたことのメモ」に足します(`shapeDataOption`、`dataDesignProblems`)。案ごとの載り方は画面に渡すときに整理の板と比べます(`dataCoverage`)。図は画面が SVG で描きます。外の部品は使いません。
 
-「決めた」の印は、人が「この設計で作る」を押す `decide` でだけ `.studio/design.json` に付きます。`decide` は目的の文書と設計から依頼の文を作って返し、画面は言葉で直す欄と同じ道で作る AI に送ります。本物の AI の同意も、その道で取ります。場面と構成はそのまま作るループの関門(G3、GE)が検査します。AI 構成の審査と AI 構成書は #422 で作ります。今は「審査なし」のまま作ります。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#j2-で決めたことtask-3852026-11-02)にあります。
+人が案を選ぶと(`choose`)、Studio が場面を `app/evals/design-*.json` に、選んだデータ設計の架空のデータを `app/data/design-data.json` に(`sampleData`)、構成を `app/composition.json` と、それが読むファイルに書きます(`syncFiles`)。ファイルの名前は Studio が決め、AI と人の文は JSON の値にしか入れません。書くのは、作る AI、ビルド、版の操作のない間だけです(`store.claimVersions`)。Studio が書いた覚えのない中身のファイルと、ふつうのファイルでないものには触りません。書いた後に検査と表示の準備を回し、通らなければ元に戻して断ります。
+
+「決めた」の印は、人が「この設計で作る」を押す `decide` でだけ `.studio/design.json` に付きます。`decide` は目的の文書と設計から依頼の文を作って返し、画面は言葉で直す欄と同じ道で作る AI に送ります。本物の AI の同意も、その道で取ります。場面と構成はそのまま作るループの関門(G3、GE)が検査します。AI 構成の審査と AI 構成書は #422 で作ります。今は「審査なし」のまま作ります。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#j2-で決めたことtask-3852026-11-02)にあります。データの段は [K2 で決めたこと](../design/user-journey.md#k2-で決めたことtask-3872026-11-07)にあります。
 
 ### 作る(試作品を変える)
 
@@ -351,7 +353,7 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | `projects/<id>/.studio/handoff-notes.json` | 引き継ぎのメモ | Studio |
 | `projects/<id>/.studio/intent.json` | 目的の文書。1 文、案内の深さ、問いと答え、文書、決めた時刻か飛ばした時刻 | Studio(作る AI と聞き出す AI は書けない) |
 | `projects/<id>/.studio/organize.json` | 整理の板。要点、5 つの欄の項目と元の要点、聞くこと、人が消したもの、確かめた時刻 | Studio(作る AI と整理する AI は書けない) |
-| `projects/<id>/.studio/design.json` | 設計の案内。5 つの段の案、選んだ案、捨てた案、理由、場面の一覧、Studio が書いたファイルの指紋、決めた時刻か飛ばした時刻 | Studio(作る AI と案を出す AI は書けない) |
+| `projects/<id>/.studio/design.json` | 設計の案内。6 つの段の案(データ設計を含む)、選んだ案、捨てた案、理由、場面の一覧、Studio が書いたファイルの指紋、決めた時刻か飛ばした時刻 | Studio(作る AI と案を出す AI は書けない) |
 | `handoffs/` | 引き継ぎの書き出し | Studio |
 | Studio のメモリー | 作業中の会話と状態、実行の記録、作る欄の会話 | Studio(止めると消える) |
 

@@ -44,7 +44,7 @@
 // 作る AI の接続の判定(agent-connection.js)のために、`--version` と `auth status` にも答える。
 // auth status は本物(2.1.312)と同じ形で、架空のメールアドレスと組織を含む(Studio が出さないかの確かめ)。
 // 案を出す AI(src/server/design-ai.js。--json-schema に screens がある)には、決まった案を返す。
-//   stdin に [案が遅い]、[案が失敗]、[案が壊れる]、[案が一度壊れる]、[案に理想]、[難しい形]、[印を書く] があれば、その振る舞いをする
+//   stdin に [案が遅い]、[案が失敗]、[案が壊れる]、[案が一度壊れる]、[案に理想]、[難しい形]、[印を書く]、[データが理想] があれば、その振る舞いをする
 // FAKE_CLAUDE_AUTH=logged-out なら、ログインしていない形を終了コード 1 で返す。
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -229,11 +229,41 @@ function designAnswer() {
           { title: '偽の場面の組 1', reason: '偽の理由', scenes: [{ category: 'normal', text: '偽のよくある発言' }, { category: 'refuse', text: '偽の断る発言' }] },
           { title: '偽の場面の組 2', reason: '偽の理由', scenes: [{ category: 'unknown', text: '偽の分からない発言' }, { category: 'refuse', text: '偽の断る発言' }, { category: 'slow', text: '偽の遅い発言' }] },
         ] },
+        data: fakeData(),
         composition: { recommended: stdin.includes('[難しい形]') ? 'master-sub' : 'single-agent', reason: '偽の構成の理由' },
         screens: { recommended: 'talk', reason: '偽の画面の理由' },
         ...marks,
       };
   process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0.0012, result: '', structured_output: output }));
+}
+
+// データの段の偽の案。形の崩れ(先のないつながり、重なる項目、記録らしい例、番号の項目)を混ぜ、整理の板のデータの欄は最初の 1 つだけを元にする。
+// [データが理想] があれば、2 つ目の案に使わない言葉を入れる(使える案が 1 つになり、決まった案に戻る)
+function fakeData() {
+  const first = /^\[data (i\d+)\]/m.exec(stdin)?.[1];
+  const field = (name, examples = [], sources = []) => ({ name, kind: 'text', examples, sources });
+  return {
+    recommended: 1,
+    options: [
+      {
+        title: '偽のデータの案 1',
+        detail: '偽の中身',
+        reason: '偽の理由',
+        entities: [
+          { name: '偽の店', about: '偽の店', writer: '人', sources: [], fields: [field('名前', ['偽の店 A', '090-1234-5678']), field('名前', ['重なり']), field('番号', ['1'])] },
+          { name: '偽の注文', about: '偽の注文', writer: 'AI', sources: first ? [first] : [], fields: [field('中身', ['偽の中身'])] },
+        ],
+        links: [{ from: '偽の店', to: '偽の注文', label: '受ける' }, { from: '偽の店', to: 'ない表', label: '先がない' }, { from: '偽の注文', to: '偽の注文', label: '自分' }],
+      },
+      {
+        title: stdin.includes('[データが理想]') ? '理想のデータ' : '偽のデータの案 2',
+        detail: '偽の中身',
+        reason: '偽の理由',
+        entities: [{ name: '偽の記録', about: '偽の記録', writer: 'AI', sources: [], fields: [field('日', [], first ? [first] : [])] }],
+        links: [],
+      },
+    ],
+  };
 }
 
 function organizeAnswer() {

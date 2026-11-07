@@ -6,8 +6,10 @@ import { IntentError } from './intent.js';
 import { DEFAULT_COMPOSITION, DEFAULT_COMPOSITIONS, DEFAULT_EVALS, MANIFEST_FILE, readManifest } from './manifest.js';
 import { isValidProjectId, listProjects, projectPaths } from './projects.js';
 import { BusyError, NotFoundError } from './store.js';
+import { aiDataOptions, DATA_FILE, dataCoverage, dataRequestLines, fixedDataOptions, reshapeDataOption, sampleData } from './data-design.js';
 
-// 設計の案内(docs/design/user-journey.md の段 3、J2)。問題、使う人、場面、エージェントの構成、画面の 5 つの段。
+// 設計の案内(docs/design/user-journey.md の段 3、J2)。問題、使う人、場面、データ、エージェントの構成、画面の 6 つの段。
+// データの段は K2 で足した(data-design.js)。選んだ案から、Studio が試作品の架空のデータを app/ に書く。
 // 置き場所は .studio/design.json。.studio/ は Studio だけが書く場所で、作る AI は読み書きできない。
 // AI は案を出すだけで、選ぶのは人。「決めた」の印は、人が「この設計で作る」を押したとき(decide)だけ付く。
 // 構成と場面は Studio が app/ に書く(docs/design/ai-architecture-review.md の 6 節)。書くファイルの名前は Studio が決め、AI の文は JSON の値にしか入れない。
@@ -20,6 +22,7 @@ export const STEPS = [
   { id: 'problem', label: '問題', question: '何を解きますか', lead: '試作品で確かめる問題を 1 つ決めます。' },
   { id: 'users', label: '使う人', question: '誰が使いますか', lead: '話しかける人を決めます。' },
   { id: 'scenes', label: '場面', question: 'どんな場面で試しますか', lead: 'うまくいく場面だけでなく、分からない、断る、遅いの場面も決めます。ここで選んだ場面が、自動で試す一覧の下書きになります。' },
+  { id: 'data', label: 'データ', question: '何を覚えておきますか', lead: '整理の板のデータの欄から、覚えておくもの、項目、つながりの案を出します。選んだ案から、試作品の架空のデータを作ります。' },
   { id: 'composition', label: 'エージェントの構成', question: 'AI をどんな作りにしますか', lead: '簡単な形から順に並べています。足りる形で止めます。' },
   { id: 'screens', label: '画面', question: 'どこで話しますか', lead: '試作品の中で、AI と話す枠の見た目を決めます。' },
 ];
@@ -150,6 +153,7 @@ export function fixedOptions({ sentence, doc, board }, gen = 1) {
     problem: numbered(gen, problems),
     users: numbered(gen, users),
     scenes: numbered(gen, scenes.map((option) => ({ ...option, detail: `${option.scenes.length} つの場面`, scenes: cleanScenes(option.scenes) }))),
+    data: numbered(gen, fixedDataOptions(board)),
   };
 }
 
@@ -219,12 +223,19 @@ function screenOptions(rawRecommended, rawReason) {
   return SCREENS.map((screen) => ({ ...screen, recommended: screen.id === recommended.id, reason: screen.id === recommended.id ? given ?? screen.reason : screen.reason }));
 }
 
-// AI の返事と決まった案を合わせる。使えない段は決まった案のまま
-export function mergeAiOptions(fixed, output, gen = 1) {
+// データの段の AI の案。形を整え、整理の板のデータの欄を全部載せる(data-design.js)。2 つそろわなければ null
+function aiDataStep(raw, board, gen) {
+  const shaped = aiDataOptions(raw, board);
+  return shaped ? numbered(gen, shaped.options, shaped.recommended) : null;
+}
+
+// AI の返事と決まった案を合わせる。使えない段は決まった案のまま。board は整理の板の項目(データの段の材料)
+export function mergeAiOptions(fixed, output, gen = 1, board = []) {
   return {
     problem: aiTextOptions(output?.problem, gen) ?? fixed.problem,
     users: aiTextOptions(output?.users, gen) ?? fixed.users,
     scenes: aiSceneOptions(output?.scenes, gen) ?? fixed.scenes,
+    data: aiDataStep(output?.data, board, gen) ?? fixed.data,
     composition: compositionOptions(output?.composition?.recommended, output?.composition?.reason),
     screens: screenOptions(output?.screens?.recommended, output?.screens?.reason),
   };
@@ -241,7 +252,8 @@ const chosenText = (step) => (step?.chosen === 'custom' ? step.text : (() => {
 })());
 
 // 作る AI に渡す依頼の文(「この設計で作る」)。目的の文書がなければ、そう書く
-export function designRequest({ doc, record, evalsDir = DEFAULT_EVALS }) {
+// dataWritten は、Studio が架空のデータを書けたか(持ち主が直したファイルは書き換えないので、書けたとは言わない)
+export function designRequest({ doc, record, evalsDir = DEFAULT_EVALS, dataWritten = true }) {
   const compositionStep = record.steps.composition;
   const composition = chosenOf(compositionStep);
   const kept = compositionStep.chosen === 'keep';
@@ -264,6 +276,8 @@ export function designRequest({ doc, record, evalsDir = DEFAULT_EVALS }) {
     const note = record.steps[step.id].note;
     if (note) lines.push(`${step.label}を選んだ理由: ${clip(note, 120)}`);
   }
+  const data = chosenOf(record.steps.data);
+  if (data) lines.push('', '[データ設計]', ...dataRequestLines(data, { written: dataWritten }));
   // 場面は最後に置く。上限で切れても、決定と決まりの文は残り、場面の全部はファイルにある
   lines.push('', '[場面の一覧]', `場面のファイルは ${evalsDir} の下に Studio が書きました。弱めないでください。`);
   for (const scene of record.scenes) lines.push(`- ${SCENE_CATEGORIES[scene.category].label}: ${clip(scene.text, 120)}`);
@@ -331,6 +345,9 @@ const displayTitle = (record, label) => `${clip(chosenText(record.steps.problem)
 // 場面は構成を選ぶ前から書く(案より先に場面の一覧を作る。ai-architecture-review.md の 4 節)
 export function desiredFiles(record, { needsAi = true, evalsDir = DEFAULT_EVALS } = {}) {
   const files = new Map();
+  // データの段で選んだ案の架空のデータ。構成によらず書く
+  const data = chosenOf(record.steps?.data);
+  if (data) files.set(DATA_FILE, jsonFile(sampleData(data)));
   const counts = {};
   for (const scene of record.scenes ?? []) {
     counts[scene.category] = (counts[scene.category] ?? 0) + 1;
@@ -452,11 +469,19 @@ export class ProjectDesigns {
     for (const project of await listProjects(this.home)) {
       try {
         const record = JSON.parse(await fsp.readFile(this.file(project.id), 'utf8'));
-        if (record?.formatVersion === FORMAT && record.steps) this.records.set(project.id, record);
+        if (record?.formatVersion === FORMAT && record.steps) this.records.set(project.id, this.withDataStep(project.id, record));
       } catch (error) {
         if (error.code !== 'ENOENT') this.log(`設計の案内を読めませんでした: ${project.id}(${error.message})`);
       }
     }
+  }
+
+  // K2 より前の設計には、データの段がない。決まった案を足す(選ぶまで「この設計で作る」は押せない)。ファイルは次に書くときに直る。
+  // 選ぶと、ほかの段と同じく後ろの段(構成、画面)は確かめ直しになる。データの案が構成の前提になるため
+  withDataStep(id, record) {
+    if (record.steps.data) return record;
+    const options = numbered(record.gen ?? 1, fixedDataOptions(this.boardOf(id)));
+    return { ...record, steps: { ...record.steps, data: { options, source: 'fixed', chosen: null, text: null, note: '', decidedAt: null, stale: false } } };
   }
 
   async write(id, record) {
@@ -500,7 +525,7 @@ export class ProjectDesigns {
   async layout(id) {
     const { app } = projectPaths(this.home, id);
     const { manifest } = await readManifest(app).catch(() => ({ manifest: null }));
-    return { composition: manifest?.composition ?? null, compositions: manifest?.compositions ?? DEFAULT_COMPOSITIONS, evals: manifest?.evals ?? DEFAULT_EVALS, ai: manifest?.ai ?? null };
+    return { composition: manifest?.composition ?? null, compositions: manifest?.compositions ?? DEFAULT_COMPOSITIONS, evals: manifest?.evals ?? DEFAULT_EVALS, ai: manifest?.ai ?? null, data: (manifest?.data ?? []).map((entry) => entry.file) };
   }
 
   // 持ち主の構成があるか。Studio が書いた覚えのない composition.json は、書き換えない。
@@ -557,6 +582,10 @@ export class ProjectDesigns {
       const lost = step.id === 'composition' && !this.compositionFits(record, limits);
       return { ...step, ...value, options, chosen: lost && value.chosen === 'keep' ? null : value.chosen, stale: value.stale || (lost && value.chosen !== 'keep') };
     });
+    // データの段の案ごとに、整理の板のデータの欄がどこに載ったか。案を作った後に足した欄は、載っていないと出る
+    const board = this.boardOf(id);
+    const dataStep = stepViews.find((step) => step.id === 'data');
+    dataStep.options = dataStep.options.map((option) => ({ ...option, coverage: dataCoverage(option, board) }));
     return {
       ...rest,
       steps: stepViews,
@@ -637,13 +666,20 @@ export class ProjectDesigns {
         await this.write(id, { ...previous, note: note ? `${note.split('。')[0]}。前の案のままにしました。` : null });
         return null;
       }
-      const options = mergeAiOptions(fixed, output, gen);
+      const options = mergeAiOptions(fixed, output, gen, material.board);
       const now = new Date().toISOString();
       const steps = {};
       for (const step of STEP_IDS) {
         const before = previous?.steps?.[step];
         const fresh = options[step];
-        const keptChoice = before?.chosen && before.chosen !== 'custom' ? chosenOf(before) : null;
+        let keptChoice = before?.chosen && before.chosen !== 'custom' ? chosenOf(before) : null;
+        // データの段で選んだ案は、今の整理の板で整え直す。案を作った後に板に足した欄も載る。中身が変われば確かめ直しにする
+        let reshaped = false;
+        if (step === 'data' && keptChoice) {
+          const next = reshapeDataOption(keptChoice, material.board);
+          reshaped = JSON.stringify(next) !== JSON.stringify(keptChoice);
+          keptChoice = next;
+        }
         const inFresh = keptChoice && fresh.some((option) => option.id === keptChoice.id);
         // 選んだ案を前に残し、おすすめを落とさずに 3 つまでにする
         const ordered = [...fresh].sort((a, b) => Number(b.recommended) - Number(a.recommended));
@@ -654,7 +690,7 @@ export class ProjectDesigns {
           text: before?.text ?? null,
           note: before?.note ?? '',
           decidedAt: before?.decidedAt ?? null,
-          stale: before?.stale ?? false,
+          stale: (before?.stale ?? false) || reshaped,
         };
       }
       const record = {
@@ -816,14 +852,15 @@ export class ProjectDesigns {
   async decide(id) {
     return this.exclusive(id, async () => {
       const record = this.requireRecord(id);
-      if (!this.isReady(record) || !this.compositionFits(record, await this.compositionLimits(id, record))) throw new IntentError(409, 'not-ready', '5 つの段を全部選んでから押してください。前の段を変えたときは、後ろの段を確かめ直してください');
+      if (!this.isReady(record) || !this.compositionFits(record, await this.compositionLimits(id, record))) throw new IntentError(409, 'not-ready', '全部の段を選んでから押してください。前の段を変えたときは、後ろの段を確かめ直してください');
       const intent = this.intentOf(id);
       const next = { ...structuredClone(record), status: 'decided', decidedAt: new Date().toISOString(), skippedAt: null, note: null };
       // 版を戻すなどで、ファイルが選んだ案と違っていたら、作る前に合わせる
       await this.syncFiles(id, next);
       await this.write(id, next);
       const { evals } = await this.layout(id);
-      return { design: await this.viewOf(id), request: designRequest({ doc: intent?.status === 'decided' ? intent.doc : null, record: next, evalsDir: evals }) };
+      const dataWritten = Object.hasOwn(next.written ?? {}, DATA_FILE);
+      return { design: await this.viewOf(id), request: designRequest({ doc: intent?.status === 'decided' ? intent.doc : null, record: next, evalsDir: evals, dataWritten }) };
     });
   }
 
@@ -878,7 +915,9 @@ export class ProjectDesigns {
       }
     }
     for (const relative of Object.keys(record.written ?? {})) {
-      if (desired.has(relative) || (leaveComposition && !relative.startsWith(`${layout.evals}/`))) continue;
+      if (desired.has(relative) || (leaveComposition && !relative.startsWith(`${layout.evals}/`) && relative !== DATA_FILE)) continue;
+      // 目録が架空のデータを宣言していれば、試作品が読んでいる。飛ばしても消さない(消すと試作品が描けなくなる)
+      if (relative === DATA_FILE && layout.data.includes(DATA_FILE)) continue;
       const current = await readCurrent(appDir, relative);
       if (current.state === 'file' && (known[relative] ?? []).includes(current.hash)) {
         plan.backups.set(relative, current);

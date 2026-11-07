@@ -674,10 +674,52 @@ async function designCall(argv) {
         },
       ],
     },
+    data: fakeDataOptions(input),
     composition: { recommended: 'fixed-flow', reason: '聞く順番が決まっているので、手順をコードに書ける見込みです(今日の推測)。' },
     screens: { recommended: 'web', reason: '誰でも開けるので、最初の確かめに向いています(今日の推測)。' },
   };
   emit({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, total_cost_usd: 0, result: '', structured_output: output });
+}
+
+// データの段の案(K2)。整理の板のデータの欄([data i1] の行)のうち、最初の 1 つだけを元に書く。
+// 残りの欄は Studio が「聞いたことのメモ」に足す(全部が載ることを、画面で確かめられるように)
+function fakeDataOptions(input) {
+  const board = /<整理の板>\n?([\s\S]*?)\n?<\/整理の板>/.exec(input)?.[1] ?? '';
+  const first = /^\[data (i\d+)\]/m.exec(board)?.[1];
+  const sources = first ? [first] : [];
+  return {
+    recommended: 0,
+    options: [
+      {
+        title: 'お店と問い合わせに分ける',
+        detail: 'お店の情報と、受けた問い合わせを別に覚えます。',
+        reason: '1 つのお店に、いくつもの問い合わせがつながります。同じお店の情報を何度も書かずに済みます。',
+        entities: [
+          { name: 'お店', about: '商店街の架空のお店です。', writer: '人が前もって書く', sources: [], fields: [
+            { name: 'お店の名前', kind: 'text', examples: ['みほん青果', 'ためし書店', 'かくう茶房'], sources: [] },
+            { name: '閉店の時刻', kind: 'text', examples: ['19 時', '20 時', '18 時'], sources: [] },
+          ] },
+          { name: '問い合わせ', about: '閉店後に受けた問い合わせです。', writer: 'AI が会話の中で書く', sources: [], fields: [
+            { name: '受けた日', kind: 'date', examples: [], sources: [] },
+            { name: '問い合わせの中身', kind: 'text', examples: ['明日は何時まで開いていますか', '駐輪場はありますか'], sources },
+          ] },
+        ],
+        links: [{ from: 'お店', to: '問い合わせ', label: '受ける' }],
+      },
+      {
+        title: '問い合わせだけを覚える',
+        detail: '受けた問い合わせだけを 1 つの表に覚えます。',
+        reason: '表が 1 つなので、いちばん簡単です。お店の情報は問い合わせごとに書きます。',
+        entities: [
+          { name: '問い合わせ', about: '閉店後に受けた問い合わせです。', writer: 'AI が会話の中で書く', sources: [], fields: [
+            { name: 'お店の名前', kind: 'text', examples: ['みほん青果', 'ためし書店'], sources: [] },
+            { name: '問い合わせの中身', kind: 'text', examples: ['明日は何時まで開いていますか'], sources },
+          ] },
+        ],
+        links: [],
+      },
+    ],
+  };
 }
 
 // 「この設計で作る」の依頼(src/server/design.js の designRequest)。依頼の問題と使う人を、試作品の見出しと説明に入れ、会話の枠を置く。
@@ -691,16 +733,29 @@ async function buildFromDesign(request) {
     return finish({ text: '変えていません' });
   }
   const heading = target.text.match(HEADING_PATTERN);
+  // データ設計があれば、Studio が書いた架空のデータを読んで、表を描く(K2)
+  const dataFile = /^架空のデータは (\S+\.json) に Studio が書きました。/m.exec(request)?.[1];
+  const dataImport = dataFile ? `import data from './${path.relative(path.dirname(target.file), path.join(process.cwd(), dataFile)).split(path.sep).join('/')}';\n` : '';
+  const dataTables = dataFile
+    ? `
+      {data.tables.map((table) => (
+        <table key={table.name}>
+          <caption>{table.name}(架空)</caption>
+          <thead><tr>{table.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+          <tbody>{table.rows.map((row) => <tr key={row[table.key]}>{table.columns.map((column) => <td key={column}>{String(row[column])}</td>)}</tr>)}</tbody>
+        </table>
+      ))}`
+    : '';
   const next = target.text.includes('まだ中身はありません')
     ? `import { createRoot } from 'react-dom/client';
 import { Talk, useStudioTalk } from 'studio-talk';
-
+${dataImport}
 function App() {
   const talk = useStudioTalk();
   return (
     <main style={{ fontFamily: 'system-ui, sans-serif', padding: '1rem', lineHeight: 1.6 }}>
       <h1>${line('問題')}</h1>
-      <p>使う人: ${line('使う人')}</p>
+      <p>使う人: ${line('使う人')}</p>${dataTables}
       <Talk talk={talk} placeholder="話しかけてください" />
     </main>
   );

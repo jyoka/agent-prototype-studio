@@ -4787,6 +4787,11 @@ const designEls = {
   scenes: $('design-scenes'),
   sceneCategory: $('design-scene-category'),
   sceneText: $('design-scene-text'),
+  dataBox: $('design-data-box'),
+  dataFigure: $('design-data-figure'),
+  dataTables: $('design-data-tables'),
+  dataCoverage: $('design-data-coverage'),
+  dataSample: $('design-data-sample'),
   owner: $('design-owner'),
   review: $('design-review'),
   noteBox: $('design-note-box'),
@@ -4838,11 +4843,14 @@ const designOpenIndex = (record) => {
 function designStateText(record) {
   const staleAfter = record.status === 'decided' && record.steps.find((step) => step.stale);
   if (staleAfter) return `${formatTime(record.decidedAt)}に決めた後に、構成のファイルが変わりました。次にすること: 「${staleAfter.label}」の案を確かめ直してください。`;
+  // データの段(K2)より前に決めた設計には、選んでいない段がある
+  const unchosen = record.status === 'decided' && record.steps.find((step) => !step.chosen);
+  if (unchosen) return `${formatTime(record.decidedAt)}に決めた後に、「${unchosen.label}」の段が増えました。次にすること: 「${unchosen.label}」の案を選んでください。`;
   if (record.status === 'decided') return `${formatTime(record.decidedAt)}に決めました。次にすること: 作った試作品を試してください。`;
   if (record.status === 'skipped') return `${formatTime(record.skippedAt)}に飛ばしました。「設計なし」のまま進めています。設計に戻るときは、案を選んでください。`;
   const stale = record.steps.find((step) => step.stale);
   if (stale) return `前の段を変えました。次にすること: 「${stale.label}」の案を確かめ直してください。`;
-  if (record.ready) return '5 つの段を選びました。次にすること: 「この設計で作る」を押してください。';
+  if (record.ready) return `${record.steps.length} つの段を選びました。次にすること: 「この設計で作る」を押してください。`;
   const step = designCurrent(record);
   if (!step.chosen) return `次にすること: 「${step.label}」の案を読んで、1 つ選んでください。`;
   return '次にすること: 「次の段へ」を押してください。';
@@ -4873,6 +4881,7 @@ function designOptionItem(option, step, record) {
     for (const scene of option.scenes) list.append(element('li', `${record.categories[scene.category]}: ${scene.text}`));
     li.append(list);
   }
+  if (option.entities) li.append(...dataOptionSummary(option));
   if (option.reason) li.append(element('p', `${option.recommended ? 'おすすめの理由' : '理由'}: ${option.reason}`, 'design-reason'));
   if (option.limitation) li.append(element('p', option.limitation, 'muted'));
   const button = element('button', `「${option.title}」を選ぶ`);
@@ -4882,6 +4891,133 @@ function designOptionItem(option, step, record) {
   button.addEventListener('click', () => chooseDesign(step.id, option.id));
   li.append(button);
   return li;
+}
+
+// データの段(K2)。項目の種類の言葉。主キーと外部キーの言葉も隠さない(field-session.md の段 3)
+const FIELD_KIND_LABELS = { key: '番号(主キー)', link: 'つながりの番号(外部キー)', text: '文', number: '数', date: '日付', choice: '選ぶもの' };
+const linkText = (link) => `1 つの「${link.from}」に、いくつもの「${link.to}」(${link.label}。1 対 多)`;
+
+// 整理の板のデータの欄が、案に全部載ったか。載っていない欄と、Studio が足した欄を数える
+function dataCoverageText(option) {
+  const coverage = option.coverage ?? [];
+  if (coverage.length === 0) return '整理の板にデータの欄はありません。';
+  const missing = coverage.filter((entry) => entry.where.length === 0);
+  const added = option.added?.length ?? 0;
+  const parts = [missing.length === 0 ? `整理の板のデータの欄 ${coverage.length} つが、全部載っています。` : `整理の板のデータの欄 ${coverage.length} つのうち、${missing.length} つがまだ載っていません。「案を作り直す」で載ります。`];
+  if (added > 0) parts.push(`${added} つは案になかったので、Studio が「聞いたことのメモ」に足しました。`);
+  return parts.join('');
+}
+
+// 案のカードに出す短い形。覚えておくものと項目、つながり、整理の板の欄が載ったか、図
+function dataOptionSummary(option) {
+  const list = element('ul');
+  for (const entity of option.entities) list.append(element('li', `${entity.name}: ${entity.fields.map((field) => field.name).join('、')}`));
+  for (const link of option.links) list.append(element('li', `つながり: ${linkText(link)}`));
+  return [list, element('p', dataCoverageText(option), 'muted design-data-note'), dataFigure(option, `「${option.title}」の図`)];
+}
+
+// データ設計の図。覚えておくものを箱に、つながりを矢印にする。外の部品を使わず、SVG で描く
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function svgNode(tag, attributes = {}, text) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, String(value));
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function dataFigure(option, label) {
+  const shown = 6;
+  const width = 200;
+  const lineHeight = 17;
+  const head = 24;
+  const gapX = 130;
+  const gapY = 56;
+  const columns = Math.min(3, option.entities.length);
+  const heightOf = (entity) => head + Math.min(entity.fields.length, shown + 1) * lineHeight + 8;
+  const rowHeight = Math.max(...option.entities.map(heightOf));
+  const rows = Math.ceil(option.entities.length / columns);
+  const boxes = new Map(option.entities.map((entity, index) => {
+    const x = 10 + (index % columns) * (width + gapX);
+    const y = 10 + Math.floor(index / columns) * (rowHeight + gapY);
+    return [entity.name, { x, y, w: width, h: heightOf(entity) }];
+  }));
+  const svg = svgNode('svg', { viewBox: `0 0 ${20 + columns * width + (columns - 1) * gapX} ${20 + rows * rowHeight + (rows - 1) * gapY}`, role: 'img', 'aria-label': `${label}。${option.entities.map((entity) => entity.name).join('、')}。${option.links.map(linkText).join('。')}`, class: 'data-figure' });
+  const marker = `data-arrow-${Math.random().toString(36).slice(2, 8)}`;
+  const defs = svgNode('defs');
+  const arrow = svgNode('marker', { id: marker, viewBox: '0 0 10 10', refX: 10, refY: 5, markerWidth: 8, markerHeight: 8, orient: 'auto-start-reverse' });
+  arrow.append(svgNode('path', { d: 'M 0 0 L 10 5 L 0 10 z', class: 'link-arrow' }));
+  defs.append(arrow);
+  svg.append(defs);
+  // 箱の縁から縁へ線を引く(中心を結ぶ線が縁を出る所)
+  const edge = (box, dx, dy) => {
+    const t = Math.min(dx === 0 ? Infinity : box.w / 2 / Math.abs(dx), dy === 0 ? Infinity : box.h / 2 / Math.abs(dy));
+    return { x: box.x + box.w / 2 + dx * t, y: box.y + box.h / 2 + dy * t };
+  };
+  for (const link of option.links) {
+    const from = boxes.get(link.from);
+    const to = boxes.get(link.to);
+    if (!from || !to) continue;
+    const dx = to.x + to.w / 2 - (from.x + from.w / 2);
+    const dy = to.y + to.h / 2 - (from.y + from.h / 2);
+    const start = edge(from, dx, dy);
+    const end = edge(to, -dx, -dy);
+    svg.append(svgNode('line', { x1: start.x, y1: start.y, x2: end.x, y2: end.y, class: 'link-line', 'marker-end': `url(#${marker})` }));
+    svg.append(svgNode('text', { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 - 4, 'text-anchor': 'middle', class: 'link-label' }, `${link.label}(1 対 多)`));
+  }
+  for (const entity of option.entities) {
+    const box = boxes.get(entity.name);
+    svg.append(svgNode('rect', { x: box.x, y: box.y, width: box.w, height: box.h, rx: 6, class: 'entity-box' }));
+    svg.append(svgNode('rect', { x: box.x, y: box.y, width: box.w, height: head, rx: 6, class: 'entity-head' }));
+    svg.append(svgNode('text', { x: box.x + 8, y: box.y + 16, class: 'entity-name' }, entity.name));
+    const fields = entity.fields.slice(0, shown);
+    fields.forEach((field, index) => {
+      const mark = field.kind === 'key' ? '(主キー)' : field.kind === 'link' ? '(外部キー)' : '';
+      svg.append(svgNode('text', { x: box.x + 8, y: box.y + head + 14 + index * lineHeight, class: mark ? 'entity-key' : 'entity-field' }, `${field.name}${mark}`.slice(0, 22)));
+    });
+    if (entity.fields.length > shown) svg.append(svgNode('text', { x: box.x + 8, y: box.y + head + 14 + shown * lineHeight, class: 'entity-key' }, `ほか ${entity.fields.length - shown} つ`));
+  }
+  return svg;
+}
+
+// 選んだ案の表。項目ごとに、種類、例(架空)、元の話(整理の板の欄)を並べる
+function dataTable(entity, textOf) {
+  const table = element('table');
+  const caption = [entity.name, entity.about, entity.writer ? `書く人: ${entity.writer}` : ''].map((part) => part.replace(/。+$/, '')).filter(Boolean).join('。');
+  table.append(element('caption', caption));
+  const headRow = element('tr');
+  for (const name of ['項目', '種類', '例(架空)', '元の話(整理の板)']) headRow.append(element('th', name));
+  const thead = element('thead');
+  thead.append(headRow);
+  const tbody = element('tbody');
+  for (const field of entity.fields) {
+    const row = element('tr');
+    const kind = field.kind === 'link' ? `${FIELD_KIND_LABELS.link}: 「${field.to}」の番号を指す` : FIELD_KIND_LABELS[field.kind] ?? field.kind;
+    const examples = field.kind === 'key' || field.kind === 'link' ? 'Studio が付けます' : field.examples?.length > 0 ? field.examples.join('、') : 'Studio が作ります';
+    const sources = [...(field.sources ?? []), ...(field.kind === 'key' ? entity.sources ?? [] : [])].map(textOf).filter(Boolean);
+    row.append(element('th', field.name), element('td', kind), element('td', examples), element('td', sources.join('、') || 'なし'));
+    row.firstChild.setAttribute('scope', 'row');
+    tbody.append(row);
+  }
+  table.append(thead, tbody);
+  return table;
+}
+
+function renderDataBox(step) {
+  const option = designChosen(step);
+  designEls.dataBox.hidden = !option;
+  if (!option) return;
+  const coverage = option.coverage ?? [];
+  const textOf = (id) => coverage.find((entry) => entry.id === id)?.text ?? '';
+  designEls.dataFigure.replaceChildren(dataFigure(option, 'データ設計の図'));
+  const links = element('ul');
+  for (const link of option.links) links.append(element('li', `つながり: ${linkText(link)}`));
+  designEls.dataTables.replaceChildren(...option.entities.map((entity) => dataTable(entity, textOf)), ...(option.links.length > 0 ? [links] : []));
+  designEls.dataCoverage.replaceChildren(...(coverage.length > 0 ? coverage.map((entry) => {
+    const li = element('li', `${entry.text} → ${entry.where.length > 0 ? entry.where.join('、') : 'まだ載っていません'}`);
+    li.dataset.placed = String(entry.where.length > 0);
+    return li;
+  }) : [element('li', '整理の板にデータの欄はありません。')]));
+  designEls.dataSample.textContent = `${dataCoverageText(option)}選んだ案から、試作品の架空のデータを表ごとに 3 行作りました。「この設計で作る」で、作る AI はこのデータを読んで画面を描きます。`;
 }
 
 function designSceneItem(scene, index, record) {
@@ -4969,6 +5105,8 @@ function renderDesign() {
     const scenes = designUi.sceneDraft ?? record.scenes;
     designEls.scenes.replaceChildren(...scenes.map((scene, at) => designSceneItem(scene, at, record)));
   }
+  if (step.id === 'data') renderDataBox(step);
+  else designEls.dataBox.hidden = true;
   designEls.owner.hidden = step.id !== 'composition' || !record.ownerComposition;
   designEls.review.hidden = step.id !== 'composition' && !record.ready;
   designEls.noteBox.hidden = !step.chosen;
