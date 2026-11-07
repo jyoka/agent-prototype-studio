@@ -27,7 +27,7 @@
     <button type="button" id="intent-mark" class="intent-mark" data-state="none" hidden>目的なし</button>
     <!-- 整理の板の印(field-session.md の段 2)。押すと、聞き取りの欄と整理の板を開く -->
     <button type="button" id="organize-mark" class="intent-mark" data-state="none" hidden>ヒアリングの整理</button>
-    <!-- 設計の案内の印(user-journey.md の段 3、J2)。押すと、5 つの段の帯と案の比べを開く -->
+    <!-- 設計の案内の印(user-journey.md の段 3、J2)。押すと、6 つの段の帯と案の比べを開く -->
     <button type="button" id="design-mark" class="intent-mark" data-state="none" hidden>設計なし</button>
     <div class="topbar-end">
       <!-- STUDIO_AGENT=fake で起動したときだけ出す(ux-redesign.md 4 節) -->
@@ -181,7 +181,7 @@
     <p id="intent-note" class="intent-note" role="status" hidden></p>
     <p id="intent-error" class="intent-error" role="alert" hidden></p>
   </section>
-  <!-- 設計の案内(user-journey.md の段 3、J2)。5 つの段の帯と、各段の案の比べ。出している間は、下の 2 列を隠す -->
+  <!-- 設計の案内(user-journey.md の段 3、J2)。6 つの段の帯と、各段の案の比べ。出している間は、下の 2 列を隠す。データの段は K2 -->
   <section id="design" class="design" aria-labelledby="design-heading" hidden>
     <h2 id="design-heading" tabindex="-1">設計の案内</h2>
     <p id="design-state" class="intent-doc-state" role="status"></p>
@@ -224,6 +224,16 @@
           <input id="design-scene-text" type="text" maxlength="200" autocomplete="off">
           <button type="submit">場面を足す</button>
         </form>
+      </section>
+      <!-- データの段で選んだ案(K2)。日常の言葉の表と図、整理の板のデータの欄がどこに載ったか、架空のデータ -->
+      <section id="design-data-box" class="design-data" aria-labelledby="design-data-heading" hidden>
+        <h4 id="design-data-heading">データ設計(選んだ案)</h4>
+        <p class="muted">覚えておくもの(表)と、その項目と、つながりです。名前はお客さんの言葉にそろえてください。型と細かい決まりは、会の後に決めます。</p>
+        <div id="design-data-figure"></div>
+        <div id="design-data-tables"></div>
+        <h4>整理の板のデータの欄</h4>
+        <ul id="design-data-coverage" class="design-data-coverage" aria-label="整理の板のデータの欄"></ul>
+        <p id="design-data-sample" class="muted"></p>
       </section>
       <p id="design-owner" class="muted" hidden>この試作品には今の構成があります。Studio は書き換えません。</p>
       <p id="design-review" class="muted" hidden>AI 構成の審査(4 つの承認)の画面は、まだありません。今は審査なしで作ります。記録にも「審査なし」と残します。</p>

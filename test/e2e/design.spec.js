@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ROOT, SAMPLES, chooseSample, expect, expectNoDevWords, expectNoDevWordsOnScreen, launchStudio, test } from './studio.js';
 
-// 設計の案内(docs/design/user-journey.md の段 3、J2)。5 つの段の帯と案の比べ。
+// 設計の案内(docs/design/user-journey.md の段 3、J2)。6 つの段の帯と案の比べ。データの段は K2。
 // 実モデルは呼ばない。偽接続(STUDIO_AGENT=fake)か、偽の claude(test/fixtures/fake-claude.js)で動かす
 
 const SENTENCE = '商店街のお店への問い合わせに、AI が答えられるようにしたい';
@@ -20,6 +20,8 @@ const ui = (page) => ({
   build: page.getByRole('button', { name: 'この設計で作る' }),
   mark: page.locator('#design-mark'),
   scenes: page.getByRole('list', { name: '場面の一覧' }),
+  dataBox: page.locator('#design-data-box'),
+  coverage: page.getByRole('list', { name: '整理の板のデータの欄' }),
   choose: (title) => page.getByRole('button', { name: `「${title}」を選ぶ` }),
   step: (name) => page.getByRole('list', { name: '設計の段' }).getByRole('button', { name }),
 });
@@ -56,7 +58,16 @@ async function openDesign(page, studio, id) {
   return d;
 }
 
-// 3 つの段を、おすすめのとおりに選ぶ(fake-claude の案)
+// データの段で、fake-claude のおすすめの案を選び、構成の段へ進む
+async function chooseData(d) {
+  await expect(d.heading).toContainText('データ');
+  await d.choose('お店と問い合わせに分ける').click();
+  await expect(d.choose('お店と問い合わせに分ける')).toHaveAttribute('aria-pressed', 'true');
+  await d.next.click();
+  await expect(d.heading).toContainText('エージェントの構成');
+}
+
+// 4 つの段を、おすすめのとおりに選ぶ(fake-claude の案)
 async function chooseToComposition(d) {
   await d.choose('問い合わせの数を減らす').click();
   await d.next.click();
@@ -65,10 +76,10 @@ async function chooseToComposition(d) {
   await d.choose('よくある問い合わせと困る場面').click();
   await expect(d.scenes.getByRole('listitem')).toHaveCount(5);
   await d.next.click();
-  await expect(d.heading).toContainText('エージェントの構成');
+  await chooseData(d);
 }
 
-test('5 段を進んで戻れる。場面の段が下書きを書き、構成の選択が検査を通り、関門の場面が回り、目的と設計が依頼に入る', async ({ page, home }) => {
+test('6 段を進んで戻れる。場面の段が下書きを書き、構成の選択が検査を通り、関門の場面が回り、目的と設計が依頼に入る', async ({ page, home }) => {
   test.setTimeout(120_000);
   const studio = await launchStudio(home);
   try {
@@ -85,8 +96,8 @@ test('5 段を進んで戻れる。場面の段が下書きを書き、構成の
     await expect(d.state).toContainText('次にすること');
     await page.getByRole('button', { name: '案を作る' }).click();
 
-    // 段の帯は 5 つ。案が 2〜3 並び、おすすめと理由が出る
-    await expect(d.band.getByRole('button')).toHaveText([/問題/, /使う人/, /場面/, /エージェントの構成/, /画面/]);
+    // 段の帯は 6 つ。案が 2〜3 並び、おすすめと理由が出る
+    await expect(d.band.getByRole('button')).toHaveText([/問題/, /使う人/, /場面/, /データ/, /エージェントの構成/, /画面/]);
     await expect(d.options.getByRole('listitem')).toHaveCount(2);
     await expect(d.options.getByText('おすすめ', { exact: true })).toHaveCount(1);
     await expect(d.options).toContainText('おすすめの理由');
@@ -143,7 +154,7 @@ test('5 段を進んで戻れる。場面の段が下書きを書き、構成の
     // 直した文は場面のファイルに入る
     await page.getByLabel(/場面 1(.*)の文/).fill('明日の閉店は何時ですか');
     await d.next.click();
-    await expect(d.heading).toContainText('エージェントの構成');
+    await chooseData(d);
     expect((await readJson(appFile(home, id, 'evals/design-normal-1.json'))).turns[0].user).toBe('明日の閉店は何時ですか');
     expect((await readJson(appFile(home, id, 'evals/design-slow-1.json'))).turns[0].user).toBe('まだ待つのですか');
 
@@ -293,7 +304,7 @@ test('前の段を選び直すと、後ろの段は確かめ直しになり、�
     await expect(page.locator('#design-stale')).toBeVisible();
 
     // 後ろの段を全部確かめ直すと、作れる
-    for (const [step, title] of [[/使う人/, '問い合わせるお客さん'], [/場面/, 'よくある問い合わせと困る場面'], [/エージェントの構成/, '固定の流れ'], [/画面/, 'Web の相談画面']]) {
+    for (const [step, title] of [[/使う人/, '問い合わせるお客さん'], [/場面/, 'よくある問い合わせと困る場面'], [/データ/, 'お店と問い合わせに分ける'], [/エージェントの構成/, '固定の流れ'], [/画面/, 'Web の相談画面']]) {
       await d.step(step).click();
       await d.choose(title).click();
       await expect(d.step(step)).not.toContainText('確かめ直す');
@@ -340,7 +351,7 @@ test('案を選んだ直後に打った場面の文は、一覧の読み直し�
     await expect(firstScene).toHaveValue('読み直しの間に打った文');
     // 次の段へ進むと、打った文が保存される
     await d.next.click();
-    await expect(d.heading).toContainText('エージェントの構成');
+    await expect(d.heading).toContainText('データ');
     await expect.poll(async () => (await readJson(appFile(home, id, 'evals/design-normal-1.json'))).turns[0].user).toBe('読み直しの間に打った文');
   } finally {
     await studio.stop();
@@ -451,6 +462,7 @@ test('今の構成のある試作品では、構成を書き換えない', async
     await d.next.click();
     await d.choose('まず困る場面だけ').click();
     await d.next.click();
+    await chooseData(d);
     await expect(page.locator('#design-owner')).toBeVisible();
     await expect(d.choose('固定の流れ')).toBeDisabled();
     await expect(d.choose('単一エージェント')).toBeDisabled();
@@ -552,6 +564,98 @@ test('同意の前は案を出す AI を呼ばない。やめると Studio の�
     await expect(d.options).toContainText('偽の問題 1');
     await expect(d.options.locator(':scope > li').nth(1)).toContainText('おすすめ');
     expect(await designCalls()).toHaveLength(1);
+  } finally {
+    await studio.stop();
+  }
+});
+
+// K2 データ設計の案内(docs/design/user-journey.md の 6 節)。整理の板のデータの欄が全部データ設計に載り、選んだ案の架空のデータで試作品が描ける
+test('データの段: 整理の板のデータの欄が全部データ設計に載り、表と図で見せ、選んだ案の架空のデータで試作品が描ける', async ({ page, home }) => {
+  test.setTimeout(120_000);
+  const studio = await launchStudio(home);
+  try {
+    const id = await decidedProject(studio);
+    // 整理の板のデータの欄(架空)。fake-claude の案は最初の欄だけを元にし、残りは Studio が足す
+    const dataItems = ['閉店後の問い合わせの中身', 'お店ごとの閉店の時刻', '商品の取り置きの有無'];
+    for (const text of dataItems) expect((await studio.post(`/api/projects/${id}/organize/item`, { column: 'data', text })).status).toBe(200);
+    expect((await studio.post(`/api/projects/${id}/organize/item`, { column: 'rule', text: '取り置きは 3 日まで' })).status).toBe(200);
+
+    const d = await openDesign(page, studio, id);
+    await d.choose('問い合わせの数を減らす').click();
+    await d.next.click();
+    await d.choose('問い合わせるお客さん').click();
+    await d.next.click();
+    await d.choose('よくある問い合わせと困る場面').click();
+    await d.next.click();
+
+    // データの段。案が 2 つ並び、どの案にも覚えておくもの、つながり、図、整理の板の欄が載ったかが出る
+    await expect(d.heading).toContainText('データ');
+    await expect(d.heading).toContainText('何を覚えておきますか');
+    const cards = d.options.locator(':scope > li');
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0)).toContainText('おすすめ');
+    await expect(cards.nth(0)).toContainText('つながり: 1 つの「お店」に、いくつもの「問い合わせ」(受ける。1 対 多)');
+    await expect(cards.nth(0).getByRole('img', { name: /「お店と問い合わせに分ける」の図/ })).toBeVisible();
+    for (const card of await cards.all()) await expect(card).toContainText('整理の板のデータの欄 3 つが、全部載っています');
+    await expect(cards.nth(0)).toContainText('Studio が「聞いたことのメモ」に足しました');
+    await expect(d.dataBox).toBeHidden();
+    // 規則の欄は、データ設計に載せない
+    await expect(d.options).not.toContainText('取り置きは 3 日まで');
+
+    // 選ぶと、表と図が出る。項目ごとに種類、例(架空)、元の話。主キーと外部キーの言葉も出す
+    await d.choose('お店と問い合わせに分ける').click();
+    await expect(d.dataBox).toBeVisible();
+    await expect(d.dataBox.getByRole('img', { name: /データ設計の図/ })).toBeVisible();
+    const shops = d.dataBox.getByRole('table').filter({ hasText: 'お店。商店街の架空のお店です。' });
+    await expect(shops.getByRole('row', { name: /お店の名前/ })).toContainText('みほん青果');
+    await expect(shops).toContainText('番号(主キー)');
+    const asks = d.dataBox.getByRole('table').filter({ hasText: '問い合わせ。閉店後に受けた問い合わせです。' });
+    await expect(asks.getByRole('row', { name: /お店の番号/ })).toContainText('つながりの番号(外部キー): 「お店」の番号を指す');
+    await expect(asks.getByRole('row', { name: /問い合わせの中身/ })).toContainText(dataItems[0]);
+    await expect(d.dataBox.getByRole('table').filter({ hasText: '聞いたことのメモ' })).toContainText('Studio が足しました');
+
+    // 整理の板のデータの欄が、全部データ設計に載る(どこに載ったかが出る)
+    await expect(d.coverage.getByRole('listitem')).toHaveCount(dataItems.length);
+    for (const text of dataItems) {
+      const entry = d.coverage.getByRole('listitem').filter({ hasText: text });
+      await expect(entry).toHaveAttribute('data-placed', 'true');
+      await expect(entry).not.toContainText('まだ載っていません');
+    }
+    await expect(d.coverage.getByRole('listitem').filter({ hasText: dataItems[0] })).toContainText('問い合わせの問い合わせの中身');
+    await expect(d.coverage.getByRole('listitem').filter({ hasText: dataItems[2] })).toContainText('聞いたことのメモ');
+    await expectNoDevWords(d.section);
+    await page.screenshot({ path: path.join(UX_SHOTS, 'K2-data.png'), fullPage: true });
+    await d.dataBox.screenshot({ path: path.join(UX_SHOTS, 'K2-data-box.png') });
+
+    // 選んだ案から、Studio が架空のデータを書く。つながりの番号は、元の番号を指す
+    const written = await readJson(appFile(home, id, 'data/design-data.json'));
+    expect(written.tables.map((table) => table.name)).toEqual(['お店', '問い合わせ', '聞いたことのメモ']);
+    const shopKeys = new Set(written.tables[0].rows.map((row) => row['番号']));
+    expect(written.tables[1].rows.every((row) => shopKeys.has(row['お店の番号']))).toBe(true);
+    expect(written.tables[2].columns).toEqual(['番号', dataItems[1], dataItems[2]]);
+    expect((await designRecord(home, id)).steps.data.chosen).toBeTruthy();
+
+    // 後ろの段を選び、この設計で作る。作る AI への依頼にデータ設計が入り、試作品が架空のデータで描ける
+    await d.next.click();
+    await d.choose('固定の流れ').click();
+    await d.next.click();
+    await d.choose('Web の相談画面').click();
+    await d.build.click();
+    await expect(d.section).toBeHidden();
+    const app = page.frameLocator('iframe[title="試作品"]');
+    const shopTable = app.getByRole('table', { name: 'お店(架空)' });
+    await expect(shopTable).toBeVisible({ timeout: 60_000 });
+    await expect(shopTable).toContainText('みほん青果');
+    await expect(shopTable).toContainText('1001');
+    await expect(app.getByRole('table', { name: '問い合わせ(架空)' })).toContainText('明日は何時まで開いていますか');
+    await expect(app.getByRole('table', { name: '聞いたことのメモ(架空)' })).toContainText(`${dataItems[1]}の例 1(架空)`);
+    await expect(page.locator('body')).toContainText('AI の場面を確かめました', { timeout: 60_000 });
+    const run = (await studio.api(`/api/projects/${id}/build-requests`)).runs.at(-1);
+    expect(run.request).toContain('[データ設計]');
+    expect(run.request).toContain('データ: お店と問い合わせに分ける');
+    expect(run.request).toContain('架空のデータは data/design-data.json に Studio が書きました');
+    expect(run.gates.find((g) => g.name === 'contract').status).toBe('passed');
+    await page.screenshot({ path: path.join(UX_SHOTS, 'K2-built.png'), fullPage: true });
   } finally {
     await studio.stop();
   }

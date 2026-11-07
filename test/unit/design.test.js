@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { compositionChoices, compositionOptions, cleanScenes, COMPOSITION_OPTIONS, desiredFiles, designRequest, fixedOptions, mergeAiOptions, missingScenes, REQUIRED_SCENES, SCENE_CATEGORIES, SCREENS, STEPS, withRequiredScenes } from '../../src/server/design.js';
 import { DESIGN_SCHEMA, designOutputProblem } from '../../src/server/design-ai.js';
+import { DATA_FILE } from '../../src/server/data-design.js';
 import { readManifest } from '../../src/server/manifest.js';
 import { readAiDefinition } from '../../src/server/product-ai/definition.js';
 import { readSimulation } from '../../src/server/sim/composition.js';
@@ -42,13 +43,13 @@ async function contractOf(appDir) {
   return readSimulation(appDir, manifest, ai);
 }
 
-test('5 つの段が、問題、使う人、場面、エージェントの構成、画面の順', () => {
-  assert.deepEqual(STEPS.map((step) => step.label), ['問題', '使う人', '場面', 'エージェントの構成', '画面']);
+test('6 つの段が、問題、使う人、場面、データ、エージェントの構成、画面の順', () => {
+  assert.deepEqual(STEPS.map((step) => step.label), ['問題', '使う人', '場面', 'データ', 'エージェントの構成', '画面']);
 });
 
 test('Studio の決まった案: どの段も案が 2〜3 あり、おすすめが 1 つで、理由がある', () => {
   const options = mergeAiOptions(fixedOptions(MATERIAL), null);
-  for (const step of ['problem', 'users', 'scenes', 'screens']) {
+  for (const step of ['problem', 'users', 'scenes', 'data', 'screens']) {
     assert.ok(options[step].length >= 2 && options[step].length <= 3, step);
     assert.equal(options[step].filter((option) => option.recommended).length, 1, step);
     assert.ok(options[step].every((option) => option.reason), step);
@@ -168,9 +169,10 @@ test('場面の下書き: どの種類も場面の検査を通り、種類の名
   }
 });
 
-test('構成を選ぶ前は、場面のファイルだけを書く', () => {
+test('構成を選ぶ前は、場面のファイルと、データの段で選んだ案の架空のデータだけを書く', () => {
   const record = recordWith(null);
-  assert.ok([...desiredFiles(record).keys()].every((name) => name.startsWith('evals/')));
+  assert.ok([...desiredFiles(record).keys()].every((name) => name.startsWith('evals/') || name === DATA_FILE));
+  assert.ok(desiredFiles(record).has(DATA_FILE));
   assert.ok(![...desiredFiles(recordWith('keep')).keys()].some((name) => name === 'composition.json'));
 });
 

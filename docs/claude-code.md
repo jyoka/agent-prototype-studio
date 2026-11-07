@@ -165,7 +165,7 @@ Claude Code の起動のしかた(どれも Claude Code の CLI のフラグで�
 
 ## 案を出す AI と Claude Code
 
-設計の案内で、5 つの段の案を出す役です。聞き出す AI と同じ決め方の別の役で、起動の形も同じです(`src/server/structured-ai.js`)。決めた理由は [user-journey.md の 7 節](design/user-journey.md#j2-で決めたことtask-3852026-11-02)にあります。
+設計の案内で、6 つの段の案を出す役です。聞き出す AI と同じ決め方の別の役で、起動の形も同じです(`src/server/structured-ai.js`)。決めた理由は [user-journey.md の 7 節](design/user-journey.md#j2-で決めたことtask-3852026-11-02)にあります。
 
 - 起動の引数は `src/server/design-ai.js` の `buildDesignArgs`。聞き出す AI と同じで、`--json-schema` と `--system-prompt` と `--max-budget-usd 0.3` が違う。cwd は空の一時フォルダー。値は仮で、実モデルでは測っていない。
 - 送るのは、書いた 1 文(なければ、目録の目的の 1 文か試作品の名前)、決めた目的の文書、整理の板の項目だけ。stdin で渡す。画面のソースは送らない。
