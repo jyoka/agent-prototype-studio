@@ -10,7 +10,8 @@ import { evalVerdict, judgeCheck, riskyOutcomeOf, tallyResult } from './eval-run
 // 返す値は数え直した結果(元の result は変えない)。場面ごとに recounted: true を付ける
 
 // 記録のツールの呼び出しと引き継ぎだけで決まる確かめ(返事の文と記録の店を見ない)
-const TRACE_CHECKS = ['toolCalled', 'noToolCall', 'noToolRun', 'guardBlocked', 'noGuardBlock', 'handoffTo'];
+// retrieved は、記録のツールの結果の要約(docs)で決まる(task 421)。cited は返事の文が要るので決めない
+const TRACE_CHECKS = ['toolCalled', 'noToolCall', 'noToolRun', 'guardBlocked', 'noGuardBlock', 'handoffTo', 'retrieved'];
 
 // 場面の確かめの、結果に残る期待の文(前の結果の確かめと突き合わせるため)
 function expectedOf(item) {
@@ -18,6 +19,8 @@ function expectedOf(item) {
     connection: item.only ?? 'mock',
     hasTools: true,
     toolNames: new Set(item.tool ? [item.tool] : []),
+    // 文書の検索の確かめの期待の文を作るため。ツールの名前は期待の文に入らない
+    retrieveTools: new Set([item.tool ?? 'retrieve']),
     hasHandoffs: true,
     hasHarness: true,
     steps: [],
@@ -42,7 +45,7 @@ function noRecordFromTrace(item, { scenario, steps, recordWriters, ctx }) {
   return { check: item.check, verdict: 'n/a', reason: '読み直し: 記録の店の中身が記録に残っていないので決められない' };
 }
 
-// 1 つの場面の結果を数え直す。group は { connection, toolNames, hasHandoffs, recordWriters }、trace は伏せた sim-turn の並び(なければ null)
+// 1 つの場面の結果を数え直す。group は { connection, toolNames, retrieveTools, hasHandoffs, recordWriters }、trace は伏せた sim-turn の並び(なければ null)
 export function recountEval(e, { scenario, group, trace }) {
   // 場面がない、回せなかった、途中で止めた、場面ごと n/a(いない参加者など)は、そのまま
   if (!scenario || !['passed', 'failed', 'unjudged', 'n/a'].includes(e.verdict) || (e.verdict === 'n/a' && e.reason)) return e;
@@ -51,6 +54,7 @@ export function recountEval(e, { scenario, group, trace }) {
     connection: group.connection,
     hasTools: group.toolNames.size > 0,
     toolNames: group.toolNames,
+    retrieveTools: group.retrieveTools ?? new Set(),
     hasHandoffs: group.hasHandoffs,
     hasHarness: false,
     steps: steps ?? [],

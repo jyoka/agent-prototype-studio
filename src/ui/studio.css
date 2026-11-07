@@ -318,6 +318,10 @@ body[data-design] .layout, body[data-design] .first-steps { display: none; }
 .design-data th { background: var(--bg); font-weight: 600; }
 .design-data-coverage { margin: 0; padding-left: 1.1rem; font-size: 0.9rem; }
 .design-data-coverage li[data-placed="false"] { color: var(--warn-text); }
+.design-shelf, .design-rag { display: flex; flex-direction: column; gap: 0.3rem; }
+.design-rag-verdict { margin: 0; font-weight: 600; }
+.design-rag-reason p { margin: 0; font-size: 0.9rem; }
+.design-rag ol, .design-rag ul { margin: 0; padding-left: 1.2rem; font-size: 0.9rem; }
 .data-figure { width: 100%; height: auto; max-height: 28rem; }
 .data-figure .entity-box { fill: var(--panel); stroke: var(--text); stroke-width: 1.2; }
 .data-figure .entity-head { fill: var(--accent-bg); stroke: var(--text); stroke-width: 1.2; }

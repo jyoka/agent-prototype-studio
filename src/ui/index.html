@@ -235,6 +235,20 @@
         <ul id="design-data-coverage" class="design-data-coverage" aria-label="整理の板のデータの欄"></ul>
         <p id="design-data-sample" class="muted"></p>
       </section>
+      <!-- AI が読むデータの棚と RAG の判定(task 421)。選んだ案と整理の板からの下書き。測っていないので推測 -->
+      <section id="design-shelf" class="design-shelf design-data" aria-labelledby="design-shelf-heading" hidden>
+        <h4 id="design-shelf-heading">AI が読むデータの棚</h4>
+        <p class="muted">AI が何をどう読むかの下書きです。変わる速さと個人情報は、本番のデータの話として確かめてください。</p>
+        <div id="design-shelf-table"></div>
+        <div id="design-rag" class="design-rag" role="group" aria-labelledby="design-rag-heading">
+          <h4 id="design-rag-heading">RAG の判定</h4>
+          <p class="muted">RAG は、文書から探した部分を AI に読ませて答えさせる仕組みです。簡単な読み方から順に問い、足りたらそこで止まります。</p>
+          <p id="design-rag-verdict" class="design-rag-verdict"></p>
+          <div id="design-rag-reason" class="design-rag-reason"></div>
+          <ol id="design-rag-steps" aria-label="RAG の判定の問い"></ol>
+          <div id="design-rag-decide"></div>
+        </div>
+      </section>
       <p id="design-owner" class="muted" hidden>この試作品には今の構成があります。Studio は書き換えません。</p>
       <p id="design-review" class="muted" hidden>AI 構成の審査(4 つの承認)の画面は、まだありません。今は審査なしで作ります。記録にも「審査なし」と残します。</p>
       <div id="design-note-box" class="design-line" hidden>

@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "owner": "shiokaze",
+  "tools": [
+    {
+      "name": "search_terms",
+      "description": "架空の運送約款から、問いに近い条を探す。結果の cite(条の見出し)を答えに書く",
+      "inputSchema": { "type": "object", "properties": { "question": { "type": "string", "maxLength": 200 } }, "required": ["question"] },
+      "do": { "op": "retrieve", "data": "data/terms.json", "query": "question", "limit": 2 },
+      "guards": { "maxCallsPerConversation": 5 }
+    }
+  ]
+}

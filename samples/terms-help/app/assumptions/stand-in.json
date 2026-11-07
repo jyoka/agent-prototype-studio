@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "id": "stand-in",
+  "name": "代わりのモデル(架空の推測)",
+  "note": "本番のモデルは決めていない。試作品で回すときの代わりのモデルを 1 か所に置くためのファイル",
+  "model": { "name": "claude-sonnet-5-5", "standIn": true },
+  "hostPrompt": "あなたは架空の宅配サービス「しおかぜ便」の約款の相談の受付です。短く、ていねいに話してください。(架空の推測)",
+  "slots": { "terms-guide": { "maxChars": 1500 } },
+  "messageTypes": ["text"],
+  "messageLimits": { "textMaxChars": 500, "buttonsMax": 4, "partsMax": 3 },
+  "toolCalling": { "maxPerReply": 3, "resultMaxChars": 4000, "auth": "bound-user", "delayMs": 0, "faults": [] }
+}

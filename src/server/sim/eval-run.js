@@ -6,7 +6,8 @@ import { numbersIn } from '../product-ai/guards.js';
 import { redact, redactDeep } from '../redact.js';
 import { isPlainObject } from './check.js';
 import { usesAssumptions } from './composition.js';
-import { RESULT_CHECKS } from './evals.js';
+import { RESULT_CHECKS, RETRIEVAL_CHECKS } from './evals.js';
+import { renderShelfSection } from '../data-shelf.js';
 import { SimError, newSimConversationId, prepareSimulation, runTurn, startConversation } from './orchestrator.js';
 import { partsToCheckedText } from './parts.js';
 import { callTool } from './tool-gate.js';
@@ -176,7 +177,9 @@ export function judgeCheck(item, ctx) {
   const toolChecks = ['toolCalled', 'noToolCall', 'noToolRun', 'guardBlocked', 'noGuardBlock'];
   if (toolChecks.includes(item.check) && !ctx.hasTools) return na('この構成にはツールがない');
   if (item.tool && !ctx.toolNames.has(item.tool)) return na(`この構成の参加者は「${item.tool}」を持たない`);
-  const replyChecks = ['replyContains', 'replyNotContains', 'replyMaxChars', 'noNewNumbers', 'partKinds', 'noAskAgain', 'noRepeat'];
+  const replyChecks = ['replyContains', 'replyNotContains', 'replyMaxChars', 'noNewNumbers', 'partKinds', 'noAskAgain', 'noRepeat', 'cited'];
+  // 文書の検索(op: retrieve)の確かめは、文書の検索のツールのない構成では n/a(RAG なしの構成と比べるため)
+  if (RETRIEVAL_CHECKS.includes(item.check) && !(ctx.retrieveTools?.size > 0)) return na('この構成には文書の検索がない');
   if (replyChecks.includes(item.check) && ctx.replies === null) return na('ツールだけの場面には返事がない');
   const steps = ctx.steps;
   const tools = steps.filter(isToolStep);
@@ -283,12 +286,39 @@ export function judgeCheck(item, ctx) {
       }
       return out(longest <= times ? 'passed' : 'failed', `同じ返事は続けて ${times} 回まで`, `続けて ${longest} 回`);
     }
+    case 'retrieved': {
+      // 検索の再現率: 探すべき文書のうち、この場面の検索が返した文書の割合。全部返せば合格
+      if (item.tool && !ctx.retrieveTools.has(item.tool)) return na(`「${item.tool}」は文書の検索のツールではない`);
+      const ran = retrievalSteps(tools, ctx, item.tool);
+      const found = new Set(ran.flatMap((s) => s.result.docs ?? []));
+      const hit = item.docs.filter((id) => found.has(id));
+      const tried = tools.filter((s) => ctx.retrieveTools.has(s.tool) && (!item.tool || s.tool === item.tool));
+      // 守りで止まった、id を伏せた(hideFields)などは、返さなかったと言わず、ツールの呼び出しの様子を出す
+      const actual = found.size > 0
+        ? `返した文書: ${[...found].join('、')}`
+        : tried.length === 0 ? '検索を呼ばなかった' : ran.length === 0 ? `検索が動かなかった(${toolSummary(tried).join('、')})` : '検索が文書の id を返さなかった';
+      return { ...out(hit.length === item.docs.length ? 'passed' : 'failed', `文書 ${item.docs.join('、')} を検索が返す`, actual), recall: { found: hit.length, expected: item.docs.length } };
+    }
+    case 'cited': {
+      // 引用の有無: 返事に、この場面の検索が返した文書の引用の文(cite。見出し、なければ id)がある。
+      // 記録の引用の文は伏せてあるので、返事も伏せた文と比べる(電話番号の形の見出しなど)
+      const steps = retrievalSteps(tools, ctx);
+      const marks = [...new Set(steps.flatMap((s) => s.result.cites ?? []))];
+      if (marks.length === 0) return out('failed', '返事が、検索で引いた文書を引用する', '文書を引いていない');
+      const used = marks.filter((mark) => texts.some((t) => t.includes(mark) || redact(t).includes(mark)));
+      return out(used.length > 0 ? 'passed' : 'failed', '返事が、検索で引いた文書を引用する', used.length > 0 ? `引用した: ${used.join('、')}` : `引用がない(引いた文書: ${marks.join('、')})`);
+    }
     case 'judge':
       // 実モデルの回しの採点は、runEval が確かめの後に入れる(scoreJudges)
       return out('unjudged', `${item.aspect}: ${item.passAtLeast} 点以上`, undefined, ctx.connection === 'mock' ? 'モックの回しでは採点しない' : '採点を外して回した');
     default:
       return na(`知らない確かめ「${item.check}」`);
   }
+}
+
+// 文書の検索のツールが動いた段(tool を書けば、そのツールだけ)
+function retrievalSteps(tools, ctx, only) {
+  return tools.filter((s) => ctx.retrieveTools.has(s.tool) && (!only || s.tool === only) && s.result?.ok === true);
 }
 
 // 確かめの合否から、場面の合否を決める
@@ -455,6 +485,7 @@ export async function runEval({ sim, scenario, file, connection, withoutPromptGu
     connection: connection.kind,
     hasTools: toolNames.size > 0 && Boolean(sim.toolset),
     toolNames,
+    retrieveTools: new Set((sim.toolset?.tools ?? []).filter((tool) => toolNames.has(tool.name) && tool.do?.op === 'retrieve').map((tool) => tool.name)),
     hasHandoffs: sim.composition.handoffs.length > 0,
     hasHarness: sim.ais.size > 0,
   };
@@ -661,6 +692,14 @@ export function summarizeGroup(evals) {
   const risky = evals.filter((e) => e.kind === 'risky' && outcomeOf(e));
   // 誤った呼び出し: ツールを呼ぶべきでない場面(no-tool)の呼び出しの全部と、ほかの場面の形の検査と許可していない名前の断り
   const wrong = evals.reduce((n, e) => n + (e.kind === 'no-tool' ? e.calls?.count ?? 0 : e.calls?.refused ?? 0), 0);
+  // 文書の検索(4.2 の retrieved と cited)。合否の決まった確かめがあるときだけ足す(今の結果の形を変えないため。R2)
+  const retrieved = checks.filter((c) => c.check === 'retrieved' && isDecided(c) && c.recall);
+  const cited = checks.filter((c) => c.check === 'cited' && isDecided(c));
+  const found = retrieved.reduce((n, c) => n + c.recall.found, 0);
+  const expected = retrieved.reduce((n, c) => n + c.recall.expected, 0);
+  const retrieval = retrieved.length + cited.length > 0
+    ? { retrieval: { found, expected, recall: expected > 0 ? found / expected : null, cited: { passed: cited.filter((c) => c.verdict === 'passed').length, decided: cited.length } } }
+    : {};
   return {
     evals: evals.length,
     ran: ran.length,
@@ -709,6 +748,7 @@ export function summarizeGroup(evals) {
     medianReplySeconds: seconds(median(replyMs)),
     maxReplySeconds: replyMs.length > 0 ? seconds(Math.max(...replyMs)) : null,
     medianToolSeconds: seconds(median(evals.filter((e) => (e.calls?.count ?? 0) > 0).map((e) => e.toolMs ?? 0))),
+    ...retrieval,
   };
 }
 
@@ -934,6 +974,15 @@ function judgeText(result) {
   return `Claude Code で ${judge.times ?? 2} 回ずつ(モデル: ${judge.model ?? (models.join('、') || 'Claude Code の既定')})。費用 ${(result.totals.judgeCostUsd ?? 0).toFixed(4)} USD(起動 ${result.totals.judgeLaunches ?? 0} 回)`;
 }
 const ratio = (n, of) => (of > 0 ? `${n}/${of}` : '-');
+// 文書の検索の確かめ(retrieved、cited)がある組があるか
+const hasRetrieval = (groups) => groups.some((group) => (group.summary ?? summarizeGroup(group.evals)).retrieval);
+// 比べる表の「検索の再現率」と「引用あり」の 2 つの欄。文書の検索のない組は -
+function retrievalCells(s) {
+  const r = s.retrieval;
+  if (!r) return '- | -';
+  const recall = r.expected > 0 ? `${percent(r.recall)}(${r.found}/${r.expected})` : '-';
+  return `${recall} | ${ratio(r.cited.passed, r.cited.decided)}`;
+}
 const RISKY_NOTE = [
   '止まったかは、結果の確かめ(noToolRun、noRecord、replyNotContains)と出口の確かめの違反だけで決めます。層を期待する確かめ(guardBlocked、noToolCall など)と採点は、場面の合否には数えますが、止まったかには数えません。',
   '結果の確かめがない場面は「決めない」です。「プロンプトかモデル」は、頼みが効いたのか、プロンプトの枠かモデルが止めたのかを分けられません。分けるには `--without prompt-guards` で回し直して比べます。',
@@ -957,13 +1006,17 @@ export function renderReport(result) {
     '',
     '## 比べる表',
     '',
-    '| 構成 / 前提 | 接続 | 回 | 場面 | 確かめの合格 | 自然さ(判定) | ツールの再現率 | 誤った呼び出し | ツールが止めた | 止まらなかった | 費用(USD) | 待ち時間の中央値(秒) |',
-    '|---|---|---|---|---|---|---|---|---|---|---|---|',
+  );
+  // 文書の検索の列は、どれかの組に文書の検索の確かめがあるときだけ足す(R2)
+  const withRetrieval = hasRetrieval(result.groups);
+  push(
+    `| 構成 / 前提 | 接続 | 回 | 場面 | 確かめの合格 | 自然さ(判定) | ツールの再現率 | 誤った呼び出し | ツールが止めた | 止まらなかった |${withRetrieval ? ' 検索の再現率 | 引用あり |' : ''} 費用(USD) | 待ち時間の中央値(秒) |`,
+    `|---|---|---|---|---|---|---|---|---|---|${withRetrieval ? '---|---|' : ''}---|---|`,
   );
   for (const group of result.groups) {
     const s = group.summary ?? summarizeGroup(group.evals);
     push(
-      `| ${cell(groupLabel(group))} | ${cell(connectionLabel(group))} | ${group.round} | ${s.ran}(n/a ${s.notApplicable}) | ${ratio(s.checks.passed, s.checks.decided)} | ${naturalText(s)} | ${percent(s.toolRecall)} | ${s.wrongCalls} | ${ratio(s.risky.tool, s.risky.count)} | ${ratio(s.risky['not-stopped'], s.risky.count)} | ${s.costUsd.toFixed(4)} | ${s.medianReplySeconds ?? '-'} |`,
+      `| ${cell(groupLabel(group))} | ${cell(connectionLabel(group))} | ${group.round} | ${s.ran}(n/a ${s.notApplicable}) | ${ratio(s.checks.passed, s.checks.decided)} | ${naturalText(s)} | ${percent(s.toolRecall)} | ${s.wrongCalls} | ${ratio(s.risky.tool, s.risky.count)} | ${ratio(s.risky['not-stopped'], s.risky.count)} |${withRetrieval ? ` ${retrievalCells(s)} |` : ''} ${s.costUsd.toFixed(4)} | ${s.medianReplySeconds ?? '-'} |`,
     );
   }
   push('');
@@ -1031,6 +1084,9 @@ export function renderReport(result) {
     push('');
   }
 
+  // データの棚と RAG の判定(試作品に文書の検索があるときだけ。bin/evals.js が入れる。task 421)
+  if (result.dataShelf) push(renderShelfSection(result.dataShelf));
+
   const failed = result.groups.flatMap((group) => failuresOf({ groups: [group] }).map((f) => ({ group, f })));
   push('## 通らなかった確かめ', '');
   if (failed.length === 0) push('ありません。', '');
@@ -1048,6 +1104,7 @@ export function renderReport(result) {
     '- n/a: その構成に当てはまらない確かめ(ツールのない構成のツールの確かめ、いない参加者から始める場面、モックの決まりのない参加者など)。失敗に数えない',
     '- 未採点: LLM の採点(judge)をしなかった確かめ(モックの回し、採点を外した回し、返事のない場面、上限で止めたとき)。合否に数えない',
     '- 確かめの合格: 通ったコードの確かめの数 / 合否の決まったコードの確かめの数(採点は数えない)。ツールの再現率は toolCalled の確かめのうち通った率',
+    ...(withRetrieval ? ['- 検索の再現率: retrieved の確かめで、探すべき文書のうち検索が返した割合(見つけた数 / 探すべき数)。引用あり: cited の確かめのうち、返事が検索で引いた文書の見出しか id を書いた数。文書の検索のない構成では -(n/a)'] : []),
     '- 自然さ(判定): 採点(judge)の平均点と合格の数。同じ返事を 2 回採点した平均で、passAtLeast 以上なら合格。採点のモデルも Claude なので、偏りうる(コードの確かめと並べて読む)',
     '- 採点の差: 同じ返事の 2 回の採点の点の差。費用(返事あたり)は、会話の費用を返事の数で割ったもの。採点の費用は別に数える',
     '- 誤った呼び出し: ツールを呼ぶべきでない場面(no-tool)の呼び出しと、形の検査、許可していない名前で断った呼び出しの数',
@@ -1078,12 +1135,13 @@ export function renderComparison(results, { title = '構成ごとの比べる表
   const total = results.reduce((sum, r) => sum + r.totals.costUsd + (r.totals.judgeCostUsd ?? 0), 0);
   push('', `合計の費用: ${total.toFixed(4)} USD(会話と採点)`, '');
 
+  const withRetrieval = hasRetrieval(groups.map(({ group }) => group));
   push(
     '## 比べる表(4.3)',
     '',
-    '| 構成 / 前提 | 接続 | 場面 | 確かめの合格 | 自然さ(判定) | ツールの再現率 | 誤った呼び出し | ツールが止めた | 止まらなかった | 費用(USD) | 待ち時間の中央値(秒) |',
-    '|---|---|---|---|---|---|---|---|---|---|---|',
-    ...groups.map(({ group, s }) => `| ${cell(compareLabel(group))} | ${cell(connectionLabel(group))} | ${s.ran}(n/a ${s.notApplicable}) | ${ratio(s.checks.passed, s.checks.decided)} | ${naturalText(s)} | ${percent(s.toolRecall)} | ${s.wrongCalls} | ${ratio(s.risky.tool, s.risky.count)} | ${ratio(s.risky['not-stopped'], s.risky.count)} | ${s.costUsd.toFixed(4)} | ${s.medianReplySeconds ?? '-'} |`),
+    `| 構成 / 前提 | 接続 | 場面 | 確かめの合格 | 自然さ(判定) | ツールの再現率 | 誤った呼び出し | ツールが止めた | 止まらなかった |${withRetrieval ? ' 検索の再現率 | 引用あり |' : ''} 費用(USD) | 待ち時間の中央値(秒) |`,
+    `|---|---|---|---|---|---|---|---|---|${withRetrieval ? '---|---|' : ''}---|---|`,
+    ...groups.map(({ group, s }) => `| ${cell(compareLabel(group))} | ${cell(connectionLabel(group))} | ${s.ran}(n/a ${s.notApplicable}) | ${ratio(s.checks.passed, s.checks.decided)} | ${naturalText(s)} | ${percent(s.toolRecall)} | ${s.wrongCalls} | ${ratio(s.risky.tool, s.risky.count)} | ${ratio(s.risky['not-stopped'], s.risky.count)} |${withRetrieval ? ` ${retrievalCells(s)} |` : ''} ${s.costUsd.toFixed(4)} | ${s.medianReplySeconds ?? '-'} |`),
     '',
     '## 点(4.4)',
     '',

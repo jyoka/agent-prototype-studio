@@ -1,0 +1,7 @@
+{
+  "formatVersion": 1,
+  "rules": [
+    { "when": { "contains": ["壊れ", "補償", "再配達"] }, "reply": [{ "kind": "text", "text": "約款が手元にないので、お答えできません。担当の者にお尋ねください。" }] }
+  ],
+  "otherwise": [{ "kind": "text", "text": "約款のことをお尋ねください。" }]
+}

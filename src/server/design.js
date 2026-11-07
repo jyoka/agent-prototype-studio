@@ -7,6 +7,7 @@ import { DEFAULT_COMPOSITION, DEFAULT_COMPOSITIONS, DEFAULT_EVALS, MANIFEST_FILE
 import { isValidProjectId, listProjects, projectPaths } from './projects.js';
 import { BusyError, NotFoundError } from './store.js';
 import { aiDataOptions, DATA_FILE, dataCoverage, dataRequestLines, fixedDataOptions, reshapeDataOption, sampleData } from './data-design.js';
+import { judgeRag, shelfFromDataDesign } from './data-shelf.js';
 
 // 設計の案内(docs/design/user-journey.md の段 3、J2)。問題、使う人、場面、データ、エージェントの構成、画面の 6 つの段。
 // データの段は K2 で足した(data-design.js)。選んだ案から、Studio が試作品の架空のデータを app/ に書く。
@@ -585,7 +586,11 @@ export class ProjectDesigns {
     // データの段の案ごとに、整理の板のデータの欄がどこに載ったか。案を作った後に足した欄は、載っていないと出る
     const board = this.boardOf(id);
     const dataStep = stepViews.find((step) => step.id === 'data');
-    dataStep.options = dataStep.options.map((option) => ({ ...option, coverage: dataCoverage(option, board) }));
+    // 案ごとに、AI が読むデータの棚の下書きと RAG の判定(task 421。data-shelf.js)。測っていないので推測
+    dataStep.options = dataStep.options.map((option) => {
+      const shelf = shelfFromDataDesign(option, board);
+      return { ...option, coverage: dataCoverage(option, board), shelf, rag: judgeRag(shelf) };
+    });
     return {
       ...rest,
       steps: stepViews,

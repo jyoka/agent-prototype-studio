@@ -46,7 +46,13 @@ export const CHECK_KEYS = {
   noAskAgain: ['words'],
   noRepeat: ['times'],
   judge: ['aspect', 'rubric', 'passAtLeast'],
+  // 文書の検索(op: retrieve)の確かめ。retrieved は探すべき文書(docs の id)を検索が返したか(再現率)、
+  // cited は返事が検索で引いた文書を引用したか(引用の文 cite か id が返事にある)
+  retrieved: ['tool', 'docs'],
+  cited: [],
 };
+// 文書の検索の確かめ。文書の検索のツールのない構成では n/a
+export const RETRIEVAL_CHECKS = ['retrieved', 'cited'];
 export const CHECKS = Object.keys(CHECK_KEYS);
 // どの確かめにも書ける only: その接続の回しでだけ見る(ほかの接続では n/a)。モックの決まった文を見る確かめを、実モデルの回しから外すため
 export const CHECK_ONLY = ['mock', 'claude-code'];
@@ -74,7 +80,7 @@ function checkExpect(problems, where, item, { knownTool }) {
   checkKeys(problems, where, item, ['check', ...CHECK_KEYS[check], 'only']);
   if (item.only !== undefined) oneOf(problems, `${where}.only`, item.only, CHECK_ONLY, { label: '接続' });
   const required = check === 'toolCalled' || check === 'noToolRun';
-  if (check === 'toolCalled' || check === 'noToolCall' || check === 'noToolRun') {
+  if (check === 'toolCalled' || check === 'noToolCall' || check === 'noToolRun' || check === 'retrieved') {
     const tool = toolNameOf(problems, `${where}.tool`, item.tool, { required });
     if (tool) knownTool(`${where}.tool`, tool);
   }
@@ -97,6 +103,8 @@ function checkExpect(problems, where, item, { knownTool }) {
   if (check === 'stateHas') named(problems, `${where}.field`, item.field, KEY_PATTERN, { hint: 'ai.json の項目の key' });
   if ((check === 'recordHas' || check === 'noRecord' || check === 'stateHas') && item.equals !== undefined) jsonValue(problems, `${where}.equals`, item.equals);
   if (check === 'noAskAgain' && item.words !== undefined) texts(problems, `${where}.words`, item.words, { min: 1, max: 20, maxChars: 100 });
+  // 探すべき文書の id(1 つ以上)
+  if (check === 'retrieved') texts(problems, `${where}.docs`, item.docs, { min: 1, max: 20, maxChars: 64 });
   if (check === 'noRepeat') integer(problems, `${where}.times`, item.times, { min: 1, max: 10 });
   if (check === 'judge') {
     text(problems, `${where}.aspect`, item.aspect, { required: true, max: 40 });

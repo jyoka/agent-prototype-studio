@@ -20,7 +20,7 @@
 | 構成をデータにする | 試作品の中の AI を、`app/composition.json` に書く構成として扱う。回し手、参加者(`agent`、`harness`、`human`)、ツール、プロンプトの枠、ガードレール、会話の枠、前提を表す |
 | 構成 B は今のまま | `composition.json` のない試作品は、`ai.json`(版 2)の harness 1 つの構成として読む。`ai.json` の版は上げない。`studio.ai` の返す会話の形も今のまま |
 | 流用を受け入れ条件にする | 形の違う 3 つの構成(A、B、C)を、Studio のコードを変えずにデータだけで表す。新しい構成を足す変更で `src/` と `bin/` が変わらないことを、カードで確かめる |
-| ツールは宣言 | 試作品のツールは `app/tools.json` に、決まった 5 つの処理(`search`、`get`、`record`、`fixed`、`handoff`)で書く。Studio のコード(ツールの口)が解釈する。データは `app/` の中の JSON だけを読む |
+| ツールは宣言 | 試作品のツールは `app/tools.json` に、決まった 5 つの処理(`search`、`get`、`record`、`fixed`、`handoff`)で書く(後に #420 で `delegate`、#421 で文書の検索の `retrieve` を足し、7 つになった)。Studio のコード(ツールの口)が解釈する。データは `app/` の中の JSON だけを読む |
 | ツールを MCP で出す | ツールの口を、stdio の MCP サーバー(`bin/tools-mcp.js`、サーバーの名前は `proto`)として出す。模擬のエージェントには `--mcp-config` で 1 つだけ渡し、構成に書いた名前だけを `--allowedTools` に並べる |
 | 模擬のエージェント | Claude Code を、返事ごとに 1 回起動する。組み込みの道具は渡さない(`--tools ""`)。`--safe-mode` の代わりに ADR-0002 の案 5 の組み合わせを使う。cwd は空の一時フォルダー。会話は Studio が持ち、stdin で渡す |
 | 前提を差し替えられる | 相手の仕様の分からない所(モデル、プロンプトの土台と枠の長さ、メッセージの種類、ツールの呼び方と認証、記録の取り方)は、`app/assumptions/*.json` にだけ置く。記録に前提の `id` と指紋を残す |

@@ -47,15 +47,18 @@ async function recounter(appDir) {
     process.exit(3);
   }
   const scenarios = new Map(evals.map(({ scenario }) => [scenario.id, scenario]));
-  // 構成のファイル → { toolNames, hasHandoffs, recordWriters }。構成のファイルのない組(構成 B の読み替え)は、ツールも引き継ぎもない
-  const facts = new Map([[null, { toolNames: new Set(), hasHandoffs: false, recordWriters: new Map() }]]);
+  // 構成のファイル → { toolNames, retrieveTools, hasHandoffs, recordWriters }。構成のファイルのない組(構成 B の読み替え)は、ツールも引き継ぎもない
+  const facts = new Map([[null, { toolNames: new Set(), retrieveTools: new Set(), hasHandoffs: false, recordWriters: new Map() }]]);
   const factsOf = async (file) => {
     if (facts.has(file)) return;
     const composition = await readJson(path.join(appDir, file));
     const tools = composition.tools ? (await readJson(path.join(appDir, composition.tools))).tools ?? [] : [];
     const recordWriters = new Map();
     for (const tool of tools.filter((t) => t.do?.op === 'record')) recordWriters.set(tool.do.into, [...(recordWriters.get(tool.do.into) ?? []), tool.name]);
-    facts.set(file, { toolNames: new Set(composition.participants.flatMap((p) => p.tools ?? [])), hasHandoffs: (composition.handoffs ?? []).length > 0, recordWriters });
+    const toolNames = new Set(composition.participants.flatMap((p) => p.tools ?? []));
+    // 文書の検索(op: retrieve)のツール。retrieved を記録から決め直すため(task 421)
+    const retrieveTools = new Set(tools.filter((t) => t.do?.op === 'retrieve' && toolNames.has(t.name)).map((t) => t.name));
+    facts.set(file, { toolNames, retrieveTools, hasHandoffs: (composition.handoffs ?? []).length > 0, recordWriters });
   };
   return async (result, dir) => {
     for (const group of result.groups) await factsOf(group.composition.file ?? null);
