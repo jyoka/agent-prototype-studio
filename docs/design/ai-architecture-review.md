@@ -100,7 +100,7 @@ RAG の判定は、棚の読み方を簡単な方から順に問います。足�
 |---|---|---|---|---|
 | 固定の流れ | 手順はコードが決める。モデルは読み取りと言い方だけ | コード | `harness` の参加者の `flow` と `escalate`([agent-simulation.md の 2.8](agent-simulation.md#28-固定の流れharness-の参加者からツールを呼ぶ)) | #419 |
 | 単一エージェント | 1 つの AI が、渡された道具から選んで進む | モデル | `agent` の参加者 1 人とツール(今の構成で書ける) | 今あるもの |
-| マスターとサブ | 親の AI が、子の AI に仕事を任せて結果を受け取る | モデル。深さと回数はコード | 無い。今の構成に親子の委任はない | #420 |
+| マスターとサブ | 親の AI が、子の AI に仕事を任せて結果を受け取る | モデル。深さと回数はコード | `agent` の参加者どうしの `delegations` と、委任のツール(`op: "delegate"`)([agent-simulation.md の 2.9](agent-simulation.md#29-マスターとサブ親の-ai-が子の-ai-に仕事を任せる)) | #420 |
 
 ### 判断の順
 
@@ -234,7 +234,7 @@ AI 同士の引き継ぎ(受付の AI から相談の AI へ会話を渡す形)�
 | 場面、プロンプト、ツールの宣言、守りの値 | 要らない | `app/` |
 | 参加者の種類(`kind`) | **要る** | `src/server/sim/composition.js`、`orchestrator.js` |
 | 流れからツールを呼ぶ書き方(固定の流れ) | 足した(#419)。次の流れは書き方を足さずに書ける | `composition.js`、`src/server/product-ai/harness.js`、`tool-gate.js` |
-| 親子の委任(マスターとサブ) | **要る**(1 回だけ。#420) | `composition.js`、`orchestrator.js`、実行の記録 |
+| 親子の委任(マスターとサブ) | 足した(#420)。次のサブは書き方を足さずに書ける | `composition.js`、`orchestrator.js`、`tools.js`、`tool-gate.js`、`tools-mcp.js`、実行の記録 |
 | 流れの条件の語(`when`。人に渡す条件など) | **要る** | `composition.js`、`src/server/product-ai/` |
 | ツールの処理(`op`。文書の検索など) | **要る** | `src/server/sim/tools.js`、`tool-gate.js` |
 | 確かめの種類(`check`)、守りの層(`layer`) | **要る** | `src/server/sim/evals.js`、`eval-run.js`、`eval-recount.js`、`composition.js` |

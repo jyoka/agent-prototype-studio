@@ -2,7 +2,7 @@
 
 - 状態: **案**(2026-10-28)。出典のタスク: jyoka/tasks#328。決定の記録は [ADR-0003](../adr/0003-agent-simulation.md)(案)
 - 関係するカード: jyoka/tasks#327(aica の全部の入り口に共通の会話の層。作業中)
-- [AI 構成の審査](ai-architecture-review.md)(案。jyoka/tasks#416)との関係: この文書の土台の上に、人の承認を足す。R1〜R5 の条件は変えない。新しい処理を足す #419、#420、#421 は R3 の例外で、理由は審査の設計の 5 節に書いた。構成 C(AI 同士の引き継ぎ)は流用を試した結果として残し、審査の選択肢には出さない(審査の設計の 3 節)。C3 は #419 で、親子の委任は #420 で足す
+- [AI 構成の審査](ai-architecture-review.md)(案。jyoka/tasks#416)との関係: この文書の土台の上に、人の承認を足す。R1〜R5 の条件は変えない。新しい処理を足す #419、#420、#421 は R3 の例外で、理由は審査の設計の 5 節に書いた。構成 C(AI 同士の引き継ぎ)は流用を試した結果として残し、審査の選択肢には出さない(審査の設計の 3 節)。C3 は #419 で、親子の委任は #420 で足した(2.9)
 - 読んだもの: [PRD](../prd.md)、[HLD](../architecture/hld.md)、[harness.md](harness.md)、[ADR-0001](../adr/0001-local-runtime-and-isolation.md)、[ADR-0002](../adr/0002-observer-and-harness.md)、[configuration.md](../configuration.md)、今のコード(`src/server/product-ai/`、`src/server/observe-mcp.js`、`src/server/product-ai/claude-code.js` の `buildArgs`、`src/runtime/runtime.js`)、jyoka/tasks#327 の Goal、jyoka/aica の `evals/fulltime_hearing/README.md`
 - 範囲: 設計だけ。実装は 7 節のカードで行う。実モデルは呼んでいない
 - データの例は、どれも架空。相手の会社の仕様の推測は、**前提**(3.4)の例として架空の値で書いた。本物の仕様ではない
@@ -324,6 +324,7 @@ sim-8 で、構成 C を見本のバイト探し(`samples/part-time/app/`)に、
 | C2. ツールだけを出し、呼び手を何種類も試す | 構成 A から DIP の枠を外した構成を 1 つ置き、前提を 3 つ用意する(モデルを 3 種、土台のプロンプトを 2 種)。場面の回しで前提を並べる(4.3) |
 | C3. 自社の harness がツールを使う | #419 で足した。モデルにツールを渡さず、流れの段からコードが呼ぶ(2.8)。見本は `samples/redelivery/app/`。R3 の例外で、理由は [審査の設計の 5 節](ai-architecture-review.md#5-選択肢はデータにする) |
 | C4. 相談役と求人の係のエージェントが、役割を分ける | `agent` の参加者を 2 人にし、`handoff` のツールで行き来する。辺に両向きを書く |
+| C5. マスターとサブ(親の AI が子の AI に任せる) | #420 で足した。`delegations` の辺と委任のツール(`op: "delegate"`)で書く(2.9)。R3 の例外 |
 
 sim-8 で C2 を試した結果: コードを足さずに書けた。見本のバイト探しの `compositions/c2.json`(構成 A から DIP の枠 `dip-guide` と頼み `no-contact-ask` を外し、出口の確かめも外した。ツール 5 つとモックの決まりは同じ)と、前提 3 つ(`callers/`。モデル 3 種、土台のプロンプト 2 種)で、`npm run evals -- <プロジェクト> --composition compositions/c2.json --assumptions caller-sonnet,caller-haiku,caller-opus` が 3 組を回す。分かったこと:
 
@@ -438,6 +439,86 @@ npm run evals -- <プロジェクト> --composition composition.json,composition
 - 実モデルで回した結果はない。形が動くことをモックと偽の `claude` で確かめた
 - `--tools ""`、`--safe-mode`、MCP なしの起動は、`model` を書いても変わらない(`test/e2e/fixed-flow.spec.js`)
 
+### 2.9 マスターとサブ(親の AI が子の AI に仕事を任せる)
+
+親の AI(マスター)が、子の AI(サブ)に仕事を任せ、結果を受け取って続ける構成の書き方です。jyoka/tasks#420 で足しました。任せるかと依頼の文はモデルが決めます。任せてよい辺、深さ、1 ターンの回数はコードが守ります(審査の設計の 2 節の「モデル。深さと回数はコード」)。
+
+見本は `samples/redelivery/app/compositions/master-sub.json`(架空のしおかぜ便の再配達)です。受付のマスターが、荷物の係と予約の係の 2 人のサブに任せます。固定の流れ(`composition.json`)と単一エージェント(`compositions/single-agent.json`)と、同じ場面の一覧で比べられます。
+
+```json
+{
+  "driver": "desk-master",
+  "participants": [
+    { "id": "desk-master", "kind": "agent", "label": "再配達の受付(マスター、模擬)",
+      "prompt": [{ "from": "assumptions", "key": "hostPrompt" }, { "slot": "master-guide", "file": "prompts/master-guide.md" }],
+      "tools": ["ask_parcel_desk", "ask_booking_desk", "handoff_to_staff"], "mock": "mocks/desk-master.json" },
+    { "id": "parcel-sub", "kind": "agent", "label": "荷物の係(サブ、模擬)",
+      "prompt": [{ "slot": "parcel-sub-guide", "file": "prompts/parcel-sub.md" }],
+      "tools": ["get_parcel"], "mock": "mocks/parcel-sub.json" },
+    { "id": "booking-sub", "kind": "agent", "label": "予約の係(サブ、模擬)",
+      "prompt": [{ "slot": "booking-sub-guide", "file": "prompts/booking-sub.md" }],
+      "tools": ["record_consent", "save_redelivery"], "mock": "mocks/booking-sub.json" },
+    { "id": "staff", "kind": "human", "label": "担当者(模擬)" }
+  ],
+  "handoffs": [{ "from": "desk-master", "to": "staff" }],
+  "delegations": [
+    { "from": "desk-master", "to": "parcel-sub", "carry": ["parcel_no"] },
+    { "from": "desk-master", "to": "booking-sub", "carry": ["parcel_no", "slot"] }
+  ],
+  "limits": { "maxTurns": 12, "maxHandoffs": 1, "maxDelegations": 2, "maxDepth": 1 }
+}
+```
+
+任せるのはツールです。`tools.json` に `op: "delegate"` のツールを書きます。
+
+```json
+{ "name": "ask_parcel_desk", "description": "荷物の係(サブの AI)に、荷物を番号で調べてもらう。係の結果は、この返事の後に届く",
+  "inputSchema": { "type": "object", "properties": {
+    "task": { "type": "string", "maxLength": 200 }, "parcel_no": { "type": "integer", "minimum": 1000, "maximum": 9999 } },
+    "required": ["task", "parcel_no"] },
+  "do": { "op": "delegate", "to": "parcel-sub" } }
+```
+
+| 項目 | 中身 | 書かないとき |
+|---|---|---|
+| `delegations[]` | 任せてよい辺。`from` と `to` は、どちらも `agent` の参加者。20 本まで | 任せない(今の構成と同じ) |
+| `delegations[].carry` | サブに渡す引数の名前。その辺の委任のツールの引数だけ。`task` は書かない(いつも渡す) | 依頼の文だけを渡す |
+| `delegations[].history` | `true` なら、サブにも会話の全体を渡す | `false`。サブが見るのは依頼の文と `carry` の値だけ |
+| 委任のツール(`op: "delegate"`) | `to` は任せる先。`inputSchema` に `task`(文字列。`maxLength` が要る)を書き、`required` に入れる | |
+| `limits.maxDelegations` | 1 ターンに任せる回数。1〜10 | 3 |
+| `limits.maxDepth` | 委任の深さ。マスターが 0、サブが 1、サブのサブが 2。1〜3 | 1(サブはさらに任せられない) |
+| モックの `when.delegated` | 任せた先の結果を受け取った後の返事でだけ当たる決まり。返事の型で `{delegated.text}`(受け取ったサブの返事の文)を使える | |
+
+1 ターンの進み方です。
+
+1. マスターが返事を作る。委任のツールを呼ぶと、ツールの口が辺と上限を確かめて頼みを受け取り、「結果はこの返事の後に渡します」と返す
+2. 頼みがあれば、その返事は途中の返事として利用者に見せない(引き継ぎも使わない)。会話の進め方が、辺、深さ、回数をもう一度確かめる
+3. 通った頼みごとに、サブが 1 回話す(`delegate:<サブ>` の節)。サブのプロンプト、ツール、出口の確かめは、サブの参加者のもの
+4. サブの返事の文を `<任せた仕事の結果>` に入れて、マスターをもう一度呼ぶ。止めた頼みは「任せられませんでした: 理由」として入れる
+5. マスターが頼まずに返事を作ったら、それがこのターンの返事になる
+
+| 所 | 決めたこと | 理由 |
+|---|---|---|
+| 結果の渡し方 | ツールの呼び出しの中では結果を返さない。マスターの返事の後にコードがサブを回し、結果を足してマスターをもう一度呼ぶ | Claude Code の接続では、ツールの MCP サーバーが別のプロセスで動く。サブの起動、費用、回数の上限を、会話の進め方の 1 か所で数えるため。モックと Claude Code で同じ進み方になる |
+| 上限を守る所 | 2 か所。ツールの口が、残りの深さ(`depthLeft`)と回数(`delegationsLeft`)で頼みを断る。会話の進め方も、サブを回す前に同じ上限を確かめ直す。頼みがどれも止まったら、マスターをもう一度呼ばずに決まった文にする | 別のプロセスの接続が上限を超える頼みを返しても、サブを動かさないため。止まった後に呼び続けないため |
+| 回数の数え方 | 1 ターンごとに数え直す。サブのサブへの委任も、同じ 1 ターンの回数に数える | 1 ターンの起動の数と費用に上限を付けるため。会話の全体で数えると、後のターンで任せられなくなる |
+| サブに渡すもの | 依頼の文と `carry` の値だけ。会話の全体は `history: true` の辺だけ。ツールは、サブの `tools` の名前だけ | 「サブはそれぞれプロンプト、ツール、文脈を持つ」を、コードで分けるため(S14) |
+| サブの置き場 | サブは回し手になれない。引き継ぎの辺(`handoffs`)にも書けない。人と harness には任せられない。回し手からたどれない辺と、深さが `limits.maxDepth` を超える辺は、使われない辺として検査で止める | サブは会話を持たず、結果を任せた参加者に返すため。会話の責任を移す形は、AI 同士の引き継ぎ(審査の設計の 3 節)と同じになる |
+| 固定の流れ | 流れ(`flow`)から委任のツールは呼べない | 固定の流れはモデルに順番を任せないため(2.8) |
+| 記録 | `sim-turn` に `delegations`(`from`、`to`、`depth`、`round`、`effect`、止めた理由、サブの返事の文字数)を足す。模擬のエージェントの段に `depth`、`parent`(任せた参加者)、`round`(同じ参加者を何回目に呼んだか)を足す。委任のツールの呼び出しには `delegate: { to }` を残す | 誰が誰に任せ、誰がどのツールを呼んだかを、1 件の記録で読めるようにするため。委任の辺を書いた構成だけに足す(R2) |
+| 変化の説明 | 委任の辺の増減と `carry`、`history` の変化を出す。`maxDelegations` と `maxDepth` を上げたら、守りが減ったとして出す。委任の辺と上限は、ガードレールの指紋に入れる | 直すラウンドで上限を緩めて通すことを、見えるようにするため |
+| モックの決まり | `when.delegated` を足した。モックは 1 回の返事で 1 つしかツールを呼べないので、同意の記録と再配達の書き込みは 2 ターンに分けた(単一エージェントのモックと同じ) | モックは決まった結果を返すためのもので、品質を測るものではないため(3.3) |
+| R3 の例外 | `composition.js`、`orchestrator.js`、`tools.js`、`tool-gate.js`、`tools-mcp.js`、`agent-claude-code.js`、`agent-mock.js`、`mocks.js`、`changes.js`、画面の記録(`studio.js`)を変えた | 新しい種類の処理(親子の委任)を足すため(審査の設計の 5 節)。次のサブは、データだけで足せる |
+
+同じ場面の一覧を 3 つの形で回せます。
+
+```sh
+npm run evals -- <プロジェクト> --composition composition.json,compositions/single-agent.json,compositions/master-sub.json
+```
+
+- モックでは 3 つとも 10 本が通る(`test/e2e/delegate.spec.js`)
+- 実モデルで回した結果は [docs/evidence/real-delegate/](../evidence/real-delegate/README.md) にある
+
 ## 3. 模擬の部品
 
 ### 3.1 全体の図
@@ -491,8 +572,9 @@ flowchart TD
 ```
 
 - 誰が話すか、引き継ぎを通すか、上限、ツールを動かすか、ツールが何を返すかは、どれもコードが決める。モデルが決めるのは、返事の中身とツールの選び方だけ
+- マスターとサブの委任(2.9)は、引き継ぎと別に数える。任せた先(サブ)は話す参加者を替えず、結果を任せた参加者に返す。深さは `limits.maxDepth`、1 ターンの回数は `limits.maxDelegations` まで
 - 1 ターンで引き継ぐのは 1 回まで。引き継いだ先の参加者が、同じターンで 1 回だけ話す。引き継ぎの行き来で止まらなくなるのを防ぐ。1 つの会話の引き継ぎは `limits.maxHandoffs` まで
-- 会話の履歴は、今と同じく Studio が持ち、毎回すべてを渡す(ADR-0001 の #276)。参加者ごとに見える履歴は同じにする(推測で分けない。分けたいときは前提に足す)
+- 会話の履歴は、今と同じく Studio が持ち、毎回すべてを渡す(ADR-0001 の #276)。参加者ごとに見える履歴は同じにする(推測で分けない。分けたいときは前提に足す)。例外はマスターとサブのサブで、辺の `history` が `true` のときだけ履歴を渡す(2.9)
 
 ### 3.3 模擬のエージェント
 
@@ -851,6 +933,7 @@ sim-5 で決めた細かい振る舞い(この文書に書いていなかった�
 - 1 回の会話で、どの参加者がどのツールをどんな引数で呼び、何が返り、どの層の守りがどこで止めたかが、この記録で全部分かる
 - 記録は今と同じく伏せてから残す(`src/server/redact.js`)。引数に電話番号らしい文字があれば伏せる。ツールの結果は長さだけと、項目の名前を残す(全文は `.studio/sim/` の `calls.jsonl`。伏せた形)
 - 構成 B の記録は今のまま(harness の段の中身)。参加者の名前だけを足す
+- 委任の辺を書いた構成(2.9)では、`delegations`(誰が誰に任せ、通したか)と、模擬のエージェントの段の `depth`、`parent`、`round` を足す
 
 sim-10 で決めた細かい振る舞い(画面の記録の出し方と、構成と前提の選び方。コードは `src/ui/studio.js` の `traceSim`、`renderSimChoice` と、`src/server/product-ai/session.js` の `chooseSimulation`。使い方は [usage.md の「構成と前提を選ぶ」](../usage.md#構成と前提を選ぶ)):
 

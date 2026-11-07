@@ -225,7 +225,8 @@ test('6 段を進んで戻れる。場面の段が下書きを書き、構成の
     expect(gate('evals').evalCount).toBe(5);
     // 全部が当てはまらない(n/a)のではなく、実際に回って通っている
     expect(gate('evals').passedCount).toBe(5);
-    expect(run.status).toBe('passed');
+    // 場面の後に起動の確認(G5)が回るので、run が終わるのを待つ
+    await expect.poll(async () => (await studio.api(`/api/projects/${id}/build-requests`)).runs.at(-1)?.status, { timeout: 60_000 }).toBe('passed');
     await page.screenshot({ path: path.join(UX_SHOTS, 'J2-built.png'), fullPage: true });
     await expectNoDevWordsOnScreen(page);
 

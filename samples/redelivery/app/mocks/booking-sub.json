@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "rules": [
+    { "when": { "contains": ["同意を記録"] }, "call": { "tool": "record_consent", "args": { "agreed": true } }, "reply": [{ "kind": "text", "text": "同意を記録しました。" }] },
+    { "when": { "contains": ["再配達に書いて"] }, "call": { "tool": "save_redelivery", "args": { "parcel_no": 1001, "slot": "午前中" } }, "reply": [{ "kind": "text", "text": "再配達を受け付けました。" }] }
+  ],
+  "otherwise": [{ "kind": "text", "text": "頼まれたことが分からないので、何もしませんでした。" }]
+}

@@ -31,6 +31,30 @@
       "description": "担当者(人)に引き継ぐ",
       "inputSchema": { "type": "object", "properties": {} },
       "do": { "op": "handoff", "to": "staff" }
+    },
+    {
+      "name": "ask_parcel_desk",
+      "description": "荷物の係(サブの AI)に、荷物を番号で調べてもらう。係の結果は、この返事の後に届く",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "task": { "type": "string", "maxLength": 200 }, "parcel_no": { "type": "integer", "minimum": 1000, "maximum": 9999 } },
+        "required": ["task", "parcel_no"]
+      },
+      "do": { "op": "delegate", "to": "parcel-sub" }
+    },
+    {
+      "name": "ask_booking_desk",
+      "description": "予約の係(サブの AI)に、同意の記録と再配達の書き込みを頼む。係の結果は、この返事の後に届く",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task": { "type": "string", "maxLength": 200 },
+          "parcel_no": { "type": "integer", "minimum": 1000, "maximum": 9999 },
+          "slot": { "type": "string", "enum": ["午前中", "昼すぎ", "夕方", "夜"] }
+        },
+        "required": ["task"]
+      },
+      "do": { "op": "delegate", "to": "booking-sub" }
     }
   ]
 }

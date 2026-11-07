@@ -1,0 +1,32 @@
+[
+  {
+    "kind": "tool-call",
+    "entry": {
+      "tool": "save_redelivery",
+      "args": {
+        "parcel_no": 1001,
+        "slot": "午前中"
+      },
+      "result": {
+        "ok": false,
+        "error": "記録「consent」がありません"
+      },
+      "ms": 0,
+      "guards": [
+        {
+          "layer": "tool",
+          "guard": "schema",
+          "effect": "passed",
+          "owner": "shiokaze"
+        },
+        {
+          "layer": "tool",
+          "guard": "requires",
+          "effect": "blocked",
+          "owner": "shiokaze",
+          "reason": "記録「consent」がありません"
+        }
+      ]
+    }
+  }
+]

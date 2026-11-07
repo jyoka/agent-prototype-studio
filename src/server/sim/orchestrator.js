@@ -4,7 +4,7 @@ import { normalizeValue } from '../product-ai/definition.js';
 import { numbersIn } from '../product-ai/guards.js';
 import { startFlowMemory, startProgress, turn } from '../product-ai/harness.js';
 import { agentPrompt, agentStdin, maxPerReplyOf } from './agent-claude-code.js';
-import { isPlainObject } from './check.js';
+import { SIM_LIMITS, isPlainObject } from './check.js';
 import { describeParts, fitParts, partKindsOf, partsToCheckedText, partsToText, replySchema } from './parts.js';
 import { callTool, refusedEntry } from './tool-gate.js';
 
@@ -14,6 +14,10 @@ import { callTool, refusedEntry } from './tool-gate.js';
 // 固定の流れ(harness の参加者の flow と escalate。2.8)では、harness の節の中でコードがツールを呼ぶ。モデルにはツールを渡さない。
 // 1 ターンは決まった節の並びで回り、通った節を記録の nodes に残す(S9):
 //   accept → (harness:<id> | prompt:<id> → agent:<id> → surface:<id> → output:<id> | human:<id>) → handoff → (引き継いだ先の 1 回) → reply
+// マスターとサブの委任(構成の delegations。2.9)では、agent の参加者の返事が委任を頼んだら、コードが辺と上限を確かめ、
+// delegate:<任せる先> の節で任せる先(サブ)を 1 回話させ、結果を足して任せた参加者をもう一度呼ぶ:
+//   prompt:<親> → agent:<親> → surface:<親> → output:<親> → delegate:<子> → (prompt:<子> → … → output:<子>) → prompt:<親> → …
+// 深さ(limits.maxDepth)と 1 ターンの回数(limits.maxDelegations)はコードが数える。モデルが決めるのは、任せるかと依頼の文だけ。
 // モデル(接続)を呼ぶのは harness:<id> と agent:<id> の節の中だけ。ほかの節はコードだけで進む。
 // 会話(conversation)は値で受け取り、新しい会話を返す。ファイルは読み書きしない(Claude Code の接続だけが .studio/sim/ に書く)。
 
@@ -25,6 +29,8 @@ export const HUMAN_FALLBACK_TEXT = '担当の者です。お話を伺います�
 export const HANDOFFS_PER_TURN = 1;
 // 1 回の返事の、出口の確かめと形の崩れのやり直しを含めた模擬のエージェントの呼び出しの数
 export const AGENT_ATTEMPTS = 2;
+// 委任がどれもコードの確かめで止まったときの決まった文(任せた参加者をもう一度呼ばない)
+export const DELEGATION_FALLBACK_TEXT = 'すみません、いまはお調べできませんでした。もう一度送ってください。';
 
 export class SimError extends Error {
   constructor(code, message) {
@@ -142,6 +148,19 @@ export async function runTurn({
     record.nodes.push(name);
     onNode(name);
   };
+  // マスターとサブの委任(2.9)。委任の辺を書いた構成だけ、記録に delegations を足す(今の構成の記録を変えないため。R2)
+  const delegating = Array.isArray(composition.delegations);
+  if (delegating) record.delegations = [];
+  // このターンに通した委任の数(limits.maxDelegations で切る)
+  let delegationsUsed = 0;
+  // ツールの口と Claude Code の接続に渡す、委任の文脈。pending は、この返事の中ですでに頼んだ委任の数
+  const delegationContext = (depth, pending = 0) => (delegating
+    ? {
+        delegations: composition.delegations,
+        depthLeft: composition.limits.maxDepth - depth,
+        delegationsLeft: Math.max(0, composition.limits.maxDelegations - delegationsUsed - pending),
+      }
+    : {});
   const next = structuredClone(conversation);
   const labels = Object.fromEntries(composition.participants.map((p) => [p.id, p.label]));
   const history = historyOf(conversation.messages);
@@ -166,8 +185,9 @@ export async function runTurn({
   }
   next.turns += 1;
 
-  // 同じプロセスの中のツールの口。モックの模擬のエージェントが使う。呼んだ参加者、構成の辺、前提を渡す(MCP サーバーと同じ文脈)
-  const inProcessTools = (participant, handoffs) => {
+  // 同じプロセスの中のツールの口。モックの模擬のエージェントが使う。呼んだ参加者、構成の辺、前提を渡す(MCP サーバーと同じ文脈)。
+  // delegations には、通った委任の頼みを足す。depth は呼んだ参加者の委任の深さ(回し手と引き継いだ先は 0)
+  const inProcessTools = (participant, handoffs, delegations = [], depth = 0) => {
     let calls = 0;
     const max = maxPerReplyOf(assumption);
     return {
@@ -194,6 +214,7 @@ export async function runTurn({
             calls: next.calls,
             assumption,
             handoffs: composition.handoffs,
+            ...delegationContext(depth, delegations.length),
           },
           name,
           args,
@@ -203,31 +224,50 @@ export async function runTurn({
         record.steps.push(outcome.entry);
         if (outcome.ok) toolResults.push(outcome.result);
         if (outcome.handoff) handoffs.push(outcome.handoff);
+        if (outcome.delegate) delegations.push(outcome.delegate);
         return outcome;
       },
     };
   };
 
-  // 模擬のエージェントが 1 回話す。形の崩れと、止める出口の確かめ(enforce)に合わなければ 1 回やり直し、だめなら型の文
-  async function speakAgent(participant, handedOff) {
+  // 模擬のエージェントが 1 回返事を作る。形の崩れと、止める出口の確かめ(enforce)に合わなければ 1 回やり直し、だめなら型の文。
+  // 委任(2.9)では、task は任された仕事({ from, task, carry, history }。サブのときだけ)、received はこのターンに任せた先から
+  // 受け取った結果、depth は委任の深さ、parent は任せた参加者、round は同じ参加者を何回目に呼んだか。
+  // 返す: { message, handoffs(使う引き継ぎの頼み), delegations(使う委任の頼み) }
+  async function replyAgent(participant, handedOff, { task = null, received = [], depth = 0, parent = null, round = 1 } = {}) {
     const { id } = participant;
     node(`prompt:${id}`);
     const kinds = partKindsOf(assumption);
     const prompt = agentPrompt({ participant, assumption, prompts: sim.prompts, guards: composition.guards, withoutPromptGuards, kinds });
     const schema = replySchema(assumption);
     const guards = composition.guards.filter((guard) => guard.layer === 'output' && guard.on === id);
-    const step = { participant: id, kind: 'agent', connection: agent.kind, real: Boolean(agent.real), ms: 0, costUsd: null, prompt: { pieces: prompt.pieces, asked: prompt.asked } };
+    const step = {
+      participant: id,
+      kind: 'agent',
+      connection: agent.kind,
+      real: Boolean(agent.real),
+      ms: 0,
+      costUsd: null,
+      prompt: { pieces: prompt.pieces, asked: prompt.asked },
+      // 親子(2.9)。委任の辺を書いた構成だけ
+      ...(delegating ? { depth, ...(parent ? { parent } : {}), round } : {}),
+    };
     record.steps.push(step);
+    // サブが受け取るのは依頼の文と辺の carry の値。会話の全体は、辺の history が true のときだけ
+    const heard = task ? { text: task.task, action: null } : { text, action };
+    const seen = task ? (task.history ? [...history, { role: 'user', text }] : []) : history;
     // 引き継ぎは、使った返事の回のものだけを使う。やり直した回と、決まった文に代えた回の引き継ぎは使わない。
     // 記録の店と呼び出しの数は、本番のツールと同じく、やり直した回の分も残る
     let handoffs = [];
+    let delegations = [];
     let problem = null;
     let parts = null;
     for (let attempt = 1; attempt <= AGENT_ATTEMPTS; attempt += 1) {
       node(`agent:${id}`);
       handoffs = [];
+      delegations = [];
       const started = Date.now();
-      const stdin = agentStdin({ messages: history, labels, input: { text, action }, handedOff, problem });
+      const stdin = agentStdin({ messages: seen, labels, input: heard, handedOff, problem, task, received, withHistory: !task || task.history });
       if (attempt === 1) step.command = agent.describe?.({ tools: participant.tools, schema, systemPrompt: prompt.text, assumption })?.command;
       const mock = participant.mock ? sim.mocks.get(participant.mock) ?? null : null;
       if (agent.kind === 'mock' && !mock) {
@@ -236,9 +276,10 @@ export async function runTurn({
       const replied = await agent.reply({
         participant,
         mock,
-        input: { text, action },
+        input: heard,
         turns: next.turns,
-        tools: inProcessTools(participant, handoffs),
+        tools: inProcessTools(participant, handoffs, delegations, depth),
+        delegated: received,
         systemPrompt: prompt.text,
         stdin,
         schema,
@@ -254,6 +295,7 @@ export async function runTurn({
           store: next.store,
           calls: next.calls,
           onLaunch: context.onLaunch,
+          ...delegationContext(depth),
         },
       });
       step.ms += Date.now() - started;
@@ -264,6 +306,7 @@ export async function runTurn({
       if (replied.store) next.store = replied.store;
       if (replied.calls) next.calls = replied.calls;
       if (replied.handoffs) handoffs.push(...replied.handoffs);
+      if (replied.delegations) delegations.push(...replied.delegations);
       if (replied.command) step.command = replied.command;
 
       node(`surface:${id}`);
@@ -305,10 +348,60 @@ export async function runTurn({
     if (!parts) {
       parts = [{ kind: 'text', text: OUTPUT_FALLBACK_TEXT }];
       if (handoffs.length > 0) record.steps.push({ participant: id, handoffIgnored: handoffs.map((h) => h.to), reason: '決まった文に代えた返事の引き継ぎは使わない' });
+      if (delegations.length > 0) record.steps.push({ participant: id, delegationIgnored: delegations.map((d) => d.to), reason: '決まった文に代えた返事の委任は使わない' });
       handoffs = [];
+      delegations = [];
       record.steps.push({ participant: id, fallback: true, output: { parts: describeParts(parts) }, reason: '形が崩れているか、止める出口の確かめに、やり直しても合わなかったので、決まった文に代えた' });
     }
-    return { message: { role: 'assistant', from: id, text: partsToText(parts), parts }, handoffs };
+    return { message: { role: 'assistant', from: id, text: partsToText(parts), parts }, handoffs, delegations };
+  }
+
+  // 模擬のエージェントが 1 回話す。委任を頼まれたら、コードが辺と上限を確かめてサブを回し、結果を足してもう一度呼ぶ(2.9)。
+  // 委任を頼んだ返事は途中の返事で、利用者には見せない。その返事の引き継ぎも使わない。
+  // 任された参加者(サブ)も同じ関数で話す(深さを 1 つ足す)。サブの引き継ぎは使わない
+  async function speakAgent(participant, handedOff, { task = null, depth = 0, parent = null } = {}) {
+    const { id } = participant;
+    const received = [];
+    for (let round = 1; ; round += 1) {
+      const once = await replyAgent(participant, handedOff, { task, received, depth, parent, round });
+      if (once.delegations.length === 0) return { message: once.message, handoffs: once.handoffs };
+      if (once.handoffs.length > 0) record.steps.push({ participant: id, handoffIgnored: once.handoffs.map((h) => h.to), reason: '委任を頼んだ途中の返事の引き継ぎは使わない' });
+      let passed = 0;
+      for (const asked of once.delegations) {
+        const entry = { from: id, to: asked.to, depth: depth + 1, round, effect: 'passed' };
+        record.delegations.push(entry);
+        const target = participantOf(sim, asked.to);
+        const edge = composition.delegations.find((item) => item.from === id && item.to === asked.to);
+        // ツールの口でも同じ上限を見ている。ここは、別のプロセスの接続(Claude Code)の頼みも含めて、コードが確かめ直す所
+        let reason = null;
+        if (!target || target.kind !== 'agent' || !edge) reason = '構成の delegations にない委任';
+        else if (depth + 1 > composition.limits.maxDepth) reason = `委任は ${composition.limits.maxDepth} 段まで(limits.maxDepth)`;
+        else if (delegationsUsed >= composition.limits.maxDelegations) reason = `1 ターンの委任は ${composition.limits.maxDelegations} 回まで(limits.maxDelegations)`;
+        if (reason) {
+          Object.assign(entry, { effect: 'blocked', reason });
+          received.push({ from: asked.to, refused: reason });
+          continue;
+        }
+        delegationsUsed += 1;
+        passed += 1;
+        node(`delegate:${asked.to}`);
+        const carry = Object.fromEntries((edge.carry ?? []).filter((key) => isPlainObject(asked.carry) && Object.hasOwn(asked.carry, key)).map((key) => [key, asked.carry[key]]));
+        const sub = await speakAgent(target, null, {
+          task: { from: id, task: String(asked.task ?? '').slice(0, SIM_LIMITS.maxText), carry, history: edge.history },
+          depth: depth + 1,
+          parent: id,
+        });
+        if (sub.handoffs.length > 0) record.steps.push({ participant: target.id, handoffIgnored: sub.handoffs.map((h) => h.to), reason: '任された参加者(サブ)は会話を引き継げない' });
+        entry.reply = { chars: [...sub.message.text].length };
+        received.push({ from: target.id, text: sub.message.text });
+      }
+      if (passed === 0) {
+        // 委任がどれもコードの確かめで止まった。上限を超えて呼び続けないよう、もう一度は呼ばずに決まった文にする
+        const parts = [{ kind: 'text', text: DELEGATION_FALLBACK_TEXT }];
+        record.steps.push({ participant: id, fallback: true, output: { parts: describeParts(parts) }, reason: '頼んだ委任が、どれも辺か上限で止まったので、決まった文に代えた' });
+        return { message: { role: 'assistant', from: id, text: partsToText(parts), parts }, handoffs: [] };
+      }
+    }
   }
 
   // harness の参加者が 1 回話す。harness の turn() をそのまま使う(抽出 → 決定 → 言い方 → rules)

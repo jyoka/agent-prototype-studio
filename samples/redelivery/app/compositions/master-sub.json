@@ -1,0 +1,47 @@
+{
+  "formatVersion": 1,
+  "name": "マスターとサブ: 受付の AI が係の AI に任せる(架空)",
+  "driver": "desk-master",
+  "participants": [
+    {
+      "id": "desk-master",
+      "kind": "agent",
+      "label": "再配達の受付(マスター、模擬)",
+      "owner": "shiokaze",
+      "prompt": [
+        { "from": "assumptions", "key": "hostPrompt", "owner": "shiokaze" },
+        { "slot": "master-guide", "owner": "shiokaze", "file": "prompts/master-guide.md" }
+      ],
+      "tools": ["ask_parcel_desk", "ask_booking_desk", "handoff_to_staff"],
+      "mock": "mocks/desk-master.json"
+    },
+    {
+      "id": "parcel-sub",
+      "kind": "agent",
+      "label": "荷物の係(サブ、模擬)",
+      "owner": "shiokaze",
+      "prompt": [{ "slot": "parcel-sub-guide", "owner": "shiokaze", "file": "prompts/parcel-sub.md" }],
+      "tools": ["get_parcel"],
+      "mock": "mocks/parcel-sub.json"
+    },
+    {
+      "id": "booking-sub",
+      "kind": "agent",
+      "label": "予約の係(サブ、模擬)",
+      "owner": "shiokaze",
+      "prompt": [{ "slot": "booking-sub-guide", "owner": "shiokaze", "file": "prompts/booking-sub.md" }],
+      "tools": ["record_consent", "save_redelivery"],
+      "mock": "mocks/booking-sub.json"
+    },
+    { "id": "staff", "kind": "human", "label": "担当者(模擬)", "owner": "shiokaze", "mock": { "reply": "担当の者です。お話を伺います。(模擬の返事)" } }
+  ],
+  "tools": "tools.json",
+  "handoffs": [{ "from": "desk-master", "to": "staff" }],
+  "delegations": [
+    { "from": "desk-master", "to": "parcel-sub", "carry": ["parcel_no"] },
+    { "from": "desk-master", "to": "booking-sub", "carry": ["parcel_no", "slot"] }
+  ],
+  "surface": { "kind": "talk", "theme": "talk" },
+  "assumptions": { "dir": "assumptions", "default": "stand-in" },
+  "limits": { "maxTurns": 12, "maxHandoffs": 1, "maxDelegations": 2, "maxDepth": 1 }
+}

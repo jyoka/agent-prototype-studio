@@ -78,23 +78,41 @@ export function agentPrompt({ participant, assumption, prompts = {}, guards = []
 
 // 模擬のエージェントに渡す本文(stdin)。会話の全体(Studio が持つ履歴)、新しい発言、押したボタン、引き継ぎの知らせ。
 // 記録の店、harness の状態、ほかの参加者のツールなど、Studio の内側の情報は渡さない(S14)。
-// labels は参加者の id → 表示の名前。problem は、前の返事が使えなかったところ(やり直すときだけ)
-export function agentStdin({ messages = [], labels = {}, input, handedOff = null, problem = null }) {
+// labels は参加者の id → 表示の名前。problem は、前の返事が使えなかったところ(やり直すときだけ)。
+// マスターとサブ(2.9): task は任された仕事({ from, task, carry })で、あれば新しい発言の代わりに依頼を渡す。
+// 会話の全体は withHistory(辺の history)のときだけ。received は任せた先から受け取った結果([{ from, text } か { from, refused }])
+export function agentStdin({ messages = [], labels = {}, input, handedOff = null, problem = null, task = null, received = [], withHistory = true }) {
   const line = (message) => {
     if (message.role === 'user') return `[利用者] ${message.text}`;
     if (message.role === 'correction') return `[利用者の修正] ${message.text}`;
     return `[${labels[message.from] ?? 'AI'}] ${message.text}`;
   };
   const carried = handedOff?.carry ? Object.entries(handedOff.carry) : [];
+  const name = (id) => labels[id] ?? id;
   return [
-    '<これまでの会話>',
-    ...(messages.length > 0 ? messages.map(line) : ['(まだありません)']),
-    '</これまでの会話>',
-    '',
-    '<新しい発言>',
-    input.text,
-    '</新しい発言>',
+    ...(withHistory ? ['<これまでの会話>', ...(messages.length > 0 ? messages.map(line) : ['(まだありません)']), '</これまでの会話>', ''] : []),
+    ...(task
+      ? [
+          '<依頼>',
+          `${name(task.from)} から任された仕事です。返事は利用者ではなく、任せた AI が読みます。分かったことだけを短く書いてください。`,
+          ...Object.entries(task.carry ?? {}).map(([key, value]) => `- ${key}: ${JSON.stringify(value)}`),
+          '</依頼>',
+          '',
+          '<依頼の文>',
+          task.task,
+          '</依頼の文>',
+        ]
+      : ['<新しい発言>', input.text, '</新しい発言>']),
     ...(input.action ? ['', '<押したボタン>', input.action, '</押したボタン>'] : []),
+    ...(received.length > 0
+      ? [
+          '',
+          '<任せた仕事の結果>',
+          ...received.map((item) => (typeof item.text === 'string' ? `[${name(item.from)}] ${item.text}` : `[${name(item.from)}] 任せられませんでした: ${item.refused}`)),
+          '</任せた仕事の結果>',
+          'この結果を使って返事を作ってください。足りないときだけ、もう一度任せてください。',
+        ]
+      : []),
     ...(handedOff
       ? ['', '<引き継ぎ>', `${labels[handedOff.from] ?? handedOff.from} から引き継ぎました。`, ...carried.map(([key, value]) => `- ${key}: ${JSON.stringify(value)}`), '</引き継ぎ>']
       : []),
@@ -286,6 +304,8 @@ export function createClaudeCodeAgent({ env = process.env, limits = SIM_AGENT_LI
           '構成に書いた試作品のツールの説明と、ツールの結果(前提の長さまで)',
           'この試作品で話した会話の全体と、新しく送る発言',
           ...(flows.length > 0 ? ['流れがツールの結果から作った文(構成の tell に書いた置き換えの値)'] : []),
+          // マスターとサブ(2.9)。サブには、辺の history が true のときだけ会話の全体を送る
+          ...(simulation?.composition?.delegations ? ['任せた仕事の依頼の文と受け渡す値(サブに)、サブの返事(任せた AI に)'] : []),
         ],
         notSent: 'app/ の他のファイル、記録の店の全体、他の試作品、PC のファイルは送りません。ファイル、コマンド、Web の道具は渡しません。',
       };
@@ -294,17 +314,18 @@ export function createClaudeCodeAgent({ env = process.env, limits = SIM_AGENT_LI
     describe({ mcpConfig, tools, schema, systemPrompt, assumption }) {
       return { command: [path.basename(binName), ...shownArgs(buildSimArgs({ mcpConfig: mcpConfig ?? '<mcp.json>', tools, schema, systemPrompt, assumption }))] };
     },
-    // 1 回の返事。context は会話の進め方が渡す: { projectDir, conversationId, by, toolsFile, handoffs, assumption, userId, store, calls, onLaunch }。
+    // 1 回の返事。context は会話の進め方が渡す: { projectDir, conversationId, by, toolsFile, handoffs, assumption, userId, store, calls, onLaunch,
+    // delegations, depthLeft, delegationsLeft(委任の辺と上限。2.9) }。
     // ツールがあれば、起動の前に .studio/sim/<会話の ID>/ に MCP の設定、文脈、記録の店、呼び出しの数を書き、
     // 起動の後に、呼び出しの記録(calls.jsonl のこの起動の分)、記録の店、呼び出しの数、引き継ぎを読み戻す。
-    // 返す: { output, format, problem, meta, steps, results, store, calls, handoffs, command }
+    // 返す: { output, format, problem, meta, steps, results, store, calls, handoffs, delegations?, command }
     async reply({ participant, systemPrompt, stdin, schema, signal, context }) {
       const bin = findExecutable(binName, env);
       if (!bin) {
         throw new ConnectionError('not-found', `Claude Code が見つかりません(${binName})。Claude Code を入れてログインするか、STUDIO_CLAUDE_BIN で場所を指定してください。`);
       }
       if (signal?.aborted) throw new ConnectionError('cancelled', '応答を止めました');
-      const { projectDir, conversationId, by, toolsFile, handoffs, assumption, userId, store, calls, onLaunch } = context;
+      const { projectDir, conversationId, by, toolsFile, handoffs, assumption, userId, store, calls, onLaunch, delegations, depthLeft, delegationsLeft } = context;
       const tools = participant.tools ?? [];
       let dir = null;
       let mcpConfig = null;
@@ -321,6 +342,8 @@ export function createClaudeCodeAgent({ env = process.env, limits = SIM_AGENT_LI
           // 道具の一覧に出すのは、この参加者のツールだけ(--allowedTools は呼べるかを決めるだけで、一覧は変えないため)
           allowedTools: tools,
           handoffs,
+          // 委任の辺と上限(2.9)。委任の辺を書いた構成だけ
+          ...(Array.isArray(delegations) ? { delegations, depthLeft, delegationsLeft } : {}),
           toolCalling: {
             ...(Number.isInteger(assumption?.toolCalling?.delayMs) ? { delayMs: assumption.toolCalling.delayMs } : {}),
             ...(Number.isInteger(assumption?.toolCalling?.resultMaxChars) ? { resultMaxChars: assumption.toolCalling.resultMaxChars } : {}),
@@ -334,6 +357,7 @@ export function createClaudeCodeAgent({ env = process.env, limits = SIM_AGENT_LI
         await writeAtomic(conversation, SIM_FILES.store, store);
         await writeAtomic(conversation, SIM_FILES.counts, calls);
         await fsp.rm(path.join(dir, SIM_FILES.handoff), { force: true });
+        await fsp.rm(path.join(dir, SIM_FILES.delegate), { force: true });
         before = await countLines(path.join(dir, SIM_FILES.calls));
       }
       if (!workDir || !fs.existsSync(workDir)) workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-sim-agent-'));
@@ -346,6 +370,7 @@ export function createClaudeCodeAgent({ env = process.env, limits = SIM_AGENT_LI
       let nextStore = store;
       let nextCalls = calls;
       let handoffList = [];
+      let delegateList = [];
       if (dir) {
         const lines = (await fsp.readFile(path.join(dir, SIM_FILES.calls), 'utf8').catch(() => '')).split('\n').filter((line) => line.trim() !== '');
         for (const line of lines.slice(before)) {
@@ -361,6 +386,9 @@ export function createClaudeCodeAgent({ env = process.env, limits = SIM_AGENT_LI
         nextCalls = await readJsonFile(path.join(dir, SIM_FILES.counts), calls);
         handoffList = await readJsonFile(path.join(dir, SIM_FILES.handoff), []);
         await fsp.rm(path.join(dir, SIM_FILES.handoff), { force: true });
+        delegateList = await readJsonFile(path.join(dir, SIM_FILES.delegate), []);
+        await fsp.rm(path.join(dir, SIM_FILES.delegate), { force: true });
+        if (!Array.isArray(delegateList)) delegateList = [];
         if (!isPlainObject(nextStore)) nextStore = store;
         if (!isPlainObject(nextCalls)) nextCalls = calls;
         if (!Array.isArray(handoffList)) handoffList = [];
@@ -376,6 +404,7 @@ export function createClaudeCodeAgent({ env = process.env, limits = SIM_AGENT_LI
         store: nextStore,
         calls: nextCalls,
         handoffs: handoffList,
+        ...(delegateList.length > 0 ? { delegations: delegateList } : {}),
         command: [path.basename(binName), ...shownArgs(args)],
       };
     },

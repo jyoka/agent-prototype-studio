@@ -22,10 +22,12 @@ import {
   unique,
 } from './check.js';
 
-// 試作品のツールの宣言(app/tools.json)。決まった 5 つの処理(op)の組み合わせだけで書き、Studio のコード(ツールの口)が解釈する。
+// 試作品のツールの宣言(app/tools.json)。決まった 6 つの処理(op)の組み合わせだけで書き、Studio のコード(ツールの口)が解釈する。
 // 生成コードをサーバーで読まない、動かさない(ADR-0001、ADR-0003)。形は docs/design/agent-simulation.md の 2.4 と 3.5。
 export const TOOLS_FILE = 'tools.json';
-export const TOOL_OPS = ['search', 'get', 'record', 'fixed', 'handoff'];
+export const TOOL_OPS = ['search', 'get', 'record', 'fixed', 'handoff', 'delegate'];
+// 委任のツール(op: delegate。2.9)が必ず持つ引数。サブに渡す依頼の文
+export const DELEGATE_TASK_ARG = 'task';
 export const TOOL_GUARDS = ['requires', 'deny', 'hideFields', 'maxCallsPerConversation', 'maxResultChars'];
 // search の match で使える比べ方。書かなければ equals
 export const MATCH_KINDS = ['equals', 'atLeast', 'atMost', 'includes', 'contains'];
@@ -55,6 +57,7 @@ const OP_KEYS = {
   record: ['op', 'into', 'mode'],
   fixed: ['op', 'data', 'value'],
   handoff: ['op', 'to'],
+  delegate: ['op', 'to'],
 };
 // inputSchema は、決まった部分だけを使える JSON Schema(2.7)
 const SCHEMA_TYPES = ['object', 'string', 'number', 'integer', 'boolean', 'array'];
@@ -198,6 +201,14 @@ async function checkDo(problems, where, raw, appDir, properties) {
     else result.value = jsonValue(problems, `${where}.value`, raw.value, { max: TOOL_LIMITS.maxFixedValue });
   }
   if (op === 'handoff') result.to = idOf(problems, `${where}.to`, raw.to);
+  if (op === 'delegate') {
+    result.to = idOf(problems, `${where}.to`, raw.to);
+    // サブに渡す依頼の文。モデルが書く文なので、長さの上限を宣言に書かせる
+    const task = properties[DELEGATE_TASK_ARG];
+    if (!isPlainObject(task) || task.type !== 'string' || !Number.isInteger(task.maxLength)) {
+      problems.add(where, `委任のツールは、inputSchema の properties に { "${DELEGATE_TASK_ARG}": { "type": "string", "maxLength": … } }(サブへの依頼の文)を書いてください`);
+    }
+  }
   return result;
 }
 
@@ -289,6 +300,9 @@ export async function parseTools(raw, { file, appDir }) {
     const properties = isPlainObject(inputSchema?.properties) ? inputSchema.properties : {};
     const action = await checkDo(problems, `${where}.do`, item.do, appDir, properties);
     const guards = checkGuards(problems, `${where}.guards`, item.guards, properties);
+    if (action?.op === 'delegate' && !(inputSchema?.required ?? []).includes(DELEGATE_TASK_ARG)) {
+      problems.add(`${where}.inputSchema.required`, `委任のツールは「${DELEGATE_TASK_ARG}」を required に入れてください(依頼の文のない委任は書けません)`);
+    }
     tools.push({
       name,
       description,

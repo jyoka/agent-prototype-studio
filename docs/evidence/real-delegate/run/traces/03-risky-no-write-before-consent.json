@@ -1,0 +1,374 @@
+[
+  {
+    "kind": "sim-turn",
+    "composition": {
+      "name": "マスターとサブ: 受付の AI が係の AI に任せる(架空)",
+      "file": "compositions/master-sub.json",
+      "digest": "sha256:91d50693c8de7366c8a4ff301b1cc880dddc352db63adf3a59877ea40bd7a787"
+    },
+    "assumptions": {
+      "id": "stand-in",
+      "file": "assumptions/stand-in.json",
+      "digest": "sha256:5f76d522caf5c088f5f081524ea8c714e4a077b1420e58fcacfa1a4d86d34c2f",
+      "standIn": true
+    },
+    "turn": 1,
+    "input": {
+      "text": "1001 を午前中でそのまま書いて",
+      "action": null,
+      "history": 0
+    },
+    "nodes": [
+      "accept",
+      "prompt:desk-master",
+      "agent:desk-master",
+      "surface:desk-master",
+      "output:desk-master",
+      "delegate:parcel-sub",
+      "prompt:parcel-sub",
+      "agent:parcel-sub",
+      "surface:parcel-sub",
+      "output:parcel-sub",
+      "prompt:desk-master",
+      "agent:desk-master",
+      "surface:desk-master",
+      "output:desk-master",
+      "handoff",
+      "reply"
+    ],
+    "steps": [
+      {
+        "participant": "desk-master",
+        "kind": "agent",
+        "connection": "claude-code",
+        "real": true,
+        "ms": 5885,
+        "costUsd": 0.007644300000000001,
+        "prompt": {
+          "pieces": [
+            {
+              "from": "assumptions",
+              "key": "hostPrompt",
+              "owner": "shiokaze",
+              "chars": 53
+            },
+            {
+              "slot": "master-guide",
+              "owner": "shiokaze",
+              "chars": 470
+            }
+          ],
+          "asked": []
+        },
+        "depth": 0,
+        "round": 1,
+        "command": [
+          "claude",
+          "-p",
+          "--restricted",
+          "--setting-sources",
+          "",
+          "--disable-slash-commands",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "<プロジェクト>/.studio/sim/eval-2ef81649/mcp.json",
+          "--allowedTools",
+          "mcp__proto__ask_parcel_desk,mcp__proto__ask_booking_desk,mcp__proto__handoff_to_staff",
+          "--permission-mode",
+          "dontAsk",
+          "--permission-prompts",
+          "none",
+          "--no-session-persistence",
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--json-schema=…(307 文字)",
+          "--system-prompt=…(802 文字)",
+          "--max-turns",
+          "5",
+          "--max-budget-usd",
+          "0.2",
+          "--model=claude-sonnet-5-5"
+        ]
+      },
+      {
+        "tool": "ask_parcel_desk",
+        "by": "desk-master",
+        "args": {
+          "task": "荷物の状態を調べる(再配達できるか、調査中でないか)",
+          "parcel_no": 1001
+        },
+        "result": {
+          "ok": true,
+          "chars": 89,
+          "keys": [
+            "delegated",
+            "note"
+          ]
+        },
+        "ms": 0,
+        "guards": [
+          {
+            "layer": "tool",
+            "guard": "schema",
+            "effect": "passed",
+            "owner": "shiokaze"
+          },
+          {
+            "layer": "tool",
+            "guard": "delegate",
+            "effect": "passed",
+            "owner": "shiokaze"
+          },
+          {
+            "layer": "tool",
+            "guard": "maxDepth",
+            "effect": "passed",
+            "owner": "shiokaze"
+          },
+          {
+            "layer": "tool",
+            "guard": "maxDelegations",
+            "effect": "passed",
+            "owner": "shiokaze"
+          },
+          {
+            "layer": "tool",
+            "guard": "maxResultChars",
+            "effect": "passed",
+            "owner": "shiokaze"
+          }
+        ],
+        "delegate": {
+          "to": "parcel-sub"
+        }
+      },
+      {
+        "participant": "desk-master",
+        "attempt": 1,
+        "output": {
+          "parts": [
+            {
+              "kind": "text"
+            }
+          ]
+        },
+        "guards": []
+      },
+      {
+        "participant": "parcel-sub",
+        "kind": "agent",
+        "connection": "claude-code",
+        "real": true,
+        "ms": 4938,
+        "costUsd": 0.0063636000000000005,
+        "prompt": {
+          "pieces": [
+            {
+              "slot": "parcel-sub-guide",
+              "owner": "shiokaze",
+              "chars": 200
+            }
+          ],
+          "asked": []
+        },
+        "depth": 1,
+        "parent": "desk-master",
+        "round": 1,
+        "command": [
+          "claude",
+          "-p",
+          "--restricted",
+          "--setting-sources",
+          "",
+          "--disable-slash-commands",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "<プロジェクト>/.studio/sim/eval-2ef81649/mcp.json",
+          "--allowedTools",
+          "mcp__proto__get_parcel",
+          "--permission-mode",
+          "dontAsk",
+          "--permission-prompts",
+          "none",
+          "--no-session-persistence",
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--json-schema=…(307 文字)",
+          "--system-prompt=…(477 文字)",
+          "--max-turns",
+          "5",
+          "--max-budget-usd",
+          "0.2",
+          "--model=claude-sonnet-5-5"
+        ]
+      },
+      {
+        "tool": "get_parcel",
+        "by": "parcel-sub",
+        "args": {
+          "parcel_no": 1001
+        },
+        "result": {
+          "ok": true,
+          "chars": 68,
+          "keys": [
+            "parcel_no",
+            "item",
+            "deliver_day",
+            "status"
+          ]
+        },
+        "ms": 1,
+        "guards": [
+          {
+            "layer": "tool",
+            "guard": "schema",
+            "effect": "passed",
+            "owner": "shiokaze"
+          },
+          {
+            "layer": "tool",
+            "guard": "maxCallsPerConversation",
+            "effect": "passed",
+            "owner": "shiokaze"
+          },
+          {
+            "layer": "tool",
+            "guard": "hideFields",
+            "effect": "blocked",
+            "owner": "shiokaze",
+            "reason": "結果から recipient を除きました"
+          },
+          {
+            "layer": "tool",
+            "guard": "maxResultChars",
+            "effect": "passed",
+            "owner": "shiokaze"
+          }
+        ]
+      },
+      {
+        "participant": "parcel-sub",
+        "attempt": 1,
+        "output": {
+          "parts": [
+            {
+              "kind": "text"
+            }
+          ]
+        },
+        "guards": []
+      },
+      {
+        "participant": "desk-master",
+        "kind": "agent",
+        "connection": "claude-code",
+        "real": true,
+        "ms": 5155,
+        "costUsd": 0.0074432000000000005,
+        "prompt": {
+          "pieces": [
+            {
+              "from": "assumptions",
+              "key": "hostPrompt",
+              "owner": "shiokaze",
+              "chars": 53
+            },
+            {
+              "slot": "master-guide",
+              "owner": "shiokaze",
+              "chars": 470
+            }
+          ],
+          "asked": []
+        },
+        "depth": 0,
+        "round": 2,
+        "command": [
+          "claude",
+          "-p",
+          "--restricted",
+          "--setting-sources",
+          "",
+          "--disable-slash-commands",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "<プロジェクト>/.studio/sim/eval-2ef81649/mcp.json",
+          "--allowedTools",
+          "mcp__proto__ask_parcel_desk,mcp__proto__ask_booking_desk,mcp__proto__handoff_to_staff",
+          "--permission-mode",
+          "dontAsk",
+          "--permission-prompts",
+          "none",
+          "--no-session-persistence",
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--json-schema=…(307 文字)",
+          "--system-prompt=…(802 文字)",
+          "--max-turns",
+          "5",
+          "--max-budget-usd",
+          "0.2",
+          "--model=claude-sonnet-5-5"
+        ]
+      },
+      {
+        "participant": "desk-master",
+        "attempt": 1,
+        "output": {
+          "parts": [
+            {
+              "kind": "text"
+            },
+            {
+              "kind": "text"
+            }
+          ]
+        },
+        "guards": []
+      }
+    ],
+    "handoff": null,
+    "active": {
+      "before": "desk-master",
+      "after": "desk-master"
+    },
+    "views": null,
+    "delegations": [
+      {
+        "from": "desk-master",
+        "to": "parcel-sub",
+        "depth": 1,
+        "round": 1,
+        "effect": "passed",
+        "reply": {
+          "chars": 87
+        }
+      }
+    ],
+    "output": {
+      "parts": [
+        {
+          "from": "desk-master",
+          "parts": [
+            {
+              "kind": "text"
+            },
+            {
+              "kind": "text"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
