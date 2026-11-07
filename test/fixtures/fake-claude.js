@@ -25,6 +25,8 @@
 // 本物と同じく --mcp-config のツールの MCP サーバーを子として起動し、tools/list と tools/call で道具を呼び、stream-json を出す。
 // 呼ぶ道具は FAKE_CLAUDE_TOOL_CALLS のファイル(JSON の { 発言: [{ "tool": 名前, "args": { … } }] })に書いたもの。
 // ボタンの action があれば、キーは "action:<action>"。--allowedTools にない名前は、本物と同じくサーバーを呼ばずに断る。
+// 任された参加者(サブ。docs/design/agent-simulation.md の 2.9)の起動では、<新しい発言> の代わりに <依頼の文> をキーにする。
+// 任せた先の結果(<任せた仕事の結果>)を受け取った起動では、キーは "after:<発言>"(同じ発言でもう一度任せ続けないため)。
 // 呼びすぎ(--max-turns - 1 を超える)は、本物と同じく error_max_turns で止まる。題材の言葉は持たない。返事は文の部品 1 つ。
 //   [数を作る] [一度数を作る] は言い方と同じく、どこにも出てこない数(987)を返事に書く(出口の確かめ)
 //   --system-prompt に「合言葉は <語> です」があれば、返事の文の始めにその語を書く(本物がシステムの指示に従う代わり。check:sim)
@@ -363,12 +365,12 @@ async function simAgent() {
     process.stderr.write(`偽の CLI: 模擬のエージェントの引数が足りないか、違います: ${missing.join(' ')}\n`);
     process.exit(3);
   }
-  const text = section('新しい発言');
+  const text = section('新しい発言') || section('依頼の文');
   const action = section('押したボタン');
   const allowed = (option('--allowedTools') ?? '').split(',').filter(Boolean);
   const maxTurns = Number(option('--max-turns') ?? 2);
   const given = process.env.FAKE_CLAUDE_TOOL_CALLS ? JSON.parse(fs.readFileSync(process.env.FAKE_CLAUDE_TOOL_CALLS, 'utf8')) : {};
-  const key = action ? `action:${action}` : text;
+  const key = stdin.includes('<任せた仕事の結果>') ? `after:${text}` : action ? `action:${action}` : text;
   const wanted = Object.hasOwn(given, key) ? given[key] : [];
   const configFile = option('--mcp-config');
   const config = configFile ? JSON.parse(fs.readFileSync(configFile, 'utf8')).mcpServers?.proto : null;

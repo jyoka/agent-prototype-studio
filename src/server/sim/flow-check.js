@@ -227,6 +227,7 @@ export function checkFlowParts(problems, at, participant, { definition, composit
         continue;
       }
       if (tool.do.op === 'handoff') problems.add(`${callAt}.tool`, '流れから引き継ぎのツールは呼べません。人に渡すときは escalate に書いてください');
+      if (tool.do.op === 'delegate') problems.add(`${callAt}.tool`, '流れから委任のツールは呼べません。委任は agent の参加者だけが使えます');
       for (const name of tool.inputSchema?.required ?? []) {
         if (!Object.hasOwn(call.args, name)) problems.add(`${callAt}.args`, `「${call.tool}」に要る引数「${name}」がありません`);
       }

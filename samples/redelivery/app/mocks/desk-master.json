@@ -1,0 +1,22 @@
+{
+  "formatVersion": 1,
+  "rules": [
+    { "when": { "delegated": "booking-sub", "contains": ["はい"] }, "reply": [{ "kind": "text", "text": "ありがとうございます。よろしければ、もう一度「お願いします」と送ってください。" }] },
+    { "when": { "delegated": "booking-sub" }, "reply": [{ "kind": "text", "text": "{delegated.text}" }] },
+    { "when": { "delegated": "parcel-sub", "contains": ["1009"] }, "call": { "tool": "handoff_to_staff" }, "reply": [{ "kind": "text", "text": "このお荷物は調査中なので、担当の者におつなぎします。" }] },
+    { "when": { "delegated": "parcel-sub", "contains": ["9999"] }, "reply": [{ "kind": "text", "text": "その番号のお荷物は見つかりませんでした。番号をもう一度教えてください。" }] },
+    { "when": { "delegated": "parcel-sub" }, "reply": [{ "kind": "text", "text": "{delegated.text}希望の時間帯を教えてください。" }] },
+    { "when": { "contains": ["苦情", "責任者", "壊れ", "怒"] }, "call": { "tool": "handoff_to_staff" }, "reply": [{ "kind": "text", "text": "担当の者におつなぎします。" }] },
+    { "when": { "contains": ["9998"] }, "call": { "tool": "handoff_to_staff" }, "reply": [{ "kind": "text", "text": "お荷物を見つけられないので、担当の者におつなぎします。" }] },
+    { "when": { "contains": ["えーと"], "turnsAtLeast": 2 }, "call": { "tool": "handoff_to_staff" }, "reply": [{ "kind": "text", "text": "番号を読み取れないので、担当の者におつなぎします。" }] },
+    { "when": { "contains": ["そのまま書いて"] }, "call": { "tool": "ask_booking_desk", "args": { "task": "1001 を午前中で再配達に書いてください", "parcel_no": 1001, "slot": "午前中" } }, "reply": [{ "kind": "text", "text": "確かめます。" }] },
+    { "when": { "contains": ["1009"] }, "call": { "tool": "ask_parcel_desk", "args": { "task": "荷物 1009 を調べてください", "parcel_no": 1009 } }, "reply": [{ "kind": "text", "text": "お調べします。" }] },
+    { "when": { "contains": ["9999"] }, "call": { "tool": "ask_parcel_desk", "args": { "task": "荷物 9999 を調べてください", "parcel_no": 9999 } }, "reply": [{ "kind": "text", "text": "お調べします。" }] },
+    { "when": { "contains": ["1002"] }, "call": { "tool": "ask_parcel_desk", "args": { "task": "荷物 1002 を調べてください", "parcel_no": 1002 } }, "reply": [{ "kind": "text", "text": "お調べします。" }] },
+    { "when": { "contains": ["1001"] }, "call": { "tool": "ask_parcel_desk", "args": { "task": "荷物 1001 を調べてください", "parcel_no": 1001 } }, "reply": [{ "kind": "text", "text": "お調べします。" }] },
+    { "when": { "contains": ["午前"] }, "reply": [{ "kind": "text", "text": "午前中にお届けします。これでよいですか?" }] },
+    { "when": { "contains": ["お願いします"] }, "call": { "tool": "ask_booking_desk", "args": { "task": "1001 を午前中で再配達に書いてください", "parcel_no": 1001, "slot": "午前中" } }, "reply": [{ "kind": "text", "text": "書きます。" }] },
+    { "when": { "contains": ["はい"] }, "call": { "tool": "ask_booking_desk", "args": { "task": "本人が内容を確かめて「はい」と言いました。同意を記録してください" } }, "reply": [{ "kind": "text", "text": "記録します。" }] }
+  ],
+  "otherwise": [{ "kind": "text", "text": "荷物の番号を教えてください。不在票の右上にあります。" }]
+}

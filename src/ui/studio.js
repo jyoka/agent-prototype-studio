@@ -2953,12 +2953,18 @@ function simStepItem(entry, step, index, nameOf) {
     li.append(labeled('引数', JSON.stringify(step.args ?? {})), labeled('結果', toolResultText(step.result)));
     if (step.fault) li.append(element('p', '前提の失敗(faults)に当たったので、失敗を返しました', 'notice'));
     if (step.handoff) li.append(labeled('引き継ぎの頼み', nameOf(step.handoff.to)));
+    if (step.delegate) li.append(labeled('委任の頼み', nameOf(step.delegate.to)));
   } else if (step.kind === 'agent') {
     li.dataset.step = 'agent';
     const facts = [`接続 ${via(step)}`];
+    // マスターとサブ(docs/design/agent-simulation.md の 2.9)。任された参加者(サブ)には、任せた参加者と深さを出す
+    if (step.parent) {
+      li.dataset.depth = String(step.depth);
+      facts.unshift(`${nameOf(step.parent)} から任された仕事(深さ ${step.depth})`);
+    } else if (Number.isFinite(step.round) && step.round > 1) facts.unshift(`任せた結果を受け取って ${step.round} 回目`);
     if (Number.isFinite(step.ms)) facts.push(`${step.ms} ミリ秒`);
     if (Number.isFinite(step.costUsd)) facts.push(`費用の目安 $${step.costUsd.toFixed(4)}`);
-    li.append(element('strong', `参加者 ${nameOf(step.participant)}(模擬のエージェント)`), document.createTextNode(`: ${facts.join('、')}`));
+    li.append(element('strong', `参加者 ${nameOf(step.participant)}(模擬のエージェント${step.parent ? '、サブ' : ''})`), document.createTextNode(`: ${facts.join('、')}`));
     const pieces = (step.prompt?.pieces ?? []).map((piece) => `${piece.slot ? `枠 ${piece.slot}` : `前提の ${piece.key}`}(持ち主 ${piece.owner}、${piece.chars} 字)`);
     if (pieces.length > 0) li.append(labeled('プロンプトの部品', pieces.join('、')));
     if (step.command) {
@@ -2981,6 +2987,9 @@ function simStepItem(entry, step, index, nameOf) {
   } else if (step.handoffIgnored) {
     li.dataset.step = 'handoff-ignored';
     li.append(element('strong', `${nameOf(step.participant)} の引き継ぎ(${step.handoffIgnored.map(nameOf).join('、')})を使いませんでした`), document.createTextNode(`: ${step.reason}`));
+  } else if (step.delegationIgnored) {
+    li.dataset.step = 'delegation-ignored';
+    li.append(element('strong', `${nameOf(step.participant)} の委任(${step.delegationIgnored.map(nameOf).join('、')})を使いませんでした`), document.createTextNode(`: ${step.reason}`));
   } else if (step.output) {
     li.dataset.step = 'output';
     li.append(element('strong', `${nameOf(step.participant)} の返事の部品(${step.attempt} 回目)`), document.createTextNode(`: ${partsText(step.output.parts)}`));
@@ -3030,6 +3039,11 @@ function traceSim(entry) {
   steps.setAttribute('aria-label', '模擬の会話の段');
   steps.append(...entry.steps.map((step, index) => simStepItem(entry, step, index, nameOf)));
   box.append(steps);
+  if (entry.delegations?.length) {
+    // 委任(マスターとサブ)。任せた参加者 → 任された参加者、深さ、通したか。止めたときは理由
+    const lines = entry.delegations.map((d) => `${nameOf(d.from)} → ${nameOf(d.to)}(深さ ${d.depth}): ${EFFECT_WORDS[d.effect] ?? d.effect}${d.reason ? `、理由 ${d.reason}` : ''}`);
+    box.append(labeled('委任', lines.join(' / ')));
+  }
   if (entry.handoff) box.append(labeled('引き継ぎ', handoffText(entry.handoff, nameOf)));
   if (entry.returned) box.append(labeled('戻り', handoffText(entry.returned, nameOf)));
   if (entry.views) {

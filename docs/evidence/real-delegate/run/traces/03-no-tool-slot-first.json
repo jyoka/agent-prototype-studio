@@ -1,0 +1,120 @@
+[
+  {
+    "kind": "sim-turn",
+    "composition": {
+      "name": "マスターとサブ: 受付の AI が係の AI に任せる(架空)",
+      "file": "compositions/master-sub.json",
+      "digest": "sha256:91d50693c8de7366c8a4ff301b1cc880dddc352db63adf3a59877ea40bd7a787"
+    },
+    "assumptions": {
+      "id": "stand-in",
+      "file": "assumptions/stand-in.json",
+      "digest": "sha256:5f76d522caf5c088f5f081524ea8c714e4a077b1420e58fcacfa1a4d86d34c2f",
+      "standIn": true
+    },
+    "turn": 1,
+    "input": {
+      "text": "午前中がいいです",
+      "action": null,
+      "history": 0
+    },
+    "nodes": [
+      "accept",
+      "prompt:desk-master",
+      "agent:desk-master",
+      "surface:desk-master",
+      "output:desk-master",
+      "handoff",
+      "reply"
+    ],
+    "steps": [
+      {
+        "participant": "desk-master",
+        "kind": "agent",
+        "connection": "claude-code",
+        "real": true,
+        "ms": 4134,
+        "costUsd": 0.0047372000000000004,
+        "prompt": {
+          "pieces": [
+            {
+              "from": "assumptions",
+              "key": "hostPrompt",
+              "owner": "shiokaze",
+              "chars": 53
+            },
+            {
+              "slot": "master-guide",
+              "owner": "shiokaze",
+              "chars": 470
+            }
+          ],
+          "asked": []
+        },
+        "depth": 0,
+        "round": 1,
+        "command": [
+          "claude",
+          "-p",
+          "--restricted",
+          "--setting-sources",
+          "",
+          "--disable-slash-commands",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "<プロジェクト>/.studio/sim/eval-0acf3615/mcp.json",
+          "--allowedTools",
+          "mcp__proto__ask_parcel_desk,mcp__proto__ask_booking_desk,mcp__proto__handoff_to_staff",
+          "--permission-mode",
+          "dontAsk",
+          "--permission-prompts",
+          "none",
+          "--no-session-persistence",
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--json-schema=…(307 文字)",
+          "--system-prompt=…(802 文字)",
+          "--max-turns",
+          "5",
+          "--max-budget-usd",
+          "0.2",
+          "--model=claude-sonnet-5-5"
+        ]
+      },
+      {
+        "participant": "desk-master",
+        "attempt": 1,
+        "output": {
+          "parts": [
+            {
+              "kind": "text"
+            }
+          ]
+        },
+        "guards": []
+      }
+    ],
+    "handoff": null,
+    "active": {
+      "before": "desk-master",
+      "after": "desk-master"
+    },
+    "views": null,
+    "delegations": [],
+    "output": {
+      "parts": [
+        {
+          "from": "desk-master",
+          "parts": [
+            {
+              "kind": "text"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

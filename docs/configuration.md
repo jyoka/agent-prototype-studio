@@ -245,8 +245,8 @@
 
 | ファイル | 中身 | 形 |
 |---|---|---|
-| `composition.json`、`compositions/*.json` | 構成。回し手(`driver`)、参加者(`agent`、`harness`、`human`)、ツールの宣言のファイル、引き継ぎの辺(`handoffs`)、ガードレール(`guards`。`prompt` と `output` の層)、会話の枠、前提、上限。`harness` の参加者には、固定の流れ(`flow`、`escalate`、`model`)も書ける | 設計の 2.2、2.8 |
-| `tools.json` | ツールの宣言。決まった処理(`search`、`get`、`record`、`fixed`、`handoff`)とツールの守りだけで書く | 設計の 2.4、3.5 |
+| `composition.json`、`compositions/*.json` | 構成。回し手(`driver`)、参加者(`agent`、`harness`、`human`)、ツールの宣言のファイル、引き継ぎの辺(`handoffs`)、委任の辺(`delegations`。マスターとサブ)、ガードレール(`guards`。`prompt` と `output` の層)、会話の枠、前提、上限。`harness` の参加者には、固定の流れ(`flow`、`escalate`、`model`)も書ける | 設計の 2.2、2.8、2.9 |
+| `tools.json` | ツールの宣言。決まった処理(`search`、`get`、`record`、`fixed`、`handoff`、`delegate`)とツールの守りだけで書く | 設計の 2.4、2.9、3.5 |
 | `data/*.json` など | ツールが読む架空のデータ。`.json` だけ。`search` と `get` はオブジェクトの配列 | 設計の 3.5 |
 | `prompts/*.md` | プロンプトの枠の文(`.md` か `.txt`) | 設計の 2.4 |
 | `assumptions/*.json` | 前提。1 ファイル 1 組 | 設計の 3.4 |
@@ -255,7 +255,7 @@
 
 - どれもビルドのたびに検査する(関門 G3)。誤りはビルドの失敗として、ファイルと項目の場所が「その他」の「開発者向けの詳細」に出る(`ai.json` の誤りと同じ)
 - `composition.json` と `compositions/` のすべての構成を検査する。構成のファイルが 1 つでもあれば、使われていない `tools.json`、`assumptions/`、`mocks/` も検査する。構成のファイルがない試作品では、この 3 つを読まない(画面のデータに同じ名前を使っている今の試作品を壊さないため)。`evals/` はいつも検査する
-- 次は誤り: 知らないキー、知らない種類(参加者の `kind`、ツールの `op`、守りの `layer`、場面の `kind` と `check`、部品の `kind`)、ない参加者やツールを指す、辺(`handoffs`)にない引き継ぎのツールを渡す、`app/` の外のファイルを指す、データやモックに `.js` などのコードを使う、上限を超える値
+- 次は誤り: 知らないキー、知らない種類(参加者の `kind`、ツールの `op`、守りの `layer`、場面の `kind` と `check`、部品の `kind`)、ない参加者やツールを指す、辺(`handoffs`)にない引き継ぎのツールを渡す、委任の辺(`delegations`)にない委任のツールを渡す、`app/` の外のファイルを指す、データやモックに `.js` などのコードを使う、上限を超える値
 - ツールの名前は `^[a-z][a-z0-9_]{0,39}$` だけ。参加者、前提、守り、枠、場面の `id` は `^[a-z][a-z0-9-]{0,39}$`
 - 場面の `entry` の参加者が、ある構成にいなくても誤りにしない(その構成では、その場面を当てはまらないものとして扱う)
 - ツールの守り(`requires`、`deny`、`hideFields`、`maxCallsPerConversation`、`maxResultChars`)は、ツールの口のコードが守る。当たった呼び出しは実行せず、守りの名前と理由を記録に残す。`inputSchema` にない引数も断る。`hideFields` は呼び出しを断らず、項目を除いて返す。細かい振る舞いは [設計の 3.5](design/agent-simulation.md#35-ツールの口)
@@ -266,6 +266,7 @@
 `composition.json` のある試作品は、`studio.ai` の会話を会話の進め方(`src/server/sim/orchestrator.js`)が回す。決まりは [agent-simulation.md の 3.2 と「sim-4 で決めた細かい振る舞い」](design/agent-simulation.md#32-1-ターンの進め方)にある。
 
 - 誰が話すか、引き継ぎ(辺にあるものだけ、1 ターン 1 回、`limits.maxHandoffs` まで。戻るのも数える)、受け渡す値の検査、`limits.maxTurns` は Studio のコードが決める。模擬のエージェントが決めるのは、返事の中身とツールの選び方だけ
+- マスターとサブ(`delegations`)では、任せてよい辺、深さ(`limits.maxDepth`。既定 1、3 まで)、1 ターンの回数(`limits.maxDelegations`。既定 3、10 まで)を Studio のコードが守る。サブの返事は利用者に見せず、任せた参加者に渡す。書き方は [設計の 2.9](design/agent-simulation.md#29-マスターとサブ親の-ai-が子の-ai-に仕事を任せる)
 - 接続は、プロダクト内 AI と同じく「AI: お試し」(モック)か「AI: 本物」(Claude Code)。既定はモック(`app/mocks/*.json` の決まりで返す)。Claude Code に切り替えるときも、本物の AI を使う前の同意が要る
 - 前提は、構成の `assumptions.default`。返事の部品は、前提の `messageTypes` にあるものだけ。ないものは文に落とし、記録に残す
 - 返る会話には、構成 B の形(`connection`、`name`、`fields`、`state`、`messages`、`busy`)に加えて、次が入る。ツールの呼び出しの中身は返さない(「AI の実行の記録」にだけ出る)

@@ -37,7 +37,7 @@
       "modelRole": "順番、任せる先、読み取り、言い方",
       "participantKinds": [],
       "available": false,
-      "limitation": "今の Studio では動かせないので、まだ選べません。",
+      "limitation": "構成のファイルには書けますが、Studio はこの案の構成を書けないので、まだ選べません。",
       "addedOn": "2026-11-02"
     }
   ]

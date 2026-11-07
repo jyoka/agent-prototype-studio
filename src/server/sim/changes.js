@@ -185,10 +185,34 @@ function describeHandoffs(was, now, out) {
   }
 }
 
+// 委任の辺(マスターとサブ。2.9)。辺をなくすのは仕事を分けなくなる変更で、守りが減ったとはみなさない。
+// 深さと回数の上限(limits の maxDepth、maxDelegations)を上げるのは、上限を緩める変更として目立たせる
+function describeDelegations(was, now, out) {
+  const key = (edge) => `${edge.from} → ${edge.to}`;
+  const wasEdges = was?.delegations ?? [];
+  const nowEdges = now?.delegations ?? [];
+  const added = nowEdges.filter((edge) => !wasEdges.some((e) => key(e) === key(edge)));
+  const removed = wasEdges.filter((edge) => !nowEdges.some((e) => key(e) === key(edge)));
+  if (added.length > 0) out.lines.push(`足した委任の辺: ${added.map(key).join('、')}`);
+  if (removed.length > 0) out.lines.push(`なくした委任の辺: ${removed.map(key).join('、')}`);
+  for (const edge of nowEdges) {
+    const before = wasEdges.find((e) => key(e) === key(edge));
+    if (!before) continue;
+    if (!same(before.carry, edge.carry)) out.lines.push(`委任の辺 ${key(edge)} で渡す値(carry): ${before.carry.join('、') || 'なし'} → ${edge.carry.join('、') || 'なし'}`);
+    if (before.history !== edge.history) out.lines.push(`委任の辺 ${key(edge)} で会話の全体を渡すか(history): ${before.history} → ${edge.history}`);
+  }
+  for (const [name, label] of [['maxDepth', '委任の深さ'], ['maxDelegations', '1 ターンの委任の回数']]) {
+    const before = was?.limits?.[name];
+    const after = now?.limits?.[name];
+    if (Number.isInteger(before) && Number.isInteger(after) && after > before) out.weakened.push(`${label}の上限(limits.${name})を緩めた: ${before} → ${after}`);
+  }
+}
+
 // 1 つの構成の前と後を比べる。ツールの宣言は、指すファイルを替えたときだけここで比べる(同じファイルの中の変化は describeSimulationChanges がファイルごとに 1 回比べる)
 function describeCompositionPair(before, after, was, now, out) {
   describeParticipants(was, now, out);
   describeHandoffs(was, now, out);
+  describeDelegations(was, now, out);
   describeGuards(was, now, out);
   const wasFile = was?.tools ?? null;
   const nowFile = now?.tools ?? null;
@@ -301,13 +325,14 @@ export function referencedFiles(simulation) {
 }
 
 // ガードレールの指紋。直すラウンドでガードレールが変わったか(guardsChanged の印)を見るのに使う。
-// 中身: 構成ごとの守り(guards)、引き継ぎの辺(handoffs)、参加者に渡すツールの名前、固定の流れ(flow、escalate)、ツールごとの守り、harness の ai.json の rules(目録の ai も)
+// 中身: 構成ごとの守り(guards)、引き継ぎの辺(handoffs)、委任の辺と上限(delegations、limits の maxDelegations と maxDepth)、参加者に渡すツールの名前、固定の流れ(flow、escalate)、ツールごとの守り、harness の ai.json の rules(目録の ai も)
 export function guardFingerprint(simulation, ai) {
   if (!simulation) return JSON.stringify({ ai: ai?.rules ?? null });
   const compositions = [simulation.composition, ...(simulation.compositions ?? []).map((item) => item.composition)].filter(Boolean);
   return JSON.stringify({
     // 参加者に渡すツールの名前も守り(許可していない名前は permission の層で断る)。外すと、その確かめが n/a になるため
-    compositions: compositions.map((c) => [c.file ?? null, c.guards ?? [], c.handoffs ?? [], c.participants.map((p) => [p.id, p.kind, p.tools ?? null, ...(p.flow || p.escalate ? [p.flow ?? null, p.escalate ?? null] : [])])]),
+    // 委任の辺と上限は、書いた構成だけ足す(今の構成の指紋を変えないため。R2)
+    compositions: compositions.map((c) => [c.file ?? null, c.guards ?? [], c.handoffs ?? [], c.participants.map((p) => [p.id, p.kind, p.tools ?? null, ...(p.flow || p.escalate ? [p.flow ?? null, p.escalate ?? null] : [])]), ...(c.delegations ? [c.delegations, { maxDelegations: c.limits.maxDelegations, maxDepth: c.limits.maxDepth }] : [])]),
     tools: Object.entries(simulation.tools ?? {}).sort(([a], [b]) => (a < b ? -1 : 1)).map(([file, toolset]) => [file, toolset.tools.map((tool) => [tool.name, tool.guards ?? null])]),
     ai: ai?.rules ?? null,
     harness: Object.entries(simulation.harnessAis ?? {}).sort(([a], [b]) => (a < b ? -1 : 1)).map(([file, definition]) => [file, definition.rules]),
