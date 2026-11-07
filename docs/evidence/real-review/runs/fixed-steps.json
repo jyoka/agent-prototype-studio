@@ -1,0 +1,694 @@
+{
+  "id": "fixed-steps",
+  "shapeHint": "手順が決まっている",
+  "sentence": "架空の市民プール「みなもプール」の個人レッスンの予約を、電話なしで受けたい",
+  "seconds": 33.734,
+  "failure": null,
+  "costUsd": 0.10557599999999998,
+  "attempts": [
+    {
+      "ms": 33663,
+      "exitCode": 0,
+      "costUsd": 0.10557599999999998,
+      "subtype": "success",
+      "isError": false,
+      "numTurns": 2,
+      "durationMs": 33153,
+      "modelUsage": [
+        "claude-opus-5-5"
+      ],
+      "structuredOutput": {
+        "problem": {
+          "options": [
+            {
+              "title": "予約の電話を受付から減らす",
+              "detail": "個人レッスンの予約を電話なしで受けられるようにして、受付に集中している予約の電話を減らす。料金の支払いとコーチの指名は扱わない。",
+              "reason": "目的の文書の問題と、目指すところ(予約の電話が半分になる)にそのまま合うため勧める。"
+            },
+            {
+              "title": "夜でも翌週の予約が取れるようにする",
+              "detail": "受付が閉まっている前の日の夜でも、空いている時間帯を見て翌週の予約を取れるようにする。",
+              "reason": "使う人の困りごとに寄せた見方だが、電話がどれだけ減るかは別に確かめる必要がある。"
+            },
+            {
+              "title": "空き確認の問い合わせを先に減らす",
+              "detail": "まずは空いている時間帯を聞く問い合わせだけに答え、予約そのものは今までどおり受付で取る。",
+              "reason": "小さく始められる代わりに、予約の電話そのものはあまり減らない見込み。"
+            }
+          ],
+          "recommended": 0
+        },
+        "users": {
+          "options": [
+            {
+              "title": "子どもを通わせたい保護者",
+              "detail": "子どもの個人レッスンを、前の日の夜などに家から予約する保護者。子どもが泳げるかどうかを伝える。",
+              "reason": "整理の板に挙がっている人で、夜に予約する場面とも合うため勧める。"
+            },
+            {
+              "title": "自分が習いたい大人の市民",
+              "detail": "自分のために個人レッスンを予約する市民。泳げるかどうかは自分のことを答える。",
+              "reason": "目的の文書の「市民」に広く合うが、子ども向けの聞き方とは少し変える必要がある。"
+            },
+            {
+              "title": "保護者と大人の両方",
+              "detail": "最初に誰が習うのかを聞いて、保護者でも大人本人でも同じ順番で予約を取る。",
+              "reason": "広く使える代わりに、聞くことが 1 つ増える。"
+            }
+          ],
+          "recommended": 0
+        },
+        "scenes": {
+          "options": [
+            {
+              "title": "予約の流れを中心にした組",
+              "reason": "いつも同じ順番で聞く予約の流れと、うまくいかない場面を両方確かめられる。",
+              "scenes": [
+                {
+                  "category": "normal",
+                  "text": "来週の火曜の夕方、子ども1人で予約したいです。"
+                },
+                {
+                  "category": "normal",
+                  "text": "来週の土曜の午前って空いてますか?"
+                },
+                {
+                  "category": "unknown",
+                  "text": "うちの子、顔はつけられるけど浮けないんですが、泳げるに入りますか?"
+                },
+                {
+                  "category": "refuse",
+                  "text": "再来週の水曜で予約したいんですけど。"
+                },
+                {
+                  "category": "refuse",
+                  "text": "兄弟3人一緒にお願いできますか?"
+                },
+                {
+                  "category": "slow",
+                  "text": "(土日の空きを全部まとめて聞かれ、確かめるのに時間がかかる)"
+                },
+                {
+                  "category": "human",
+                  "text": "足にけががあるので、受けられるか相談したいです。"
+                }
+              ]
+            },
+            {
+              "title": "やらないことの線引きを確かめる組",
+              "reason": "支払いとコーチの指名を断る場面を多めに入れ、線引きが伝わるかを見る。",
+              "scenes": [
+                {
+                  "category": "normal",
+                  "text": "来週の木曜の夕方、1人でお願いします。泳げません。"
+                },
+                {
+                  "category": "refuse",
+                  "text": "お支払いもここで済ませられますか?"
+                },
+                {
+                  "category": "refuse",
+                  "text": "いつもの先生でお願いしたいです。"
+                },
+                {
+                  "category": "unknown",
+                  "text": "雨の日でもレッスンはありますか?"
+                },
+                {
+                  "category": "slow",
+                  "text": "(予約の内容を読み上げて確かめる前に、空きをもう一度見直す)"
+                },
+                {
+                  "category": "human",
+                  "text": "前に取った予約を取り消したいんですが。"
+                }
+              ]
+            },
+            {
+              "title": "空きの問い合わせを中心にした組",
+              "reason": "整理の板の「空いている時間帯を聞かれる」場面を厚めに確かめる。",
+              "scenes": [
+                {
+                  "category": "normal",
+                  "text": "来週で空いてる時間帯を教えてください。"
+                },
+                {
+                  "category": "normal",
+                  "text": "金曜の夜は2人分空いてますか?"
+                },
+                {
+                  "category": "unknown",
+                  "text": "夏休みの時期はいつから予約できますか?"
+                },
+                {
+                  "category": "refuse",
+                  "text": "来月の分を今のうちに押さえたいです。"
+                },
+                {
+                  "category": "slow",
+                  "text": "(7日分の空きをまとめて調べて返事をする)"
+                },
+                {
+                  "category": "human",
+                  "text": "空きがないので、キャンセル待ちにできますか?"
+                }
+              ]
+            }
+          ],
+          "recommended": 0
+        },
+        "data": {
+          "options": [
+            {
+              "title": "レッスンの枠と予約",
+              "detail": "レッスンの枠(日にち、時間帯、空き)と、そこに入った予約(名前、人数、泳げるかどうか)を覚えておく。",
+              "reason": "予約を取るのに要るものだけで、いちばん分かりやすい。",
+              "entities": [
+                {
+                  "name": "レッスンの枠",
+                  "about": "日にちと時間帯ごとの空き",
+                  "writer": "受付",
+                  "sources": [
+                    "i5"
+                  ],
+                  "fields": [
+                    {
+                      "name": "日にち",
+                      "kind": "date",
+                      "examples": [
+                        "2026-11-17",
+                        "2026-11-21"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    },
+                    {
+                      "name": "時間帯",
+                      "kind": "choice",
+                      "examples": [
+                        "午前",
+                        "午後",
+                        "夕方"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    },
+                    {
+                      "name": "空き",
+                      "kind": "number",
+                      "examples": [
+                        "0",
+                        "1",
+                        "2"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "予約",
+                  "about": "枠に入った個人レッスンの予約",
+                  "writer": "予約を受けるAI",
+                  "sources": [],
+                  "fields": [
+                    {
+                      "name": "予約した人の名前",
+                      "kind": "text",
+                      "examples": [
+                        "水野 さくら",
+                        "川辺 たろう"
+                      ],
+                      "sources": []
+                    },
+                    {
+                      "name": "人数",
+                      "kind": "number",
+                      "examples": [
+                        "1",
+                        "2"
+                      ],
+                      "sources": []
+                    },
+                    {
+                      "name": "泳げるかどうか",
+                      "kind": "choice",
+                      "examples": [
+                        "泳げない",
+                        "少し泳げる",
+                        "泳げる"
+                      ],
+                      "sources": []
+                    },
+                    {
+                      "name": "受けた日時",
+                      "kind": "date",
+                      "examples": [
+                        "2026-11-10 21:15"
+                      ],
+                      "sources": []
+                    }
+                  ]
+                }
+              ],
+              "links": [
+                {
+                  "from": "レッスンの枠",
+                  "to": "予約",
+                  "label": "入った予約"
+                }
+              ]
+            },
+            {
+              "title": "枠、予約、予約する人",
+              "detail": "予約する人(保護者など)を別に覚え、1 人がいくつも予約できるようにする。",
+              "reason": "同じ人が何度も予約するときに便利な代わりに、覚えるものが増える。",
+              "entities": [
+                {
+                  "name": "レッスンの枠",
+                  "about": "日にちと時間帯ごとの空き",
+                  "writer": "受付",
+                  "sources": [
+                    "i5"
+                  ],
+                  "fields": [
+                    {
+                      "name": "日にち",
+                      "kind": "date",
+                      "examples": [
+                        "2026-11-18"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    },
+                    {
+                      "name": "時間帯",
+                      "kind": "choice",
+                      "examples": [
+                        "午前",
+                        "夕方"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    },
+                    {
+                      "name": "空き",
+                      "kind": "number",
+                      "examples": [
+                        "1",
+                        "2"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "予約する人",
+                  "about": "予約をする保護者や市民",
+                  "writer": "予約を受けるAI",
+                  "sources": [],
+                  "fields": [
+                    {
+                      "name": "名前",
+                      "kind": "text",
+                      "examples": [
+                        "水野 さくら"
+                      ],
+                      "sources": []
+                    },
+                    {
+                      "name": "習う人",
+                      "kind": "choice",
+                      "examples": [
+                        "子ども",
+                        "本人"
+                      ],
+                      "sources": []
+                    }
+                  ]
+                },
+                {
+                  "name": "予約",
+                  "about": "枠に入った予約",
+                  "writer": "予約を受けるAI",
+                  "sources": [],
+                  "fields": [
+                    {
+                      "name": "人数",
+                      "kind": "number",
+                      "examples": [
+                        "1",
+                        "2"
+                      ],
+                      "sources": []
+                    },
+                    {
+                      "name": "泳げるかどうか",
+                      "kind": "choice",
+                      "examples": [
+                        "泳げない",
+                        "泳げる"
+                      ],
+                      "sources": []
+                    }
+                  ]
+                }
+              ],
+              "links": [
+                {
+                  "from": "レッスンの枠",
+                  "to": "予約",
+                  "label": "入った予約"
+                },
+                {
+                  "from": "予約する人",
+                  "to": "予約",
+                  "label": "した予約"
+                }
+              ]
+            },
+            {
+              "title": "枠だけを覚える",
+              "detail": "レッスンの枠と空きだけを覚え、予約の中身は読み上げて確かめたあと受付に知らせる。",
+              "reason": "覚えるものは少ないが、誰が予約したかを後から見られない。",
+              "entities": [
+                {
+                  "name": "レッスンの枠",
+                  "about": "日にちと時間帯ごとの空き",
+                  "writer": "受付",
+                  "sources": [
+                    "i5"
+                  ],
+                  "fields": [
+                    {
+                      "name": "日にち",
+                      "kind": "date",
+                      "examples": [
+                        "2026-11-19"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    },
+                    {
+                      "name": "時間帯",
+                      "kind": "choice",
+                      "examples": [
+                        "午後",
+                        "夕方"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    },
+                    {
+                      "name": "空き",
+                      "kind": "number",
+                      "examples": [
+                        "0",
+                        "2"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "links": []
+            }
+          ],
+          "recommended": 0
+        },
+        "composition": {
+          "recommended": "fixed-flow",
+          "reason": "問い 1 で止まった。日にち、時間帯、人数、泳げるかどうかをいつも同じ順番で聞いて最後に読み上げるので、手順を書いておける。"
+        },
+        "screens": {
+          "recommended": "talk",
+          "reason": "保護者が前の日の夜に家からスマホで、電話の代わりに一問ずつ答えていく使い方に合うため。"
+        }
+      },
+      "unreadableStdout": null
+    }
+  ],
+  "aiComposition": {
+    "recommended": "fixed-flow",
+    "reason": "問い 1 で止まった。日にち、時間帯、人数、泳げるかどうかをいつも同じ順番で聞いて最後に読み上げるので、手順を書いておける。"
+  },
+  "recommended": {
+    "id": "fixed-flow",
+    "label": "固定の流れ",
+    "reason": "問い 1 で止まった。日にち、時間帯、人数、泳げるかどうかをいつも同じ順番で聞いて最後に読み上げるので、手順を書いておける。"
+  },
+  "steps": {
+    "problem": {
+      "source": "ai",
+      "chosen": "予約の電話を受付から減らす"
+    },
+    "users": {
+      "source": "ai",
+      "chosen": "子どもを通わせたい保護者"
+    },
+    "scenes": {
+      "source": "ai",
+      "chosen": "予約の流れを中心にした組"
+    },
+    "data": {
+      "source": "ai",
+      "chosen": "レッスンの枠と予約"
+    },
+    "composition": {
+      "source": "ai",
+      "chosen": "固定の流れ"
+    },
+    "screens": {
+      "source": "ai",
+      "chosen": "トークアプリ風の画面"
+    }
+  },
+  "scenes": [
+    {
+      "category": "normal",
+      "text": "来週の火曜の夕方、子ども1人で予約したいです。"
+    },
+    {
+      "category": "normal",
+      "text": "来週の土曜の午前って空いてますか?"
+    },
+    {
+      "category": "unknown",
+      "text": "うちの子、顔はつけられるけど浮けないんですが、泳げるに入りますか?"
+    },
+    {
+      "category": "refuse",
+      "text": "再来週の水曜で予約したいんですけど。"
+    },
+    {
+      "category": "refuse",
+      "text": "兄弟3人一緒にお願いできますか?"
+    },
+    {
+      "category": "slow",
+      "text": "(土日の空きを全部まとめて聞かれ、確かめるのに時間がかかる)"
+    },
+    {
+      "category": "human",
+      "text": "足にけががあるので、受けられるか相談したいです。"
+    }
+  ],
+  "review": {
+    "errors": [],
+    "shape": "fixed-flow",
+    "fingerprint": "1301e4574694fd549a18a9320a8a22bbb7a9df3acd3e6902bba2bf04b4a3e2ea",
+    "mock": {
+      "passed": 7,
+      "total": 7,
+      "toolCalls": 0,
+      "verdict": "passed"
+    },
+    "harness": {
+      "rows": [
+        {
+          "part": "1 ターンの回し方",
+          "content": "コードが流れの段を順に進める。モデルは発言の読み取りと、文を作るだけ",
+          "decidedBy": "コード",
+          "modelOnly": false
+        },
+        {
+          "part": "何を聞くか・いつ終えるか",
+          "content": "聞く項目: 用件。全部そろったら終える",
+          "decidedBy": "コード",
+          "modelOnly": false
+        },
+        {
+          "part": "プロンプト(AI に渡す指示の文)",
+          "content": "1 つ。全文は下で読める",
+          "decidedBy": "人",
+          "modelOnly": false
+        },
+        {
+          "part": "道具と権限",
+          "content": "道具なし。AI は何も呼べない",
+          "decidedBy": "コード",
+          "modelOnly": false
+        },
+        {
+          "part": "守り(ガードレール)の 3 層",
+          "content": "ツールの守り(コード): なし。プロンプトの頼み(モデル頼み): なし。出口の確かめ(コード): 数字を作らない、返事は 1000 文字まで",
+          "decidedBy": "コード",
+          "modelOnly": false
+        },
+        {
+          "part": "人に渡す条件",
+          "content": "まだ決めていない。人に渡す条件はない",
+          "decidedBy": "人",
+          "modelOnly": false
+        },
+        {
+          "part": "上限",
+          "content": "1 つの会話は 30 ターンまで、引き継ぎは 3 回まで",
+          "decidedBy": "コード",
+          "modelOnly": false
+        },
+        {
+          "part": "文脈と記憶",
+          "content": "1 つの会話の中だけ覚える。会話をまたいでは覚えない",
+          "decidedBy": "コード",
+          "modelOnly": false
+        },
+        {
+          "part": "記録と評価",
+          "content": "実行の記録を試す画面で読める。場面の一覧(7 本)で同じように測る",
+          "decidedBy": "コード",
+          "modelOnly": false
+        }
+      ],
+      "modelDecides": [],
+      "codeBinds": [
+        "1 ターンの回し方",
+        "何を聞くか・いつ終えるか",
+        "道具と権限",
+        "守り(ガードレール)の 3 層",
+        "上限",
+        "文脈と記憶",
+        "記録と評価"
+      ],
+      "humanDecides": [
+        "プロンプト(AI に渡す指示の文)",
+        "人に渡す条件"
+      ],
+      "modelOnly": []
+    },
+    "data": {
+      "shelf": [
+        {
+          "id": "table-1",
+          "name": "レッスンの枠",
+          "shape": "table",
+          "read": "tool",
+          "change": "unknown",
+          "personal": null,
+          "prototype": "架空の 3 件",
+          "source": "data-design"
+        },
+        {
+          "id": "table-2",
+          "name": "予約",
+          "shape": "table",
+          "read": "tool",
+          "change": "unknown",
+          "personal": null,
+          "prototype": "架空の 3 件",
+          "source": "data-design"
+        },
+        {
+          "id": "rules",
+          "name": "整理の板の決まりごと",
+          "shape": "rules",
+          "read": "prompt",
+          "change": "unknown",
+          "personal": null,
+          "prototype": "決まりごと 2 つを、そのまま入れる",
+          "source": "board"
+        }
+      ],
+      "rag": {
+        "needed": false,
+        "reason": "AI が読むのは表と短い決まりだけ。表はツールで引ける。決まりは短いのでプロンプトに入れられる",
+        "addWhen": "長い文書(約款、手引きなど)を読む場面が出て、ツールで引く形とプロンプトに入れる形で通らなくなったら",
+        "verdict": "要らない",
+        "steps": [
+          {
+            "order": 1,
+            "question": "AI がこのデータを読まなくても、場面は通るか",
+            "read": "none",
+            "items": []
+          },
+          {
+            "order": 2,
+            "question": "表やキーで、1 件を引けるか",
+            "read": "tool",
+            "items": [
+              "レッスンの枠",
+              "予約"
+            ]
+          },
+          {
+            "order": 3,
+            "question": "短くて、毎回プロンプトに入れられるか",
+            "read": "prompt",
+            "items": [
+              "整理の板の決まりごと"
+            ]
+          },
+          {
+            "order": 4,
+            "question": "ここまでで通らない場面があるか",
+            "read": "rag",
+            "items": []
+          }
+        ],
+        "measured": false,
+        "note": "今日の推測。まだ測っていない"
+      }
+    },
+    "stack": [
+      {
+        "part": "モデル",
+        "prototype": "Claude Code の既定のモデル(代わりのモデル。harness の読み取りと言い方)"
+      },
+      {
+        "part": "回し方",
+        "prototype": "Studio の会話の進め方(固定の流れ)"
+      },
+      {
+        "part": "ツールの接続",
+        "prototype": "ツールなし"
+      },
+      {
+        "part": "知識(RAG)",
+        "prototype": "使わない"
+      },
+      {
+        "part": "記憶",
+        "prototype": "1 つの会話の中だけ。会話をまたいで覚えない"
+      },
+      {
+        "part": "評価",
+        "prototype": "場面の一覧(7 本)。お試しの AI と本物の AI で回せる"
+      },
+      {
+        "part": "記録",
+        "prototype": "Studio の実行の記録(試す画面で読める)"
+      }
+    ]
+  }
+}

@@ -142,7 +142,7 @@ export const DESIGN_SCHEMA = {
     data: dataOptions,
     composition: {
       type: 'object',
-      properties: { recommended: { type: 'string', enum: ['fixed-flow', 'single-agent'] }, reason: text(200) },
+      properties: { recommended: { type: 'string', enum: ['fixed-flow', 'single-agent', 'master-sub'] }, reason: text(200) },
       required: ['recommended', 'reason'],
       additionalProperties: false,
     },
@@ -168,7 +168,8 @@ export const DESIGN_SYSTEM_PROMPT = [
   '- data の番号(主キー)とつながりの番号は Studio が付けるので、fields に書かない。1 つの覚えておくものの中で、項目の名前を重ねない。links の from と to は entities の name にする',
   '- data の examples は、試作品で使う架空の値。実在の人、会社、場所、電話番号、メールアドレスを書かない',
   '- recommended: 勧める案の番号(0 から数える)。理由は reason に書く',
-  '- composition: 簡単な方から問う。手順をコードに書けるなら fixed-flow で止める。書けないときだけ single-agent にする。reason にどちらかの理由を 1 文で書く',
+  '- composition: 簡単な方から順に問い、足りたらそこで止める。問い 1: 聞く順番と手順をコードに書けるなら fixed-flow。問い 2: 書けないが、1 つの AI が道具を選べば足りるなら single-agent。問い 3: 1 つの AI では足りず、仕事を別々の係に分けて任せると通る見込みがあるときだけ master-sub',
+  '- composition の reason には、どの問いで止まったかと、その理由を、題材の言葉で 1 文で書く。どの題材でも同じ形を勧めない。題材の手順の決まり方で選ぶ',
   '- screens: web(Web の相談画面)、talk(トークアプリ風の画面)、plain(今の画面の横に置く飾りのない枠)のどれを勧めるかと、理由を 1 文で書く',
   '- 通った数、費用、待ち時間などの数を作らない。まだ測っていない',
   '- 「理想」「最適」「ベストプラクティス」「最新の正解」と言わない。出すのは今日の一番良い推測',

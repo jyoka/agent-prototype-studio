@@ -133,9 +133,9 @@ test('README は「今できること」と「作っているもの」を分け�
   // 動くもの(設計の案内、ツールを呼ぶ固定の流れ)を、作っているものに「まだない」と書かない
   assert.ok(readme.slice(today, building).includes('設計の案内'));
   assert.doesNotMatch(readme.slice(building, start), /設計の案内|固定の流れからツールを呼ぶことと/);
-  // 1 文の後の 2〜3 行で、承認の段がまだ使えないと言う(1 文だけを読んで、できると思わせない)
+  // 1 文の後の 2〜3 行で、承認の段は人の確かめがまだだと言う(1 文だけを読んで、できあがったと思わせない)
   const lead = readme.slice(readme.indexOf(`**${JA}**`), readme.indexOf('## しくみ'));
-  assert.match(lead, /承認する段は作っているところで、まだ使えません/);
+  assert.match(lead, /承認する段(.*)は、設計の案内の後に入りましたが、人の確かめはまだ/);
 });
 
 test('README と LP は「理想の構成」と言わず、日付と根拠のある今日の一番良い推測と書く', async () => {

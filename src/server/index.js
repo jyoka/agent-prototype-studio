@@ -11,6 +11,7 @@ import { ProjectHandoffs } from './handoff.js';
 import { ProjectIntents } from './intent.js';
 import { createIntentAi, INTENT_SYSTEM_PROMPT } from './intent-ai.js';
 import { ProjectDesigns } from './design.js';
+import { ProjectReviews } from './review.js';
 import { ProjectMaterials } from './materials.js';
 import { createDesignAi, DESIGN_SYSTEM_PROMPT } from './design-ai.js';
 import { ProjectMeetings, removeErasing } from './meeting.js';
@@ -114,6 +115,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       await organizes.forget(id);
       intents.forget(id);
       designs.forget(id);
+      reviews.forget(id);
       requests.forget(id);
       checks.forget(id);
       aiSessions.forgetProject(id);
@@ -181,6 +183,8 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     maxBudgetUsd: config.maxBudgetUsd,
     consent,
     meetingGate: (id, mode) => meetings.require(id, mode),
+    // AI 構成の審査(review.js)。審査の要る試作品は、4 つの承認の後だけ作る AI を起動し、承認と違う構成は関門 GA で止める
+    reviews: { check: (id) => reviews.check(id), markStopped: (id, detail) => reviews.markStopped(id, detail) },
     ...(scenarioLimits ? { scenarioLimits } : {}),
     ...(onAgentEvent ? { onAgentEvent } : {}),
   });
@@ -226,9 +230,13 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     talkGate,
     intentOf: (id) => intents.records.get(id) ?? null,
     boardOf: (id) => organizes.boards.get(id)?.items ?? [],
+    reviewOf: (id) => reviews.statusOf(id),
     log,
   });
   await designs.load();
+  // AI 構成の審査と AI 構成書。会の中では承認する役を分ける(docs/design/ai-architecture-review.md の 9 節)
+  const reviews = new ProjectReviews({ home: config.home, store, designs, modeOf: (id) => (meetings.records.has(id) ? 'meeting' : 'single'), log });
+  await reviews.load();
   const materials = new ProjectMaterials({ store, log });
   const servers = [];
   const versions = new ProjectVersions({ store, aiSessions, log });
@@ -245,6 +253,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       intents,
       organizes,
       designs,
+      reviews,
       materials,
       meetings,
       token,
@@ -309,6 +318,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     intents,
     organizes,
     designs,
+    reviews,
     meetings,
     checks,
     observer,

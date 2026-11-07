@@ -183,6 +183,19 @@ function parseGuard(problems, where, raw) {
   return guard;
 }
 
+// 構成の形(docs/design/ai-architecture-review.md の 2 節の選択肢)。AI 構成の審査と、場面の回しの結果の数を形ごとに読むのに使う。
+// 回し手が harness なら固定の流れ、委任の辺があればマスターとサブ、AI から AI への引き継ぎがあれば handoff(選択肢にない今の構成)
+export function compositionShape(composition) {
+  const participants = composition?.participants ?? [];
+  const driver = participants.find((p) => p.id === composition?.driver) ?? participants[0];
+  if (!driver) return 'none';
+  if (driver.kind === 'harness') return 'fixed-flow';
+  if ((composition.delegations ?? []).length > 0) return 'master-sub';
+  const kindOf = new Map(participants.map((p) => [p.id, p.kind]));
+  if ((composition.handoffs ?? []).some((edge) => kindOf.get(edge.to) !== 'human' && kindOf.get(edge.from) !== 'human')) return 'handoff';
+  return 'single-agent';
+}
+
 // この構成が前提を使うか。agent の参加者と、モデルを前提から読む harness の参加者が使う(今の harness の参加者は使わない。R2)
 export const usesAssumptions = (composition) => composition.participants.some((p) => p.kind === 'agent' || p.model?.from === 'assumptions');
 

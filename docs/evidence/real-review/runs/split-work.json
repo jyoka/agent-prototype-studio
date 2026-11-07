@@ -1,0 +1,793 @@
+{
+  "id": "split-work",
+  "shapeHint": "仕事を分けて並べられる",
+  "sentence": "架空の旅行会社「そらいろ旅行」で、宿、移動、観光の候補を別々に調べて、1 つの旅程の案にまとめたい",
+  "seconds": 56.331,
+  "failure": null,
+  "costUsd": 0.22408919999999996,
+  "attempts": [
+    {
+      "ms": 56254,
+      "exitCode": 0,
+      "costUsd": 0.22408919999999996,
+      "subtype": "success",
+      "isError": false,
+      "numTurns": 3,
+      "durationMs": 55499,
+      "modelUsage": [
+        "claude-opus-5-5"
+      ],
+      "structuredOutput": {
+        "problem": {
+          "options": [
+            {
+              "title": "最初の旅程の案を1回で出す",
+              "detail": "行き先、日にち、人数を聞いて、宿、移動、観光を別々に調べ、日ごとの旅程の案にまとめて1回の相談で見せる。予約と支払いはしない。",
+              "reason": "目的の文書の「1回の相談で最初の案が出る」にそのまま合わせた案です。"
+            },
+            {
+              "title": "子ども連れで無理のない旅程にする",
+              "detail": "小さい子どものいる家族向けに、移動の時間が長すぎないか、観光の場所が休みの日でないかを確かめながら旅程の案を組む。",
+              "reason": "整理の板の利用者と入れ替えの場面に寄せた案です。そのぶん、ほかの旅の形には向きにくくなります。"
+            },
+            {
+              "title": "調べる手間だけを減らす",
+              "detail": "宿、移動、観光の候補をそれぞれ並べて見せるところまでにして、組み合わせは相談する人が決める。",
+              "reason": "作るものは小さくなりますが、旅程の案にまとめる部分は残ったままです。"
+            }
+          ],
+          "recommended": 0
+        },
+        "users": {
+          "options": [
+            {
+              "title": "小さい子どものいる家族",
+              "detail": "週末の2泊3日で家族旅行を考えている人。移動の時間や子どもの疲れが気になる。",
+              "reason": "整理の板に書かれた利用者で、場面とも合っています。"
+            },
+            {
+              "title": "家族旅行を考えている人全般",
+              "detail": "子どもの年や人数を問わず、家族で週末に出かけたい人。",
+              "reason": "幅は広がりますが、子ども連れに特有の気づかいは薄くなります。"
+            },
+            {
+              "title": "そらいろ旅行の窓口の人",
+              "detail": "お客さんの相談を受けながら、その場で旅程の案をつくる店の人。",
+              "reason": "お客さんに見せる前に人が確かめられますが、目的の文書の利用者とは違います。"
+            }
+          ],
+          "recommended": 0
+        },
+        "scenes": {
+          "options": [
+            {
+              "title": "家族の週末旅行の相談の組",
+              "reason": "うまくいく場面と、入れ替え、分からない、断る、遅いを一通りそろえています。",
+              "scenes": [
+                {
+                  "category": "normal",
+                  "text": "来月の週末に、子ども2人と海の近くへ2泊3日で行きたいです。"
+                },
+                {
+                  "category": "normal",
+                  "text": "移動が長すぎるので、2日目の観光を近いところに替えてください。"
+                },
+                {
+                  "category": "unknown",
+                  "text": "この宿、ベビーベッドは借りられますか?"
+                },
+                {
+                  "category": "refuse",
+                  "text": "この案で宿を予約して、カードで払っておいてください。"
+                },
+                {
+                  "category": "slow",
+                  "text": "3つの地域で、それぞれ宿と移動と観光を全部比べてみてください。"
+                },
+                {
+                  "category": "human",
+                  "text": "予算を少し超えてしまうので、お店の人と相談したいです。"
+                }
+              ]
+            },
+            {
+              "title": "休みの日と予算に気をつける組",
+              "reason": "観光の休みの日や予算の扱いなど、まだ決まっていないところを確かめる組です。",
+              "scenes": [
+                {
+                  "category": "normal",
+                  "text": "土曜に動物園へ行って、日曜はゆっくりしたいです。"
+                },
+                {
+                  "category": "normal",
+                  "text": "その日が休みの場所は外して、別の候補を入れてください。"
+                },
+                {
+                  "category": "unknown",
+                  "text": "当日の道の混み具合はどうなりそうですか?"
+                },
+                {
+                  "category": "refuse",
+                  "text": "キャンセル料を払わずに済むよう宿に交渉してください。"
+                },
+                {
+                  "category": "slow",
+                  "text": "宿を安い順に全部出して、それぞれに旅程の案を付けてください。"
+                },
+                {
+                  "category": "human",
+                  "text": "子どもが乗り物に酔いやすいので、詳しい人に聞きたいです。"
+                }
+              ]
+            }
+          ],
+          "recommended": 0
+        },
+        "data": {
+          "options": [
+            {
+              "title": "宿、移動、観光、旅程の案",
+              "detail": "調べる3つの表と、それらを日ごとにまとめた旅程の案を覚えておく。",
+              "reason": "整理の板の3つのデータをそのまま表にして、まとめた結果も残せます。",
+              "entities": [
+                {
+                  "name": "宿",
+                  "about": "泊まる場所の候補",
+                  "writer": "そらいろ旅行",
+                  "sources": [
+                    "i4"
+                  ],
+                  "fields": [
+                    {
+                      "name": "宿の名前",
+                      "kind": "text",
+                      "examples": [
+                        "みなと荘",
+                        "森のやど"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    },
+                    {
+                      "name": "地域",
+                      "kind": "text",
+                      "examples": [
+                        "うみべ町",
+                        "やまなみ村"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    },
+                    {
+                      "name": "1泊の料金",
+                      "kind": "number",
+                      "examples": [
+                        "12000",
+                        "18000"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    },
+                    {
+                      "name": "空き",
+                      "kind": "choice",
+                      "examples": [
+                        "あり",
+                        "なし"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "移動",
+                  "about": "区間ごとの移動の手段と時間",
+                  "writer": "そらいろ旅行",
+                  "sources": [
+                    "i5"
+                  ],
+                  "fields": [
+                    {
+                      "name": "区間",
+                      "kind": "text",
+                      "examples": [
+                        "中央駅→うみべ駅"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    },
+                    {
+                      "name": "手段",
+                      "kind": "choice",
+                      "examples": [
+                        "電車",
+                        "バス"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    },
+                    {
+                      "name": "所要時間(分)",
+                      "kind": "number",
+                      "examples": [
+                        "90",
+                        "40"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "観光の場所",
+                  "about": "見に行く場所の候補",
+                  "writer": "そらいろ旅行",
+                  "sources": [
+                    "i6"
+                  ],
+                  "fields": [
+                    {
+                      "name": "場所の名前",
+                      "kind": "text",
+                      "examples": [
+                        "こども水族館",
+                        "花の丘公園"
+                      ],
+                      "sources": [
+                        "i6"
+                      ]
+                    },
+                    {
+                      "name": "地域",
+                      "kind": "text",
+                      "examples": [
+                        "うみべ町"
+                      ],
+                      "sources": [
+                        "i6"
+                      ]
+                    },
+                    {
+                      "name": "所要時間(分)",
+                      "kind": "number",
+                      "examples": [
+                        "120",
+                        "60"
+                      ],
+                      "sources": [
+                        "i6"
+                      ]
+                    },
+                    {
+                      "name": "休みの日",
+                      "kind": "text",
+                      "examples": [
+                        "月曜",
+                        "なし"
+                      ],
+                      "sources": [
+                        "i6"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "旅程の案",
+                  "about": "相談ごとにまとめた案",
+                  "writer": "案を出すAI",
+                  "sources": [],
+                  "fields": [
+                    {
+                      "name": "出発の日",
+                      "kind": "date",
+                      "examples": [
+                        "2026-12-05"
+                      ],
+                      "sources": []
+                    },
+                    {
+                      "name": "人数",
+                      "kind": "text",
+                      "examples": [
+                        "大人2、子ども2"
+                      ],
+                      "sources": []
+                    }
+                  ]
+                },
+                {
+                  "name": "日ごとの予定",
+                  "about": "旅程の案の1日分の中身",
+                  "writer": "案を出すAI",
+                  "sources": [
+                    "i4",
+                    "i5",
+                    "i6"
+                  ],
+                  "fields": [
+                    {
+                      "name": "何日目",
+                      "kind": "number",
+                      "examples": [
+                        "1",
+                        "2"
+                      ],
+                      "sources": []
+                    },
+                    {
+                      "name": "泊まる宿",
+                      "kind": "text",
+                      "examples": [
+                        "みなと荘"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    },
+                    {
+                      "name": "移動",
+                      "kind": "text",
+                      "examples": [
+                        "中央駅→うみべ駅 電車90分"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    },
+                    {
+                      "name": "観光",
+                      "kind": "text",
+                      "examples": [
+                        "こども水族館"
+                      ],
+                      "sources": [
+                        "i6"
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "links": [
+                {
+                  "from": "旅程の案",
+                  "to": "日ごとの予定",
+                  "label": "日ごとに分ける"
+                }
+              ]
+            },
+            {
+              "title": "3つの表だけを覚えておく",
+              "detail": "宿、移動、観光の場所だけを覚え、旅程の案はその場で見せるだけにする。",
+              "reason": "表は少なくて済みますが、前の案を見返すことはできません。",
+              "entities": [
+                {
+                  "name": "宿",
+                  "about": "泊まる場所の候補",
+                  "writer": "そらいろ旅行",
+                  "sources": [
+                    "i4"
+                  ],
+                  "fields": [
+                    {
+                      "name": "宿の名前",
+                      "kind": "text",
+                      "examples": [
+                        "みなと荘"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    },
+                    {
+                      "name": "地域",
+                      "kind": "text",
+                      "examples": [
+                        "うみべ町"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    },
+                    {
+                      "name": "1泊の料金",
+                      "kind": "number",
+                      "examples": [
+                        "12000"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    },
+                    {
+                      "name": "空き",
+                      "kind": "choice",
+                      "examples": [
+                        "あり",
+                        "なし"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "移動",
+                  "about": "区間ごとの所要時間",
+                  "writer": "そらいろ旅行",
+                  "sources": [
+                    "i5"
+                  ],
+                  "fields": [
+                    {
+                      "name": "区間",
+                      "kind": "text",
+                      "examples": [
+                        "中央駅→うみべ駅"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    },
+                    {
+                      "name": "所要時間(分)",
+                      "kind": "number",
+                      "examples": [
+                        "90"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "観光の場所",
+                  "about": "見に行く場所の候補",
+                  "writer": "そらいろ旅行",
+                  "sources": [
+                    "i6"
+                  ],
+                  "fields": [
+                    {
+                      "name": "場所の名前",
+                      "kind": "text",
+                      "examples": [
+                        "花の丘公園"
+                      ],
+                      "sources": [
+                        "i6"
+                      ]
+                    },
+                    {
+                      "name": "地域",
+                      "kind": "text",
+                      "examples": [
+                        "やまなみ村"
+                      ],
+                      "sources": [
+                        "i6"
+                      ]
+                    },
+                    {
+                      "name": "所要時間(分)",
+                      "kind": "number",
+                      "examples": [
+                        "60"
+                      ],
+                      "sources": [
+                        "i6"
+                      ]
+                    },
+                    {
+                      "name": "休みの日",
+                      "kind": "text",
+                      "examples": [
+                        "火曜"
+                      ],
+                      "sources": [
+                        "i6"
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "links": []
+            }
+          ],
+          "recommended": 0
+        },
+        "composition": {
+          "recommended": "single-agent",
+          "reason": "問い2で止まりました。移動が長いときに観光を入れ替えるなど順番は決めきれませんが、宿、移動、観光の3つの表を1つのAIが選んで引けば足ります。"
+        },
+        "screens": {
+          "recommended": "web",
+          "reason": "日ごとの旅程の案を並べて見せ、入れ替えの相談も続けやすいからです。"
+        }
+      },
+      "unreadableStdout": null
+    }
+  ],
+  "aiComposition": {
+    "recommended": "single-agent",
+    "reason": "問い2で止まりました。移動が長いときに観光を入れ替えるなど順番は決めきれませんが、宿、移動、観光の3つの表を1つのAIが選んで引けば足ります。"
+  },
+  "recommended": {
+    "id": "single-agent",
+    "label": "単一エージェント",
+    "reason": "問い2で止まりました。移動が長いときに観光を入れ替えるなど順番は決めきれませんが、宿、移動、観光の3つの表を1つのAIが選んで引けば足ります。"
+  },
+  "steps": {
+    "problem": {
+      "source": "ai",
+      "chosen": "最初の旅程の案を1回で出す"
+    },
+    "users": {
+      "source": "ai",
+      "chosen": "小さい子どものいる家族"
+    },
+    "scenes": {
+      "source": "ai",
+      "chosen": "家族の週末旅行の相談の組"
+    },
+    "data": {
+      "source": "ai",
+      "chosen": "宿、移動、観光、旅程の案"
+    },
+    "composition": {
+      "source": "ai",
+      "chosen": "単一エージェント"
+    },
+    "screens": {
+      "source": "ai",
+      "chosen": "Web の相談画面"
+    }
+  },
+  "scenes": [
+    {
+      "category": "normal",
+      "text": "来月の週末に、子ども2人と海の近くへ2泊3日で行きたいです。"
+    },
+    {
+      "category": "normal",
+      "text": "移動が長すぎるので、2日目の観光を近いところに替えてください。"
+    },
+    {
+      "category": "unknown",
+      "text": "この宿、ベビーベッドは借りられますか?"
+    },
+    {
+      "category": "refuse",
+      "text": "この案で宿を予約して、カードで払っておいてください。"
+    },
+    {
+      "category": "slow",
+      "text": "3つの地域で、それぞれ宿と移動と観光を全部比べてみてください。"
+    },
+    {
+      "category": "human",
+      "text": "予算を少し超えてしまうので、お店の人と相談したいです。"
+    }
+  ],
+  "review": {
+    "errors": [],
+    "shape": "single-agent",
+    "fingerprint": "2a00cdffe2d17079501726edf2259e09c3e29cbdd491b82e5441ca9f215ffc37",
+    "mock": {
+      "passed": 6,
+      "total": 6,
+      "toolCalls": 0,
+      "verdict": "passed"
+    },
+    "harness": {
+      "rows": [
+        {
+          "part": "1 ターンの回し方",
+          "content": "1 つの AI が返事ごとに、道具を呼ぶか答えるかを選ぶ",
+          "decidedBy": "モデル",
+          "modelOnly": true
+        },
+        {
+          "part": "何を聞くか・いつ終えるか",
+          "content": "AI が決める。会話の上限(30 ターン)で必ず終わる",
+          "decidedBy": "モデル",
+          "modelOnly": true
+        },
+        {
+          "part": "プロンプト(AI に渡す指示の文)",
+          "content": "1 つ。全文は下で読める",
+          "decidedBy": "人",
+          "modelOnly": false
+        },
+        {
+          "part": "道具と権限",
+          "content": "道具なし。AI は何も呼べない",
+          "decidedBy": "コード",
+          "modelOnly": false
+        },
+        {
+          "part": "守り(ガードレール)の 3 層",
+          "content": "ツールの守り(コード): なし。プロンプトの頼み(モデル頼み): 分からないことは分からないと言い、作り話をしないでください。出口の確かめ(コード): 数字を作らない",
+          "decidedBy": "コード",
+          "modelOnly": false
+        },
+        {
+          "part": "人に渡す条件",
+          "content": "まだ決めていない。人に渡す条件はない",
+          "decidedBy": "人",
+          "modelOnly": false
+        },
+        {
+          "part": "上限",
+          "content": "1 つの会話は 30 ターンまで、引き継ぎは 3 回まで",
+          "decidedBy": "コード",
+          "modelOnly": false
+        },
+        {
+          "part": "文脈と記憶",
+          "content": "1 つの会話の中だけ覚える。会話をまたいでは覚えない",
+          "decidedBy": "コード",
+          "modelOnly": false
+        },
+        {
+          "part": "記録と評価",
+          "content": "実行の記録を試す画面で読める。場面の一覧(6 本)で同じように測る",
+          "decidedBy": "コード",
+          "modelOnly": false
+        }
+      ],
+      "modelDecides": [
+        "1 ターンの回し方",
+        "何を聞くか・いつ終えるか"
+      ],
+      "codeBinds": [
+        "道具と権限",
+        "守り(ガードレール)の 3 層",
+        "上限",
+        "文脈と記憶",
+        "記録と評価"
+      ],
+      "humanDecides": [
+        "プロンプト(AI に渡す指示の文)",
+        "人に渡す条件"
+      ],
+      "modelOnly": [
+        "1 ターンの回し方",
+        "何を聞くか・いつ終えるか"
+      ]
+    },
+    "data": {
+      "shelf": [
+        {
+          "id": "table-1",
+          "name": "宿",
+          "shape": "table",
+          "read": "tool",
+          "change": "unknown",
+          "personal": null,
+          "prototype": "架空の 3 件",
+          "source": "data-design"
+        },
+        {
+          "id": "table-2",
+          "name": "移動",
+          "shape": "table",
+          "read": "tool",
+          "change": "unknown",
+          "personal": null,
+          "prototype": "架空の 3 件",
+          "source": "data-design"
+        },
+        {
+          "id": "table-3",
+          "name": "観光の場所",
+          "shape": "table",
+          "read": "tool",
+          "change": "unknown",
+          "personal": null,
+          "prototype": "架空の 3 件",
+          "source": "data-design"
+        },
+        {
+          "id": "table-4",
+          "name": "旅程の案",
+          "shape": "table",
+          "read": "tool",
+          "change": "unknown",
+          "personal": null,
+          "prototype": "架空の 3 件",
+          "source": "data-design"
+        },
+        {
+          "id": "table-5",
+          "name": "日ごとの予定",
+          "shape": "table",
+          "read": "tool",
+          "change": "unknown",
+          "personal": null,
+          "prototype": "架空の 3 件",
+          "source": "data-design"
+        }
+      ],
+      "rag": {
+        "needed": false,
+        "reason": "AI が読むのは表だけ。表はツールで引ける",
+        "addWhen": "長い文書(約款、手引きなど)を読む場面が出て、ツールで引く形とプロンプトに入れる形で通らなくなったら",
+        "verdict": "要らない",
+        "steps": [
+          {
+            "order": 1,
+            "question": "AI がこのデータを読まなくても、場面は通るか",
+            "read": "none",
+            "items": []
+          },
+          {
+            "order": 2,
+            "question": "表やキーで、1 件を引けるか",
+            "read": "tool",
+            "items": [
+              "宿",
+              "移動",
+              "観光の場所",
+              "旅程の案",
+              "日ごとの予定"
+            ]
+          },
+          {
+            "order": 3,
+            "question": "短くて、毎回プロンプトに入れられるか",
+            "read": "prompt",
+            "items": []
+          },
+          {
+            "order": 4,
+            "question": "ここまでで通らない場面があるか",
+            "read": "rag",
+            "items": []
+          }
+        ],
+        "measured": false,
+        "note": "今日の推測。まだ測っていない"
+      }
+    },
+    "stack": [
+      {
+        "part": "モデル",
+        "prototype": "claude-sonnet-5-5(代わりのモデル)"
+      },
+      {
+        "part": "回し方",
+        "prototype": "Studio の会話の進め方(単一エージェント)"
+      },
+      {
+        "part": "ツールの接続",
+        "prototype": "ツールなし"
+      },
+      {
+        "part": "知識(RAG)",
+        "prototype": "使わない"
+      },
+      {
+        "part": "記憶",
+        "prototype": "1 つの会話の中だけ。会話をまたいで覚えない"
+      },
+      {
+        "part": "評価",
+        "prototype": "場面の一覧(6 本)。お試しの AI と本物の AI で回せる"
+      },
+      {
+        "part": "記録",
+        "prototype": "Studio の実行の記録(試す画面で読める)"
+      }
+    ]
+  }
+}

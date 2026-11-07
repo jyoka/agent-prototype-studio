@@ -132,13 +132,13 @@ Studio が何で、何が違うかを 1 文で言い切る。運営者が 2026-1
 
 ### 作っているもの
 
-どれも、まだ使えない。今の Studio で動くと書かない。全部のカードが終わったら jyoka/tasks#394 が畳み、「今できること」に本物の画面で移す。
+どれも、人の確かめが済んでいない。今の Studio で完成したと書かない。全部のカードが終わったら jyoka/tasks#394 が畳み、「今できること」に本物の画面で移す。
 
 | 見出し | 説明(日本語) | Heading | Description | カード |
 |---|---|---|---|---|
-| AI 構成の審査 | エージェントの構成、harness、データと RAG、技術の組の案を見せる。人が 4 つを承認するまで、作る AI を起動しない。結果は AI 構成書に残す。 | AI architecture review | Shows a proposal for the agent setup, harness, data and RAG, and tech stack. The maker AI does not start until a person approves all four. The result stays in an AI architecture record. | #422 |
-| 3 つの形の比べ | 固定の流れ、単一エージェント、マスターとサブを、同じ場面の一覧で比べる。簡単な方から問い、足りたら止まる。3 つの形とも構成に書け、ターミナルで比べられる。問いを進める審査の画面は、まだない。 | Three architecture shapes | Compares a fixed flow, a single agent, and a master with sub-agents on the same evals. It asks about the simplest shape first and stops when that is enough. All three shapes can be written as a composition and compared in the terminal. The review screen that walks through the questions does not exist yet. | #420(済)、#422 |
-| データの棚と RAG の判定 | AI が何をどう読むかを見せ、RAG が要るかを判定する。「要らない」とも言える。今は、データの段と場面の回しの表で見られる。審査の画面で承認する段は、まだない。 | Data shelf and RAG check | Shows what the AI reads and how, and checks whether RAG is needed. The answer can be no. Today you can see it in the data step and in the eval tables. The review screen that approves it does not exist yet. | #421(済)、#422 |
+| AI 構成の審査 | エージェントの構成、harness、データと RAG、技術の組の案を見せる。人が 4 つを承認するまで、作る AI を起動しない。結果は AI 構成書に残す。審査の画面がある。人の確かめと、本物の AI で案ごとの数を測る段はまだ。 | AI architecture review | Shows a proposal for the agent setup, harness, data and RAG, and tech stack. The maker AI does not start until a person approves all four. The result stays in an AI architecture record. There is a review screen. It has not been checked with people, and measuring each proposal with the real model is not built yet. | #422(画面、AI 構成書、関門 GA は済) |
+| 3 つの形の比べ | 固定の流れ、単一エージェント、マスターとサブを、同じ場面の一覧で比べる。簡単な方から問い、足りたら止まる。3 つの形とも構成に書け、審査の画面で切り替えて、お試しの AI で形を確かめられる。本物の AI で比べるのはターミナルだけ。 | Three architecture shapes | Compares a fixed flow, a single agent, and a master with sub-agents on the same evals. It asks about the simplest shape first and stops when that is enough. All three shapes can be written as a composition. You can switch between them on the review screen and check the shape with the mock AI. Comparing them with the real model is terminal only. | #420(済)、#422(済) |
+| データの棚と RAG の判定 | AI が何をどう読むかを見せ、RAG が要るかを判定する。「要らない」とも言える。データの段と審査の画面で見て、審査の画面で承認できる。本物の AI で RAG ありとなしを比べるのはターミナルだけ。 | Data shelf and RAG check | Shows what the AI reads and how, and checks whether RAG is needed. The answer can be no. You can see it in the data step and on the review screen, and approve it on the review screen. Comparing with and without RAG on the real model is terminal only. | #421(済)、#422(済) |
 | 記録と比べる表を主の画面に | 今、記録は開発者向けの詳細に、比べる表はターミナルにある。主の画面で読めるようにする。 | Traces and tables on the main screen | Today the trace is under developer details and the comparison table is in the terminal. This moves them to the main screen. | #423 |
 | 質の見直し | 使いやすさ、アクセシビリティ、素材に合っているか、場面の結果をまとめて見る。 | Quality review | Reviews usability, accessibility, fit with the design materials, and eval results together. | J6 |
 | みんなで作る | コメントと反応を付け、承認したコメントだけを作る AI が直す。まず 1 台の PC でみんなで使う形から作る。 | Building together | People comment and react, and the maker AI acts only on approved comments. It starts with a group sharing one PC. | K3 |

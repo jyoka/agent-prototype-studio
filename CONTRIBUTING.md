@@ -109,6 +109,7 @@ E2E と観察器のブラウザがないときは、`npm run install:chromium` �
 - 実モデルで模擬のエージェントの起動が動くかは、`npm run check:sim -- --run --limit-usd <USD>` と `STUDIO_REAL=1 npx playwright test test/e2e/real-sim.spec.js` で確かめます。これも人が決めたときだけです。`npm run test:e2e` では、`real-sim.spec.js` は飛ばされます([docs/claude-code.md の「模擬のエージェントの起動を実機で確かめる」](docs/claude-code.md#模擬のエージェントの起動を実機で確かめる))
 - 実モデルで閉じたループが回るかは、`npm run check:loop -- --real` と `STUDIO_REAL=1 npx playwright test test/e2e/real-loop.spec.js` で確かめます。これも人が決めたときだけです。`npm run test:e2e` では、`real-loop.spec.js` は飛ばされます([docs/claude-code.md の「閉じたループを実機で確かめる」](docs/claude-code.md#閉じたループを実機で確かめる))
 - 整理する AI の質は、`npm run check:organize -- --run --limit-usd 3` で確かめます。これも人が決めたときだけです。`npm test` と `npm run test:e2e` からは呼びません([docs/claude-code.md の「整理する AI を実機で確かめる」](docs/claude-code.md#整理する-ai-を実機で確かめる))
+- AI 構成の審査の案(案を出す AI)は、`npm run check:review -- --run --limit-usd 3` で確かめます。これも人が決めたときだけです。`npm test` と `npm run test:e2e` からは呼びません([docs/claude-code.md の「AI 構成の審査の案を実機で確かめる」](docs/claude-code.md#ai-構成の審査の案を実機で確かめる))
 
 ## 画像と動く画像を撮り直す
 
