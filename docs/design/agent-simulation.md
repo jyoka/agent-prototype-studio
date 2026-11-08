@@ -401,7 +401,7 @@ sim-1 で決めた細かい形(この文書に書いていなかったもの。�
 
 | 語 | 満たすとき |
 |---|---|
-| `unreadAfter: { field, times }` | 聞いた項目が埋まらない発言が `times` 回あった。質問と脱線(`clarify`、`aside`)と、抽出が壊れた回は数えない |
+| `unreadAfter: { field, times }` | 聞いた項目が埋まらない発言が `times` 回あった。質問(`clarify`)も数える。脱線(`aside`)と、抽出が壊れた回は数えない。質問を数えるのは、番号を探しながらの「どこだろう」も質問と読まれるため(場面 `escalate-unread`、`docs/evidence/real-delegate/`) |
 | `toolFailed: { tool, times }` | そのツールが `times` 回失敗した(守りの断りと前提の失敗も数える) |
 | `fieldIs: { field, equals }` | 項目の値が `equals`。意味の読み取りはモデル、渡すかはコード。見本の苦情らしさはこの形 |
 | `resultIs: { result, key, equals }` | 覚えた結果の項目が `equals` |
