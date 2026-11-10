@@ -1,7 +1,7 @@
 # 引き継ぎの形(handoff、形式 4)
 
 - 状態: **仮**(2026-10-28)。出典のタスク: jyoka/tasks#280(親 PRD: jyoka/tasks#269)。形式 2 は jyoka/tasks#313([harness.md](design/harness.md) の 5 節、基準 S7)。形式 3 は jyoka/tasks#344([agent-simulation.md](design/agent-simulation.md) の 4.5、基準 S6、S7)。形式 4 は jyoka/tasks#392([user-journey.md](design/user-journey.md) の J8。原則 5「理由を残す」、原則 7「信頼できる」)
-- 作るところ: `src/server/handoff.js`。形式 4 で足した中身を読むところは `src/server/handoff-decisions.js`。画面は上の帯の「その他」の「本番開発へ渡す」
+- 作るところ: `src/server/handoff.js`。形式 4 で足した中身を読むところは `src/server/handoff-decisions.js`。会の終わりの成果物(K5、jyoka/tasks#395)を読むところは `src/server/closing.js`。画面は上の帯の「その他」の「本番開発へ渡す」と、会の終わりの画面の「書き出す」(どちらも同じものを書き出す)
 
 試作品を本番開発の担当者に渡すときに、Studio が書き出すフォルダーの形です。中身は決まった手順で作ります。AI の判断は入れません(ADR-0001、Stripe の Minions の考え方)。標準化する契約は、使われ方を見て直します(親 PRD)。
 
@@ -10,6 +10,8 @@
 形式 3 では、構成(`app/composition.json`、`app/compositions/`)、ツールの宣言、前提、プロンプトの枠、場面(`app/evals/`)と、最新の場面の回し(`npm run evals`)の要約を足しました。本番の担当者が、ツールの仕様と、ガードレールのどの層が効いたかを、そのまま読めるようにするためです。
 
 形式 4 では、決めたことと理由を足しました。目的の文書、設計の段ごとの決定と理由、質の見直しの結果、人に見せた答え、AI 構成書と承認の記録、既定の素材の出典とライセンスです。開発の担当者が、何を、なぜこの作りにしたのか、何を確かめていないのかを、聞き返さずに読めるようにするためです。どれも Studio が持つ記録(`.studio/`)から読むだけで、AI の判断は入れません。
+
+形式 4 には、会の終わりの成果物も足しました(K5)。7 つの成果物(要件の文書、データ設計、構成の図、AI 構成書、試作品、場面の一覧、未決事項)の状態、要件の文書、データ設計、構成の図、直した記録の一覧、未決事項の持ち主と期日です。要件の文書の項目から、元の要点か、それを変えたコメントと直した記録へたどれます。項目を足しただけで、前の項目の形は変えていないので、`formatVersion` は 4 のままです。
 
 ## 置き場所
 
@@ -23,7 +25,7 @@
 
 | ファイル | 中身 |
 |---|---|
-| `README.md` | 人が読む資料。目的、目的の文書、作る AI が書いた意図と制約(目録)、設計の段ごとの決定と理由、AI 構成の審査(AI 構成書)、決まったこと、未決事項、実機・モック・未接続の一覧、プロダクト内 AI の設定、試した会話と状態、構成とツール(模擬)、場面と最新の回し、シナリオ、最新の証拠、質の見直し、人に見せた答え、素材の出典とライセンス、ソースの一覧、版、変更の経緯、確かめていないこと、入れていないもの |
+| `README.md` | 人が読む資料。目的、目的の文書、作る AI が書いた意図と制約(目録)、会の終わりの成果物(7 つの状態、要件の文書、データ設計、直した記録の一覧、未決事項の持ち主と期日)、設計の段ごとの決定と理由、AI 構成の審査(AI 構成書)、決まったこと、未決事項、実機・モック・未接続の一覧、プロダクト内 AI の設定、試した会話と状態、構成とツール(模擬)、場面と最新の回し、シナリオ、最新の証拠、質の見直し、人に見せた答え、素材の出典とライセンス、ソースの一覧、版、変更の経緯、確かめていないこと、入れていないもの |
 | `handoff.json` | 機械が読む資料。下の「handoff.json」 |
 | `app/` | 試作品のソース(作業中の `app/` の写し)。目録の `app/prototype.json` とシナリオの `app/scenarios/` も入る。秘密を入れるファイルは外す |
 | `ai/system-prompt.md` | プロダクト内 AI を実モデルで動かすときの指示の全文。抽出の指示と、言い方の指示(`ai.json` の `instructions` と Studio の決まり)の 2 つ。AI のない試作品にはない |
@@ -75,6 +77,10 @@
 | `quality` | 質の見直しの結果(J6)。下の「quality」 |
 | `shows` | 人に見せた答え(J7)。下の「shows」 |
 | `review` | AI 構成の審査の状態と、AI 構成書の写しと承認の記録。下の「review」 |
+| `requirements` | 要件の文書(K5)。下の「requirements」 |
+| `dataDesign` | データ設計(K2 で選んだ案。K5)。下の「dataDesign」 |
+| `fixRecords[]` | 直した記録の一覧(K3 の記録。K5)。下の「fixRecords」 |
+| `closing` | 会の終わりの 7 つの成果物の状態、構成の図、未決事項の持ち主と期日(K5)。下の「closing」 |
 | `openQuestions[]` | 未決事項。`from` は `person`(書き出した人)か `studio`(Studio が見つけたもの) |
 | `ai` | プロダクト内 AI の設定(`fields`、`initialState`、`mock`)、書き出したときの接続(`real` は実際の AI モデルか)。なければ `null` |
 | `conversation` | 書き出したときの会話と状態。AI の発言には `via`(接続)、`viaLabel`、`real` が付く。`via` が `null` の発言は、設定の固定文(あいさつ) |
@@ -196,6 +202,60 @@ AI 構成の審査([ai-architecture-review.md の 6 節](design/ai-architecture-
 | `skipped` | 審査を飛ばしたときの `at`、`by`、`reason` |
 | `record` | AI 構成書(`.studio/reviews/<審査の ID>/architecture.json`)の写し。文は伏せる処理を通す。押した人と声に出した人の名前は承認の記録なので残る(申告の名前。伏せる処理はメールアドレスなどの形だけを伏せ、名前だけの文字列は見分けられない)。指紋(`basis`、`evidence`、`fingerprint`、承認の `digest`)は伏せない(伏せると照合できない)。画面へのコメント(種類が「構成」)から審査に戻したときだけ、戻したコメント(`comments`。番号、文、時刻)が入る(K3) |
 
+### requirements
+
+要件の文書(field-session.md の 3 節)。目的の文書(`.studio/intent.json`)、整理の板(`.studio/organize.json`)の項目、2 人が承認した要件のコメント(`.studio/comments.json`)から作る。整理の板のデータの欄は入れない(`dataDesign` に載る)。文は伏せる。
+
+| 項目 | 中身 |
+|---|---|
+| `status` | `none`(目的の文書も板の項目もない)、`draft`(下書き)、`confirmed`(決める人が整理の板で「この理解で合っている」を押した) |
+| `confirmedAt`、`purposeStatus` | 押した日時と、目的の文書の状態(`purpose.status` と同じ) |
+| `sections[]` | 7 つの節。`id`(`purpose`、`user`、`scene`、`requirement`、`rule`、`notDoing`、`success`)、`label`、`items[]` |
+| `sections[].items[]` | `id`(板の項目は `i<n>`、目的の文書は `purpose-…`、コメントは `comment-<番号>`)、`text`、`from`(`purpose` 目的の文書、`point` 元の要点がある、`checked` 人が確かめた、`guess` 推測、`comment` 承認したコメント)、`sources[]`(元の要点の `n` と `text`)、`guess`、`comment`(`number`、`status`、`statusLabel`、`recordId`。コメントから来た項目だけ) |
+| `counts` | `items`(項目の数)、`guesses`(推測の印の数)、`checkedRatio`(推測の印が残っていない割合。項目がなければ `null`) |
+
+### dataDesign
+
+データ設計(`.studio/design.json` の `steps.data` で選んだ案。K2)。型と細かい決まりは会の後に決めるので入れない。文は伏せる。
+
+| 項目 | 中身 |
+|---|---|
+| `status` | `none`(選んでいない)、`chosen`(選んだ)、`stale`(前の段を選び直したので確かめ直しが要る)、`skipped`(設計の案内を飛ばした) |
+| `title`、`detail`、`reason`、`note`、`source`、`decidedAt` | 選んだ案の題、中身、理由(案を出した日の推測)、選んだ人のメモ、案を出したのが AI か Studio の決まった案か、選んだ日時 |
+| `entities[]` | 覚えておくもの。`name`、`about`、`writer`(誰が書くか)、`byStudio`(Studio が足した「聞いたことのメモ」か)、`fields[]`(`name`、`kind`、`kindLabel`、`to`(つながりの先)、`examples`、`sources`(元にした整理の板の項目の ID)) |
+| `links[]` | つながり。`from`(1 の側)、`to`(多の側)、`label` |
+| `heard[]` | 整理の板のデータの欄。`id`、`text`、`onDesign`(選んだ案に載っているか) |
+
+### fixRecords
+
+直した記録(`.studio/fix-records/<記録の ID>/record.json`。K3、collaboration.md の 5 節)を、作った順に並べたもの。前と後の画面の写しは入れない。文と名前は伏せる。
+
+| 項目 | 中身 |
+|---|---|
+| `id`、`status`、`createdAt` | 記録の ID、状態、作った日時 |
+| `comment` | `number`、`text`、`kind`、`kindLabel`、`placeWords`(画面の場所)、`author`、`reactions` |
+| `approval` | `approvers[]`(`role`、`roleLabel`、`pressedBy`、`spokenBy`、`at`)と、そろった日時 `completedAt` |
+| `request` | 作る AI に渡した依頼の文 |
+| `versions` | 直す前と後の版(`id`、`number`、`name`) |
+| `changes` | 変わったファイル(`files`)、要約(`summary`)、記録が持つ「変えた要件の項目」(`requirementItems`。K3 では空) |
+| `requirementItem` | 要件の文書の中の項目の ID(要件のコメントで、文書に載っているときだけ。ほかは `null`) |
+| `gates` | 関門の結果(`status`、`run`、`results[]`) |
+| `confirmation`、`events[]` | 「直った」か「戻した」を押した人と日時、起きたことの並び |
+
+### closing
+
+会の終わりの成果物(field-session.md の段 7、user-journey.md の K5)。画面の会の終わりと同じ関数(`closing.js` の `describeClosing`)で作る。
+
+| 項目 | 中身 |
+|---|---|
+| `present` | 7 つのうち、ある(`missing` でない)成果物の数 |
+| `deliverables[]` | 7 つの成果物。`id`(`requirements`、`dataDesign`、`composition`、`review`、`prototype`、`scenes`、`openItems`)、`label`、`status`(`ready` そろった、`draft` 下書き、`missing` ない)、`statusLabel`、`note`(中身の 1 行)、`where`(handoff.json の中の場所) |
+| `figure` | 構成の図。`nodes[]`(`id`、`kind`(`person`、`ai`、`code`、`tool`)、`label`)と `edges[]`(`from`、`to`、`label`)。AI 構成の審査の画面の図と同じ作り |
+| `openItems[]` | 未決事項。`key`(持ち主を結ぶ印)、`from`(`conflict`、`unasked`、`guess`、`empty`、`purpose`、`design`、`review`、`comment`)、`fromLabel`、`text`、`owner`(持ち主。なければ空)、`due`(期日 `YYYY-MM-DD`。なければ空) |
+| `unowned` | 持ち主のない未決事項の数。1 以上なら、Studio が `openQuestions` にも書く |
+
+持ち主と期日は `.studio/closing.json`(`formatVersion`、`owners`: `{ key: { owner, due, at } }`)に置く。未決事項の文が変わると `key` が変わり、持ち主なしに戻る。
+
 ### materials
 
 | 項目 | 中身 |
@@ -225,7 +285,7 @@ AI 構成の審査([ai-architecture-review.md の 6 節](design/ai-architecture-
 - 同じ探し方を、Studio が `app/` の外から足す中身(`README.md`、`handoff.json`、`ai/`。証拠の要約を含む)にも使う。見つけたら書き出さず、`handoff.json:行` の形で場所を出す。
 - 証拠の要約の文(関門の `summary` や `reason`)は、作る run の記録のまま入れる。伏せずに、上の探し方で秘密を止める。
 - `.env`、`.env.*`、`*.pem`、`*.key`、`*.p12`、`*.pfx`、`id_rsa` などは、中を見ずに外す。外したことは README と `excluded` に書く。見本の `.env.example`、`.env.sample`、`.env.template` は外さず、ほかのファイルと同じく中を調べる。
-- 会話、メモ、依頼の文、試作品の名前、版の名前、目的の文書、設計の案と人のメモ、人に見せた答え、AI 構成書の文の中の、鍵らしい文字列と、メールアドレス、電話番号、住所、氏名らしい文字列は伏せる(`src/server/redact.js`)。改行は 1 行にまとめ、表の行を足させない。ソースの中のものは変えずに、未決事項に場所を書く。
+- 会話、メモ、依頼の文、試作品の名前、版の名前、目的の文書、設計の案と人のメモ、人に見せた答え、AI 構成書の文、要件の文書、データ設計、直した記録、未決事項と持ち主の中の、鍵らしい文字列と、メールアドレス、電話番号、住所、氏名らしい文字列は伏せる(`src/server/redact.js`)。改行は 1 行にまとめ、表の行を足させない。ソースの中のものは変えずに、未決事項に場所を書く。
 - AI の実行の記録、作る AI の返事、ログインの情報、環境変数、PC のフォルダーの場所は入れない。
 - 書き出しの間は、版の保存と同じ印を使い、作る AI、ビルド、版の操作、プロダクト内 AI への発言を断る。
 - 形で見分けるので、秘密や個人のデータを見落とすことがある。架空のデータだけで試す決まりは変わらない。
@@ -251,6 +311,7 @@ AI 構成の審査([ai-architecture-review.md の 6 節](design/ai-architecture-
 - `materials` はいつも入れ、既定の素材の出典とライセンス(`materials.default`)を足した。書き出しに `materials/default/` を足した。
 - Studio が見つけたこと(`openQuestions` の `studio`)に、次を足した。目的の文書がない、または決めていない。設計の決定がない、または決めていない。確かめ直しの要る段がある。質の見直しに「直す」がある。画面の検査が古い。人に見せた答えがない。今の構成が AI 構成書の承認と違う。審査が承認の途中、審査なし、AI 構成書を読めない、測らずに承認した。
 - README に「目的の文書」「設計の段ごとの決定と理由」「AI 構成の審査(AI 構成書)」「質の見直し」「人に見せた答え」「素材の出典とライセンス」「確かめていないこと」の節を足した。
+- K5 で、`requirements`、`dataDesign`、`fixRecords`、`closing` を足した。`openQuestions` に「持ち主のない未決事項がある」を足した。README に「会の終わりの成果物」の節(7 つの成果物、要件の文書、データ設計、直した記録の一覧、未決事項の持ち主と期日)を足した。前の項目の形は変えていないので、`formatVersion` は 4 のまま。
 
 ## まだしないこと
 
@@ -259,5 +320,4 @@ AI 構成の審査([ai-architecture-review.md の 6 節](design/ai-architecture-
 - 書き出したものを Studio に読み込む画面(いまは `app/` を手で写す)。
 - 利用者の「確かめる」の report の要約。Studio がまだ report を残さない([harness.md の 8 節](design/harness.md#8-実装のカード)の P27 で足す)。
 - 版に report の要約を入れること。
-- 会の終わりの成果物(要件の文書、データ設計、直した記録の一覧)。K5(jyoka/tasks#395)で形式 4 に足す。
 - 目的の聞き出しの問いと答えの全部。決めた文書だけを入れる。

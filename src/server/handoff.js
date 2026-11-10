@@ -30,10 +30,14 @@ import {
   describeReview,
   describeShows,
 } from './handoff-decisions.js';
+import { closingReadmeLines, describeClosing, describeDataDesign, readBoard, readComments, readOwners, redactClosing } from './closing.js';
+import { readFixRecords } from './comments.js';
+import { FIX_RECORDS_DIR } from './meeting.js';
 
 // 本番開発への引き継ぎ(#280、#313)。試作品のソース、意図、AI の設定、モックと状態、未接続と未決事項、
 // 目録とシナリオ、最新の証拠の要約、構成とツールと前提、場面と最新の場面の回しの要約を、1 つのフォルダーに書き出す。中身は決まった手順で作り、AI の判断は入れない(ADR-0001、Stripe の Minions)。
 // 形式 4(J8)で、目的の文書、設計の段ごとの決定と理由、質の見直しの結果、人に見せた答え、AI 構成書と承認の記録、既定の素材の出典とライセンスを足した(handoff-decisions.js)。
+// K5 で、会の終わりの成果物(7 つの成果物の状態、要件の文書、データ設計、構成の図、直した記録の一覧、未決事項の持ち主と期日)を足した(closing.js)。
 // 形は docs/handoff.md に書く。標準化は仮で、使われ方を見て直す。
 
 export const HANDOFF_FORMAT = 'prototype-studio-handoff';
@@ -214,7 +218,7 @@ async function readJson(file) {
 
 // 最新の作る run(.studio/runs/<run-id>/run.json)と、その最後のラウンドの観察の report の要約。
 // 確かめた app/ の中身の指紋(appDigest)が今の app/ と違えば、古い(stale)。指紋が分からなければ stale は null
-async function latestEvidence(paths, appDigest) {
+export async function latestEvidence(paths, appDigest) {
   const runsDir = path.join(paths.studio, 'runs');
   let record = null;
   for (const entry of await fs.readdir(runsDir, { withFileTypes: true }).catch(() => [])) {
@@ -274,7 +278,7 @@ async function latestEvidence(paths, appDigest) {
 
 // 最新の場面の回し(.studio/evals/<回しの ID>/result.json。npm run evals が書く)の要約。
 // 回した app/ の指紋が今の app/ と違えば、古い(stale)。指紋が分からなければ stale は null
-async function latestEvalRun(paths, appDigest) {
+export async function latestEvalRun(paths, appDigest) {
   const evalsDir = path.join(paths.studio, 'evals');
   let found = null;
   for (const entry of await fs.readdir(evalsDir, { withFileTypes: true }).catch(() => [])) {
@@ -1009,6 +1013,7 @@ function renderReadme(h) {
     '',
     ...purposeLines(h.purpose),
     ...prototypeLines(h.prototype),
+    ...closingReadmeLines({ ...h.closing, requirements: h.requirements, dataDesign: h.dataDesign, fixRecords: h.fixRecords }),
     ...designLines(h.design),
     ...reviewLines(h.review),
     '## 決まったこと',
@@ -1129,7 +1134,7 @@ function renderReadme(h) {
     '- 作る run の記録の全体と、観察のスクリーンショット。要約だけを「最新の証拠」と handoff.json の `evidence` に入れた。',
     '- 場面の回しの結果の全体と、その記録(.studio/evals/)。要約だけを「場面(確かめ方)と最新の回し」と handoff.json の `simulation.latestRun` に入れた。',
     '- 目的の聞き出しの問いと答えの全部、案を出す AI の返事の全部、質の見直しの「直す」の依頼の文。決めた文書、選んだ案と理由、表の結果だけを入れた。',
-    '- 会話、目的の文書、設計のメモ、人に見せた答えの中の、メールアドレス、電話番号、住所、氏名らしい文字列は伏せた(`[伏せた: …]`)。',
+    '- 会話、目的の文書、設計のメモ、人に見せた答え、要件の文書、データ設計、直した記録、未決事項の持ち主の中の、メールアドレス、電話番号、住所、氏名らしい文字列は伏せた(`[伏せた: …]`)。',
     '',
     '## 試作品を動かす',
     '',
@@ -1272,6 +1277,24 @@ export class ProjectHandoffs {
       const shows = await describeShows({ paths, purpose, versions: versionList });
       const review = await describeReview({ paths, appDir: appCopy });
       const defaultMaterial = await describeDefaultMaterial(scan.packages);
+      // 会の終わりの成果物(K5)。画面と同じ関数で作り、人が書いた文を伏せる
+      const board = await readBoard(paths);
+      const closing = redactClosing(
+        describeClosing({
+          purpose,
+          design,
+          review,
+          board,
+          comments: await readComments(paths),
+          records: await readFixRecords(path.join(paths.studio, FIX_RECORDS_DIR)),
+          dataDesign: await describeDataDesign(paths, board),
+          simulation: build.simulation,
+          ai: definition,
+          evidence,
+          latestRun: simulation.latestRun,
+          owners: await readOwners(paths),
+        }),
+      );
       const manifest = {
         format: HANDOFF_FORMAT,
         formatVersion: HANDOFF_FORMAT_VERSION,
@@ -1285,6 +1308,7 @@ export class ProjectHandoffs {
           ...(notes.undecided ? [{ from: 'person', text: redact(notes.undecided) }] : []),
           ...studioQuestions({ ai: definition, conversation, working, scan, excluded, evidence, simulation }).map((text) => ({ from: 'studio', text })),
           ...decisionQuestions({ purpose, design, quality, shows, review }).map((text) => ({ from: 'studio', text })),
+          ...(closing.unowned > 0 ? [{ from: 'studio', text: `持ち主のない未決事項が ${closing.unowned} 件ある(「会の終わりの成果物」の「未決事項の持ち主と期日」)。` }] : []),
         ],
         prototype,
         scenarios,
@@ -1297,6 +1321,11 @@ export class ProjectHandoffs {
         quality,
         shows,
         review,
+        // 会の終わりの成果物(K5)。要件の文書、データ設計、直した記録の一覧と、7 つの成果物の状態、構成の図、未決事項の持ち主と期日
+        requirements: closing.requirements,
+        dataDesign: closing.dataDesign,
+        fixRecords: closing.fixRecords,
+        closing: { present: closing.present, deliverables: closing.deliverables, figure: closing.figure, openItems: closing.openItems, unowned: closing.unowned },
         ai: definition
           ? {
               name: definition.name,

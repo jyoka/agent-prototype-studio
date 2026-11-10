@@ -79,6 +79,7 @@
         <button type="button" id="meeting-agree" class="primary">同意して始める</button>
         <button type="button" id="meeting-trial">お試しの AI だけで始める</button>
         <button type="button" id="meeting-organize" class="primary" hidden>ヒアリングの整理へ</button>
+        <button type="button" id="meeting-closing-open" hidden>会の終わりへ</button>
         <button type="button" id="meeting-back">試作品の画面に戻る</button>
         <button type="button" id="meeting-erase">会のデータを消す</button>
       </div>
@@ -90,6 +91,29 @@
           <button type="button" id="meeting-erase-cancel">やめる</button>
         </div>
       </div>
+    </div>
+    <!-- 会の終わりの画面(field-session.md の段 7、user-journey.md の K5)。7 つの成果物、未決事項の持ち主と期日、書き出し -->
+    <div id="meeting-closing" class="meeting-closing" hidden>
+      <p id="closing-unowned" class="intent-error" role="alert" hidden></p>
+      <h3 id="closing-deliverables-heading">7 つの成果物</h3>
+      <ul id="closing-deliverables" class="organize-list closing-deliverables" aria-labelledby="closing-deliverables-heading"></ul>
+      <h3 id="closing-open-heading">未決事項の持ち主と期日</h3>
+      <p class="muted">未決事項を読み上げ、持ち主と期日を決めてください。持ち主は、名前か役(進行役、決める人など)で書きます。電話番号やメールアドレスは書きません。</p>
+      <ul id="closing-open" class="organize-list closing-open" aria-labelledby="closing-open-heading"></ul>
+      <h3 id="closing-requirements-heading">要件の文書</h3>
+      <p id="closing-requirements-state" class="muted"></p>
+      <dl id="closing-requirements" class="meeting-facts closing-requirements" aria-labelledby="closing-requirements-heading"></dl>
+      <h3 id="closing-data-heading">データ設計</h3>
+      <div id="closing-data" aria-labelledby="closing-data-heading"></div>
+      <h3 id="closing-fixes-heading">直した記録</h3>
+      <ul id="closing-fixes" class="organize-list" aria-labelledby="closing-fixes-heading"></ul>
+      <div class="organize-actions">
+        <button type="button" id="closing-export" class="primary">書き出す</button>
+        <button type="button" id="closing-reload">読み直す</button>
+        <button type="button" id="closing-back">会の始めに戻る</button>
+      </div>
+      <p class="muted">書き出しは、本番開発へ渡すフォルダー(引き継ぎ)と同じです。7 つの成果物、直した記録、未決事項の持ち主と期日が入ります。</p>
+      <div id="closing-exported" role="status" hidden></div>
     </div>
     <div id="meeting-erased" hidden>
       <ul id="meeting-erased-list" class="organize-list" aria-label="消した一覧"></ul>

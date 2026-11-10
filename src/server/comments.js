@@ -221,6 +221,22 @@ export function heldReason(error) {
   return { code, message: '直す AI に送れませんでした。見せ終わってから「言葉で直す」の欄で理由を確かめ、「列を進める」を押してください', detail: error?.message ?? null };
 }
 
+// 直した記録の全部(.studio/fix-records/<記録の ID>/record.json)を、作った順に読む。会の終わりの成果物と引き継ぎも使う(K5)
+export async function readFixRecords(dir) {
+  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+  const found = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !ID.test(entry.name)) continue;
+    try {
+      const record = JSON.parse(await fs.readFile(path.join(dir, entry.name, FIX_RECORD_FILE), 'utf8'));
+      if (record?.format === FIX_RECORD_FORMAT && record.id === entry.name) found.push(record);
+    } catch {
+      // 読めない記録は出さない(消さない)
+    }
+  }
+  return found.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+}
+
 export class ProjectComments {
   // requests は作る run(build-requests.js)、versions は版(versions.js)、reviews は AI 構成の審査(review.js)。
   // contextOf(id) は依頼に包む { purpose, board }。talkGate(id) は会の同意の前と消している間に断る(index.js)。
@@ -361,19 +377,7 @@ export class ProjectComments {
   }
 
   async readRecords(id) {
-    const dir = this.paths(id).records;
-    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
-    const found = [];
-    for (const entry of entries) {
-      if (!entry.isDirectory() || !ID.test(entry.name)) continue;
-      try {
-        const record = JSON.parse(await fs.readFile(path.join(dir, entry.name, FIX_RECORD_FILE), 'utf8'));
-        if (record?.format === FIX_RECORD_FORMAT && record.id === entry.name) found.push(record);
-      } catch {
-        // 読めない記録は出さない(消さない)
-      }
-    }
-    return found.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+    return readFixRecords(this.paths(id).records);
   }
 
   async readRecord(id, recordId) {
