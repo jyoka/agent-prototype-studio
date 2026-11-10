@@ -392,6 +392,38 @@
       <div id="frame-host" class="frame-host">
         <p id="frame-placeholder" class="placeholder">読み込んでいます…</p>
       </div>
+      <!-- 1 ターンの記録(task 423。ai-architecture-review.md の 15 節)。試す欄で最後に送った発言で、働いた参加者、道具、守りの層、時間、費用。
+           技術の言葉と平たい言葉を並べる。全部の中身は、開発者向けの詳細の「AI の実行の記録」にある。
+           お客さんに見せる画面(#391)には出さない(data-studio-only。試作品の iframe の外にだけ置く) -->
+      <section id="turn-record" class="turn-record" aria-labelledby="turn-record-heading" data-studio-only hidden>
+        <h3 id="turn-record-heading">1 ターンの記録</h3>
+        <div id="turn-record-body"></div>
+      </section>
+      <!-- 場面の一覧と比べる表(task 423)。場面の一覧を構成ごとに回し、通った数、道具の呼び方の正しさ、費用、待ち時間を並べる。
+           通らない場面の「直す」で、言葉で直す欄に依頼を入れる。本物の AI で回すときは、同意と費用の上限を通す。見せる画面には出さない -->
+      <details id="scene-runs" class="scene-runs" data-studio-only hidden>
+        <summary id="scene-runs-summary">場面の一覧と比べる表</summary>
+        <div class="scene-runs-body">
+          <p class="muted">場面の一覧(この AI にできてほしい会話)を、構成ごとに回して比べます。お試しの AI は費用がかからず、形が動くかの確かめだけです。</p>
+          <div class="scene-runs-actions">
+            <button type="button" id="scene-run-mock" class="primary">場面を回す(お試しの AI)</button>
+            <label for="scene-limit">費用の上限(USD)</label>
+            <input id="scene-limit" type="number" min="0.01" max="100" step="any" value="1">
+            <button type="button" id="scene-run-real">本物の AI で回す</button>
+            <button type="button" id="scene-cancel" hidden>止める</button>
+          </div>
+          <p id="scene-real-note" class="muted"></p>
+          <!-- 本物の AI で回すときの、同意のカード(直す欄、試す欄と同じ中身) -->
+          <div id="scene-consent" hidden></div>
+          <div id="scene-status" class="scene-status" role="status"></div>
+          <div id="scene-table"></div>
+          <div id="scene-failures"></div>
+          <details class="scene-list">
+            <summary id="scene-list-summary">回す場面</summary>
+            <ol id="scene-list" aria-label="回す場面"></ol>
+          </details>
+        </div>
+      </details>
     </section>
     <section class="make" aria-labelledby="make-heading">
       <div class="make-head">

@@ -846,3 +846,31 @@ body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
 .guides-enabled[hidden] { display: none; }
 .guides-record { padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid var(--line); }
 .guides-record button { margin-top: 0.3rem; }
+
+/* 1 ターンの記録と、場面の一覧と比べる表(task 423)。試す欄の下に置く。どちらも高さに上限を付け、長いときは欄の中でスクロールする(試作品を押し出しすぎない) */
+.turn-record { margin-top: 0.5rem; padding: 0.4rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font-size: 0.85rem; max-height: 9rem; overflow: auto; flex-shrink: 0; }
+.turn-record[hidden], .scene-runs[hidden] { display: none; }
+.turn-record h3 { margin: 0 0 0.2rem; font-size: 0.9rem; }
+.turn-record p { margin: 0.1rem 0; }
+.turn-facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.1rem 0.6rem; margin: 0.2rem 0 0; }
+.turn-term { font-weight: 600; color: var(--muted); }
+.turn-value { word-break: break-word; }
+.turn-record ul { margin: 0; padding-left: 1.1rem; }
+.turn-record li[data-effect="blocked"], .turn-record li[data-effect="violated"], .turn-record li[data-effect="replaced"], .turn-record li[data-effect="failed"] { color: var(--error); font-weight: 600; }
+.scene-runs { margin-top: 0.5rem; padding: 0.3rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; font-size: 0.85rem; flex-shrink: 0; }
+.scene-runs > summary { cursor: pointer; font-weight: 600; }
+.scene-runs-body { max-height: 40vh; overflow: auto; }
+.scene-runs-body p { margin: 0.3rem 0; }
+.scene-runs-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.scene-runs-actions input { width: 5rem; }
+.scene-runs-actions button { padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--accent); cursor: pointer; }
+.scene-runs-actions button.primary { background: var(--accent); color: var(--on-accent); }
+.scene-runs-actions button:disabled { opacity: 0.5; cursor: default; }
+.scene-runs-actions button[hidden] { display: none; }
+.scene-runs table { border-collapse: collapse; width: 100%; margin: 0.3rem 0; }
+.scene-runs th, .scene-runs td { border: 1px solid var(--line); padding: 0.2rem 0.4rem; text-align: left; vertical-align: top; }
+.scene-runs small { display: block; color: var(--muted); }
+.scene-failures { margin: 0.2rem 0; padding-left: 1.1rem; }
+.scene-failures li { margin: 0.3rem 0; }
+.scene-failures button { margin-left: 0.4rem; padding: 0.1rem 0.6rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--accent); cursor: pointer; }
+.scene-warn { color: var(--error); }

@@ -511,14 +511,29 @@ export class ProjectReviews {
       });
       await writer.write(result, traces, { report: true });
       await pruneEvalRuns(path.join(root, '.studio', 'evals'), runId).catch(() => {});
-      const record = await this.current(id);
-      if (record) {
-        const next = structuredClone(record);
-        next.evidence = this.recordContent(await this.content(id)).evidence;
-        await this.write(id, next);
-      }
+      await this.writeEvidence(id);
       return null;
     });
+  }
+
+  // 審査の記録の数(evidence)を、今の場面の回しの結果で取り直す
+  async writeEvidence(id) {
+    const record = await this.current(id);
+    if (!record) return;
+    const next = structuredClone(record);
+    next.evidence = this.recordContent(await this.content(id)).evidence;
+    await this.write(id, next);
+  }
+
+  // 主の画面で場面を回した後(scene-runs.js)。審査のない試作品では何もしない。審査の操作の途中なら、次の操作に任せる
+  async noteMeasured(id) {
+    if ((await this.flag(id)) !== 'required' || this.locked.has(id)) return;
+    this.locked.add(id);
+    try {
+      await this.writeEvidence(id);
+    } finally {
+      this.locked.delete(id);
+    }
   }
 
   // 関門 GA と節 accept が使う比べ(build-requests.js)。applies が false なら何もしない(今の試作品。R2)

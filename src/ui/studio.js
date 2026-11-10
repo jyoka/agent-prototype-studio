@@ -438,6 +438,7 @@ function render() {
   }
   renderTokens(project);
   renderGuides(project);
+  syncScenes(project);
   if (!project) {
     showPlaceholder('試作品がありません。');
   } else if (!project.previewUrl) {
@@ -761,6 +762,7 @@ function renderMake(project) {
   renderRealAiMarks();
   renderSaveMark(project);
   renderFirstSteps(project);
+  renderScenes(project);
 }
 
 // 最初の一歩の案内(ux-redesign.md 2 節、7-1、7-2、7-4)。1 行の説明と 3 つの手順を、上の帯の下に出す。
@@ -1654,6 +1656,7 @@ async function openConsent(use, { projectId, kind = null, send = false }) {
   if (view.consent.agreed) {
     if (use === 'product') await selectConnection(kind);
     else if (use === 'check') await startCheck();
+    else if (use === 'evals') await startScenes('claude-code');
     return;
   }
   openConsentDetails.delete('card');
@@ -1715,6 +1718,7 @@ async function agreeConsent() {
   if (!agreed || !still || card.projectId !== selectedId) return;
   if (card.use === 'product') await selectConnection(card.kind);
   else if (card.use === 'check') await startCheck();
+  else if (card.use === 'evals') await startScenes('claude-code');
   else if (card.send) await submitRequest();
 }
 
@@ -1729,6 +1733,7 @@ function declineConsent() {
   if (card?.use === 'organize') organizeUi.declined = true;
   if (card?.use === 'design') designUi.declined = true;
   if (card?.use === 'check') checks.message = { projectId: card.projectId, text: '本物の AI で確かめるには、同意が要ります。お試しの AI なら、同意なしで確かめられます。' };
+  if (card?.use === 'evals') sceneUi.message = '本物の AI で回すには、同意が要ります。お試しの AI なら、同意なしで回せます。';
   renderMake(selectedProject());
   renderAi();
   renderIntentConsent();
@@ -3560,7 +3565,130 @@ function traceItem(entry) {
   return li;
 }
 
+// 1 ターンの記録(task 423。ai-architecture-review.md の 15 節)。試す欄の会話で最後に送った発言の記録から、
+// 働いた参加者、呼んだ道具、効いた守りの層、時間、費用を、技術の言葉と平たい言葉を並べて出す。観察の会話の記録は使わない。
+// 全部の中身(引数、プロンプトの部品、理由)は、開発者向けの詳細の「AI の実行の記録」に残す
+const TURN_KIND_WORDS = { agent: 'エージェント(道具を選びながら自分で進める AI)', harness: 'harness(AI の周りで決まりを守らせるコード)', human: '人(模擬)' };
+const TURN_EFFECTS = { passed: '通した', blocked: '止めた', violated: '合わなかった(記録だけ)', retried: 'やり直させた', replaced: '決まった文に代えた', asked: '頼んだ' };
+const HARNESS_GUARD_EFFECTS = { passed: 'passed', retried: 'retried', fallback: 'replaced' };
+
+function lastTurnEntry() {
+  if (trace.projectId !== ai.projectId || !trace.entries) return null;
+  // 記録は新しい順。観察の会話と、発言でない記録(リセット、切り替え)は飛ばす
+  return trace.entries.find((entry) => entry.type === 'reply' && !entry.observation) ?? null;
+}
+
+// 段から、守りの層と判定を集める。出口の確かめと会話の枠は返事の段に、ツールの守りはツールの段に付く
+function turnGuards(entry) {
+  if (entry.kind === 'sim-turn') {
+    const guards = (entry.steps ?? []).flatMap((step) => [
+      ...(step.guards ?? []).map((guard) => ({ ...guard, tool: typeof step.tool === 'string' ? step.tool : null })),
+      ...(step.prompt?.asked ?? []).map((id) => ({ layer: 'prompt', guard: id, effect: 'asked' })),
+    ]);
+    for (const d of entry.delegations ?? []) if (d.effect === 'blocked') guards.push({ layer: 'delegation', guard: 'delegation', effect: 'blocked', reason: d.reason });
+    if (entry.handoff?.effect === 'blocked') guards.push({ layer: 'handoff', guard: 'handoff', effect: 'blocked', reason: entry.handoff.reason });
+    return guards;
+  }
+  // 構成のない試作品(AI の設定 1 つ)。harness の守ることの確かめ(出口の確かめ)と、状態に入れなかった値(コードの検査)
+  const guards = [];
+  const checked = entry.harness?.guards;
+  if (checked) guards.push({ layer: 'output', guard: checked.failed?.length ? checked.failed.join('、') : 'guards', effect: HARNESS_GUARD_EFFECTS[checked.result] ?? checked.result });
+  if (entry.rejected?.length) guards.push({ layer: 'tool', guard: 'fields', effect: 'blocked', reason: `${entry.rejected.length} つの値を状態に入れなかった` });
+  if (entry.harness?.timeout) guards.push({ layer: 'output', guard: 'timeout', effect: 'replaced' });
+  return guards;
+}
+
+const TURN_LAYERS = {
+  tool: 'ツールの守り(コードが止める)',
+  permission: '渡したツールの名前(コードが止める)',
+  prompt: 'プロンプトの頼み(モデル頼み)',
+  output: '出口の確かめ(返事をコードが確かめる)',
+  surface: '会話の枠(使えない部品を落とす)',
+  delegation: '委任の上限(コードが止める)',
+  handoff: '引き継ぎの決まり(コードが止める)',
+};
+
+function turnGuardText(guard) {
+  let effect = TURN_EFFECTS[guard.effect] ?? guard.effect;
+  if (guard.layer === 'surface') effect = guard.to ? `${partWord(guard.from)}を${partWord(guard.to)}に落とした` : `${partWord(guard.from)}を外した`;
+  return `${TURN_LAYERS[guard.layer] ?? guard.layer}「${guard.guard}」${guard.tool ? `(${guard.tool})` : ''}: ${effect}`;
+}
+
+function renderTurnRecord() {
+  const section = $('turn-record');
+  const body = $('turn-record-body');
+  const entry = ai.session && ai.projectId === selectedId ? lastTurnEntry() : null;
+  section.hidden = !entry;
+  if (!entry) {
+    body.replaceChildren();
+    return;
+  }
+  section.dataset.status = entry.status;
+  const labels = new Map((entry.participants ?? []).map((p) => [p.id, p]));
+  const nameOf = (id) => labels.get(id)?.label ?? String(id);
+  const via = entry.connection?.real ? '本物の AI' : 'お試しの AI';
+  const head = element('p');
+  head.append(element('strong', `発言「${entry.text || '(ボタン)'}」`), document.createTextNode(`(${via}。${formatTime(entry.at)}。${TRACE_STATUS[entry.status] ?? entry.status})`));
+  // 用語と中身の 2 列。dl は使わない(試す欄の AI の状態の dl と、読み上げの役割が混ざらないように)
+  const facts = element('div', undefined, 'turn-facts');
+  const row = (term, value) => {
+    const cell = element('div', undefined, 'turn-value');
+    if (value instanceof Node) cell.append(value);
+    else cell.textContent = value;
+    facts.append(element('div', term, 'turn-term'), cell);
+  };
+  // 参加者: 段に出てきた順。任された参加者(サブ)には、任せた参加者を添える
+  const acted = [];
+  if (entry.kind === 'sim-turn') {
+    for (const step of entry.steps ?? []) {
+      if (!['agent', 'harness', 'human'].includes(step.kind) || acted.some((item) => item.id === step.participant)) continue;
+      acted.push({ id: step.participant, kind: step.kind, parent: step.parent ?? null });
+    }
+  }
+  const people = element('ul');
+  people.setAttribute('aria-label', '働いた参加者');
+  if (entry.kind === 'sim-turn') {
+    people.append(...acted.map((item) => element('li', `${nameOf(item.id)}: ${TURN_KIND_WORDS[item.kind] ?? item.kind}${item.parent ? `。${nameOf(item.parent)} から任された(サブ)` : ''}`)));
+  } else {
+    people.append(element('li', `試作品の中の AI: ${TURN_KIND_WORDS.harness}`));
+  }
+  if (people.childElementCount === 0) people.append(element('li', 'まだ分かりません'));
+  row('参加者(エージェント)', people);
+  // 道具: 呼んだツールと、通ったか止まったか
+  const tools = (entry.steps ?? []).filter((step) => typeof step.tool === 'string');
+  const toolList = element('ul');
+  toolList.setAttribute('aria-label', '呼んだ道具');
+  for (const step of tools) {
+    const blocked = (step.guards ?? []).find((guard) => guard.effect === 'blocked');
+    const li = element('li', `${step.tool}(${nameOf(step.by)} が呼んだ): ${blocked ? `${TURN_LAYERS[blocked.layer] ?? blocked.layer}が止めた` : step.result?.ok ? '通った' : '失敗した'}`);
+    li.dataset.effect = blocked ? 'blocked' : step.result?.ok ? 'passed' : 'failed';
+    toolList.append(li);
+  }
+  row('道具(ツール)', tools.length > 0 ? toolList : '呼んでいません');
+  // 守り: 止めた、やり直させた、代えたものを先に出す。通しただけのものは数だけ
+  const guards = turnGuards(entry);
+  const acting = guards.filter((guard) => guard.effect !== 'passed');
+  const passed = guards.length - acting.length;
+  const guardList = element('ul');
+  guardList.setAttribute('aria-label', '守りの層');
+  const order = (guard) => (guard.effect === 'blocked' ? 0 : guard.effect === 'asked' ? 2 : 1);
+  for (const guard of [...acting].sort((a, b) => order(a) - order(b))) {
+    const li = element('li', turnGuardText(guard));
+    li.dataset.layer = guard.layer;
+    li.dataset.effect = guard.effect;
+    guardList.append(li);
+  }
+  if (passed > 0) guardList.append(element('li', `ほかに通した守り ${passed} つ`));
+  if (guardList.childElementCount === 0) guardList.append(element('li', '守りの記録はありません'));
+  row('守り(ガードレール)', guardList);
+  const cost = entry.output?.costUsd;
+  const time = Number.isFinite(entry.elapsedMs) && entry.status !== 'running' ? formatSeconds(entry.elapsedMs) : '待っています';
+  row('時間と費用', `${time}、${entry.connection?.real ? (Number.isFinite(cost) ? `${cost.toFixed(4)} USD(Claude Code の報告)` : '費用は不明') : '費用はかかりません(お試しの AI)'}`);
+  body.replaceChildren(head, facts, element('p', '全部の中身(引数、プロンプトの部品、理由)は、その他 → 開発者向けの詳細の「AI の実行の記録」にあります。', 'muted'));
+}
+
 function renderTrace() {
+  renderTurnRecord();
   const { session } = ai;
   if (!session) {
     els.aiTrace.replaceChildren(element('p', 'プロダクト内 AI を使う試作品を開くと、ここに出ます。', 'muted'));
@@ -6314,6 +6442,214 @@ $('review-skip').addEventListener('click', () => {
   }
   buildFromReview('skip', { reason, by: reviewEls.pressed.value.trim() || undefined });
 });
+
+// 場面の一覧と比べる表(task 423。ai-architecture-review.md の 15 節。サーバーは src/server/scene-runs.js)。
+// 試す欄の下に置く。場面の一覧を構成ごとに回し、通った数、道具の呼び方の正しさ、費用、待ち時間を並べる。
+// 通らない場面の「直す」は、言葉で直す欄に依頼を入れる(送るのは人)。本物の AI は、今の同意(consent の use が evals)と費用の上限を通す。
+// data はサーバーの中身、version は読んだときの一覧の版(projects の scenes.version が変わったら読み直す)
+const sceneUi = { projectId: null, data: null, version: null, seq: 0, starting: false, message: null };
+const sceneEls = {
+  box: $('scene-runs'),
+  summary: $('scene-runs-summary'),
+  runMock: $('scene-run-mock'),
+  runReal: $('scene-run-real'),
+  limit: $('scene-limit'),
+  cancel: $('scene-cancel'),
+  realNote: $('scene-real-note'),
+  consent: $('scene-consent'),
+  status: $('scene-status'),
+  table: $('scene-table'),
+  failures: $('scene-failures'),
+  list: $('scene-list'),
+  listSummary: $('scene-list-summary'),
+};
+const SCENE_STATUS = { done: '終わった', stopped: '途中で止めた', error: '途中で失敗した', running: '回している' };
+const sceneUsd = (value) => `${value.toFixed(value < 0.01 ? 4 : 2)} USD`;
+
+// 読み直す印。回しの版(場面を 1 つ回すごとに上がる)、場面の数、表示中の版(ビルドで場面の一覧が変わる)
+const sceneKey = (project) => JSON.stringify([project.scenes?.version ?? 0, project.scenes?.count ?? 0, project.previewUrl ?? null]);
+
+// 印が変わったら、場面の中身を読み直す。force は欄を開いたとき(ターミナルや審査の画面で回した結果も読むため)
+async function syncScenes(project, { force = false } = {}) {
+  const id = project?.id ?? null;
+  if (sceneUi.projectId !== id) Object.assign(sceneUi, { projectId: id, data: null, version: null, message: null });
+  if (!id || !(project.scenes?.count > 0 || sceneUi.data)) {
+    renderScenes(project);
+    return;
+  }
+  const key = sceneKey(project);
+  if (!force && sceneUi.version === key && sceneUi.data) return;
+  const seq = ++sceneUi.seq;
+  try {
+    const { scenes } = await api(`/api/projects/${encodeURIComponent(id)}/scenes`);
+    if (seq !== sceneUi.seq || sceneUi.projectId !== id) return;
+    sceneUi.data = scenes;
+    sceneUi.version = key;
+  } catch (error) {
+    if (seq === sceneUi.seq) handleError(error);
+  }
+  renderScenes(selectedProject());
+}
+
+function sceneTable(last) {
+  const table = element('table');
+  table.setAttribute('aria-label', '構成ごとの比べる表');
+  const head = element('tr');
+  for (const name of ['構成', '回した AI', '通った場面', '道具の呼び方の正しさ(ツールの再現率)', '費用', '待ち時間(返事の中央値)']) head.append(element('th', name));
+  const thead = element('thead');
+  thead.append(head);
+  const tbody = element('tbody');
+  for (const row of last.rows) {
+    const tr = element('tr');
+    tr.dataset.row = row.key;
+    const name = element('th');
+    name.setAttribute('scope', 'row');
+    name.append(document.createTextNode(row.composition.name), element('small', [row.composition.shapeLabel, row.composition.file].filter(Boolean).join('・')));
+    const who = row.real ? `本物の AI${row.assumption?.model ? `(${row.assumption.model}${row.assumption.standIn ? '。代わりのモデル' : ''})` : ''}` : 'お試しの AI';
+    const passed = `${row.passed} / ${row.ran}${row.failed + row.errors > 0 ? `(通らない ${row.failed + row.errors})` : ''}${row.unjudged > 0 ? `(採点していない ${row.unjudged})` : ''}${row.stopped > 0 ? `(途中で止めた ${row.stopped})` : ''}${row.notApplicable > 0 ? `(当てはまらない ${row.notApplicable})` : ''}`;
+    const tools = row.toolRecall === null ? `確かめる場面なし(呼んだ ${row.toolCalls} 回、誤った呼び出し ${row.wrongCalls})` : `${Math.round(row.toolRecall * 100)}%(誤った呼び出し ${row.wrongCalls})`;
+    const cost = row.real
+      ? `${sceneUsd(row.costUsd ?? 0)}${row.costPerConversationUsd !== null ? `(1 会話 ${sceneUsd(row.costPerConversationUsd)})` : ''}${row.judgeCostUsd > 0 ? `。ほかに採点 ${sceneUsd(row.judgeCostUsd)}` : ''}`
+      : 'かかりません';
+    const wait = row.real ? (row.medianReplySeconds !== null ? `${row.medianReplySeconds} 秒` : '-') : '測れません(お試しの AI)';
+    tr.append(name);
+    for (const text of [who, passed, tools, cost, wait]) tr.append(element('td', text));
+    tbody.append(tr);
+  }
+  table.append(thead, tbody);
+  return table;
+}
+
+// 開発向けの元の文(CLI の引数の名前などが入りうる)は、閉じた開く操作の中に置く(8 節。見える文字に開発の言葉を出さない)
+function sceneDevNote(summary, text) {
+  const box = element('details', undefined, 'card-dev');
+  box.append(element('summary', summary), element('p', text));
+  return box;
+}
+
+function sceneFailures(last) {
+  if (last.failures.length === 0) return [element('p', last.rows.length > 0 ? '通らない場面はありません。' : '', 'muted')];
+  const list = element('ul', undefined, 'scene-failures');
+  list.setAttribute('aria-label', '通らない場面');
+  for (const item of last.failures) {
+    const row = last.rows.find((r) => r.key === item.row);
+    const li = element('li');
+    li.dataset.scene = item.id;
+    const checks = item.checks.map((check) => `確かめ「${check.check}」: 期待 ${check.expected ?? '-'}、実際 ${check.actual ?? '-'}`).join('。');
+    li.append(element('strong', `場面「${item.id}」`), document.createTextNode(`${item.about ? `(${item.about})` : ''}、構成「${row?.composition.name ?? ''}」: ${item.verdictLabel}。${item.reason ? '' : checks}`));
+    const fix = element('button', '直す');
+    fix.type = 'button';
+    fix.title = '言葉で直す欄に、この場面を直す依頼を入れます。送るのはあなたです';
+    fix.addEventListener('click', () => {
+      fillRequest(item.request);
+      sceneUi.message = `場面「${item.id}」を直す依頼を、言葉で直す欄に入れました。読んで、送ってください。`;
+      renderScenes(selectedProject());
+    });
+    li.append(fix);
+    if (item.reason) li.append(sceneDevNote('開発者向け: 回せなかった理由', item.reason));
+    list.append(li);
+  }
+  const more = last.failureCount > last.failures.length ? `ほか ${last.failureCount - last.failures.length} つは、ここに出していません。` : '';
+  return [element('p', `通らない場面(「直す」で、言葉で直す欄に依頼が入ります)。${more}`), list];
+}
+
+function renderScenes(project) {
+  const data = sceneUi.projectId === project?.id ? sceneUi.data : null;
+  const count = project?.scenes?.count ?? 0;
+  sceneEls.box.hidden = !project || (count === 0 && !data?.last);
+  if (sceneEls.box.hidden) return;
+  const running = data?.running ?? (project.scenes?.running ? {} : null);
+  const last = data?.last ?? null;
+  sceneEls.summary.textContent = `場面の一覧と比べる表(${count} 本${last ? `。前の回し: ${last.rows.length} 組、通らない場面 ${last.failureCount ?? last.failures.length}` : ''}${running ? '。回しています…' : ''})`;
+  const busy = Boolean(running) || sceneUi.starting || consent.agreeing;
+  sceneEls.runMock.disabled = busy || count === 0;
+  const real = data?.real;
+  sceneEls.runReal.disabled = busy || count === 0 || !real?.available;
+  sceneEls.limit.disabled = busy || !real?.available;
+  if (real) sceneEls.limit.max = String(real.maxLimitUsd);
+  sceneEls.cancel.hidden = !running;
+  const reason = real?.code === 'not-found' ? UNAVAILABLE.missing.lead() : real?.reason;
+  sceneEls.realNote.textContent = real && !real.available
+    ? `本物の AI では回せません: ${reason}`
+    : '本物の AI で回すと、場面の発言ごとに試作品の中の AI を呼び、費用がかかります。使った費用が上限に達したら、次の返事を始めずに止めます。自然さの採点はしません。';
+  const card = consent.card?.use === 'evals' && consent.card.projectId === project.id ? consent.card : null;
+  sceneEls.consent.hidden = !card;
+  sceneEls.consent.replaceChildren(...(card ? [consentCard(card.view, { card })] : []));
+  const lines = [];
+  if (running) {
+    const how = running.real ? `本物の AI。使った費用 ${sceneUsd(running.spentUsd ?? 0)} / 上限 ${sceneUsd(running.limitUsd ?? 0)}` : 'お試しの AI';
+    lines.push(`場面を回しています… ${running.done ?? 0} / ${running.total ?? '?'}(${how})`);
+  }
+  if (sceneUi.message) lines.push(sceneUi.message);
+  if (data?.problem) lines.push(data.problem.text);
+  sceneEls.status.replaceChildren(document.createTextNode(lines.join(' ')), ...(data?.problem?.detail ? [sceneDevNote('開発者向け: 回せなかった理由', data.problem.detail)] : []));
+  if (!last) {
+    sceneEls.table.replaceChildren(element('p', 'まだ回していません。', 'muted'));
+    sceneEls.failures.replaceChildren();
+  } else {
+    const how = last.real
+      ? `本物の AI で回した(${formatTime(last.startedAt)}。上限 ${sceneUsd(last.limitUsd ?? 0)}。自然さは${last.judged ? '採点した' : '採点していません'})`
+      : `お試しの AI で回した(${formatTime(last.startedAt)})。形が動くかの確かめだけで、構成の良し悪しの根拠にしません`;
+    const notes = [element('p', `${how}。状態: ${SCENE_STATUS[last.status] ?? last.status}${last.stopText ? `(${last.stopText})` : ''}`, last.status === 'done' || last.status === 'running' ? 'muted' : 'scene-warn')];
+    if (last.stopReason) notes.push(sceneDevNote('開発者向け: 止めた理由の元の文', last.stopReason));
+    if (last.stale) notes.push(element('p', '回した後に場面の一覧が変わったので、この表は古いです。', 'scene-warn'));
+    sceneEls.table.replaceChildren(...notes, sceneTable(last));
+    sceneEls.failures.replaceChildren(...sceneFailures(last));
+  }
+  const scenes = data?.scenes ?? [];
+  sceneEls.listSummary.textContent = `回す場面(${scenes.length} 本、構成 ${data?.compositions ?? 0} つ)`;
+  sceneEls.list.replaceChildren(...scenes.map((scene) => element('li', `${scene.id}${scene.about ? `: ${scene.about}` : ''}`)));
+}
+
+// 回し始める。本物の AI で同意の前なら、同意のカードを欄に出し、同意したら回す
+async function startScenes(connection) {
+  const project = selectedProject();
+  if (!project || sceneUi.starting) return;
+  const id = project.id;
+  const limitUsd = Number(sceneEls.limit.value);
+  sceneUi.starting = true;
+  sceneUi.message = null;
+  if (consent.card?.use === 'evals') consent.card = null;
+  renderScenes(project);
+  try {
+    const { scenes } = await api(`/api/projects/${encodeURIComponent(id)}/scenes/run`, { method: 'POST', json: connection === 'mock' ? { connection } : { connection, limitUsd } });
+    if (sceneUi.projectId === id) sceneUi.data = scenes;
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'consent-required') {
+      sceneUi.starting = false;
+      await openConsent('evals', { projectId: id });
+    } else if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) {
+      sceneUi.message = `回せませんでした: ${error.message}`;
+    } else {
+      handleError(error);
+    }
+  } finally {
+    sceneUi.starting = false;
+    sceneUi.version = null;
+    lastSnapshot = '';
+    await refresh();
+    renderScenes(selectedProject());
+  }
+}
+
+async function cancelScenes() {
+  const project = selectedProject();
+  if (!project) return;
+  try {
+    await api(`/api/projects/${encodeURIComponent(project.id)}/scenes/cancel`, { method: 'POST' });
+    sceneUi.message = '止めています。今の返事が終わったら、それまでの結果を残して止まります。';
+  } catch (error) {
+    handleError(error);
+  }
+  renderScenes(selectedProject());
+}
+
+sceneEls.box.addEventListener('toggle', () => {
+  if (sceneEls.box.open) syncScenes(selectedProject(), { force: true });
+});
+sceneEls.runMock.addEventListener('click', () => startScenes('mock'));
+sceneEls.runReal.addEventListener('click', () => startScenes('claude-code'));
+sceneEls.cancel.addEventListener('click', cancelScenes);
 
 // 案内のとおり同じタブに URL を貼ると、フラグメントだけが変わり、画面は読み直されない。
 // 新しい鍵を覚えてから読み直し、はじめからつなぎ直す。
