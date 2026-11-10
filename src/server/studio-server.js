@@ -16,6 +16,7 @@ import { SceneRunError } from './scene-runs.js';
 import { ShowError } from './show.js';
 import { CommentError } from './comments.js';
 import { VersionError } from './versions.js';
+import { COLUMNS } from './organize-ai.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
 // トークンのファイルは大きいので、その API だけ広げる(上限は design-tokens.js の TOKEN_LIMITS。JSON の中に入れると伸びる分を見る)
@@ -150,7 +151,7 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
 // reviews は AI 構成の審査と AI 構成書(review.js)。sceneRuns は主の画面の場面の回しと比べる表(scene-runs.js)。
 // quality は質の見直しの表(quality.js)。shows は人に見せる画面の問いと答え(show.js)。
 // comments は画面へのコメント、反応、承認、列、直した記録、元に戻す(comments.js)
-export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, closings, intents, organizes, designs, reviews, sceneRuns, quality, shows, comments, materials, meetings, token, ports, realAi, consent, firstSteps }) {
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, closings, intents, organizes, designs, reviews, sceneRuns, quality, shows, comments, materials, meetings, timeline = { mark: async () => false }, token, ports, realAi, consent, firstSteps }) {
   const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes, designs, meetings, reviews, sceneRuns);
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
@@ -343,6 +344,8 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       const body = (await readJson(req)) ?? {};
       if (action === 'erase') return sendJson(res, 200, await meetings.erase(id, body));
       const meeting = action === 'decide' ? await meetings.decide(id, body) : await meetings.setDeleteOn(id, body);
+      // 会の段ごとの時刻(timeline.js)。始めの時刻は、初めて決めた時刻
+      if (action === 'decide') await timeline.mark(id, 'start', meeting.decidedAt);
       return sendJson(res, 200, { meeting, consent: consent.state() });
     } catch (error) {
       return sendIntentError(res, error);
@@ -371,12 +374,25 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     }
   }
 
+  // 整理の板の段の時刻(timeline.js)。5 つの欄がそろったら「聞く」、決める人が押したら「AI が整理する」。
+  // 押した後に初めて欄がそろったと分かったときは、聞くの時刻を押した時刻にする(聞くが整理より後にならないように)
+  async function markOrganize(id) {
+    const board = organizes.boards.get(id);
+    if (!board) return;
+    const columns = new Set(board.items.map((item) => item.column));
+    const confirmedAt = board.status === 'confirmed' ? board.confirmedAt : null;
+    if (Object.keys(COLUMNS).every((column) => columns.has(column))) await timeline.mark(id, 'listen', confirmedAt);
+    if (confirmedAt) await timeline.mark(id, 'organize', confirmedAt);
+  }
+
   async function handleOrganize(req, res, id, action) {
     try {
       if (!action) return sendJson(res, 200, { organize: await organizes.view(id) });
       const body = await readJson(req);
       if (action === 'cancel') return sendJson(res, 200, { cancelled: organizes.cancel(id) });
-      return sendJson(res, 200, { organize: await organizes[ORGANIZE_ACTIONS[action]](id, body ?? {}) });
+      const organize = await organizes[ORGANIZE_ACTIONS[action]](id, body ?? {});
+      await markOrganize(id);
+      return sendJson(res, 200, { organize });
     } catch (error) {
       return sendIntentError(res, error);
     }
@@ -427,7 +443,12 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       if (!action) return sendJson(res, 200, { review: await reviews.view(id) });
       const body = (await readJson(req)) ?? {};
       // build と skip は依頼の文も返す
-      if (action === 'build' || action === 'skip') return sendJson(res, 200, await reviews[action](id, body));
+      if (action === 'build' || action === 'skip') {
+        const result = await reviews[action](id, body);
+        // 4 つの承認がそろい、「この構成で作る」を押した時刻(timeline.js)
+        if (action === 'build' && result.review?.approvedAt) await timeline.mark(id, 'review', result.review.approvedAt);
+        return sendJson(res, 200, result);
+      }
       if (action === 'start') return sendJson(res, 200, { review: await reviews.start(id, { origin: 'existing' }) });
       return sendJson(res, 200, { review: await reviews[action](id, body) });
     } catch (error) {
@@ -464,7 +485,11 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       if (req.method === 'GET') return sendJson(res, 200, { comments: await comments.view(id) });
       const body = (await readJson(req)) ?? {};
       let result;
-      if (!action) result = await comments.create(id, body);
+      if (!action) {
+        result = await comments.create(id, body);
+        // 最初のコメントが付いた時刻(timeline.js)
+        await timeline.mark(id, 'show');
+      }
       else if (action === 'resume') result = await comments.resume(id);
       else if (action === 'approve') result = await comments.approve(id, commentId, body);
       else if (action === 'resolve' || action === 'revert') result = await comments[action](id, commentId, body);
@@ -609,7 +634,10 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     try {
       if (req.method === 'GET') return sendJson(res, 200, await handoffs.view(id));
       const body = await readJson(req);
-      return sendJson(res, 200, await handoffs.export(id, body));
+      const exported = await handoffs.export(id, body);
+      // 会の終わりの時刻(timeline.js)。書き出しの中に入れた時刻と同じにする
+      await timeline.mark(id, 'closing', exported?.last?.createdAt);
+      return sendJson(res, 200, exported);
     } catch (error) {
       if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', error.message);
       if (error instanceof BusyError) return sendError(res, 409, 'busy', error.message);

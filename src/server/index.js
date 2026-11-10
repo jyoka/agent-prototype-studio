@@ -21,6 +21,7 @@ import { ProjectComments } from './comments.js';
 import { ProjectMaterials } from './materials.js';
 import { createDesignAi, DESIGN_SYSTEM_PROMPT } from './design-ai.js';
 import { ProjectMeetings, removeErasing } from './meeting.js';
+import { CHECKED_RUN, MeetingTimeline } from './timeline.js';
 import { ProjectOrganizes } from './organize.js';
 import { createOrganizeAi, ORGANIZE_SYSTEM_PROMPT } from './organize-ai.js';
 import { createPreviewHandler } from './preview-server.js';
@@ -135,6 +136,8 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     log,
   });
   await meetings.load();
+  // 会の段ごとの時刻(timeline.js、K6)。同意の後の会だけに残す。お試しの AI だけで始めた会も測る
+  const timeline = new MeetingTimeline({ home: config.home, isOpen: (id) => ['agreed', 'trial'].includes(meetings.records.get(id)?.status), log });
   // 観察器のブラウザは、Studio の中で 1 つだけ。最初の観察のときに起動する
   const observer = new Observer();
 
@@ -196,8 +199,11 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     meetingGate: (id, mode) => meetings.require(id, mode),
     // AI 構成の審査(review.js)。審査の要る試作品は、4 つの承認の後だけ作る AI を起動し、承認と違う構成は関門 GA で止める
     reviews: { check: (id) => reviews.check(id), markStopped: (id, detail) => reviews.markStopped(id, detail) },
-    // run が終わるたびに、承認したコメントの列を進める(comments.js)
-    onEnd: (id) => comments.afterRun(id),
+    // run が終わるたびに、承認したコメントの列を進める(comments.js)。自動の確かめが通れば、会の「試作品」の時刻を残す(timeline.js)
+    onEnd: (id, run) => {
+      if (CHECKED_RUN.includes(run?.status)) timeline.mark(id, 'prototype', run.finishedAt);
+      comments.afterRun(id);
+    },
     ...(scenarioLimits ? { scenarioLimits } : {}),
     ...(onAgentEvent ? { onAgentEvent } : {}),
   });
@@ -290,6 +296,10 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       const { report } = await observeShown(id, { scenarios: [], base: false, viewports: ['desktop'], outDir });
       return report?.screenshots?.find((shot) => typeof shot?.file === 'string')?.file ?? null;
     },
+    // 直した版ができ、自動の確かめも通ったら、会の「承認して AI が直す」の時刻を残す(timeline.js)
+    onFixed: (id, record) => {
+      if (CHECKED_RUN.includes(record.gates?.status)) timeline.mark(id, 'fix', record.events.find((e) => e.type === 'fixed')?.at);
+    },
     log,
   });
   const handoffs = new ProjectHandoffs({ home: config.home, store, aiSessions, versions, requests, log });
@@ -324,6 +334,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       comments,
       materials,
       meetings,
+      timeline,
       token,
       ports,
       // 同意のカードの中身(real-ai.js の consentView)。試作品を渡すと、その試作品の中の AI の「詳しく」も入れる

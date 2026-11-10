@@ -241,12 +241,14 @@ export class ProjectComments {
   // requests は作る run(build-requests.js)、versions は版(versions.js)、reviews は AI 構成の審査(review.js)。
   // contextOf(id) は依頼に包む { purpose, board }。talkGate(id) は会の同意の前と消している間に断る(index.js)。
   // shoot(id, outDir) は今の画面のスクリーンショットを撮り、PNG の場所を返す(直す前と後の比べ。撮れなければ null)
-  constructor({ home, store, requests, versions, reviews = null, contextOf = () => ({}), talkGate = () => {}, shoot = null, log = () => {} }) {
+  constructor({ home, store, requests, versions, reviews = null, contextOf = () => ({}), talkGate = () => {}, shoot = null, onFixed = () => {}, log = () => {} }) {
     this.home = home;
     this.store = store;
     this.requests = requests;
     this.versions = versions;
     this.reviews = reviews;
+    // 直した版ができたとき(会の段ごとの時刻。timeline.js)
+    this.onFixed = onFixed;
     this.contextOf = contextOf;
     this.talkGate = talkGate;
     this.shoot = shoot;
@@ -714,6 +716,13 @@ export class ProjectComments {
         }
       }
       await this.writeRecord(id, record);
+      if (fixed) {
+        try {
+          this.onFixed(id, record);
+        } catch (error) {
+          this.log(`直した後の処理で問題が起きました: ${id}(${error.message})`);
+        }
+      }
       comment.status = fixed ? 'review' : 'failed';
       if (!fixed) comment.held = { code: 'failed', message: '直す AI が直せませんでした。「元に戻す」で前の版に戻すか、「開き直す」で書き直してください' };
       await this.save(id);

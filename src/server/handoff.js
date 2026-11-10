@@ -33,6 +33,7 @@ import {
 import { closingReadmeLines, describeClosing, describeDataDesign, readBoard, readComments, readOwners, redactClosing } from './closing.js';
 import { readFixRecords } from './comments.js';
 import { FIX_RECORDS_DIR } from './meeting.js';
+import { readTimeline } from './timeline.js';
 
 // 本番開発への引き継ぎ(#280、#313)。試作品のソース、意図、AI の設定、モックと状態、未接続と未決事項、
 // 目録とシナリオ、最新の証拠の要約、構成とツールと前提、場面と最新の場面の回しの要約を、1 つのフォルダーに書き出す。中身は決まった手順で作り、AI の判断は入れない(ADR-0001、Stripe の Minions)。
@@ -93,6 +94,12 @@ function cleanNotes(raw) {
 }
 
 const pad = (n) => String(n).padStart(2, '0');
+// 書き出しに入れる段ごとの時刻。会を始めた試作品では、この書き出しが会の終わりの印になる(index.js が同じ時刻を残す)
+async function exportStages(paths, createdAt) {
+  const stages = await readTimeline(paths);
+  return stages.start && !stages.closing ? { ...stages, closing: createdAt.toISOString() } : stages;
+}
+
 function stamp(date) {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
 }
@@ -1293,6 +1300,8 @@ export class ProjectHandoffs {
           evidence,
           latestRun: simulation.latestRun,
           owners: await readOwners(paths),
+          // 段ごとの時刻(K6)。会の書き出しは、それ自体が会の終わりの印なので、まだ残っていなければ書き出した時刻を入れる
+          stages: await exportStages(paths, createdAt),
         }),
       );
       const manifest = {
@@ -1325,7 +1334,7 @@ export class ProjectHandoffs {
         requirements: closing.requirements,
         dataDesign: closing.dataDesign,
         fixRecords: closing.fixRecords,
-        closing: { present: closing.present, deliverables: closing.deliverables, figure: closing.figure, openItems: closing.openItems, unowned: closing.unowned },
+        closing: { present: closing.present, deliverables: closing.deliverables, figure: closing.figure, openItems: closing.openItems, unowned: closing.unowned, timeline: closing.timeline },
         ai: definition
           ? {
               name: definition.name,
