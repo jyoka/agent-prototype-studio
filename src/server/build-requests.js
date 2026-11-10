@@ -51,6 +51,8 @@ export const BLUEPRINT = Object.freeze([
   { name: 'fingerprint', kind: 'code', label: '前の指紋' },
   { name: 'agent', kind: 'model', label: '作る AI' },
   { name: 'changes', kind: 'code', gate: 'G1', label: '変更の確認' },
+  // AI 構成の審査で承認した構成と同じか(docs/design/ai-architecture-review.md の 6 節。review.js)。審査のない試作品では何もせず、結果にも出さない(R2)
+  { name: 'architecture', kind: 'code', gate: 'GA', label: '構成の承認' },
   { name: 'inspect', kind: 'code', gate: 'G2', label: '検査' },
   { name: 'contract', kind: 'code', gate: 'G3', label: '契約' },
   { name: 'compile', kind: 'code', gate: 'G4', label: 'ビルド' },
@@ -62,6 +64,8 @@ export const BLUEPRINT = Object.freeze([
 ].map((node) => Object.freeze(node)));
 const NODES = new Map(BLUEPRINT.map((node) => [node.name, node]));
 const GATES = BLUEPRINT.filter((node) => node.gate);
+// 関門 GA の行は、審査のある試作品でだけ結果に足す(node_architecture)
+const ROUND_GATES = GATES.filter((node) => node.name !== 'architecture');
 const BUILD_GATES = ['inspect', 'contract', 'compile'];
 const GATE_STATUS_TEXT = { passed: '通った', failed: '失敗', unverified: '未確認', unchanged: '変更なし', skipped: '行わない' };
 // 作る会話の項目の本文(text)は、利用者の画面の言葉で書く(ux-redesign.md 4 節)。関門、シナリオ、ビルド、app/ などの
@@ -73,6 +77,7 @@ const GATE_WORDS = {
   contract: 'AI の設定と確かめ方の形',
   compile: '表示の準備',
   evals: 'AI の場面で動くか',
+  architecture: '承認した構成と同じか',
   launch: '開いて表示できるか',
   scenarios: '決めた手順で動くか',
 };
@@ -95,7 +100,7 @@ const leadSentence = (text) => String(text ?? '').split('。')[0].trim();
 const TRY_YOURSELF = '試す欄で、動きを確かめてください。';
 const unverifiedText = (what, reason) => `${what}。${leadSentence(reason) || NO_REASON}。${TRY_YOURSELF}`;
 const GATE_TIMEOUT = Symbol('gate-timeout');
-const freshGates = () => GATES.map((node) => ({ id: node.gate, name: node.name, label: node.label, status: 'skipped' }));
+const freshGates = () => ROUND_GATES.map((node) => ({ id: node.gate, name: node.name, label: node.label, status: 'skipped' }));
 // ビルドの誤りを、関門の結果に残す形にする
 const gateErrors = (errors) =>
   errors.slice(0, MAX_GATE_ERRORS).map((e) => ({ file: e.file, line: e.line ?? null, column: e.column ?? null, text: clip(e.text), ...(e.material ? { material: true } : {}), ...(e.locked ? { locked: true } : {}) }));
@@ -228,6 +233,13 @@ function finalStatus(gates, round) {
 }
 
 export class RequestError extends Error {}
+// AI 構成の審査の承認がそろっていない、承認した構成と違う(review.js)。code は review-not-approved、review-changed、review-missing
+export class ReviewRequiredError extends Error {
+  constructor(message, code) {
+    super(message);
+    this.code = code;
+  }
+}
 export class AgentUnavailableError extends Error {}
 
 // 作る欄の依頼を受け、作る run を blueprint の節の順に回す。
@@ -257,6 +269,7 @@ export class BuildRequests {
     maxBudgetUsd = DEFAULT_MAX_BUDGET_USD,
     consent = new RealAiConsent(),
     meetingGate = () => {},
+    reviews = null,
   }) {
     this.store = store;
     this.connection = connection;
@@ -264,6 +277,8 @@ export class BuildRequests {
     this.consent = consent;
     // 会の同意の前と、お試しだけの会では断る(meeting.js)
     this.meetingGate = meetingGate;
+    // AI 構成の審査(review.js)。なければ審査を見ない
+    this.reviews = reviews;
     // 決まった節が使う、接続の名前と問題。決まった節は、ここだけを見る
     this.agentLabel = connection.label;
     this.agentProblem = connection.problem;
@@ -342,6 +357,16 @@ export class BuildRequests {
     if (this.closing) throw new AgentUnavailableError('Studio を止めているところです');
     if (this.agentProblem) throw new AgentUnavailableError(this.agentProblem);
     this.meetingGate(id, this.connection.kind === 'claude' ? 'real' : 'fake');
+    let reviewed = null;
+    // 審査の要る試作品は、4 つの承認がそろい、承認した構成と同じときだけ作る AI を起動する(関門 GA と同じ比べ)
+    if (this.reviews) {
+      const review = await this.reviews.check(id);
+      if (review.applies && !review.ok) {
+        if (review.code === 'review-changed') await this.reviews.markStopped(id, { changed: review.changed, fingerprint: review.fingerprint });
+        throw new ReviewRequiredError(review.message, review.code);
+      }
+      reviewed = review.applies ? { id: review.reviewId ?? null, fingerprint: review.fingerprint ?? null } : null;
+    }
     if (this.connection.kind === 'claude') this.consent.require('fix');
     this.store.claimRun(id);
 
@@ -376,6 +401,8 @@ export class BuildRequests {
       // 関門が確かめた app/ の中身の指紋。今の app/ と違えば、証拠は古い(S6。evidence.js)
       appDigest: null,
       evidence: null,
+      // AI 構成の審査で承認した試作品なら、受け付けたときの AI 構成書の ID と指紋(review.js)。審査のない試作品では足さない(R2)
+      ...(reviewed ? { review: reviewed } : {}),
     };
     this.onNode({ projectId: id, runId: run.id, node: 'accept', kind: 'code' });
     run.nodes.push({ name: 'accept', kind: 'code', round: 1, startedAt: run.startedAt, durationMs: Date.now() - acceptedAt, outcome: 'passed' });
@@ -500,7 +527,7 @@ export class BuildRequests {
       this.onAgentEvent({ ...event, type: 'input', text: input });
       handle = startAgentProcess({
         command: connection.command,
-        args: [...connection.prefixArgs, ...buildClaudeArgs({ billing: connection.billing, mcpConfig: state.mcpConfig, maxBudgetUsd: this.maxBudgetUsd, materialGuide: material?.guide ?? null })],
+        args: [...connection.prefixArgs, ...buildClaudeArgs({ billing: connection.billing, mcpConfig: state.mcpConfig, maxBudgetUsd: this.maxBudgetUsd, materialGuide: material?.guide ?? null, reviewed: Boolean(run.review) })],
         cwd: paths.app,
         // 利用者の環境変数をそのまま渡す。値は読まない、残さない
         env: this.env,
@@ -620,7 +647,7 @@ export class BuildRequests {
         detail: `app/ のファイルが ${MAX_SNAPSHOT_ENTRIES} 個を超えているので、G1 は確かめずに通し、ビルドし直します。`,
       });
       this.setGate(run, 'changes', { status: 'passed', changedFiles: changed.length, detail: '数が多いので確かめきれません' });
-      return { next: 'inspect', outcome: 'passed' };
+      return { next: 'architecture', outcome: 'passed' };
     }
     if (changed.length === 0 && fixing) return this.unchangedFix(state);
     if (changed.length === 0) {
@@ -634,7 +661,27 @@ export class BuildRequests {
       detail: `${fixing ? '直すラウンドで変わったファイル' : '変わったファイル'}: ${names}`,
     });
     this.setGate(run, 'changes', { status: 'passed', changedFiles: changed.length });
-    return { next: 'inspect', outcome: 'passed' };
+    return { next: 'architecture', outcome: 'passed' };
+  }
+
+  // 節 architecture(GA 構成の承認): 今の app/ の指紋が、AI 構成書の指紋と同じか(review.js の check)。
+  // 審査のない試作品では何もしない(行も足さない。R2)。違えば止める。直すラウンドに回さず、作る AI に直させない。
+  // G2〜G4 は通ると試す欄の試作品が替わるので、その前に止める。試す欄は前の試作品のまま
+  async node_architecture(state) {
+    const { id, run } = state;
+    const review = this.reviews ? await this.reviews.check(id) : { applies: false };
+    if (!review.applies) return { next: 'inspect', outcome: 'skipped' };
+    const gate = { id: 'GA', name: 'architecture', label: NODES.get('architecture').label, status: review.ok ? 'passed' : 'failed', reviewId: review.reviewId ?? null };
+    if (!review.ok) Object.assign(gate, { summary: review.message, changed: review.changed ?? [], code: review.code });
+    const at = run.gates.findIndex((g) => g.name === 'architecture');
+    if (at === -1) run.gates.splice(run.gates.findIndex((g) => g.name === 'changes') + 1, 0, gate);
+    else run.gates[at] = gate;
+    if (review.ok) return { next: 'inspect', outcome: 'passed' };
+    if (review.code === 'review-changed') await this.reviews.markStopped(id, { runId: run.id, changed: review.changed, fingerprint: review.fingerprint });
+    this.addItem(id, run, 'failed', '承認した構成と違うので、止めました。試す欄は前の試作品のままです。AI 構成の審査に戻ってください。', {
+      detail: `GA 構成の承認: ${review.message}(審査 ${review.reviewId ?? 'なし'})`,
+    });
+    return { next: 'evidence', outcome: 'failed' };
   }
 
   // 直すラウンドで、作る AI が app/ のシナリオを変えたか。シナリオを弱めて通すことを防ぐため、
@@ -986,7 +1033,7 @@ export class BuildRequests {
       return { next: 'evidence', outcome: 'gave-up' };
     }
 
-    state.fixPrompt = buildFixPrompt({ request: run.request, gate: failed, changedFiles: run.changedFiles });
+    state.fixPrompt = buildFixPrompt({ request: run.request, gate: failed, changedFiles: run.changedFiles, reviewed: Boolean(run.review) });
     state.lastFailure = failed;
     // 次のラウンドでガードレールが変わったかを、このときの表示中のビルドと比べる
     state.roundGuards = guardFingerprint(this.store.simulation(id), this.store.aiDefinition(id));
@@ -1125,6 +1172,8 @@ export class BuildRequests {
       build: run.build,
       // 関門が確かめた app/ の中身の指紋(古くなったかの判定に使う。S6)
       appDigest: run.appDigest,
+      // AI 構成の審査で承認した試作品なら、受け付けたときの AI 構成書の ID と指紋(審査のない試作品では書かない。R2)
+      ...(run.review ? { review: run.review } : {}),
       reports: run.rounds.flatMap((round) => (round.gates ?? []).filter((gate) => gate.report).map((gate) => ({ gate: gate.id, round: round.round, file: gate.report }))),
     };
     await fs.mkdir(dir, { recursive: true });

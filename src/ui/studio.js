@@ -455,6 +455,7 @@ function renderList() {
       leaveIntent();
       closeOrganize();
       closeDesign();
+      closeReview();
       closeMeeting();
       switchProject(project.id);
     });
@@ -1054,7 +1055,8 @@ function evidenceDev(run) {
   const rounds = element('ul');
   rounds.setAttribute('aria-label', '節の列');
   for (const round of run.rounds ?? []) {
-    const names = (run.nodes ?? []).filter((node) => node.round === round.round).map((node) => (node.gate ? `${node.gate} ${node.name}` : node.name));
+    // 関門 GA は、AI 構成の審査のない試作品では何もしない(skipped)。今の試作品の見え方を変えないため、その節は出さない(R2)
+    const names = (run.nodes ?? []).filter((node) => node.round === round.round && !(node.name === 'architecture' && node.outcome === 'skipped')).map((node) => (node.gate ? `${node.gate} ${node.name}` : node.name));
     rounds.append(element('li', `ラウンド ${round.round}: ${names.join(' → ')}`));
   }
   box.append(rounds);
@@ -3613,6 +3615,7 @@ function renderIntentMark(project) {
   renderOrganizeMark(project);
   renderMeetingMark(project);
   renderDesignMark(project);
+  renderReviewMark(project);
 }
 
 function intentError(text) {
@@ -3912,6 +3915,7 @@ async function openIntentFromMark() {
   if (project.meeting?.status === 'waiting') return openMeeting(project.id);
   closeOrganize();
   closeDesign();
+  closeReview();
   closeMeeting();
   try {
     const { intent } = await api(intentPath(project.id));
@@ -3966,6 +3970,7 @@ $('new-project').addEventListener('click', () => {
   leaveIntent();
   closeOrganize();
   closeDesign();
+  closeReview();
   closeMeeting();
   openStart(null);
 });
@@ -4353,6 +4358,7 @@ async function openOrganize() {
   if (project.meeting?.status === 'waiting') return openMeeting(project.id);
   leaveIntent();
   closeDesign();
+  closeReview();
   closeMeeting();
   // 別の試作品の板には、前の試作品のために書いた文を持ち込まない
   if (organizeUi.inputsFor !== project.id) {
@@ -4489,6 +4495,7 @@ function renderMeetingDue(list) {
       leaveIntent();
       closeOrganize();
       closeDesign();
+      closeReview();
       switchProject(entry.id);
       openMeeting(entry.id);
     }));
@@ -4595,6 +4602,7 @@ async function openMeeting(id) {
   leaveIntent();
   closeOrganize();
   closeDesign();
+  closeReview();
   meetingUi.seq += 1;
   const { seq } = meetingUi;
   Object.assign(meetingUi, { view: 'meeting', projectId: id, record: null, confirming: false, working: false, erased: null });
@@ -4685,6 +4693,7 @@ async function eraseMeeting() {
     Object.assign(meetingUi, { view: 'erased', projectId: null, record: null, confirming: false, working: false, erased });
     closeOrganize();
     closeDesign();
+    closeReview();
     leaveIntent();
     renderMeeting();
     await refreshMeetingList();
@@ -4701,6 +4710,7 @@ function startMeetingFromMenu() {
   leaveIntent();
   closeOrganize();
   closeDesign();
+  closeReview();
   openMeetingNew();
 }
 
@@ -5209,6 +5219,7 @@ async function openDesign() {
   leaveIntent();
   closeOrganize();
   closeMeeting();
+  closeReview();
   designUi.seq += 1;
   const { seq } = designUi;
   designUi.open = true;
@@ -5330,19 +5341,18 @@ async function goDesign(step) {
   }
 }
 
-// 「この設計で作る」。「決めた」の印を付け、目的と設計を入れた依頼を、言葉で直す欄と同じ道で送る(本物の AI の同意もその道で取る)
+// 「この設計で作る」。「決めた」の印を付け、AI 構成の審査を開く。依頼は審査の「この構成で作る」で送る
 async function buildFromDesign() {
   const id = designUi.projectId;
   if (!id || !(await saveDesignDrafts())) return;
   designError(null);
   try {
-    const { request } = await api(designPath(id, 'decide'), { method: 'POST' });
+    // 決めたら、作る前に AI 構成の審査へ進む(4 つを承認してから作る。ai-architecture-review.md)
+    await api(designPath(id, 'decide'), { method: 'POST' });
     selectedId = id;
-    closeDesign();
     lastSnapshot = '';
     await refresh();
-    els.requestText.value = request;
-    await submitRequest();
+    await openReview(id);
   } catch (error) {
     designFailed(error);
   }
@@ -5397,6 +5407,434 @@ $('design-back').addEventListener('click', async () => {
 });
 designEls.skip.addEventListener('click', async () => {
   if (await designAct('skip')) closeDesign();
+});
+
+// ---- AI 構成の審査(docs/design/ai-architecture-review.md)----
+// 4 つ(エージェントの構成、harness、データと RAG、技術の組)を上から順に並べ、欄ごとに承認する。4 つそろうまで「この構成で作る」は押せない。
+// 構成を選び直すと、4 つの承認は全部消える(サーバーが消す)。中身はどれも Studio が今のファイルから書いたもので、画面は出すだけ
+const reviewPath = (id, action = '') => `/api/projects/${encodeURIComponent(id)}/review${action ? `/${action}` : ''}`;
+const reviewUi = { open: false, projectId: null, record: null, seq: 0, busy: false };
+const reviewEls = {
+  section: $('review'),
+  heading: $('review-heading'),
+  count: $('review-count'),
+  state: $('review-state'),
+  stopped: $('review-stopped'),
+  stoppedText: $('review-stopped-text'),
+  pressed: $('review-pressed'),
+  spoken: $('review-spoken'),
+  spokenLabel: $('review-spoken-label'),
+  items: $('review-items'),
+  left: $('review-left'),
+  build: $('review-build'),
+  measure: $('review-measure'),
+  toDesign: $('review-to-design'),
+  skipBox: $('review-skip-box'),
+  skipReason: $('review-skip-reason'),
+  message: $('review-message'),
+  error: $('review-error'),
+  mark: $('review-mark'),
+};
+const REVIEW_MARKS = { drafting: '審査: 承認 {n} / 4', approved: '審査: 承認済み', stopped: '審査: 承認と違う構成', skipped: '審査なし', missing: '審査: 記録がありません' };
+const FIGURE_KIND_LABELS = { person: '人', ai: 'AI', code: 'コード', tool: 'ツール' };
+
+function renderReviewMark(project) {
+  const summary = project?.review ?? { status: 'none' };
+  reviewEls.mark.hidden = !project || summary.status === 'none' || (intentUi.view === 'start' && !intentUi.projectId);
+  reviewEls.mark.textContent = (REVIEW_MARKS[summary.status] ?? '').replace('{n}', String(summary.approved ?? 0));
+  reviewEls.mark.dataset.state = summary.status === 'approved' ? 'decided' : summary.status === 'skipped' ? 'none' : 'draft';
+}
+
+function reviewError(text) {
+  reviewEls.error.hidden = !text;
+  reviewEls.error.textContent = text ?? '';
+}
+
+function reviewMessage(text) {
+  reviewEls.message.hidden = !text;
+  reviewEls.message.textContent = text ?? '';
+}
+
+function reviewFailed(error) {
+  if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) reviewError(`進められませんでした: ${error.message}`);
+  else handleError(error);
+}
+
+// 構成の図。人、AI、コード、ツールの箱を、使う人からの近さで列に並べ、矢印でつなぐ
+function compositionFigureSvg(figure, label) {
+  const depth = new Map([['user', 0]]);
+  const queue = ['user'];
+  while (queue.length > 0) {
+    const from = queue.shift();
+    for (const edge of figure.edges.filter((item) => item.from === from)) {
+      if (depth.has(edge.to)) continue;
+      depth.set(edge.to, depth.get(from) + 1);
+      queue.push(edge.to);
+    }
+  }
+  for (const node of figure.nodes) if (!depth.has(node.id)) depth.set(node.id, 1);
+  const columns = new Map();
+  for (const node of figure.nodes) {
+    const at = depth.get(node.id);
+    columns.set(at, [...(columns.get(at) ?? []), node]);
+  }
+  const width = 170;
+  const height = 46;
+  const gapX = 70;
+  const gapY = 24;
+  const rows = Math.max(...[...columns.values()].map((nodes) => nodes.length));
+  const boxes = new Map();
+  for (const [column, nodes] of columns) {
+    nodes.forEach((node, index) => boxes.set(node.id, { x: 10 + column * (width + gapX), y: 10 + index * (height + gapY), w: width, h: height }));
+  }
+  const totalW = 20 + columns.size * width + (columns.size - 1) * gapX;
+  const totalH = 20 + rows * height + (rows - 1) * gapY;
+  const described = `${label}。${figure.nodes.map((node) => `${FIGURE_KIND_LABELS[node.kind] ?? ''} ${node.label}`).join('、')}。${figure.edges.map((edge) => `${figure.nodes.find((n) => n.id === edge.from)?.label ?? edge.from} から ${figure.nodes.find((n) => n.id === edge.to)?.label ?? edge.to} へ ${edge.label}`).join('。')}`;
+  const svg = svgNode('svg', { viewBox: `0 0 ${totalW} ${totalH}`, role: 'img', 'aria-label': described, class: 'data-figure review-figure' });
+  const marker = `review-arrow-${Math.random().toString(36).slice(2, 8)}`;
+  const defs = svgNode('defs');
+  const arrow = svgNode('marker', { id: marker, viewBox: '0 0 10 10', refX: 10, refY: 5, markerWidth: 8, markerHeight: 8, orient: 'auto-start-reverse' });
+  arrow.append(svgNode('path', { d: 'M 0 0 L 10 5 L 0 10 z', class: 'link-arrow' }));
+  defs.append(arrow);
+  svg.append(defs);
+  for (const edge of figure.edges) {
+    const from = boxes.get(edge.from);
+    const to = boxes.get(edge.to);
+    if (!from || !to) continue;
+    const backward = to.x <= from.x;
+    const start = { x: backward ? from.x + from.w / 2 : from.x + from.w, y: backward ? from.y + from.h : from.y + from.h / 2 };
+    const end = { x: backward ? to.x + to.w / 2 : to.x, y: backward ? to.y : to.y + to.h / 2 };
+    svg.append(svgNode('line', { x1: start.x, y1: start.y, x2: end.x, y2: end.y, class: 'link-line', 'marker-end': `url(#${marker})` }));
+    svg.append(svgNode('text', { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 - 4, 'text-anchor': 'middle', class: 'link-label' }, edge.label));
+  }
+  for (const node of figure.nodes) {
+    const box = boxes.get(node.id);
+    svg.append(svgNode('rect', { x: box.x, y: box.y, width: box.w, height: box.h, rx: node.kind === 'person' ? 22 : 6, class: `entity-box figure-${node.kind}` }));
+    svg.append(svgNode('text', { x: box.x + 8, y: box.y + 17, class: 'entity-key' }, FIGURE_KIND_LABELS[node.kind] ?? ''));
+    svg.append(svgNode('text', { x: box.x + 8, y: box.y + 35, class: 'entity-name' }, node.label.slice(0, 16)));
+  }
+  return svg;
+}
+
+const usd = (value) => `${value.toFixed(value < 0.01 ? 4 : 2)} USD`;
+
+// 案の数(想像図の 1 の数)。同じ場面の一覧を回した結果だけを出す。回していなければ「まだ測っていない」
+function metricsBlock(metrics) {
+  const box = element('div', undefined, 'review-metrics');
+  if (!metrics) {
+    box.append(element('p', '数: まだ測っていない。「お試しの AI で場面を回す」で形を確かめられます。本物の AI で測るのは、人が頼んだときだけです。', 'muted'));
+    return box;
+  }
+  const how = metrics.real ? `本物の AI で回した(${formatTime(metrics.measuredAt)}。${metrics.model ?? 'モデル不明'}、${metrics.round} 回目)` : `お試しの AI で回した(${formatTime(metrics.measuredAt)})。形の確かめだけで、案の良し悪しの根拠にしません`;
+  box.append(element('p', how, metrics.real ? undefined : 'muted'));
+  if (metrics.stale) box.append(element('p', '回した後に場面の一覧が変わったので、この数は古いです。', 'review-warn'));
+  const table = element('table');
+  table.setAttribute('aria-label', 'この構成の数');
+  const rows = [
+    ['通った場面', `${metrics.passed} / ${metrics.total}`],
+    ['道具の正しさ', metrics.toolRecall === null ? `呼ぶべき道具を確かめる場面なし(呼んだ回数 ${metrics.toolCalls}、誤った呼び出し ${metrics.wrongCalls})` : `${Math.round(metrics.toolRecall * 100)}%(誤った呼び出し ${metrics.wrongCalls})`],
+    ['1 会話の費用', metrics.costPerConversationUsd === null ? 'お試しの AI なので費用はかかりません' : usd(metrics.costPerConversationUsd)],
+    ['待ち時間(返事の中央値)', metrics.real && metrics.medianReplySeconds !== null ? `${metrics.medianReplySeconds} 秒` : 'お試しの AI なので測れません'],
+  ];
+  const tbody = element('tbody');
+  for (const [name, value] of rows) {
+    const tr = element('tr');
+    tr.append(element('th', name), element('td', value));
+    tr.firstChild.setAttribute('scope', 'row');
+    tbody.append(tr);
+  }
+  table.append(tbody);
+  box.append(table);
+  return box;
+}
+
+function reviewTable(label, heads, rows) {
+  const table = element('table');
+  table.setAttribute('aria-label', label);
+  const headRow = element('tr');
+  for (const name of heads) headRow.append(element('th', name));
+  const thead = element('thead');
+  thead.append(headRow);
+  const tbody = element('tbody');
+  for (const cells of rows) {
+    const tr = element('tr');
+    cells.forEach((cell, index) => {
+      const td = element(index === 0 ? 'th' : 'td');
+      if (index === 0) td.setAttribute('scope', 'row');
+      if (cell instanceof Node) td.append(cell);
+      else td.textContent = cell;
+      tr.append(td);
+    });
+    tbody.append(tr);
+  }
+  table.append(thead, tbody);
+  return table;
+}
+
+function reviewCompositionBody(record) {
+  const c = record.composition;
+  const body = [];
+  const group = element('div', undefined, 'review-switch');
+  group.setAttribute('role', 'group');
+  group.setAttribute('aria-label', '構成を切り替える');
+  for (const option of c.options) {
+    const button = element('button');
+    button.type = 'button';
+    button.append(element('strong', option.label), element('small', option.plain), element('small', option.metrics ? `${option.metrics.real ? '本物の AI' : 'お試しの AI'}: ${option.metrics.passed} / ${option.metrics.total} 通った` : 'まだ測っていない'));
+    button.setAttribute('aria-pressed', String(c.shape === option.id));
+    button.disabled = reviewUi.busy || !c.choosable || !option.available || Boolean(record.stopped);
+    button.addEventListener('click', () => {
+      if (c.shape !== option.id) reviewAct('choose', { composition: option.id });
+    });
+    group.append(button);
+  }
+  body.push(group);
+  body.push(element('p', c.choosable ? '構成を選び直すと、4 つの承認は全部消えます。Studio が構成のファイルを書き直します。' : '今の構成をそのまま審査します。Studio は書き換えません。', 'muted'));
+  const choice = c.options.find((option) => option.id === c.shape);
+  body.push(element('p', choice ? `${choice.label}: ${choice.plain}。順番を決めるもの: ${choice.decidedBy}。モデルの役目: ${choice.modelRole}。` : `${c.label}。`));
+  body.push(compositionFigureSvg(c.figure, `${c.label}の図`));
+  if (c.recommended) {
+    const scenes = c.basisScenes.length > 0 ? c.basisScenes.map((scene) => `${scene.id}${scene.verdict ? `(${scene.verdict === 'passed' ? '通った' : scene.verdict === 'failed' ? '通らなかった' : scene.verdict})` : ''}`).join('、') : 'なし';
+    const p = element('p', undefined, 'review-recommend');
+    p.append(element('strong', `おすすめ: ${c.recommended.label}`), document.createTextNode(`。理由: ${c.recommended.reason}(出した日: ${c.recommended.date ?? '不明'}。${c.recommended.source === 'ai' ? 'AI が出した案' : 'Studio の決まった案'}。今日の一番良い推測)。根拠の場面: ${scenes}${record.evidence.status === 'unmeasured' ? '(まだ回していない下書き)' : ''}。`));
+    body.push(p);
+    if (c.recommended.option !== c.shape) body.push(element('p', `おすすめと違う「${c.label}」を選んでいます。${c.outOfOrder ? '簡単な方から問う順を飛ばして選んだ印が、AI 構成書に残ります。' : ''}`, 'review-warn'));
+  }
+  if (c.answers.length > 0) {
+    const list = element('ol', undefined, 'review-answers');
+    list.setAttribute('aria-label', '簡単な方から順の問い');
+    for (const answer of c.answers) list.append(element('li', `${answer.question} → ${answer.answer}(${answer.basis}${answer.evalIds.length > 0 ? `。通らなかった場面: ${answer.evalIds.join('、')}` : ''})`));
+    body.push(list);
+  }
+  body.push(metricsBlock(c.metrics));
+  return body;
+}
+
+function reviewHarnessBody(record) {
+  const h = record.harness;
+  const body = [element('p', 'harness は、AI の周りで決まりを守らせるコードです。行ごとに、決めるのがコードかモデルか人かを出します。「モデル頼み」はコードで縛れず、モデルに頼るしかない所です。', 'muted')];
+  body.push(reviewTable('harness の部品', ['部品', 'この案での中身', '決めるのは', '今の Studio にあるか'], h.rows.map((row) => {
+    const who = element('span', row.decidedByLabel);
+    if (row.modelOnly) who.append(element('span', 'モデル頼み', 'review-badge'));
+    return [row.part, row.content, who, row.inStudio];
+  })));
+  body.push(element('p', `モデルに任せる: ${h.modelDecides.join('、') || 'なし'}。コードで縛る: ${h.codeBinds.join('、') || 'なし'}。人が決める: ${h.humanDecides.join('、') || 'なし'}。`));
+  const details = element('details', undefined, 'review-prompts');
+  details.append(element('summary', `プロンプトの全文を読む(${h.prompts.length} つ)`));
+  for (const prompt of h.prompts) {
+    details.append(element('h4', `${prompt.label}(${prompt.participant})`));
+    details.append(element('pre', prompt.text));
+  }
+  body.push(details);
+  return body;
+}
+
+function reviewDataBody(record) {
+  const { shelf, rag, source } = record.data;
+  const body = [element('p', `AI が読むデータの棚です(${source === 'data-design' ? '設計の案内のデータ設計から' : '試作品のツールとデータから'} Studio が書いた下書き)。変わる速さと個人情報は、本番のデータの話として確かめてください。`, 'muted')];
+  body.push(shelf.length > 0 ? shelfTable(shelf) : element('p', 'AI が読むデータは、まだありません。', 'muted'));
+  const box = element('div', undefined, 'design-rag');
+  box.setAttribute('role', 'group');
+  box.setAttribute('aria-label', 'RAG の判定(審査)');
+  const verdict = element('p', `RAG(文書から探した部分を AI に読ませる仕組み): ${rag.verdict}(${rag.note})`, 'design-rag-verdict');
+  verdict.dataset.needed = String(rag.needed);
+  box.append(verdict, element('p', `理由: ${rag.reason}。`));
+  if (rag.addWhen) box.append(element('p', `足す条件: ${rag.addWhen}。`));
+  if (rag.decide) {
+    const list = element('ul');
+    for (const item of rag.decide) list.append(element('li', `${item.label}: ${item.question}(試作品では: ${item.prototype})`));
+    box.append(element('p', 'RAG を足すなら決めること'), list);
+  }
+  body.push(box);
+  return body;
+}
+
+function reviewStackBody(record) {
+  const { rows, note } = record.stack;
+  return [
+    element('p', `試作品で使うものは、今のファイルから Studio が書きました。${note} 試作品の組は、本番の品質を約束しません。`, 'muted'),
+    reviewTable('技術の組', ['部品', '試作品で使うもの', '本番の候補(案。未接続)'], rows.map((row) => [`${row.part}(${row.plain})`, row.prototype, row.candidates.join(' / ')])),
+  ];
+}
+
+const REVIEW_BODIES = { composition: reviewCompositionBody, harness: reviewHarnessBody, data: reviewDataBody, stack: reviewStackBody };
+
+function reviewItemSection(record, item, index) {
+  const section = element('section', undefined, 'review-item design-data');
+  section.dataset.approved = String(item.approved);
+  section.setAttribute('aria-labelledby', `review-h-${item.id}`);
+  const heading = element('h3', `${index + 1}. ${item.label}`);
+  heading.id = `review-h-${item.id}`;
+  heading.append(element('span', item.approved ? '承認済み' : item.changed && item.by.length > 0 ? '中身が変わったので承認し直す' : 'まだ承認していません', 'review-mark'));
+  section.append(heading, element('p', item.plain, 'muted'));
+  section.append(...REVIEW_BODIES[item.id](record));
+  const approve = element('div', undefined, 'design-line review-approve');
+  for (const role of item.needs) {
+    const done = item.by.find((entry) => entry.role === role && entry.valid);
+    if (done) {
+      approve.append(element('span', `${record.roles[role]}が承認(${formatTime(done.at)}${done.pressedBy ? `。押した人: ${done.pressedBy}` : ''}${done.spokenBy ? `。声に出した人: ${done.spokenBy}` : ''})`, 'review-done'));
+      continue;
+    }
+    const button = element('button', item.needs.length === 1 && role === 'owner' ? `「${item.label}」を承認する` : `「${item.label}」を${record.roles[role]}として承認する`);
+    button.type = 'button';
+    button.className = 'primary';
+    button.disabled = reviewUi.busy || Boolean(record.stopped) || record.status === 'skipped';
+    button.addEventListener('click', () => reviewAct('approve', { item: item.id, role, pressedBy: reviewEls.pressed.value.trim() || undefined, spokenBy: reviewEls.spoken.hidden ? undefined : reviewEls.spoken.value.trim() || undefined }));
+    approve.append(button);
+  }
+  section.append(approve);
+  return section;
+}
+
+function renderReview() {
+  const { open, record } = reviewUi;
+  reviewEls.section.hidden = !open;
+  if (open) document.body.dataset.design = 'open';
+  else if (!designUi.open) delete document.body.dataset.design;
+  if (!open || !record) return;
+  if (record.status === 'none' || record.status === 'missing' || !record.items?.length || !record.composition) {
+    reviewEls.count.textContent = '';
+    reviewEls.state.textContent = record.status === 'skipped' ? `審査を飛ばしました(${formatTime(record.skipped?.at)}。理由: ${record.skipped?.reason ?? '不明'})。「審査なし」の印のまま作れます。` : 'まだ審査を始めていません。設計の案内で「この設計で作る」を押すと始まります。';
+    reviewEls.items.replaceChildren();
+    reviewEls.build.hidden = true;
+    reviewEls.measure.hidden = true;
+    reviewEls.left.textContent = '';
+    reviewEls.stopped.hidden = true;
+    return;
+  }
+  reviewEls.build.hidden = false;
+  reviewEls.measure.hidden = false;
+  const left = record.total - record.approvedCount;
+  reviewEls.count.textContent = `承認 ${record.approvedCount} / ${record.total}`;
+  reviewEls.count.dataset.ready = String(record.ready);
+  const meeting = record.mode === 'meeting';
+  reviewEls.spoken.hidden = !meeting;
+  reviewEls.spokenLabel.hidden = !meeting;
+  reviewEls.stopped.hidden = !record.stopped;
+  if (record.stopped) {
+    const labels = (record.stopped.items ?? []).map((id) => record.items.find((item) => item.id === id)?.label).filter(Boolean);
+    reviewEls.stoppedText.textContent = `承認した構成と違うので、作るのを止めました(${formatTime(record.stopped.at)}。変わった所: ${labels.join('、') || '不明'})。審査に戻ると、変わった所だけ承認し直します。承認した構成に戻すと、構成のファイルだけを承認したときの中身に戻します。`;
+  }
+  reviewEls.state.textContent = record.status === 'skipped'
+    ? '審査を飛ばしました。「審査なし」の印のまま作れます。'
+    : record.status === 'approved'
+      ? `${formatTime(record.approvedAt)}に 4 つを承認しました${record.approvedUnmeasured ? '(測らずに承認した印が残っています)' : ''}。次にすること: 「この構成で作る」を押してください。`
+      : record.stopped
+        ? '次にすること: 「審査に戻る」か「承認した構成に戻す」を押してください。'
+        : `次にすること: 4 つを上から読んで、欄ごとに承認してください。${record.evidence.status === 'unmeasured' ? '数はまだ測っていません。測らずに承認すると、その印が残ります。' : ''}`;
+  reviewEls.items.replaceChildren(...record.items.map((item, index) => reviewItemSection(record, item, index)));
+  reviewEls.build.disabled = reviewUi.busy || !record.ready;
+  reviewEls.measure.disabled = reviewUi.busy || Boolean(record.stopped);
+  reviewEls.left.textContent = record.ready ? '4 つそろいました。押すと作り始めます。' : record.stopped ? '承認と違う構成なので押せません。' : `あと ${left} つの承認で押せます。`;
+  reviewEls.toDesign.hidden = !designUi.lastProjectId || designUi.lastProjectId !== reviewUi.projectId;
+}
+
+async function openReview(projectId = selectedProject()?.id) {
+  if (!projectId) return;
+  leaveIntent();
+  closeOrganize();
+  closeMeeting();
+  if (designUi.open) {
+    designUi.lastProjectId = designUi.projectId;
+    closeDesign();
+  }
+  reviewUi.seq += 1;
+  const { seq } = reviewUi;
+  reviewUi.open = true;
+  reviewUi.projectId = projectId;
+  reviewUi.record = null;
+  reviewError(null);
+  reviewMessage(null);
+  renderReview();
+  try {
+    const { review } = await api(reviewPath(projectId));
+    if (seq !== reviewUi.seq) return;
+    reviewUi.record = review;
+    renderReview();
+    reviewEls.heading.focus();
+  } catch (error) {
+    if (seq === reviewUi.seq) reviewFailed(error);
+  }
+}
+
+function closeReview() {
+  reviewUi.seq += 1;
+  if (!reviewUi.open) return;
+  reviewUi.open = false;
+  reviewUi.projectId = null;
+  reviewUi.record = null;
+  reviewError(null);
+  reviewMessage(null);
+  renderReview();
+}
+
+async function reviewAct(action, body = {}) {
+  const id = reviewUi.projectId;
+  if (!id || reviewUi.busy) return null;
+  reviewError(null);
+  reviewMessage(action === 'measure' ? 'お試しの AI で場面を回しています…' : null);
+  reviewUi.busy = true;
+  renderReview();
+  const { seq } = reviewUi;
+  try {
+    const result = await api(reviewPath(id, action), { method: 'POST', json: body });
+    if (seq !== reviewUi.seq) return null;
+    reviewUi.record = result.review;
+    reviewMessage(action === 'choose' ? '構成を選び直しました。4 つの承認は消えました。' : action === 'measure' ? 'お試しの AI で回しました。形の確かめだけです。' : action === 'back' ? '新しい審査にしました。変わった所だけ承認し直してください。' : action === 'restore' ? '構成のファイルを、承認したときの中身に戻しました。' : null);
+    lastSnapshot = '';
+    await refresh();
+    return result;
+  } catch (error) {
+    if (seq === reviewUi.seq) {
+      reviewMessage(null);
+      reviewFailed(error);
+    }
+    return null;
+  } finally {
+    if (seq === reviewUi.seq) {
+      reviewUi.busy = false;
+      renderReview();
+    }
+  }
+}
+
+// 「この構成で作る」と「審査なしで作る」。依頼の文は、言葉で直す欄と同じ道で送る(本物の AI の同意もその道で取る)
+async function buildFromReview(action, body = {}) {
+  const id = reviewUi.projectId;
+  const result = await reviewAct(action, body);
+  if (!result) return;
+  if (!result.request) {
+    reviewMessage(action === 'skip' ? '審査を飛ばしました。作る依頼は、試作品の画面の欄から送ってください。' : '承認しました。作る依頼は、試作品の画面の欄から送ってください。');
+    return;
+  }
+  selectedId = id;
+  closeReview();
+  lastSnapshot = '';
+  await refresh();
+  els.requestText.value = result.request;
+  await submitRequest();
+}
+
+reviewEls.mark.addEventListener('click', () => openReview());
+reviewEls.build.addEventListener('click', () => buildFromReview('build'));
+reviewEls.measure.addEventListener('click', () => reviewAct('measure'));
+$('review-back').addEventListener('click', () => reviewAct('back'));
+$('review-restore').addEventListener('click', () => reviewAct('restore'));
+$('review-close').addEventListener('click', closeReview);
+reviewEls.toDesign.addEventListener('click', async () => {
+  const id = reviewUi.projectId;
+  closeReview();
+  selectedId = id;
+  render();
+  await openDesign();
+});
+$('review-skip').addEventListener('click', () => {
+  const reason = reviewEls.skipReason.value.trim();
+  if (!reason) {
+    reviewError('飛ばす理由を書いてください。');
+    return;
+  }
+  buildFromReview('skip', { reason, by: reviewEls.pressed.value.trim() || undefined });
 });
 
 // 案内のとおり同じタブに URL を貼ると、フラグメントだけが変わり、画面は読み直されない。

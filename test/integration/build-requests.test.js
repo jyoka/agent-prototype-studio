@@ -110,7 +110,7 @@ test('依頼を流しながら返し、変わったファイルをビルドし�
   // 通った節の列と関門の結果は .studio/runs/<run-id>/run.json に残る
   const record = JSON.parse(await fs.readFile(path.join(studio.store.home, 'projects', 'sample-library', last.evidence.run), 'utf8'));
   const observed = last.status === 'unverified' ? ['launch'] : ['launch', 'scenarios'];
-  assert.deepEqual(record.nodes.map((node) => node.name), ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', 'evals', ...observed, 'evidence']);
+  assert.deepEqual(record.nodes.map((node) => node.name), ['accept', 'fingerprint', 'agent', 'changes', 'architecture', 'inspect', 'contract', 'compile', 'evals', ...observed, 'evidence']);
   assert.deepEqual(record.gates, last.gates);
 
   const list = JSON.parse((await request(sp, { pathname: RUNS, headers })).body);

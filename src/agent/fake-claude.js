@@ -175,6 +175,23 @@ async function changeHeading(request) {
   return finish({ text });
 }
 
+// 構成(composition.json)の name を書き換える。AI 構成の審査で承認した構成を変えると、関門 GA で止まることを確かめるため(review.js)
+async function renameComposition(request) {
+  const wanted = /「([^」]{1,40})」/.exec(request)?.[1]?.replace(/[<>{}&"\\]/g, '');
+  const file = path.join(process.cwd(), 'composition.json');
+  const text = await fs.readFile(file, 'utf8').catch(() => null);
+  if (!wanted || !text) {
+    await say(!wanted ? '新しい名前を「」で囲んで書いてください。' : '構成のファイルが見つかりませんでした。');
+    return finish({ text: '構成は変えていません' });
+  }
+  const value = JSON.parse(text);
+  const next = `${JSON.stringify({ ...value, name: wanted }, null, 2)}\n`;
+  await editFile({ file, text }, `"name": ${JSON.stringify(value.name ?? '')}`, `"name": ${JSON.stringify(wanted)}`, next);
+  const said = `構成の名前を「${wanted}」に変えました。`;
+  await say(said);
+  return finish({ text: said });
+}
+
 // 観察の道具のサーバー(--mcp-config の observe)を起動し、MCP の JSON-RPC で呼ぶ。終わったら入力を閉じ、上限つきで終わりを待つ
 async function connectObserve() {
   const config = JSON.parse(await fs.readFile(mcpConfigFile, 'utf8'));
@@ -833,6 +850,7 @@ async function main() {
   if (/聞き返/.test(request)) return clarifyWithExamples();
   if (/壊/.test(request)) return breakApp();
   if (/直/.test(request)) return repairApp();
+  if (/構成の名前/.test(request)) return renameComposition(request);
   if (/見出し/.test(request)) return changeHeading(request);
 
   // 画面の言葉(ux-redesign.md 4 節)で返す。扱える依頼の一覧は、開発者向けの詳細の「試験用の依頼」にある

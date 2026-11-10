@@ -323,3 +323,21 @@ npm run check:organize -- --run --limit-usd 3     # 3 回通す。費用の上�
 - 終了コードは、3 回とも板に出たら 0、始められなかったら 1、板に出なかった回があれば 2、費用の上限で途中で止めたら 3。API の料金がかかる見込みのときは、`--allow-api-billing` を付けない限り止まる
 
 2026-10-31 の結果(Claude Code 2.1.316、本人のログイン)は [docs/evidence/real-organize/](evidence/real-organize/README.md): 3 回とも板に出た。1 回 14 秒ほど、3 回の費用は 0.1136 USD。使えるかは運営者が読んで決める。
+
+### AI 構成の審査の案を実機で確かめる
+
+案を出す AI が、題材の形に合った構成を勧めるかを人が読むために、形の違う架空の題材 3 つ(手順が決まっている、道具を選ぶ必要がある、仕事を分けて並べられる)を本物の AI で 1 回ずつ通すスクリプトがある。実モデルを呼ぶので、人が決めたときだけ動かす。`npm test` と `npm run test:e2e` からは呼ばない。
+
+```sh
+npm run check:review                              # 何を送るかを出すだけ
+npm run check:review -- --run --limit-usd 3       # 3 題材を通す。費用の上限(USD)が要る。3 まで
+npm run check:review -- --recount <フォルダー>     # 残した返事から、Studio の側だけを書き直す(呼ばない)
+```
+
+- 通す道は Studio と同じ `createDesignAi` と `mergeAiOptions`。審査の中身も Studio と同じ `architecture.js` で書く。ブラウザーと HTTP の層、Studio の同意の口は通らない
+- 案ごとの数は、Studio が書いた構成をお試しの AI(モック)で回した結果だけ。本物の AI で場面は回さない
+- 使った額に 1 題材の上限(やり直しを入れて 0.6 USD)を足して `--limit-usd` を超えるなら、その題材を始めない
+- 記録は `docs/evidence/real-review/runs/`(`--out` で変えられる)。空でない場所には書かない
+- 終了コードは、勧めた構成が 2 種類以上なら 0、始められなかったら 1、3 題材で同じ構成を勧めたら 2(案を出す AI を作り直す)、費用の上限で途中で止めたら 3。API の料金がかかる見込みのときは、`--allow-api-billing` を付けない限り止まる
+
+2026-11-08 の結果(Claude Code 2.1.319、本人のログイン)は [docs/evidence/real-review/](evidence/real-review/README.md): 固定の流れ 1、単一エージェント 2。合計 0.4109 USD。使えるかは運営者が読んで決める。

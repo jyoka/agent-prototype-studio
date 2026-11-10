@@ -335,6 +335,34 @@ body[data-design] .layout, body[data-design] .first-steps { display: none; }
 .design-data-note { font-size: 0.85rem; }
 @media (max-width: 640px) { .design-band { grid-template-columns: 1fr; } }
 
+/* AI 構成の審査(ai-architecture-review.md)。4 つの欄を上から順に並べ、欄ごとに承認の印を出す */
+.review-count { margin: 0.3rem 0; font-size: 1.2rem; font-weight: 700; }
+.review-count[data-ready="true"] { color: var(--ok); }
+.review-item { margin-top: 0.8rem; }
+.review-item[data-approved="true"] { border-color: var(--ok); }
+.review-item h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem; margin: 0; }
+.review-mark { font-size: 0.85rem; font-weight: 400; color: var(--warn-text); }
+.review-item[data-approved="true"] .review-mark { color: var(--ok); }
+.review-switch { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.4rem; }
+.review-switch button { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; text-align: left; }
+.review-switch button[aria-pressed="true"] { border: 2px solid var(--accent); background: var(--accent-bg); }
+.review-switch small { color: var(--muted); font-size: 0.8rem; }
+.review-figure { max-height: 18rem; }
+.review-figure .figure-ai { fill: var(--accent-bg); }
+.review-figure .figure-code { fill: var(--bg); }
+.review-figure .figure-tool { fill: var(--panel); stroke-dasharray: 4 3; }
+.review-recommend { font-size: 0.95rem; }
+.review-answers { margin: 0; padding-left: 1.2rem; font-size: 0.9rem; }
+.review-warn { color: var(--warn-text); }
+.review-badge { margin-left: 0.4rem; padding: 0 0.4rem; border: 1px solid var(--warn); border-radius: 999px; background: var(--warn-bg); color: var(--warn-text); font-size: 0.75rem; white-space: nowrap; }
+.review-prompts pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0.2rem 0 0.6rem; padding: 0.4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font-size: 0.85rem; }
+.review-done { color: var(--ok); font-size: 0.9rem; }
+.review-left { margin-top: 0.8rem; font-weight: 600; }
+.review-stopped { margin: 0.4rem 0; padding: 0.5rem; border: 1px solid var(--warn); border-radius: 8px; background: var(--warn-bg); color: var(--warn-text); }
+.review-stopped[hidden] { display: none; }
+.review-skip { margin-top: 0.8rem; }
+
+
 /* はじめの画面、目的の聞き出し、目的の文書。出している間は、2 列と最初の一歩の案内を隠す */
 body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
 .intent { flex: 1 1 0; width: min(46rem, 100%); margin: 0 auto; padding: 1.5rem 1rem; box-sizing: border-box; overflow-y: auto; }
