@@ -83,8 +83,22 @@ async function plainParents(root, relative) {
 const validRelative = (relative) => typeof relative === 'string' && relative.length > 0 && !relative.includes('\\') && !path.isAbsolute(relative) && !relative.split('/').includes('..');
 
 // 承認がそろった項目か。要る役の全部が、今の指紋で承認している
-function itemApproved(approval, digest) {
+export function itemApproved(approval, digest) {
   return approval.needs.every((role) => approval.by.some((entry) => entry.role === role && entry.digest === digest));
+}
+
+// 審査が要るか(none、required、skipped)、今の AI 構成書、飛ばした記録を読む。引き継ぎ(handoff.js)が使う。
+// paths は projectPaths の形(studio と meta)。AI 構成書が読めなければ record は null
+export async function readReviewState(paths) {
+  const meta = await readJson(paths.meta);
+  const flag = meta?.review === 'required' || meta?.review === 'skipped' ? meta.review : 'none';
+  const reviews = path.join(paths.studio, REVIEWS);
+  const pointer = await readJson(path.join(reviews, CURRENT));
+  const reviewId = typeof pointer?.id === 'string' && REVIEW_ID.test(pointer.id) ? pointer.id : null;
+  const found = reviewId ? await readJson(path.join(reviews, reviewId, 'architecture.json')) : null;
+  const record = found?.formatVersion === FORMAT && found.id === reviewId ? found : null;
+  const skipped = flag === 'skipped' ? await readJson(path.join(reviews, SKIPPED)) : null;
+  return { flag, record, skipped };
 }
 
 export class ProjectReviews {

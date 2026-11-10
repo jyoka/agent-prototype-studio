@@ -83,6 +83,21 @@ export function byVersion(records) {
   return map;
 }
 
+// .studio/show.json を読む。引き継ぎ(handoff.js)も使う。壊れたファイルは broken で知らせ、読める記録だけを返す
+// 形の違う記録が混ざっていれば、書き直すと消えるので、壊れたものとして扱う(読める記録は出す)
+export async function readShowFile(file) {
+  try {
+    const data = JSON.parse(await fs.readFile(file, 'utf8'));
+    if (data?.format !== FORMAT || !Array.isArray(data.records)) return { records: [], broken: true, reason: '形が違います' };
+    const records = data.records.filter(isRecord);
+    if (records.length !== data.records.length) return { records, broken: true, reason: '形の違う記録があります' };
+    return { records, broken: false, reason: null };
+  } catch (error) {
+    if (error.code === 'ENOENT') return { records: [], broken: false, reason: null };
+    return { records: [], broken: true, reason: error.message };
+  }
+}
+
 export class ProjectShows {
   // versions は版(versions.js)。intents は目的の文書(intent.js)
   constructor({ home, store, versions, intents, log = () => {} }) {
@@ -103,17 +118,9 @@ export class ProjectShows {
 
   // 壊れたファイルは、答えがないものとして読む(消さない。次に書くときに上書きしないよう、書く前に確かめる)
   async readRecords(id) {
-    try {
-      const data = JSON.parse(await fs.readFile(this.file(id), 'utf8'));
-      if (data?.format !== FORMAT || !Array.isArray(data.records)) return this.broken(id, '形が違います');
-      const records = data.records.filter(isRecord);
-      // 形の違う記録が混ざっていれば、書き直すと消えるので、壊れたものとして扱う(読める記録は出す)
-      if (records.length !== data.records.length) return { ...this.broken(id, '形の違う記録があります'), records };
-      return { records, broken: false };
-    } catch (error) {
-      if (error.code === 'ENOENT') return { records: [], broken: false };
-      return this.broken(id, error.message);
-    }
+    const read = await readShowFile(this.file(id));
+    if (!read.broken) return { records: read.records, broken: false };
+    return { ...this.broken(id, read.reason), records: read.records };
   }
 
   // 版の一覧を読むたびに呼ばれるので、ターミナルへの知らせは試作品ごとに 1 回だけ

@@ -72,7 +72,7 @@ bin/studio.js          起動。失敗したときの案内もここで出す
 src/server/            Studio のサーバー(画面と API、プレビューの配信、ビルド、app/ の検査、作る AI の起動、版の保存と復元)
 src/server/product-ai/ プロダクト内 AI。ai.json の検査、モックと Claude Code の接続、プロジェクトごとの会話と状態、実行の記録
 src/server/redact.js   記録と表示の前に、秘密らしい文字列と個人のデータを伏せる。書き出す前に秘密を探す
-src/server/handoff.js  本番開発への引き継ぎの書き出し(docs/handoff.md)
+src/server/handoff.js  本番開発への引き継ぎの書き出し(docs/handoff.md)。決めたことと理由を読むのは handoff-decisions.js
 src/observer/          観察器。表示中のビルドを Playwright の Chromium で開き、7 つの操作でシナリオを回し、エラー、スクリーンショット、合否を report で返す
 src/agent/             偽接続(Claude Code の代わりに、決まった動きをする CLI)
 scripts/               実機の Claude Code で守りを確かめるスクリプト

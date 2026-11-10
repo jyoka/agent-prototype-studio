@@ -464,6 +464,30 @@ export function qualityTable({ observation = null, auditStale = false, source, t
   };
 }
 
+// 表の入力を記録から読んで、表を作る。画面(ProjectQuality)と引き継ぎ(handoff.js)が同じ表を出すため。
+// simulation は今のビルドの構成と場面、result は一番新しい場面の回しの結果(なければ null)
+export async function readQuality({ paths, simulation, result }) {
+  const [source, material, observation, digest, changedAt] = await Promise.all([
+    scanSource(paths.app),
+    readTokenMaterial(paths.root).catch(() => null),
+    latestAudit(paths.root),
+    currentAppDigest(paths),
+    materialChangedAt(paths.root),
+  ]);
+  // 確かめた後に app/ か素材が変わったら、画面の検査の結果は古い
+  const auditStale = Boolean(observation) && (observation.appDigest !== digest || (changedAt !== null && typeof observation.startedAt === 'string' && observation.startedAt < changedAt));
+  return qualityTable({
+    observation,
+    auditStale,
+    source,
+    tokens: Boolean(material && material.problems?.length === 0),
+    hasAi: Boolean(simulation?.composition),
+    result,
+    sceneIds: (simulation?.evals ?? []).map(({ scenario }) => scenario.id),
+    defaultFile: simulation?.composition?.file ?? null,
+  });
+}
+
 export class ProjectQuality {
   // sceneRuns は場面の回し(一番新しい結果を読む)。checks は人の「確かめる」(確かめている最中か)
   constructor({ store, sceneRuns, checks }) {
@@ -474,27 +498,7 @@ export class ProjectQuality {
 
   async view(id) {
     const paths = await this.store.requireProject(id);
-    const simulation = this.store.simulation(id);
-    const [source, material, observation, digest, changedAt, result] = await Promise.all([
-      scanSource(paths.app),
-      readTokenMaterial(paths.root).catch(() => null),
-      latestAudit(paths.root),
-      currentAppDigest(paths),
-      materialChangedAt(paths.root),
-      this.sceneRuns.latest(id),
-    ]);
-    // 確かめた後に app/ か素材が変わったら、画面の検査の結果は古い
-    const auditStale = Boolean(observation) && (observation.appDigest !== digest || (changedAt !== null && typeof observation.startedAt === 'string' && observation.startedAt < changedAt));
-    const table = qualityTable({
-      observation,
-      auditStale,
-      source,
-      tokens: Boolean(material && material.problems?.length === 0),
-      hasAi: Boolean(simulation?.composition),
-      result,
-      sceneIds: (simulation?.evals ?? []).map(({ scenario }) => scenario.id),
-      defaultFile: simulation?.composition?.file ?? null,
-    });
+    const table = await readQuality({ paths, simulation: this.store.simulation(id), result: await this.sceneRuns.latest(id) });
     return { ...table, checking: this.checks.summary(id).checking };
   }
 }
