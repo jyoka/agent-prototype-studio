@@ -12,6 +12,7 @@ import { HandoffError } from './handoff.js';
 import { IntentError } from './intent.js';
 import { MaterialError } from './materials.js';
 import { MeetingRefusedError } from './meeting.js';
+import { SceneRunError } from './scene-runs.js';
 import { VersionError } from './versions.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -105,7 +106,7 @@ const ORGANIZE_ACTIONS = {
   cancel: 'cancel',
 };
 
-function projectView(project, previewPort, runs, checks, firstSteps, intents, organizes, designs, meetings, reviews) {
+function projectView(project, previewPort, runs, checks, firstSteps, intents, organizes, designs, meetings, reviews, sceneRuns) {
   return {
     id: project.id,
     title: project.title,
@@ -130,6 +131,8 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
     review: reviews.summary(project.id),
     // 会の状態(meeting.js)。none は会ではない試作品
     meeting: meetings.summary(project.id),
+    // 主の画面の場面の回し(scene-runs.js)。count は場面の数。version が変わったら、画面は比べる表を読み直す
+    scenes: sceneRuns.summary(project.id),
     previewUrl: project.previewBuildId
       ? `http://localhost:${previewPort}/p/${project.id}/${project.previewBuildId}/`
       : null,
@@ -140,9 +143,9 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
 // realAi(projectId) は本物の AI を使う前の同意のカードの中身(real-ai.js の consentView)、consent は同意の状態。
 // firstSteps は最初の一歩の案内の進み方と、閉じたこと(first-steps.js)
 // intents は目的の聞き出しと目的の文書(intent.js)。organizes はヒアリングの整理(organize.js)。designs は設計の案内(design.js)
-// reviews は AI 構成の審査と AI 構成書(review.js)
-export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, designs, reviews, materials, meetings, token, ports, realAi, consent, firstSteps }) {
-  const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes, designs, meetings, reviews);
+// reviews は AI 構成の審査と AI 構成書(review.js)。sceneRuns は主の画面の場面の回しと比べる表(scene-runs.js)
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, designs, reviews, sceneRuns, materials, meetings, token, ports, realAi, consent, firstSteps }) {
+  const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes, designs, meetings, reviews, sceneRuns);
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
   // EventSource はヘッダーにトークンを付けられないので、画面は fetch の応答をストリームで読む(ADR-0001)。
@@ -215,6 +218,9 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     const designMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/design(?:\/(start|choose|scenes|go|decide|skip|cancel))?$/.exec(url.pathname);
     if (designMatch && (designMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleDesign(req, res, designMatch[1], designMatch[2]);
     // AI 構成の審査。GET は今の状態。承認は approve、作る前の承認の確かめは build でだけ
+    // 主の画面の場面の回しと比べる表。GET は場面の一覧と一番新しい表。run は回し始める({ connection, limitUsd })。cancel は止める
+    const scenesMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/scenes(?:\/(run|cancel))?$/.exec(url.pathname);
+    if (scenesMatch && (scenesMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleScenes(req, res, scenesMatch[1], scenesMatch[2]);
     const reviewMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/review(?:\/(start|choose|approve|build|skip|measure|back|restore))?$/.exec(url.pathname);
     if (reviewMatch && (reviewMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleReview(req, res, reviewMatch[1], reviewMatch[2]);
     // 自分のトークンをつなぐ。GET は今の状態。check は検査だけで何も書かない
@@ -395,6 +401,27 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       return sendJson(res, 200, { review: await reviews[action](id, body) });
     } catch (error) {
       return sendIntentError(res, error);
+    }
+  }
+
+  // 場面の回し。本物の AI は、選べないときと同意の前は 403(理由のコードつき。consent-required など)で断る
+  async function handleScenes(req, res, id, action) {
+    try {
+      if (!action) return sendJson(res, 200, { scenes: await sceneRuns.view(id) });
+      const body = (await readJson(req)) ?? {};
+      if (action === 'cancel') {
+        await store.requireProject(id);
+        sceneRuns.cancel(id);
+        return sendJson(res, 200, { scenes: await sceneRuns.view(id) });
+      }
+      return sendJson(res, 200, { scenes: await sceneRuns.start(id, { connection: body.connection ?? 'mock', limitUsd: body.limitUsd }) });
+    } catch (error) {
+      if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', error.message);
+      if (error instanceof BusyError) return sendError(res, 409, 'busy', error.message);
+      if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
+      if (error instanceof SceneRunError) return sendError(res, error.status, error.code, error.message);
+      if (error instanceof AiError) return sendError(res, error.status, error.code, error.message, error.next);
+      throw error;
     }
   }
 

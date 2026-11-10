@@ -215,7 +215,7 @@
       </a>
       <h3><span data-lang="ja">守りの層</span><span data-lang="en">Guardrail layers</span></h3>
       <p><span data-lang="ja">どの層の守りが止めたかと、その理由を実行の記録で読む。</span><span data-lang="en">Read in the trace which guardrail layer stopped a turn, and why.</span></p>
-      <p><span data-lang="ja">層はツールの守り、プロンプトの頼み、出口の確かめの 3 つ。記録は「開発者向けの詳細」にある。</span><span data-lang="en">The layers are tool guards, prompt asks, and output checks. The trace is under developer details.</span></p>
+      <p><span data-lang="ja">層はツールの守り、プロンプトの頼み、出口の確かめの 3 つ。1 ターンの要約は試す欄の下、全部は「開発者向けの詳細」にある。</span><span data-lang="en">The layers are tool guards, prompt asks, and output checks. A one-turn summary sits under the try pane, and the full trace is under developer details.</span></p>
     </li>
     <li class="card">
       <a class="card-shot shot crop crop-evals" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md#場面を回すnpm-run-evals">
@@ -224,7 +224,7 @@
       </a>
       <h3><span data-lang="ja">場面の比較</span><span data-lang="en">Eval runs</span></h3>
       <p><span data-lang="ja">同じ場面の一覧を構成と前提ごとに回し、1 つの表で比べる。</span><span data-lang="en">Run the same evals across setups and assumptions, and compare them in one table.</span></p>
-      <p><span data-lang="ja">今はターミナルで回す(<code>npm run evals</code>)。モックの数は形の確かめで、振る舞いの差は実モデルで測る。</span><span data-lang="en">Run it in the terminal today (<code>npm run evals</code>). Mock numbers only check the shape. Differences in behavior need the real model.</span></p>
+      <p><span data-lang="ja">試す欄の下の表か、ターミナル(<code>npm run evals</code>)で回す。モックの数は形の確かめで、振る舞いの差は実モデルで測る。</span><span data-lang="en">Run it from the table under the try pane or in the terminal (<code>npm run evals</code>). Mock numbers only check the shape. Differences in behavior need the real model.</span></p>
     </li>
     <li class="card">
       <a class="card-shot shot crop crop-try" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md">
@@ -269,17 +269,17 @@
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
       <h3><span data-lang="ja">3 つの形の比べ</span><span data-lang="en">Three architecture shapes</span></h3>
-      <p><span data-lang="ja">固定の流れ、単一エージェント、マスターとサブを、同じ場面の一覧で比べる。簡単な方から問い、足りたら止まる。3 つの形とも構成に書け、審査の画面で切り替えて、お試しの AI で形を確かめられる。本物の AI で比べるのはターミナルだけ。</span><span data-lang="en">Compares a fixed flow, a single agent, and a master with sub-agents on the same evals. It asks about the simplest shape first and stops when that is enough. All three shapes can be written as a composition. You can switch between them on the review screen and check the shape with the mock AI. Comparing them with the real model is terminal only.</span></p>
+      <p><span data-lang="ja">固定の流れ、単一エージェント、マスターとサブを、同じ場面の一覧で比べる。簡単な方から問い、足りたら止まる。3 つの形とも構成に書け、審査の画面で切り替えて、お試しの AI で形を確かめられる。本物の AI では、試す欄の下の表かターミナルで比べる。</span><span data-lang="en">Compares a fixed flow, a single agent, and a master with sub-agents on the same evals. It asks about the simplest shape first and stops when that is enough. All three shapes can be written as a composition. You can switch between them on the review screen and check the shape with the mock AI. Compare them with the real model from the table under the try pane or in the terminal.</span></p>
     </li>
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
       <h3><span data-lang="ja">データの棚と RAG の判定</span><span data-lang="en">Data shelf and RAG check</span></h3>
-      <p><span data-lang="ja">AI が何をどう読むかを見せ、RAG が要るかを判定する。「要らない」とも言える。データの段と審査の画面で見て、審査の画面で承認できる。本物の AI で RAG ありとなしを比べるのはターミナルだけ。</span><span data-lang="en">Shows what the AI reads and how, and checks whether RAG is needed. The answer can be no. You can see it in the data step and on the review screen, and approve it on the review screen. Comparing with and without RAG on the real model is terminal only.</span></p>
+      <p><span data-lang="ja">AI が何をどう読むかを見せ、RAG が要るかを判定する。「要らない」とも言える。データの段と審査の画面で見て、審査の画面で承認できる。本物の AI で RAG ありとなしを比べるのは、試す欄の下の表かターミナル。</span><span data-lang="en">Shows what the AI reads and how, and checks whether RAG is needed. The answer can be no. You can see it in the data step and on the review screen, and approve it on the review screen. Compare with and without RAG on the real model from the table under the try pane or in the terminal.</span></p>
     </li>
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
       <h3><span data-lang="ja">記録と比べる表を主の画面に</span><span data-lang="en">Traces and tables on the main screen</span></h3>
-      <p><span data-lang="ja">今、記録は開発者向けの詳細に、比べる表はターミナルにある。主の画面で読めるようにする。</span><span data-lang="en">Today the trace is under developer details and the comparison table is in the terminal. This moves them to the main screen.</span></p>
+      <p><span data-lang="ja">試す欄の下に、1 ターンの記録と、場面の一覧と比べる表を出した。本物の AI は同意と費用の上限を通す。人の確かめはまだ。</span><span data-lang="en">The try pane now shows a one-turn trace and an eval table by setup. The real model runs only after consent and with a cost cap. It has not been checked with people yet.</span></p>
     </li>
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>

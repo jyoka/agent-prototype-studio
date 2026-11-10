@@ -6,7 +6,7 @@ import { INTENT_AI_LIMITS } from './intent-ai.js';
 import { ORGANIZE_AI_LIMITS } from './organize-ai.js';
 
 // 本物の AI(利用者の Claude Code)を使う前の同意(docs/design/ux-redesign.md の 6 節、ADR-0001 の T6)。
-// 同意は 1 つで、直す AI の送信、試作品の中の AI の本物への切り替え、人の「確かめる」、目的の聞き出し、ヒアリングの整理、設計の案の全部に効く。
+// 同意は 1 つで、直す AI の送信、試作品の中の AI の本物への切り替え、人の「確かめる」、目的の聞き出し、ヒアリングの整理、設計の案、場面の回し(scene-runs.js)の全部に効く。
 // Studio のメモリーにだけ持ち、Studio を起動し直すと消える(ディスクには覚えない。ux-redesign.md の 11 節)。
 // 偽接続とお試しの AI(モック)は、同意なしで使える。
 
@@ -21,6 +21,7 @@ const USES = {
   intent: '本物の AI で目的を聞き出す',
   organize: '本物の AI でヒアリングを整理する',
   design: '本物の AI で設計の案を出す',
+  evals: '本物の AI で場面を回す',
 };
 
 export class ConsentRequiredError extends Error {
@@ -98,7 +99,7 @@ export class RealAiConsent {
     return { agreed: this.agreed, agreedAt: this.agreedAt };
   }
 
-  // 本物の AI を使う前に呼ぶ。同意の前は投げる。use は fix、product、check、intent、organize、design のどれか
+  // 本物の AI を使う前に呼ぶ。同意の前は投げる。use は fix、product、check、intent、organize、design、evals のどれか
   require(use) {
     if (!this.agreed) throw new ConsentRequiredError(use);
   }
@@ -171,7 +172,7 @@ export function consentView({ consent, env, agent, fixBudgetUsd, fixLaunches, sy
     },
     summary: {
       runsOn: 'AI は、あなたの Claude Code で動きます。',
-      sends: ['頼んだ文と試作品のファイル(言葉で直すとき)', '試作品の中の会話と AI の設定(本物の AI と話すとき)', '書いた 1 文と問いへの答え(目的を聞き出すとき)', '打った要点と整理の板の項目(ヒアリングを整理するとき)', '書いた 1 文、目的の文書、整理の板の項目(設計の案を出すとき)'],
+      sends: ['頼んだ文と試作品のファイル(言葉で直すとき)', '試作品の中の会話と AI の設定(本物の AI と話すとき)', '書いた 1 文と問いへの答え(目的を聞き出すとき)', '打った要点と整理の板の項目(ヒアリングを整理するとき)', '書いた 1 文、目的の文書、整理の板の項目(設計の案を出すとき)', '場面の一覧の発言と、試作品の中の AI の設定(本物の AI で場面を回すとき)'],
       notSent: 'PC のほかのファイル、ほかの試作品',
       to: cost.to,
       cost,

@@ -12,18 +12,19 @@ import { ProjectIntents } from './intent.js';
 import { createIntentAi, INTENT_SYSTEM_PROMPT } from './intent-ai.js';
 import { ProjectDesigns } from './design.js';
 import { ProjectReviews } from './review.js';
+import { ProjectSceneRuns } from './scene-runs.js';
 import { ProjectMaterials } from './materials.js';
 import { createDesignAi, DESIGN_SYSTEM_PROMPT } from './design-ai.js';
 import { ProjectMeetings, removeErasing } from './meeting.js';
 import { ProjectOrganizes } from './organize.js';
 import { createOrganizeAi, ORGANIZE_SYSTEM_PROMPT } from './organize-ai.js';
 import { createPreviewHandler } from './preview-server.js';
-import { createClaudeCodeConnection } from './product-ai/claude-code.js';
+import { CLAUDE_CODE_LIMITS, createClaudeCodeConnection } from './product-ai/claude-code.js';
 import { createMockConnection } from './product-ai/mock.js';
 import { AiSessions } from './product-ai/session.js';
 import { observeProject } from './observe-entry.js';
 import { ensureSampleProjects, listProjects, projectPaths, projectsDir } from './projects.js';
-import { createClaudeCodeAgent } from './sim/agent-claude-code.js';
+import { SIM_AGENT_LIMITS, createClaudeCodeAgent } from './sim/agent-claude-code.js';
 import { createMockAgent } from './sim/agent-mock.js';
 import { removeAllSimDirs } from './sim/tools-mcp.js';
 import { consentView, describeCost, RealAiConsent } from './real-ai.js';
@@ -113,12 +114,13 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     consent,
     sendsOutside,
     cost: () => describeCost({ env, auth: connection.auth, fixBudgetUsd: config.maxBudgetUsd, fixLaunches: MAX_FIX_ROUNDS + 1 }),
-    busy: (id) => intents.calling.has(id) || intents.locked.has(id) || organizes.calling.has(id) || designs.calling.has(id) || designs.locked.has(id) || aiSessions.busyFor(id),
+    busy: (id) => intents.calling.has(id) || intents.locked.has(id) || organizes.calling.has(id) || designs.calling.has(id) || designs.locked.has(id) || aiSessions.busyFor(id) || sceneRuns.running.has(id),
     forget: async (id) => {
       await organizes.forget(id);
       intents.forget(id);
       designs.forget(id);
       reviews.forget(id);
+      sceneRuns.forget(id);
       requests.forget(id);
       checks.forget(id);
       aiSessions.forgetProject(id);
@@ -240,6 +242,22 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   // AI 構成の審査と AI 構成書。会の中では承認する役を分ける(docs/design/ai-architecture-review.md の 9 節)
   const reviews = new ProjectReviews({ home: config.home, store, designs, modeOf: (id) => (meetings.records.has(id) ? 'meeting' : 'single'), log });
   await reviews.load();
+  // 主の画面の場面の回しと比べる表(task 423)。お試しの AI は同意なしで回す。本物の AI は、試作品の中の AI と同じ口(useReal)で
+  // 選べるかと同意を確かめ、費用の上限を付けて回す。接続は回しごとに新しく作り、終わったら閉じる
+  const sceneRuns = new ProjectSceneRuns({
+    store,
+    aiSessions,
+    realConnection: () => ({
+      kind: 'claude-code',
+      real: true,
+      agent: createClaudeCodeAgent({ env }),
+      harness: createClaudeCodeConnection({ env, allowed: config.allowClaudeCode === true }),
+      // 費用の分からない失敗した起動に数える額(1 回の起動の上限。npm run evals と同じ)
+      launchCapUsd: Math.max(SIM_AGENT_LIMITS.maxBudgetUsd, CLAUDE_CODE_LIMITS.maxBudgetUsd),
+    }),
+    onMeasured: (id) => reviews.noteMeasured(id),
+    log,
+  });
   const materials = new ProjectMaterials({ store, log });
   const servers = [];
   const versions = new ProjectVersions({ store, aiSessions, log });
@@ -257,6 +275,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       organizes,
       designs,
       reviews,
+      sceneRuns,
       materials,
       meetings,
       token,
@@ -310,7 +329,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     }
   } catch (error) {
     await Promise.all(servers.map((server) => new Promise((resolve) => server.close(() => resolve()))));
-    await Promise.all([aiSessions.close(), intents.close(), organizes.close(), designs.close()]);
+    await Promise.all([aiSessions.close(), intents.close(), organizes.close(), designs.close(), sceneRuns.closeAll()]);
     throw error;
   }
 
@@ -332,6 +351,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     organizes,
     designs,
     reviews,
+    sceneRuns,
     meetings,
     checks,
     observer,
@@ -345,7 +365,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     },
     async close() {
       // 作る AI と、人の「確かめる」と、応答を待っているプロダクト内 AI と聞き出す AI と整理する AI の Claude Code と、観察器のブラウザを止め、終わるまで待つ
-      await Promise.all([requests.closeAll(), checks.closeAll(), aiSessions.close(), intents.close(), organizes.close(), designs.close(), observer.close()]);
+      await Promise.all([requests.closeAll(), checks.closeAll(), sceneRuns.closeAll(), aiSessions.close(), intents.close(), organizes.close(), designs.close(), observer.close()]);
       await Promise.all(
         servers.map(
           (server) =>
