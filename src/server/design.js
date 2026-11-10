@@ -6,7 +6,7 @@ import { IntentError } from './intent.js';
 import { DEFAULT_COMPOSITION, DEFAULT_COMPOSITIONS, DEFAULT_EVALS, MANIFEST_FILE, readManifest } from './manifest.js';
 import { isValidProjectId, listProjects, projectPaths } from './projects.js';
 import { BusyError, NotFoundError } from './store.js';
-import { aiDataOptions, DATA_FILE, dataCoverage, dataRequestLines, fixedDataOptions, reshapeDataOption, sampleData } from './data-design.js';
+import { aiDataOptions, DATA_FILE, dataCoverage, dataRequestLines, designTableFile, fixedDataOptions, reshapeDataOption, sampleData } from './data-design.js';
 import { judgeRag, shelfFromDataDesign } from './data-shelf.js';
 
 // 設計の案内(docs/design/user-journey.md の段 3、J2)。問題、使う人、場面、データ、エージェントの構成、画面の 6 つの段。
@@ -277,6 +277,7 @@ export function designRequest({ doc, record, evalsDir = DEFAULT_EVALS, dataWritt
   lines.push(`使う人: ${chosenText(record.steps.users)}`);
   lines.push(kept ? 'エージェントの構成: 今の構成のまま。' : `エージェントの構成: ${composition.title}(${composition.detail})。構成のファイルは Studio が書きました。変えないでください。変えたいときは言葉で知らせてください。`);
   if (AGENT_DRIVEN.includes(compositionStep.chosen)) lines.push('この形では構成が会話を動かします。AI の設定(ai.json)は置かないでください。置くと確かめで止まります。');
+  if (AGENT_DRIVEN.includes(compositionStep.chosen) && dataTools(record)) lines.push(`データの表を引くツールの宣言(${STUDIO_TOOLS})と、ツールが読む表のデータ(data/design-table-*.json)は Studio が書きました。変えないでください。ツールを足したいときは、足さずに言葉で知らせてください。`);
   if (reviewed) lines.push('AI 構成の審査で、人が構成、harness、データと RAG、技術の組の 4 つを承認しました。構成、AI の設定、ツールの宣言、プロンプトの枠、前提のファイルを変えないでください。変えると確かめで止まり、審査に戻ります。');
   lines.push(`画面: ${chosenText(record.steps.screens)}`);
   for (const step of STEPS) {
@@ -412,6 +413,8 @@ export function desiredFiles(record, { needsAi = true, evalsDir = DEFAULT_EVALS 
     masterSubFiles(record, files, surface);
     return files;
   }
+  // データの段で選んだ案に表があれば、表を引くツールを案内役に持たせる(16 節)。なければ今までどおりツールなし
+  const lookup = dataTools(record);
   files.set('composition.json', jsonFile({
     formatVersion: 1,
     name: displayTitle(record, '単一エージェント'),
@@ -421,8 +424,10 @@ export function desiredFiles(record, { needsAi = true, evalsDir = DEFAULT_EVALS 
       kind: 'agent',
       label: '案内役',
       prompt: [{ from: 'assumptions', key: 'hostPrompt' }, { slot: 'guide', text: guideText(record) }],
+      ...(lookup ? { tools: lookup.names } : {}),
       mock: 'mocks/studio-main.json',
     }],
+    ...(lookup ? { tools: STUDIO_TOOLS } : {}),
     guards: [
       { id: 'say-unknown', layer: 'prompt', on: 'main', text: '分からないことは分からないと言い、作り話をしないでください。' },
       { id: 'no-made-up-numbers', layer: 'output', on: 'main', rules: { noNewNumbers: true } },
@@ -430,11 +435,16 @@ export function desiredFiles(record, { needsAi = true, evalsDir = DEFAULT_EVALS 
     surface,
     assumptions: { dir: 'assumptions', default: 'studio-default' },
   }));
+  if (lookup) {
+    files.set(STUDIO_TOOLS, jsonFile({ formatVersion: 1, tools: lookup.tools }));
+    for (const [relative, content] of lookup.files) files.set(relative, content);
+  }
   files.set('assumptions/studio-default.json', jsonFile(studioAssumptions()));
-  const rules = (record.scenes ?? []).slice(0, 50).map((scene) => ({
-    when: { contains: [scene.text.slice(0, 30)] },
-    reply: [{ kind: 'text', text: MOCK_REPLIES[scene.category] }],
-  }));
+  const rules = (record.scenes ?? []).slice(0, 50).map((scene) => {
+    const when = { contains: [scene.text.slice(0, 30)] };
+    if (lookup && LOOKUP_REPLIES[scene.category]) return { when, call: { tool: lookup.toolFor(scene.text), args: {} }, reply: [{ kind: 'text', text: LOOKUP_REPLIES[scene.category] }] };
+    return { when, reply: [{ kind: 'text', text: MOCK_REPLIES[scene.category] }] };
+  });
   files.set('mocks/studio-main.json', jsonFile({
     formatVersion: 1,
     rules,
@@ -455,14 +465,56 @@ const studioAssumptions = () => ({
   messageTypes: ['text'],
 });
 
-// マスターとサブを書いたときの、ファイルの名前(構成、ツールの宣言、子のモック)
-export const MASTER_SUB_TOOLS = 'studio-tools.json';
+// Studio が書くツールの宣言のファイル。マスターとサブの委任のツールと、データの表を引くツール(16 節)
+export const STUDIO_TOOLS = 'studio-tools.json';
 const HELPER_TEXT = '親の AI から任された 1 つの仕事だけを調べて、短く答えてください。題材とデータはすべて架空です。分からないことは分からないと言い、作り話をしないでください。';
 const HELPER_REPLY = '任された件を確かめました。分かったことだけをお伝えします(架空の試作品です)。';
+
+// 表を引いた後のモックの返事。表を引く場面の種類だけ。「数字を作らない」の確かめに当たらないよう、数字を入れない
+const LOOKUP_REPLIES = {
+  normal: '表を確かめました。分かったことだけをお伝えします(架空の試作品です)。',
+  unknown: '表を調べましたが、それは分かりません。担当の人に確かめてお返事します。',
+};
+const LOOKUP_LIMIT = 20;
+const MAX_TOOL_DESCRIPTION = 1000;
+
+// データの段で選んだ案の表を引くツール(ai-architecture-review.md の 16 節)。表ごとに 1 つの探すツール(読むだけ)と、ツールが読む表のデータ。
+// ツールの名前、処理、読むファイルは Studio が決める。AI と人の文(表と項目の名前)は、説明の文と項目の名前の値にしか入れない。
+// 表がなければ null。toolFor(文) は、場面の文に表の名前があればその表の、なければ最初の表のツールの名前を返す(モックの決まりで使う)
+function dataTools(record) {
+  const option = chosenOf(record.steps?.data);
+  const entities = Array.isArray(option?.entities) ? option.entities : [];
+  if (entities.length === 0) return null;
+  const sample = sampleData(option);
+  const files = new Map();
+  const tools = entities.map((entity, index) => {
+    const data = designTableFile(index);
+    const rows = sample.tables[index]?.rows ?? [];
+    files.set(data, jsonFile(rows));
+    const fields = (entity.fields ?? []).map((field) => field.name);
+    // 探す項目は、最初の文の項目(番号とつながりの番号は数なので使わない)
+    const field = (entity.fields ?? []).find((item) => item.kind === 'text' || item.kind === 'choice');
+    const description = [
+      `「${entity.name}」の表(架空のデータ)から行を探す。項目: ${fields.join('、')}。`,
+      field ? `keyword を渡すと、「${field.name}」に keyword を含む行だけを返す。渡さなければ全部の行を返す。` : '全部の行を返す。',
+      '読むだけで、書き換えない。',
+    ].join('');
+    return {
+      name: `search_table_${index + 1}`,
+      description: description.slice(0, MAX_TOOL_DESCRIPTION),
+      inputSchema: { type: 'object', properties: field ? { keyword: { type: 'string', maxLength: 40 } } : {} },
+      do: { op: 'search', data, ...(field ? { match: { keyword: { field: field.name, contains: true } } } : {}), limit: LOOKUP_LIMIT },
+    };
+  });
+  const toolFor = (text) => tools[Math.max(0, entities.findIndex((entity) => String(text).includes(entity.name)))].name;
+  return { tools, names: tools.map((tool) => tool.name), files, toolFor };
+}
 
 // マスターとサブ(agent-simulation.md の 2.9)。親の案内役が、委任のツールで子の調べる係に仕事を任せ、結果を受け取って答える。
 // お試しの AI(モック)では、うまくいく場面で子に任せ、子の答えをそのまま返す
 function masterSubFiles(record, files, surface) {
+  // データの段で選んだ案に表があれば、表を引くツールを子の調べる係に持たせる(16 節)。親は任せるツールだけ
+  const lookup = dataTools(record);
   files.set('composition.json', jsonFile({
     formatVersion: 1,
     name: displayTitle(record, 'マスターとサブ'),
@@ -481,10 +533,11 @@ function masterSubFiles(record, files, surface) {
         kind: 'agent',
         label: '調べる係(子)',
         prompt: [{ slot: 'helper-guide', text: HELPER_TEXT }],
+        ...(lookup ? { tools: lookup.names } : {}),
         mock: 'mocks/studio-helper.json',
       },
     ],
-    tools: MASTER_SUB_TOOLS,
+    tools: STUDIO_TOOLS,
     delegations: [{ from: 'main', to: 'helper' }],
     guards: [
       { id: 'say-unknown', layer: 'prompt', on: 'main', text: '分からないことは分からないと言い、作り話をしないでください。' },
@@ -493,24 +546,30 @@ function masterSubFiles(record, files, surface) {
     surface,
     assumptions: { dir: 'assumptions', default: 'studio-default' },
   }));
-  files.set(MASTER_SUB_TOOLS, jsonFile({
+  files.set(STUDIO_TOOLS, jsonFile({
     formatVersion: 1,
     tools: [{
       name: 'ask_helper',
       description: '調べる係(子の AI)に、1 つの仕事を任せる。係の結果は、この返事の後に届く',
       inputSchema: { type: 'object', properties: { task: { type: 'string', maxLength: 200 } }, required: ['task'] },
       do: { op: 'delegate', to: 'helper' },
-    }],
+    }, ...(lookup?.tools ?? [])],
   }));
+  if (lookup) for (const [relative, content] of lookup.files) files.set(relative, content);
   files.set('assumptions/studio-default.json', jsonFile(studioAssumptions()));
+  // 親が任せる場面。表があれば、分からない場面も子に表を調べてもらう
+  const delegated = (category) => category === 'normal' || (lookup !== null && Object.hasOwn(LOOKUP_REPLIES, category));
   const rules = [{ when: { delegated: 'helper' }, reply: [{ kind: 'text', text: '{delegated.text}' }] }];
+  const helperRules = [];
   for (const scene of (record.scenes ?? []).slice(0, 50)) {
     const when = { contains: [scene.text.slice(0, 30)] };
-    if (scene.category === 'normal') rules.push({ when, call: { tool: 'ask_helper', args: { task: scene.text.slice(0, 200) } }, reply: [{ kind: 'text', text: '係に確かめます。' }] });
+    if (delegated(scene.category)) rules.push({ when, call: { tool: 'ask_helper', args: { task: scene.text.slice(0, 200) } }, reply: [{ kind: 'text', text: '係に確かめます。' }] });
     else rules.push({ when, reply: [{ kind: 'text', text: MOCK_REPLIES[scene.category] }] });
+    // 子は任された文(場面の文)で、表を 1 回引く
+    if (lookup && delegated(scene.category)) helperRules.push({ when, call: { tool: lookup.toolFor(scene.text), args: {} }, reply: [{ kind: 'text', text: LOOKUP_REPLIES[scene.category] }] });
   }
   files.set('mocks/studio-main.json', jsonFile({ formatVersion: 1, rules, otherwise: [{ kind: 'text', text: MOCK_REPLIES.normal }] }));
-  files.set('mocks/studio-helper.json', jsonFile({ formatVersion: 1, rules: [], otherwise: [{ kind: 'text', text: HELPER_REPLY }] }));
+  files.set('mocks/studio-helper.json', jsonFile({ formatVersion: 1, rules: helperRules, otherwise: [{ kind: 'text', text: HELPER_REPLY }] }));
 }
 
 // 設計の案内の状態。ファイルに書いたものを起動のときに読み、以降はメモリーとファイルの両方を直す。

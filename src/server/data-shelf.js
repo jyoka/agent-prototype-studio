@@ -16,7 +16,7 @@ export const SHELF_READS = { tool: 'ツールで引く', prompt: 'プロンプ�
 export const SHELF_CHANGES = { minutes: '毎分', daily: '毎日', rarely: '年に数回', unknown: 'まだ決めていない' };
 export const SHELF_SOURCES = { 'data-design': 'データ設計', board: '整理の板', app: '試作品のツールとデータ' };
 export const SHELF_LIMITS = { maxItems: 50, maxName: 60, maxPrototype: 100, maxKinds: 10 };
-const SHELF_KEYS = ['id', 'name', 'shape', 'read', 'change', 'personal', 'personalKinds', 'prototype', 'source'];
+const SHELF_KEYS = ['id', 'name', 'shape', 'read', 'change', 'personal', 'personalKinds', 'prototype', 'source', 'tools'];
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 // 判定の答え。needed は true(要る)、false(要らない)、null(まだ決めていない)
@@ -53,6 +53,8 @@ export function shelfProblems(shelf) {
     }
     if (typeof item.prototype !== 'string' || item.prototype.trim() === '' || item.prototype.length > SHELF_LIMITS.maxPrototype) problems.push(`${at}: 試作品での扱いは ${SHELF_LIMITS.maxPrototype} 文字までの文にしてください`);
     if (item.read === 'rag' && item.shape !== 'document') problems.push(`${at}: RAG で読めるのは長い文書だけです`);
+    // そのデータを読むツールの名前(審査の画面で出す。#426)。書かなければ、まだ調べていない
+    if (item.tools !== undefined && (!Array.isArray(item.tools) || item.tools.some((name) => typeof name !== 'string' || name === ''))) problems.push(`${at}: ツールは名前の配列にしてください`);
   }
   return problems;
 }
@@ -129,8 +131,9 @@ export function shelfFromApp({ toolsets = {}, toolData = {}, manifestData = [] }
     for (const tool of toolset?.tools ?? []) {
       const file = tool.do?.data;
       if (typeof file !== 'string') continue;
-      const entry = files.get(file) ?? { ops: new Set(), hidden: new Set(), value: toolData[toolsFile]?.[file] };
+      const entry = files.get(file) ?? { ops: new Set(), hidden: new Set(), tools: new Set(), value: toolData[toolsFile]?.[file] };
       entry.ops.add(tool.do.op);
+      entry.tools.add(tool.name);
       for (const field of tool.guards?.hideFields ?? []) entry.hidden.add(field);
       files.set(file, entry);
     }
@@ -154,12 +157,13 @@ export function shelfFromApp({ toolsets = {}, toolData = {}, manifestData = [] }
       ...(entry.hidden.size > 0 ? { personal: true, personalKinds: [...entry.hidden] } : { personal: null }),
       prototype: count === null ? '架空の決まった値' : document ? `架空の文書 ${count} 件` : `架空の ${count} 件`,
       source: 'app',
+      tools: [...entry.tools].sort(),
     });
   }
   // 目録のデータのうち、ツールが読まないもの(画面だけが使う)。AI は読まない
   for (const item of manifestData ?? []) {
     if (files.has(item.file)) continue;
-    shelf.push({ id: idOf(item.file, shelf.length), name: clip(item.about ?? item.file, SHELF_LIMITS.maxName), shape: 'table', read: 'none', change: 'unknown', personal: null, prototype: '画面だけが使う架空のデータ', source: 'app' });
+    shelf.push({ id: idOf(item.file, shelf.length), name: clip(item.about ?? item.file, SHELF_LIMITS.maxName), shape: 'table', read: 'none', change: 'unknown', personal: null, prototype: '画面だけが使う架空のデータ', source: 'app', tools: [] });
   }
   return shelf;
 }
