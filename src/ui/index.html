@@ -424,6 +424,19 @@
           </details>
         </div>
       </details>
+      <!-- 質の見直しの表(user-journey.md の J6。サーバーは src/server/quality.js)。測ったものと AI の判断を分け、各行に「なぜ大事か」と「直す」を付ける。
+           見ていない項目は「まだ見ていない」。「直す」で、言葉で直す欄に依頼を入れる(送るのは人)。見せる画面には出さない -->
+      <details id="quality" class="quality" data-studio-only hidden>
+        <summary id="quality-summary">質の見直し</summary>
+        <div class="quality-body">
+          <p class="muted">試作品の質を、測ったものと AI の判断に分けて並べます。「直す」が 0 になるまで、上から順に片付けます。数は Studio が持つ記録から読みます。</p>
+          <div class="quality-actions">
+            <button type="button" id="quality-check" class="primary">画面を確かめて見直す</button>
+          </div>
+          <div id="quality-status" class="scene-status" role="status"></div>
+          <div id="quality-table"></div>
+        </div>
+      </details>
     </section>
     <section class="make" aria-labelledby="make-heading">
       <div class="make-head">

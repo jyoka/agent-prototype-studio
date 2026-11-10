@@ -13,6 +13,7 @@ import { createIntentAi, INTENT_SYSTEM_PROMPT } from './intent-ai.js';
 import { ProjectDesigns } from './design.js';
 import { ProjectReviews } from './review.js';
 import { ProjectSceneRuns } from './scene-runs.js';
+import { ProjectQuality } from './quality.js';
 import { ProjectMaterials } from './materials.js';
 import { createDesignAi, DESIGN_SYSTEM_PROMPT } from './design-ai.js';
 import { ProjectMeetings, removeErasing } from './meeting.js';
@@ -258,6 +259,8 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     onMeasured: (id) => reviews.noteMeasured(id),
     log,
   });
+  // 質の見直しの表(user-journey.md の J6)。観察の検査、app/ の文、場面の回しの結果を読むだけ
+  const quality = new ProjectQuality({ store, sceneRuns, checks });
   const materials = new ProjectMaterials({ store, log });
   const servers = [];
   const versions = new ProjectVersions({ store, aiSessions, log });
@@ -276,6 +279,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       designs,
       reviews,
       sceneRuns,
+      quality,
       materials,
       meetings,
       token,

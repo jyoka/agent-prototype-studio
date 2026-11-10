@@ -3,6 +3,7 @@ import path from 'node:path';
 import { BrowserUnavailableError, ObserverBrowser } from './browser.js';
 import { Operations, StepFailure, VIEWPORTS, VIEWPORT_SETTLE_MS } from './operations.js';
 import { SCENARIO_LIMITS, baseScenarios, checkScenario } from './scenario.js';
+import { auditScript, cleanAudit } from './audit.js';
 
 // 観察器(docs/design/harness.md の 3.1)。表示中のビルドをヘッドレスの Chromium で開き、
 // 読み込み、エラー、スクリーンショット、シナリオ、最後の画面、合否を report で返す。
@@ -113,6 +114,8 @@ function emptyReport(build) {
     scenarios: [],
     // 最後の画面: 文字と、アクセシビリティの木の要約(operations.js の read)、空でないか(関門 G5 が見る)
     page: null,
+    // 最後の画面の検査(audit.js。質の見直しの、アクセシビリティの違反と字と地の差)。読めなければ null
+    audit: null,
     screenshots: [],
     verdict: 'unverified',
     reason: null,
@@ -537,6 +540,11 @@ export class Observer {
     }
     const shown = await ops.read().catch(() => null);
     if (shown) report.page = { ...shown, empty };
+    // 質の見直しの画面の検査。読めなくても観察の合否には入れない(関門は見ない)
+    if (stop.stopped || report.reason) return;
+    const audit = await within(frame.evaluate(auditScript()), PAGE_TIMEOUT_MS, '画面を検査できません').catch(() => null);
+    const cleaned = cleanAudit(audit);
+    if (cleaned) report.audit = { ...cleaned, viewport: ops.viewportName, at: new Date().toISOString() };
   }
 
   close() {

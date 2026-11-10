@@ -398,6 +398,7 @@ function render() {
   if ((project?.id ?? null) !== tokens.projectId) loadTokens(project?.id ?? null);
   renderTokens(project);
   syncScenes(project);
+  syncQuality(project);
   if (!project) {
     showPlaceholder('試作品がありません。');
   } else if (!project.previewUrl) {
@@ -722,6 +723,7 @@ function renderMake(project) {
   renderSaveMark(project);
   renderFirstSteps(project);
   renderScenes(project);
+  renderQuality(project);
 }
 
 // 最初の一歩の案内(ux-redesign.md 2 節、7-1、7-2、7-4)。1 行の説明と 3 つの手順を、上の帯の下に出す。
@@ -6172,6 +6174,155 @@ sceneEls.box.addEventListener('toggle', () => {
 sceneEls.runMock.addEventListener('click', () => startScenes('mock'));
 sceneEls.runReal.addEventListener('click', () => startScenes('claude-code'));
 sceneEls.cancel.addEventListener('click', cancelScenes);
+
+// 質の見直しの表(user-journey.md の J6。サーバーは src/server/quality.js)。試す欄の下、場面の一覧と比べる表の次に置く。
+// 測ったもの(アクセシビリティの違反、字と地の差、素材に合わない色と部品、場面の結果、道具の呼び方、守りの効き、費用、待ち時間)と、
+// AI の判断(返事の自然さの採点、使いやすさの見直し)を分けた 2 つの表にする。AI の判断の行には「判断」の印を付ける。
+// 「直す」は、言葉で直す欄に依頼を入れる(送るのは人)。「画面を確かめて見直す」は、お試しの AI で試作品を自動で確かめる(費用なし)
+const qualityUi = { projectId: null, data: null, version: null, seq: 0, starting: false, message: null };
+const qualityEls = {
+  box: $('quality'),
+  summary: $('quality-summary'),
+  check: $('quality-check'),
+  status: $('quality-status'),
+  table: $('quality-table'),
+};
+const QUALITY_BADGES = { fix: '直す', ok: '問題なし', info: '目安なし' };
+// 場所の一覧のうち、ファイルと行、要素の名前(クラスの名前)を出すもの(開発の言葉が入りうるので、開発者向けとして閉じておく)
+const QUALITY_DEV_PLACES = new Set(['a11y', 'contrast', 'colors', 'parts']);
+const QUALITY_VIEWPORTS = { mobile: 'スマートフォンの幅', tablet: 'タブレットの幅', desktop: 'パソコンの幅' };
+const QUALITY_PARTIAL = { running: '場面を回している最中なので、場面の行は途中の数です。', stopped: '場面の回しを途中で止めたので、場面の行は途中の数です。', error: '場面の回しが途中で失敗したので、場面の行は途中の数です。' };
+
+// 読み直す印。確かめの版、確かめている最中か、場面の回しの版、表示中の版
+const qualityKey = (project) => JSON.stringify([project.checksVersion ?? 0, Boolean(project.checking), project.scenes?.version ?? 0, project.previewUrl ?? null]);
+
+async function syncQuality(project, { force = false } = {}) {
+  const id = project?.id ?? null;
+  if (qualityUi.projectId !== id) Object.assign(qualityUi, { projectId: id, data: null, version: null, message: null });
+  if (!id) {
+    renderQuality(project);
+    return;
+  }
+  const key = qualityKey(project);
+  if (!force && qualityUi.version === key) return;
+  qualityUi.version = key;
+  const seq = ++qualityUi.seq;
+  try {
+    const { quality } = await api(`/api/projects/${encodeURIComponent(id)}/quality`);
+    if (seq !== qualityUi.seq || qualityUi.projectId !== id) return;
+    qualityUi.data = quality;
+  } catch (error) {
+    if (seq === qualityUi.seq) {
+      qualityUi.version = null;
+      handleError(error);
+    }
+  }
+  renderQuality(selectedProject());
+}
+
+function qualityTableOf(rows, group, label) {
+  const table = element('table', undefined, 'quality-rows');
+  table.setAttribute('aria-label', label);
+  const head = element('tr');
+  for (const name of ['項目', '結果', 'なぜ大事か', '直す']) head.append(element('th', name));
+  const thead = element('thead');
+  thead.append(head);
+  const tbody = element('tbody');
+  for (const row of rows.filter((item) => item.group === group)) {
+    const tr = element('tr');
+    tr.dataset.row = row.id;
+    tr.dataset.status = row.status;
+    const name = element('th');
+    name.setAttribute('scope', 'row');
+    name.append(document.createTextNode(row.label));
+    if (row.group === 'judged') name.append(' ', element('span', '判断', 'quality-mark'));
+    const result = element('td');
+    if (QUALITY_BADGES[row.status]) result.append(element('span', QUALITY_BADGES[row.status], `quality-badge quality-${row.status}`), ' ');
+    result.append(document.createTextNode(row.result));
+    if (row.note) result.append(element('small', row.note));
+    if (row.places.length > 0) {
+      const places = element('details', undefined, QUALITY_DEV_PLACES.has(row.id) ? 'card-dev quality-places' : 'quality-places');
+      places.append(element('summary', `${QUALITY_DEV_PLACES.has(row.id) ? '開発者向け: ' : ''}場所(${row.places.length})`));
+      const list = element('ul');
+      list.append(...row.places.map((text) => element('li', text)));
+      places.append(list);
+      result.append(places);
+    }
+    const fix = element('td');
+    fix.append(document.createTextNode(row.fix));
+    if (row.request) {
+      const button = element('button', '直す');
+      button.type = 'button';
+      button.title = '言葉で直す欄に、この行を直す依頼を入れます。送るのはあなたです';
+      button.addEventListener('click', () => {
+        fillRequest(row.request);
+        qualityUi.message = `「${row.label}」を直す依頼を、言葉で直す欄に入れました。読んで、送ってください。`;
+        renderQuality(selectedProject());
+      });
+      fix.append(' ', button);
+    }
+    tr.append(name, result, element('td', row.why), fix);
+    tbody.append(tr);
+  }
+  table.append(thead, tbody);
+  return table;
+}
+
+function renderQuality(project) {
+  const data = qualityUi.projectId === project?.id ? qualityUi.data : null;
+  qualityEls.box.hidden = !project;
+  if (!project) return;
+  const checking = Boolean(project.checking) || qualityUi.starting;
+  qualityEls.summary.textContent = data
+    ? `質の見直し(直す ${data.summary.fix}、まだ見ていない ${data.summary.unseen}${checking ? '。確かめています…' : ''})`
+    : '質の見直し';
+  qualityEls.check.disabled = !canCheck(project) || !project.previewUrl;
+  qualityEls.check.textContent = checking ? '確かめています…' : '画面を確かめて見直す';
+  const lines = [];
+  if (checking) lines.push('試作品を自動で確かめています。終わると、アクセシビリティと字と地の差の行が埋まります。');
+  if (data?.audit) lines.push(`画面を確かめた時刻: ${formatTime(data.audit.at)}(確かめの最後の画面を、${QUALITY_VIEWPORTS[data.audit.viewport] ?? '最後の画面幅'}で見た)。`);
+  if (data?.audit?.stale) lines.push('確かめた後に試作品か素材が変わったので、アクセシビリティと字と地の差の行は古いです。もう一度確かめてください。');
+  if (data?.scenes?.stale) lines.push('場面を回した後に場面の一覧が変わったので、場面の行は古いです。');
+  if (data?.scenes && QUALITY_PARTIAL[data.scenes.status]) lines.push(QUALITY_PARTIAL[data.scenes.status]);
+  if (qualityUi.message) lines.push(qualityUi.message);
+  qualityEls.status.textContent = lines.join(' ');
+  if (!data) {
+    qualityEls.table.replaceChildren(element('p', '読み込んでいます…', 'muted'));
+    return;
+  }
+  qualityEls.table.replaceChildren(
+    element('h4', '測ったもの'),
+    qualityTableOf(data.rows, 'measured', '質の見直し: 測ったもの'),
+    element('h4', 'AI の判断'),
+    element('p', 'AI の判断は、AI が読んで決めたものです。ぶれがあるので、人が確かめます。', 'muted'),
+    qualityTableOf(data.rows, 'judged', '質の見直し: AI の判断'),
+  );
+}
+
+// お試しの AI で、表示中の試作品を自動で確かめる(引き出しの「試作品を自動で確かめる」と同じ確かめ。費用も同意も要らない)
+async function startQualityCheck() {
+  const project = selectedProject();
+  if (!project || !canCheck(project) || qualityUi.starting) return;
+  qualityUi.starting = true;
+  qualityUi.message = null;
+  renderQuality(project);
+  try {
+    await api(`/api/projects/${encodeURIComponent(project.id)}/checks`, { method: 'POST', json: { connection: 'mock' } });
+  } catch (error) {
+    if (error instanceof ApiError && !['offline', 'token'].includes(error.code)) qualityUi.message = `確かめられませんでした: ${error.message}`;
+    else handleError(error);
+  } finally {
+    qualityUi.starting = false;
+    lastSnapshot = '';
+    await refresh();
+    render();
+  }
+}
+
+qualityEls.box.addEventListener('toggle', () => {
+  if (qualityEls.box.open) syncQuality(selectedProject(), { force: true });
+});
+qualityEls.check.addEventListener('click', startQualityCheck);
 
 // 案内のとおり同じタブに URL を貼ると、フラグメントだけが変わり、画面は読み直されない。
 // 新しい鍵を覚えてから読み直し、はじめからつなぎ直す。
