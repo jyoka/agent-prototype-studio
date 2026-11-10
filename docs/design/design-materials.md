@@ -199,7 +199,7 @@ Material 3 は J3 では同梱しない。選ぶ画面と「手入れが止ま�
 - Figma の変数を W3C の形で書き出す道具: 検索では、TokensBruecke(README に 2025.10 と互換と書いてある。https://cdn.jsdelivr.net/npm/tokens-bruecke@3.15.1/README.md )、Token Forge(https://figma-web.pages.dev/plugins/1560757977662930693 )、`@tfk-samf/figma-to-dtcg`(https://npmjs.com/package/@tfk-samf/figma-to-dtcg )が見つかった。どれも動かしていない。Figma の標準の書き出しは、フォーラムに一部のアカウントで出たとの書き込みがあるだけで、一般に使えるかと 2025.10 の形かは不明(https://forum.figma.com/ask-the-community-7/native-variable-export-feature-47831/index2.html )。古い形の色の文字列を出す道具があるので、誤りの文で 2025.10 の形を案内する
 - 本物の書き出しのファイルで通るか: 架空のファイルだけで確かめた
 - 明るい地と暗い地を切り替える素材: 1 つの値だけを扱う。2025.10 の Resolver の仕組みは読んでいない。暗い地の Theme では、淡い段が合わない見込み(推測)
-- 字と地の差: 検査していない。J5 の「見本で試す」と J6
+- 字と地の差: J6 の質の見直しが、試作品の最後の画面で測る([user-journey.md の「J6 で決めたこと」](user-journey.md#j6-で決めたことtask-3892026-11-11))。J5 の「見本で試す」はまだ
 
 ## 5. 取り込みを案内する流れ
 
@@ -276,5 +276,5 @@ task 388(2026-11-07)。カードに書いていなかったことを、エージ
 - SF Pro と SF Symbols の契約の全文: 未確認。どちらにしても同梱しない
 - 既定の素材の指針の要約で、作る AI の試作品が良くなるか: 実モデルで確かめていない
 - React 19 での Material Web の動き: Studio では確かめていない
-- アクセシビリティの検査の道具と、そのライセンス: 選んでいない。J6 で確かめる
+- アクセシビリティの検査の道具と、そのライセンス: 選んでいない。J6 は外の道具を入れず、Studio のコードの小さな検査にした([user-journey.md の「J6 で決めたこと」](user-journey.md#j6-で決めたことtask-3892026-11-11))。道具を選ぶのは、ライセンスを確かめる後のカード
 - Storybook の URL を読むための、Studio の新しい外への呼び出し: 入れるかを決めていない。入れるなら同意と送り先の表示を、今の本物の AI の同意と同じ形で作る

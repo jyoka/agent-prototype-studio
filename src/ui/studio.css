@@ -874,3 +874,21 @@ body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
 .scene-failures li { margin: 0.3rem 0; }
 .scene-failures button { margin-left: 0.4rem; padding: 0.1rem 0.6rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--accent); cursor: pointer; }
 .scene-warn { color: var(--error); }
+/* 質の見直しの表(user-journey.md の J6)。場面の一覧と比べる表と同じ置き方 */
+.quality[hidden] { display: none; }
+.quality { margin-top: 0.5rem; padding: 0.3rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; font-size: 0.85rem; flex-shrink: 0; }
+.quality > summary { cursor: pointer; font-weight: 600; }
+.quality-body { max-height: 40vh; overflow: auto; }
+.quality-body p { margin: 0.3rem 0; }
+.quality-body h4 { margin: 0.5rem 0 0.2rem; font-size: 0.85rem; }
+.quality-actions button { padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: var(--on-accent); cursor: pointer; }
+.quality-actions button:disabled { opacity: 0.5; cursor: default; }
+.quality table { border-collapse: collapse; width: 100%; margin: 0.3rem 0; }
+.quality th, .quality td { border: 1px solid var(--line); padding: 0.2rem 0.4rem; text-align: left; vertical-align: top; }
+.quality small { display: block; color: var(--muted); }
+.quality td button { padding: 0.1rem 0.6rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--accent); cursor: pointer; }
+.quality-mark { display: inline-block; padding: 0 0.35rem; border: 1px solid var(--muted); border-radius: 999px; font-size: 0.75rem; font-weight: 600; color: var(--muted); }
+.quality-badge { font-weight: 600; }
+.quality-fix { color: var(--error); }
+.quality-places summary { cursor: pointer; color: var(--muted); }
+.quality-places ul { margin: 0.2rem 0; padding-left: 1.1rem; }

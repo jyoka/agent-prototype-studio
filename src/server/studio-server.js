@@ -145,8 +145,9 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
 // realAi(projectId) は本物の AI を使う前の同意のカードの中身(real-ai.js の consentView)、consent は同意の状態。
 // firstSteps は最初の一歩の案内の進み方と、閉じたこと(first-steps.js)
 // intents は目的の聞き出しと目的の文書(intent.js)。organizes はヒアリングの整理(organize.js)。designs は設計の案内(design.js)
-// reviews は AI 構成の審査と AI 構成書(review.js)。sceneRuns は主の画面の場面の回しと比べる表(scene-runs.js)
-export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, designs, reviews, sceneRuns, materials, meetings, token, ports, realAi, consent, firstSteps }) {
+// reviews は AI 構成の審査と AI 構成書(review.js)。sceneRuns は主の画面の場面の回しと比べる表(scene-runs.js)。
+// quality は質の見直しの表(quality.js)
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, designs, reviews, sceneRuns, quality, materials, meetings, token, ports, realAi, consent, firstSteps }) {
   const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes, designs, meetings, reviews, sceneRuns);
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
@@ -223,6 +224,9 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     // 主の画面の場面の回しと比べる表。GET は場面の一覧と一番新しい表。run は回し始める({ connection, limitUsd })。cancel は止める
     const scenesMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/scenes(?:\/(run|cancel))?$/.exec(url.pathname);
     if (scenesMatch && (scenesMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleScenes(req, res, scenesMatch[1], scenesMatch[2]);
+    // 質の見直しの表。GET だけ(測るのは「確かめる」と場面の回し。ここは読むだけ)
+    const qualityMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/quality$/.exec(url.pathname);
+    if (qualityMatch && req.method === 'GET') return handleQuality(res, qualityMatch[1]);
     const reviewMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/review(?:\/(start|choose|approve|build|skip|measure|back|restore))?$/.exec(url.pathname);
     if (reviewMatch && (reviewMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleReview(req, res, reviewMatch[1], reviewMatch[2]);
     // 自分のトークンをつなぐ(J4)、部品と指針をつなぐ(J5)。GET は今の状態。check は検査だけで何も書かない
@@ -413,6 +417,15 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       return sendJson(res, 200, { review: await reviews[action](id, body) });
     } catch (error) {
       return sendIntentError(res, error);
+    }
+  }
+
+  async function handleQuality(res, id) {
+    try {
+      return sendJson(res, 200, { quality: await quality.view(id) });
+    } catch (error) {
+      if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', error.message);
+      throw error;
     }
   }
 

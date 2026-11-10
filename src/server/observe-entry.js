@@ -255,6 +255,8 @@ export async function observeProject({
     await ownObserver?.close();
   }
 
+  // どのモードで見たか。質の見直し(quality.js)は、表示中の試作品を見た確かめ(shown)の audit だけを使う
+  report.mode = mode;
   let reportFile = null;
   if (!outDir) {
     reportFile = path.join(dir, 'report.json');

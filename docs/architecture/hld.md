@@ -76,11 +76,12 @@ flowchart TB
         design["設計の案内<br/>design.js、design-ai.js、data-design.js、data-shelf.js、review/options.json"]
         review["AI 構成の審査と AI 構成書<br/>review.js、architecture.js"]
         sceneRuns["主の画面の場面の回しと比べる表<br/>scene-runs.js"]
+        quality["質の見直しの表<br/>quality.js"]
         redact["伏せる、秘密を探す<br/>redact.js"]
     end
 
     observeEntry["観察の入口<br/>src/server/observe-entry.js observeProject"]
-    observer["観察器<br/>src/observer/observe.js、browser.js、<br/>operations.js、scenario.js"]
+    observer["観察器<br/>src/observer/observe.js、browser.js、<br/>operations.js、scenario.js、audit.js"]
     observeCli["観察の CLI<br/>bin/observe.js(npm run observe)"]
     observeMcp["観察の道具の MCP サーバー<br/>bin/observe-mcp.js、src/server/observe-mcp.js<br/>(作る AI に --mcp-config で渡す)"]
     evalsCli["場面の回しの CLI<br/>bin/evals.js(npm run evals)"]
@@ -125,6 +126,9 @@ flowchart TB
     sceneRuns -- "本物の AI は同意を確かめる(useReal)" --> ai
     sceneRuns -- "結果と台帳を書く(.studio/evals/)" --> dotstudio
     sceneRuns -- "回した後に数を取り直す" --> review
+    api --> quality
+    quality -- "読むだけ(.studio/observations/ の audit、.studio/evals/、素材)" --> dotstudio
+    quality -- "色と部品を探す(読むだけ)" --> app
     requests --> agent
     agent -- "子プロセス(cwd は app/)" --> cli
     cli -- "読み書き" --> app
@@ -188,6 +192,7 @@ flowchart TB
 | 会話の進め方と模擬のエージェント | `src/server/sim/orchestrator.js`、`agent-mock.js`、`agent-claude-code.js`、`parts.js` | `composition.json` のある試作品の 1 ターンを、決まった節の並び(受け付け → 話す参加者 → 引き継ぎ → 返事)で回し、通った節を記録に残す(`sim-turn`)。誰が話すか、引き継ぎ(辺、1 ターン 1 回、`limits.maxHandoffs`)、受け渡す値の検査、上限、出口の確かめ(`enforce` でやり直しと型の文か、記録だけ)はコードが決める。harness の参加者は `harness.js` の `turn()` をそのまま使う。`flow` と `escalate` を書いた参加者(固定の流れ。設計の 2.8)は、決定の後、言い方の前に、コードが段の順にツールの口を呼び、条件で人に渡す。モデルにはツールを渡さない。`delegations` を書いた構成(マスターとサブ。設計の 2.9)では、模擬のエージェントが委任のツールを呼ぶと、返事の後にコードが辺、深さ(`limits.maxDepth`)、1 ターンの回数(`limits.maxDelegations`)を確かめてサブを 1 回話させ、結果を足して任せた参加者をもう一度呼ぶ。模擬のエージェントは、モック(`mocks/*.json`。ツールは同じプロセスのツールの口)か Claude Code(返事ごとに `claude -p` を 1 回。ツールは MCP サーバーを通す。`--safe-mode` の代わりに作る AI と同じ組み合わせと `--tools ""`、許可は構成の名前だけ、cwd は空の一時フォルダー)。返事の部品は前提の `messageTypes` から作り、合わない部品は文に落とす(`parts.js`)。会話と記録は `AiSessions`(`product-ai/session.js`)が持つ。設計は [agent-simulation.md の 3.2、3.3](../design/agent-simulation.md#32-1-ターンの進め方) |
 | 場面の回し | `src/server/sim/eval-run.js`、`bin/evals.js` | 場面(`app/evals/`)を、構成 × 前提 × 接続 × 回数で回す。場面ごとに新しい会話と記録の店で、会話の進め方(`runTurn`)かツールの口(`kind: tool`)を通す。確かめはコードが決め、当てはまらないものは `n/a`。`judge` はモックでは未採点で、実モデルの回しでは採点の接続(`judge.js`。道具なしの `claude -p` を 2 回)が採点する。危ない場面は、止まったかを結果の確かめ(`noToolRun`、`noRecord`、`replyNotContains`)と出口の確かめの違反で決め、止めた層(ツール、出口の確かめ、プロンプトかモデル)を別に出す。前の回しの結果は、`eval-recount.js` で今の場面の確かめで数え直せる(`scripts/sim-compare.js --recount`)。文書の検索の確かめ(`retrieved`、`cited`)があれば、比べる表に検索の再現率と引用ありの列を足す。文書の検索のツールのある試作品では、`report.md` にデータの棚と RAG の判定(`src/server/data-shelf.js`)を足す。結果(`result.json`、`report.md`、`traces/`)は `app/` と構成と前提の指紋を持つ。作る run の関門 GE はモックだけで回す。CLI(`npm run evals`)は作業中の `app/` を一時フォルダーにビルドして回し、`--real` は `STUDIO_ALLOW_CLAUDE_CODE=1` と `--limit-usd` のときだけ。台帳(`.studio/evals/ledger.jsonl`)の累計が上限に達したら次の返事と採点を始めない([agent-simulation.md の 4.3](../design/agent-simulation.md#43-場面の回し))。jyoka/tasks#327 の場面は `eval-import.js`(`npm run evals:import`)で変換して取り込み、回しを並べた比べる表は `scripts/sim-compare.js` で作る |
 | 主の画面の場面の回し | `src/server/scene-runs.js` | `/api/projects/<id>/scenes`(GET は場面の一覧、進み具合、一番新しい結果から作った比べる表と「直す」の依頼の文。`run` は回し始める、`cancel` は止める)。試す欄の下の「場面の一覧と比べる表」が使う。`eval-run.js` の `runEvals` を、既定の構成と `compositions/` の構成の全部で回し、結果は CLI と同じ `.studio/evals/` に書く。お試しの AI は同意なし。本物の AI は `AiSessions.useReal`(用途 `evals`)で選べるかと同意を確かめ、`createBudget` の台帳と費用の上限で止める。採点はしない。回し終えたら審査の数(`ProjectReviews.noteMeasured`)を取り直す。試す欄の下の「1 ターンの記録」は、プロダクト内 AI の実行の記録を画面(`renderTurnRecord`)で要約するだけで、サーバーの部品はない([ai-architecture-review.md の 15 節](../design/ai-architecture-review.md#15-423-で決めたこと)) |
+| 質の見直しの表 | `src/server/quality.js`、`src/observer/audit.js` | `/api/projects/<id>/quality`(GET だけ)。試す欄の下の「質の見直し」が使う。測ったもの(アクセシビリティの違反、字と地の差、素材に合わない色と部品、場面の結果、道具の呼び方の正しさ、守りの効き、費用、待ち時間)と AI の判断(返事の自然さの採点、使いやすさの見直し)の行に、「なぜ大事か」「直す」と、言葉で直す欄に入れる依頼の文を付ける。何も動かさず、3 つを読むだけ。(1) 一番新しい、表示中の試作品を見た観察(画面の「確かめる」。report の `mode` が `shown`)の `audit`。観察器が最後の画面で `audit.js` の小さな検査(ラベル、ボタンの名前、画像の代わりの文、WCAG の式の字と地の差)を動かし、値を決まった形に写して入れる。関門の合否には入れない。(2) `app/` の文の形で探した、値のまま書いた色と、既定の素材を読む試作品でじかに書いた部品。(3) `scene-runs.js` の一番新しい場面の回しの結果の最初の組。見ていない項目は `unseen`(「まだ見ていない」)。外の検査の道具は使わない([user-journey.md の「J6 で決めたこと」](../design/user-journey.md#j6-で決めたことtask-3892026-11-11)) |
 | 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する |
 | 引き継ぎ | `src/server/handoff.js` | 作業中の試作品と、目録、シナリオ、最新の証拠の要約、構成とツールと前提と場面、最新の場面の回しの要約を `handoffs/` に書き出す。形は [handoff.md](../handoff.md) |
 | 本物の AI の同意 | `src/server/real-ai.js` | 本物の AI を使う前の同意を、メモリーに 1 つ持つ。作る AI(`BuildRequests.start`、接続が Claude Code のとき)と、プロダクト内 AI の本物の接続への口(`AiSessions.useReal`。切り替えと観察)が、使う前に確かめ、同意の前は `consent-required` で断る。同意のカードの中身(送るもの、送り先、料金の文と上限、「詳しく」)を `/api/real-ai` で返す |
@@ -200,7 +205,7 @@ flowchart TB
 | 自分の素材 | `src/server/design-tokens.js`、`src/server/materials.js` | W3C の Design Tokens 2025.10 の形の JSON を検査し、CSS の変数にする。置き場所は `.studio/materials/`(`tokens.json`、`source.json`)。`buildApp` が `app.css` の最後に足し、関門 G3 で作る AI の上書きと指紋を確かめる。変数の名前と役割は作る AI の決まりに足す(`buildClaudeArgs` の `materialGuide`)。外への通信はない([design-materials.md の 4 節](../design/design-materials.md#j4-で決めたこと)) |
 | 部品と指針 | `src/server/guides.js`、`src/server/materials.js` | 取り込みの案内の 4 歩(J5)。指針の文(Markdown)と Storybook の静的なビルドの部品の一覧を、決まった手順で検査する(形、大きさ、秘密、外への URL、ライセンスの答え)。元を `.studio/materials/<種類>/` に、写しを `app/design/` に置き、関門 G3 で写しの指紋を確かめる。写しの場所は作る AI の決まりに足す(`materialRule`)。「これからの試作品全部」はデータの置き場の `materials/` に置き、`createStarterProject` が新しい試作品に写す。版で戻すと写しを書き直す。外への通信はない([design-materials.md の 5 節](../design/design-materials.md#j5-で決めたこと)) |
 | 観察器 | `src/observer/observe.js`、`src/observer/browser.js` | 表示中のビルドをヘッドレスの Playwright の Chromium で開き、読み込み、エラー、スクリーンショット、シナリオの結果、最後の画面、合否を report で返す。ブラウザは Studio の中で 1 つ。観察は 1 つずつ、毎回新しい文脈で回す。文脈は観察用の親ページと観察するビルドにだけ要求を出せ、名前の解決は loopback だけ([ADR 0002](../adr/0002-observer-and-harness.md))。作る AI、画面、版、会話の実装は import しない。設計は [harness.md の 3](../design/harness.md#3-観察) |
-| 観察の入口 | `src/server/observe-entry.js` | 観察を呼ぶ所が、どれも通る `observeProject`。同じ形の report を返す。モードは 2 つ。`shown` は Studio の表示中のビルドを見る。`working` は作業中の `app/` を一時フォルダーにビルドし、loopback の空いているポートに自分の試作品の配信と観察用の親ページを立てて見る。`working` の AI は、その観察だけのモックの会話。観察器は会話の実装を import しないので、入口は `src/server/` に置く |
+| 観察の入口 | `src/server/observe-entry.js` | 観察を呼ぶ所が、どれも通る `observeProject`。同じ形の report を返す。モードは 2 つで、report の `mode` に残す。`shown` は Studio の表示中のビルドを見る。`working` は作業中の `app/` を一時フォルダーにビルドし、loopback の空いているポートに自分の試作品の配信と観察用の親ページを立てて見る。`working` の AI は、その観察だけのモックの会話。観察器は会話の実装を import しないので、入口は `src/server/` に置く |
 | 観察の CLI | `bin/observe.js` | `npm run observe -- <プロジェクト>`。入口を `working` で呼び、結果をターミナルに出す。終了コードは `passed` で 0 |
 | 観察の道具の MCP サーバー | `bin/observe-mcp.js`、`src/server/observe-mcp.js`、`src/server/observe-temp.js` | `npm run observe:mcp -- <プロジェクト>`。stdio の JSON-RPC で `initialize`、`tools/list`、`tools/call` に答え、決まった名前の 9 つの道具(`open`、`read_page`、`inspect`、`click`、`type`、`scroll`、`set_viewport`、`screenshot`、`run_scenarios`)を出す。入口を `working` で呼ぶ。プロジェクトの場所は起動の引数でだけ受け取り、`app/` に書かない。SDK は使わない。入口(会話の実装を使う)を import するので、観察器の境界(S2)の外の `src/server/` に置く。起動ごとの一時フォルダーを作り、前の起動が残したものを消す(`observe-temp.js`) |
 | ツールの MCP サーバー | `bin/tools-mcp.js`、`src/server/sim/tools-mcp.js` | `npm run tools:mcp -- <プロジェクト> [--conversation <会話の ID>]`。stdio の JSON-RPC で `initialize`、`tools/list`、`tools/call` に答え、`app/tools.json` のツールだけを出す。呼び出しはツールの口(`callTool`)を通す。`app/` は読むだけ(`tools.json` とデータ)。書くのは `.studio/sim/<会話の ID>/` の `store.json`(記録の店の写し)、`counts.json`(呼び出しの数)、`calls.jsonl`(呼び出しの記録)と、動いている間のロックだけ。記録の店と数は起動のときに読み、呼び出しのたびに書く。SDK は使わない。作りは観察の道具の MCP サーバーと同じで、別のサーバー。模擬のエージェントの起動では、会話の進め方が書いた `context.json`(呼んだ参加者とそのツールの名前、辺、前提、1 回の返事のツールの数、構成の `tools` のファイル)を起動のときに読み、道具の一覧と呼び出しをその参加者のツールに絞り、引き継ぎを `handoff.json` で、委任の頼みを `delegate.json` で返す([agent-simulation.md の 3.6](../design/agent-simulation.md#36-ツールの-mcp-サーバー)) |
