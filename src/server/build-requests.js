@@ -270,6 +270,7 @@ export class BuildRequests {
     consent = new RealAiConsent(),
     meetingGate = () => {},
     reviews = null,
+    onEnd = () => {},
   }) {
     this.store = store;
     this.connection = connection;
@@ -279,6 +280,8 @@ export class BuildRequests {
     this.meetingGate = meetingGate;
     // AI 構成の審査(review.js)。なければ審査を見ない
     this.reviews = reviews;
+    // run が終わるたびに呼ぶ(id)。承認したコメントの列(comments.js)が、次を進める
+    this.onEnd = onEnd;
     // 決まった節が使う、接続の名前と問題。決まった節は、ここだけを見る
     this.agentLabel = connection.label;
     this.agentProblem = connection.problem;
@@ -431,6 +434,11 @@ export class BuildRequests {
         this.store.releaseRun(id);
         this.touch(id, run);
         emitter.emit('end', structuredClone(run));
+        try {
+          this.onEnd(id);
+        } catch (error) {
+          this.log(`run の後の処理で問題が起きました: ${id}(${error.message})`);
+        }
       });
 
     return {

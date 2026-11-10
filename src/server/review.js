@@ -327,7 +327,7 @@ export class ProjectReviews {
     });
   }
 
-  async fresh(id, { origin, previous = null, approvals = null }) {
+  async fresh(id, { origin, previous = null, approvals = null, comments = [] }) {
     const now = new Date().toISOString();
     const content = await this.content(id);
     const fingerprint = await architectureFingerprint(this.dirs(id).app);
@@ -347,6 +347,8 @@ export class ProjectReviews {
       approvedAt: null,
       approvedUnmeasured: null,
       stopped: null,
+      // 画面へのコメントのうち、種類が「構成」で承認されて、審査に戻ったもの(comments.js。K3)。ないときは項目を足さない
+      ...(comments.length > 0 ? { comments } : {}),
     };
   }
 
@@ -398,6 +400,7 @@ export class ProjectReviews {
       stopped: record.stopped,
       previous: record.previous,
       origin: record.origin,
+      comments: Array.isArray(record.comments) ? record.comments : [],
       items,
       roles: ROLE_LABELS,
       approvedCount,
@@ -418,7 +421,7 @@ export class ProjectReviews {
       if (!this.designs.records.has(id)) throw new IntentError(409, 'owner-composition', '今の構成は書き換えません');
       if (typeof composition !== 'string' || !COMPOSITION_CHOICES.some((choice) => choice.id === composition)) throw new IntentError(400, 'invalid', '知らない構成です');
       await this.designs.chooseComposition(id, composition);
-      const next = await this.fresh(id, { origin: record.origin, previous: record.id });
+      const next = await this.fresh(id, { origin: record.origin, previous: record.id, comments: record.comments ?? [] });
       await this.write(id, next);
       return null;
     });
@@ -583,6 +586,21 @@ export class ProjectReviews {
     await this.write(id, next);
   }
 
+  // 画面へのコメント(種類が「構成」)を承認したとき(comments.js。K3)。作る AI には送らず、審査に戻す。
+  // 新しい審査の ID を作り、4 つの承認を全部やり直す(コメントが構成を問い直したので、前の承認を写さない)。前の AI 構成書は残す。
+  // 審査のない試作品(今の試作品、飛ばした試作品)は、今の構成の審査を始める。どちらも、承認がそろうまで作る AI を起動しない
+  async reopenFromComment(id, comment) {
+    return this.exclusive(id, async () => {
+      const record = await this.current(id);
+      const entry = { id: String(comment.id), number: comment.number, text: clip(comment.text, 1000), at: comment.at };
+      await this.setFlag(id, 'required');
+      const comments = [...(Array.isArray(record?.comments) ? record.comments : []), entry];
+      await this.write(id, await this.fresh(id, { origin: record?.origin ?? 'comment', previous: record?.id ?? null, comments }));
+      this.log(`コメントから AI 構成の審査に戻しました: ${id}(コメント ${comment.number})`);
+      return null;
+    });
+  }
+
   // 審査に戻る(6 節の「止めた後の道」)。新しい審査の ID を作る。指紋が同じ項目の承認は写し、変わった項目は承認し直す。前の AI 構成書は残す
   async back(id) {
     return this.exclusive(id, async () => {
@@ -594,7 +612,7 @@ export class ProjectReviews {
         const same = record.fingerprint.items[item].digest === fingerprint.items[item].digest;
         return [item, { needs: approval.needs, by: same ? approval.by : [] }];
       }));
-      await this.write(id, await this.fresh(id, { origin: record.origin, previous: record.id, approvals }));
+      await this.write(id, await this.fresh(id, { origin: record.origin, previous: record.id, approvals, comments: record.comments ?? [] }));
       return null;
     });
   }

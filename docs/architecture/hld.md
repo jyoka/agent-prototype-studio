@@ -78,6 +78,7 @@ flowchart TB
         sceneRuns["主の画面の場面の回しと比べる表<br/>scene-runs.js"]
         quality["質の見直しの表<br/>quality.js"]
         show["人に見せる画面の問いと答え<br/>show.js"]
+        comments["画面へのコメント、承認、列、直した記録<br/>comments.js"]
         redact["伏せる、秘密を探す<br/>redact.js"]
     end
 
@@ -133,6 +134,11 @@ flowchart TB
     api --> show
     show -- "今の状態を版に結び付ける(なければ保存)" --> versions
     show -- "読み書き(.studio/show.json)" --> dotstudio
+    api --> comments
+    comments -- "承認がそろったものだけ、1 件ずつ依頼にする" --> requests
+    comments -- "直す前と後を保存する、元に戻す" --> versions
+    comments -- "構成のコメントは審査に戻す" --> review
+    comments -- "読み書き(.studio/comments.json、.studio/fix-records/)" --> dotstudio
     requests --> agent
     agent -- "子プロセス(cwd は app/)" --> cli
     cli -- "読み書き" --> app
@@ -187,7 +193,7 @@ flowchart TB
 | 最初の一歩の案内 | `src/server/first-steps.js` | 画面の上の 3 つの手順(試す → 言葉で直す → 直った結果を試す)の進み方と、案内を閉じたことを、メモリーにだけ持つ(起動し直すと消える)。1 番と 3 番は `ai/messages` と `ai/retry` の成功(AI のない試作品は、画面が送る `POST /api/first-steps` の `touched`)で進む。2 番は、作る run の状態(`BuildRequests.statuses`)が `passed`、`fixed`、`unverified` のどれかなら済み。`/api/projects` の試作品ごとの `firstSteps` と、全体の `firstSteps.dismissed` で返す |
 | 会の始めとお客さんのデータ | `src/server/meeting.js` | `/api/meetings` と `/api/projects/<id>/meeting` で、会を用意し、同意と消す日を `.studio/meeting.json` に持つ。同意の前は AI を呼ぶ口を止める。`erase` で試作品、版、run、引き継ぎの書き出し、メモリーを消す。下の「会の始めとお客さんのデータ」 |
 | 人の「確かめる」 | `src/server/checks.js` | `/api/projects/<id>/checks` で、表示中の試作品を自動で確かめる(P27)。`index.js` の `observeShown` を通して観察の入口を `shown` で呼び、結果を作る run の関門 G5、G6 と同じ形(`launchGate`、`scenarioGate`)にまとめる。作る run、ビルド、版の操作の間は 409(`ProjectStore.claimCheck`)。試作品の中の AI の既定はお試しで、本物は同意の後だけ(`AiSessions.observationConnection`)。確かめの一覧はメモリーにだけ置く |
-| 作るループの証拠 | `src/server/evidence.js` | `/api/projects/<id>/evidence` で、終わった run と人の「確かめる」ごとに証拠が古いか(`stale`)を返す。run が確かめた `app/` の指紋(`run.appDigest`)と、今の `app/` の指紋を比べて決める。`/api/projects/<id>/evidence/screenshot?file=` で、結果の帯のスクリーンショットを返す。読むのは `.studio/runs/` と `.studio/observations/` の中の PNG だけで、シンボリックリンクで外を指していても読まない。ほかの API と同じくトークンを要る |
+| 作るループの証拠 | `src/server/evidence.js` | `/api/projects/<id>/evidence` で、終わった run と人の「確かめる」ごとに証拠が古いか(`stale`)を返す。run が確かめた `app/` の指紋(`run.appDigest`)と、今の `app/` の指紋を比べて決める。`/api/projects/<id>/evidence/screenshot?file=` で、結果の帯のスクリーンショットを返す。読むのは `.studio/runs/`、`.studio/observations/`、`.studio/fix-records/` の中の PNG だけで、シンボリックリンクで外を指していても読まない。ほかの API と同じくトークンを要る |
 | 試作品の配信 | `src/server/preview-server.js` | ビルドしたものを別ポートから CSP つきで出す。API はない |
 | 試作品とビルド | `src/server/store.js`、`src/server/projects.js`、`src/server/build.js`、`src/server/inspect.js`、`src/server/manifest.js` | 試作品の一覧と置き場、`app/` と目録の検査、esbuild で 1 つの classic script に束ねる。一覧の名前は、表示中の版の目録の `title` と AI の有無から作る。一覧の順はサンプル(`SAMPLES` の順)が先 |
 | 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1、GA、G2〜G4、GE、G5、G6 を安い順に回す。失敗したら直す依頼(`fix-prompt.js`)を作って作る AI に返し、2 回まで直させる。`run.json` に残す |
@@ -198,6 +204,7 @@ flowchart TB
 | 主の画面の場面の回し | `src/server/scene-runs.js` | `/api/projects/<id>/scenes`(GET は場面の一覧、進み具合、一番新しい結果から作った比べる表と「直す」の依頼の文。`run` は回し始める、`cancel` は止める)。試す欄の下の「場面の一覧と比べる表」が使う。`eval-run.js` の `runEvals` を、既定の構成と `compositions/` の構成の全部で回し、結果は CLI と同じ `.studio/evals/` に書く。お試しの AI は同意なし。本物の AI は `AiSessions.useReal`(用途 `evals`)で選べるかと同意を確かめ、`createBudget` の台帳と費用の上限で止める。採点はしない。回し終えたら審査の数(`ProjectReviews.noteMeasured`)を取り直す。試す欄の下の「1 ターンの記録」は、プロダクト内 AI の実行の記録を画面(`renderTurnRecord`)で要約するだけで、サーバーの部品はない([ai-architecture-review.md の 15 節](../design/ai-architecture-review.md#15-423-で決めたこと)) |
 | 質の見直しの表 | `src/server/quality.js`、`src/observer/audit.js` | `/api/projects/<id>/quality`(GET だけ)。試す欄の下の「質の見直し」が使う。測ったもの(アクセシビリティの違反、字と地の差、素材に合わない色と部品、場面の結果、道具の呼び方の正しさ、守りの効き、費用、待ち時間)と AI の判断(返事の自然さの採点、使いやすさの見直し)の行に、「なぜ大事か」「直す」と、言葉で直す欄に入れる依頼の文を付ける。何も動かさず、3 つを読むだけ。(1) 一番新しい、表示中の試作品を見た観察(画面の「確かめる」。report の `mode` が `shown`)の `audit`。観察器が最後の画面で `audit.js` の小さな検査(ラベル、ボタンの名前、画像の代わりの文、WCAG の式の字と地の差)を動かし、値を決まった形に写して入れる。関門の合否には入れない。(2) `app/` の文の形で探した、値のまま書いた色と、既定の素材を読む試作品でじかに書いた部品。(3) `scene-runs.js` の一番新しい場面の回しの結果の最初の組。見ていない項目は `unseen`(「まだ見ていない」)。外の検査の道具は使わない([user-journey.md の「J6 で決めたこと」](../design/user-journey.md#j6-で決めたことtask-3892026-11-11)) |
 | 人に見せる画面の問いと答え | `src/server/show.js` | `/api/projects/<id>/show`(GET は問いと答えの記録。`start` は見せ始める。`answer` は答えを残す)。その他の引き出しの「人に見せる」が使う。問いは目的の文書(`intent.js`)の成功の印から、決まった形で作る(AI は呼ばない)。見せ始めると、今の状態と同じ版を探し、なければ版を保存して、その版に結び付ける。答えは見せた版の ID と番号を付けて `.studio/show.json` に残す。版の写しの外に置くので、版を戻しても消えない。版の一覧(`versions.js` の `list`)は、版ごとの答えを `shows` に載せる。見せる画面は画面の側の形(`body[data-show]`)で、試作品と問いの欄だけを出す([user-journey.md の「J7 で決めたこと」](../design/user-journey.md#j7-で決めたことtask-3912026-11-11)) |
+| 画面へのコメントと承認 | `src/server/comments.js` | `/api/projects/<id>/comments`(GET は一覧と直した記録。POST はコメントを書く。コメントごとの `react`、`approve`、`unapprove`、`close`、`reopen`、`resolve`、`revert`。`resume` は止めた列を進める)。見せる画面の右の「コメント」が使う。役は進行役と決める人だけ(1 台の PC の形)。反応と書き込みでは何も動かさない。承認がそろったコメント(見た目と動きは 1 人、要件は 2 人)を列に並べ、作る run が動いていなければ先頭を 1 つ、決まった形の依頼に包んで `BuildRequests.start` に渡す。run が終わるたびに(`BuildRequests` の `onEnd`)列を進める。送る前に直す前の版(今と同じ自分の版、なければ保存)と画面(観察器で広い画面 1 枚)を取り、終わったら直した後の版を保存し、関門の起動の確認の画面を写す。直した記録は `.studio/fix-records/<ID>/record.json`(collaboration.md の 5 節の項目)。元に戻すは `versions.js` の `restore` で、記録に「戻した」を足す。構成のコメントは作る AI に送らず、`ProjectReviews.reopenFromComment` で新しい審査にする(承認は全部やり直し)。同意、会の同意、審査の承認の前とほかの作業中は、列で止めて理由を出す([user-journey.md の「K3 で決めたこと」](../design/user-journey.md#k3-で決めたことtask-3932026-11-11)) |
 | 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する。一覧には、版ごとの人に見せた答え(`show.js`)を載せる |
 | 引き継ぎ | `src/server/handoff.js`、`src/server/handoff-decisions.js` | 作業中の試作品と、目録、シナリオ、最新の証拠の要約、構成とツールと前提と場面、最新の場面の回しの要約を `handoffs/` に書き出す。形式 4 では、目的の文書(`.studio/intent.json`)、設計の段ごとの決定と理由(`design.json`)、質の見直しの表(`quality.js` の `readQuality`)、人に見せた答え(`show.json`)、AI 構成書と承認の記録(`reviews/`。書き出す `app/` の指紋と比べる)、既定の素材の出典とライセンス(`materials/default/`)も読んで入れる。読むだけで何も動かさない。形は [handoff.md](../handoff.md) |
 | 本物の AI の同意 | `src/server/real-ai.js` | 本物の AI を使う前の同意を、メモリーに 1 つ持つ。作る AI(`BuildRequests.start`、接続が Claude Code のとき)と、プロダクト内 AI の本物の接続への口(`AiSessions.useReal`。切り替えと観察)が、使う前に確かめ、同意の前は `consent-required` で断る。同意のカードの中身(送るもの、送り先、料金の文と上限、「詳しく」)を `/api/real-ai` で返す |
