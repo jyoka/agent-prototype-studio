@@ -8,6 +8,15 @@ import { findRecords } from './redact.js';
 
 // 架空のデータの置き場所(app/ からの相対パス)。作る AI に、この中身を読んで画面を描くよう頼む
 export const DATA_FILE = 'data/design-data.json';
+// 表を引くツールが読む、表ごとの架空のデータ(行の配列)。Studio が単一エージェントとマスターとサブの構成に書く(ai-architecture-review.md の 16 節)。
+// 番号は案の表の順(1 から)。データの棚の表の id(data-shelf.js の table-<番号>)と同じ番号
+export const designTableFile = (index) => `data/design-table-${index + 1}.json`;
+const DESIGN_TABLE_PATTERN = /^data\/design-table-([1-9][0-9]?)\.json$/;
+// 表のデータのファイルから、棚の表の id を返す。表のデータのファイルでなければ null
+export function designTableShelfId(file) {
+  const found = typeof file === 'string' ? DESIGN_TABLE_PATTERN.exec(file) : null;
+  return found ? `table-${found[1]}` : null;
+}
 
 // 項目の種類。key は主キー、link は外部キー(つながりの先の番号)で、どちらも Studio が付ける
 export const FIELD_KINDS = {

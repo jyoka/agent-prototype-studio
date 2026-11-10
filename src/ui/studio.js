@@ -5172,11 +5172,14 @@ const SHELF_READ_LABELS = { tool: 'ツールで引く', prompt: 'プロンプト
 const SHELF_CHANGE_LABELS = { minutes: '毎分', daily: '毎日', rarely: '年に数回', unknown: 'まだ決めていない' };
 const shelfPersonalText = (item) => (item.personal === true ? `あり${item.personalKinds?.length ? `(${item.personalKinds.join('、')})` : ''}` : item.personal === false ? 'なし' : '不明(確かめてください)');
 
-function shelfTable(shelf) {
+// 引くツールの列(審査の画面だけ。#426)。表をツールで引くのにツールがなければ「まだない」
+const shelfToolsText = (item) => (item.tools?.length > 0 ? item.tools.join('、') : item.read === 'tool' ? 'まだない' : 'なし');
+
+function shelfTable(shelf, { tools = false } = {}) {
   const table = element('table');
   table.setAttribute('aria-label', 'AI が読むデータの棚');
   const headRow = element('tr');
-  for (const name of ['データ', '形', 'AI の読み方', '変わる速さ', '個人情報', '試作品での扱い']) headRow.append(element('th', name));
+  for (const name of ['データ', '形', 'AI の読み方', '変わる速さ', '個人情報', '試作品での扱い', ...(tools ? ['引くツール'] : [])]) headRow.append(element('th', name));
   const thead = element('thead');
   thead.append(headRow);
   const tbody = element('tbody');
@@ -5184,6 +5187,7 @@ function shelfTable(shelf) {
     const row = element('tr');
     row.dataset.read = item.read;
     row.append(element('th', item.name), element('td', SHELF_SHAPE_LABELS[item.shape] ?? item.shape), element('td', SHELF_READ_LABELS[item.read] ?? item.read), element('td', SHELF_CHANGE_LABELS[item.change] ?? item.change), element('td', shelfPersonalText(item)), element('td', item.prototype));
+    if (tools) row.append(element('td', shelfToolsText(item)));
     row.firstChild.setAttribute('scope', 'row');
     tbody.append(row);
   }
@@ -5760,7 +5764,7 @@ function reviewHarnessBody(record) {
 function reviewDataBody(record) {
   const { shelf, rag, source } = record.data;
   const body = [element('p', `AI が読むデータの棚です(${source === 'data-design' ? '設計の案内のデータ設計から' : '試作品のツールとデータから'} Studio が書いた下書き)。変わる速さと個人情報は、本番のデータの話として確かめてください。`, 'muted')];
-  body.push(shelf.length > 0 ? shelfTable(shelf) : element('p', 'AI が読むデータは、まだありません。', 'muted'));
+  body.push(shelf.length > 0 ? shelfTable(shelf, { tools: true }) : element('p', 'AI が読むデータは、まだありません。', 'muted'));
   const box = element('div', undefined, 'design-rag');
   box.setAttribute('role', 'group');
   box.setAttribute('aria-label', 'RAG の判定(審査)');

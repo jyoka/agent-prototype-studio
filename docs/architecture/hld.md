@@ -230,13 +230,13 @@ flowchart TB
 
 データの段の案は `data-design.js` が整えます。番号(主キー)とつながりの番号(外部キー)を付け、先のないつながりと重なる名前を捨て、整理の板のデータの欄で載っていないものを「聞いたことのメモ」に足します(`shapeDataOption`、`dataDesignProblems`)。案ごとの載り方は画面に渡すときに整理の板と比べます(`dataCoverage`)。同じときに、案と整理の板から AI が読むデータの棚の下書きを作り、RAG の判定を付けます(`data-shelf.js` の `shelfFromDataDesign`、`judgeRag`。問いの文は `review/options.json` の `rag`)。ファイルには残しません。図は画面が SVG で描きます。外の部品は使いません。
 
-人が案を選ぶと(`choose`)、Studio が場面を `app/evals/design-*.json` に、選んだデータ設計の架空のデータを `app/data/design-data.json` に(`sampleData`)、構成を `app/composition.json` と、それが読むファイルに書きます(`syncFiles`)。ファイルの名前は Studio が決め、AI と人の文は JSON の値にしか入れません。書くのは、作る AI、ビルド、版の操作のない間だけです(`store.claimVersions`)。Studio が書いた覚えのない中身のファイルと、ふつうのファイルでないものには触りません。書いた後に検査と表示の準備を回し、通らなければ元に戻して断ります。
+人が案を選ぶと(`choose`)、Studio が場面を `app/evals/design-*.json` に、選んだデータ設計の架空のデータを `app/data/design-data.json` に(`sampleData`)、構成を `app/composition.json` と、それが読むファイルに書きます(`syncFiles`)。単一エージェントとマスターとサブでは、選んだデータ設計の表ごとに探すツール(`op: "search"`)を `app/studio-tools.json` に、ツールが読む表の行を `app/data/design-table-<番号>.json` に書きます(`design.js` の `dataTools`。[ai-architecture-review.md の 16 節](../design/ai-architecture-review.md#16-426-で決めたこと))。ファイルの名前は Studio が決め、AI と人の文は JSON の値にしか入れません。書くのは、作る AI、ビルド、版の操作のない間だけです(`store.claimVersions`)。Studio が書いた覚えのない中身のファイルと、ふつうのファイルでないものには触りません。書いた後に検査と表示の準備を回し、通らなければ元に戻して断ります。
 
 「決めた」の印は、人が「この設計で作る」を押す `decide` でだけ `.studio/design.json` に付きます。`decide` は目的の文書と設計から依頼の文を作って返し、画面は言葉で直す欄と同じ道で作る AI に送ります。本物の AI の同意も、その道で取ります。場面と構成はそのまま作るループの関門(G3、GE)が検査します。画面は依頼を送らず、AI 構成の審査を開きます(下の節)。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#j2-で決めたことtask-3852026-11-02)にあります。データの段は [K2 で決めたこと](../design/user-journey.md#k2-で決めたことtask-3872026-11-07)にあります。
 
 ### AI 構成の審査(4 つの承認)
 
-「この設計で作る」の `decide` の後に、`review.js` の `start` が審査を始めます。`.studio/project.json` に `review: required` を書き、`.studio/reviews/<審査の ID>/architecture.json`(AI 構成書)と `.studio/reviews/current.json` を書きます。中身は、表示中のビルドの構成、AI の設定、ツール、前提と、設計の案内の記録から、Studio のコードが書きます(`architecture.js` の `compositionFigure`、`harnessRows`、`dataReview`、`stackRows`)。審査は AI を呼びません。
+「この設計で作る」の `decide` の後に、`review.js` の `start` が審査を始めます。`.studio/project.json` に `review: required` を書き、`.studio/reviews/<審査の ID>/architecture.json`(AI 構成書)と `.studio/reviews/current.json` を書きます。中身は、表示中のビルドの構成、AI の設定、ツール、前提と、設計の案内の記録から、Studio のコードが書きます(`architecture.js` の `compositionFigure`、`harnessRows`、`dataReview`、`stackRows`)。データの棚の行には、そのデータを読むツールの名前を付けます(`dataReview`)。審査は AI を呼びません。
 
 指紋(`architectureFingerprint`)は、項目ごとに決まったファイルの中身から取ります。構成は構成のファイルと目録の指し先、harness は構成、AI の設定、ツールの宣言、プロンプトの枠と目録の指し先、データはツールの宣言、技術の組は前提のフォルダーです。ないこと、シンボリックリンク、`app/` の外も印として入れます。承認は項目ごとに、その時の指紋を持ちます。指紋が変わった項目の承認は効きません。
 

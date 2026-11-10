@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { designTableShelfId } from './data-design.js';
 import { judgeRag, shelfFromApp } from './data-shelf.js';
 import { DEFAULT_ASSUMPTIONS } from './sim/assumptions.js';
 import { compositionShape } from './sim/composition.js';
@@ -374,11 +375,28 @@ export function harnessSummary(rows) {
 
 // ---- 3. データと RAG ----
 
-// 棚は、設計の案内で選んだデータ設計の棚があればそれ、なければ試作品のツールとデータから作る(data-shelf.js。#421)
+// 棚は、設計の案内で選んだデータ設計の棚があればそれ、なければ試作品のツールとデータから作る(data-shelf.js。#421)。
+// 行ごとに、そのデータを読むツールの名前を付ける(#426)。Studio が設計の表から書いたツール(data/design-table-<番号>.json を読む)は、
+// 設計の棚の同じ表の行に付け、同じ表を 2 行に出さない
 export function dataReview({ simulation, manifest = null, designShelf = null }) {
-  const appShelf = shelfFromApp({ toolsets: simulation?.tools ?? {}, toolData: simulation?.toolData ?? {}, manifestData: manifest?.data ?? [] });
-  const shelf = designShelf && designShelf.length > 0 ? [...designShelf, ...appShelf.filter((item) => item.read !== 'none')] : appShelf;
-  return { shelf, rag: judgeRag(shelf), source: designShelf && designShelf.length > 0 ? 'data-design' : 'app' };
+  const fromDesign = Array.isArray(designShelf) && designShelf.length > 0;
+  const toolsets = simulation?.tools ?? {};
+  const tableTools = new Map();
+  const rest = {};
+  for (const [file, toolset] of Object.entries(toolsets)) {
+    const kept = [];
+    for (const tool of toolset?.tools ?? []) {
+      const id = fromDesign ? designTableShelfId(tool.do?.data) : null;
+      if (id && designShelf.some((item) => item.id === id)) tableTools.set(id, [...(tableTools.get(id) ?? []), tool.name]);
+      else kept.push(tool);
+    }
+    rest[file] = { ...toolset, tools: kept };
+  }
+  const appShelf = shelfFromApp({ toolsets: rest, toolData: simulation?.toolData ?? {}, manifestData: manifest?.data ?? [] });
+  const shelf = fromDesign
+    ? [...designShelf.map((item) => ({ ...item, tools: [...new Set(tableTools.get(item.id) ?? [])].sort() })), ...appShelf.filter((item) => item.read !== 'none')]
+    : appShelf;
+  return { shelf, rag: judgeRag(shelf), source: fromDesign ? 'data-design' : 'app' };
 }
 
 // ---- 4. 技術の組 ----

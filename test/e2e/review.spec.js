@@ -204,6 +204,12 @@ test('構成を選び直すと、4 つの承認が全部消え、図と数が変
     await expect(composition.getByRole('img')).toHaveAttribute('aria-label', /案内役/);
     const file = await readJson(path.join(projectRoot(home, id), 'app', 'composition.json'));
     expect(file.participants.map((p) => p.kind)).toEqual(['agent']);
+    // データの段で選んだ表を引くツールを Studio が書き、データの欄の棚に出る(#426)
+    expect(file.participants[0].tools?.length).toBeGreaterThan(0);
+    const shelf = v.item('データと RAG').getByRole('table', { name: 'AI が読むデータの棚' });
+    await expect(shelf.locator('thead th').last()).toHaveText('引くツール');
+    await expect(shelf.locator('tbody tr[data-read="tool"]').first().locator('td').last()).toHaveText(/^search_table_\d+/);
+    await expect(shelf).not.toContainText('まだない');
 
     // お試しの AI で回すと、数が出る。形の確かめだけと出す
     await page.getByRole('button', { name: 'お試しの AI で場面を回す' }).click();
@@ -211,6 +217,8 @@ test('構成を選び直すと、4 つの承認が全部消え、図と数が変
     await expect(metrics).toContainText('通った場面');
     await expect(metrics).toContainText(/\d+ \/ \d+/);
     await expect(composition).toContainText('形の確かめだけ');
+    // お試しの AI でも、表を引く道具を呼ぶ(呼んだ回数が 0 でない)
+    await expect(metrics).toContainText(/呼んだ回数 [1-9]/);
     await expect(v.switch('単一エージェント')).toContainText('お試しの AI');
     await expect(v.switch('固定の流れ')).toContainText('まだ測っていない');
 
@@ -219,6 +227,7 @@ test('構成を選び直すと、4 つの承認が全部消え、図と数が変
     await expect(v.switch('マスターとサブ')).toHaveAttribute('aria-pressed', 'true');
     await expect(composition.getByRole('img')).toHaveAttribute('aria-label', /調べる係.*仕事を任せる/);
     await expect(v.item('harness').getByRole('table', { name: 'harness の部品' })).toContainText('子の AI に任せるか');
+    await expect(v.item('データと RAG').getByRole('table', { name: 'AI が読むデータの棚' })).toContainText('search_table_1');
     await expect(composition).toContainText('まだ測っていない');
     await expect(v.count).toHaveText('承認 0 / 4');
     await expectNoDevWords(v.section);
