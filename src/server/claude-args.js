@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MAKER_TONE_RULE } from './tone.js';
 
 // コマンド実行と Web は名前で入れない。読み書きと検索だけ
 export const AGENT_TOOLS = 'Read,Edit,Write,Glob,Grep';
@@ -33,6 +34,8 @@ export const STUDIO_SYSTEM_PROMPT = [
   '- コマンドは実行できません。ビルドと最後の確認は Studio が行い、結果を利用者に見せます。',
   '- 観察の道具(mcp__observe__ で始まる道具)で、作業中の app/ を開いて画面を確かめられます。直した後は open で開き、read_page や screenshot で画面を見て、run_scenarios でシナリオを回してください。',
   '  観察の道具は app/ を書き換えません。通ったかを決めるのは Studio の確かめです。',
+  // 調子の決まり(docs/vision.md の 7 節。tone.js)
+  MAKER_TONE_RULE,
   '',
   DEFAULT_MATERIAL_GUIDE,
 ].join('\n');

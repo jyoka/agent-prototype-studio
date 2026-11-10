@@ -43,6 +43,8 @@
   --layer-tool: var(--ok);
   --layer-guard: var(--error);
   --layer-record: var(--muted);
+  /* 7 つ目の層: 人が読んで承認する所(AI 構成の審査)。承認は「通った」の色 */
+  --layer-review: var(--ok);
 
   /* 字: OS に入っている字だけ。Web フォントは読み込まない */
   --font-sans: system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", sans-serif;

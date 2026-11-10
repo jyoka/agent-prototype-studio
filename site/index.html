@@ -40,7 +40,7 @@
   <p class="hero-line" id="sentence"><span data-lang="ja">思いつきを AI プロダクトにすると、どんな作りになるか。動かして測り、人が承認してから作る。</span><span data-lang="en">See how your idea works as an AI product, test it, and approve the architecture before you build.</span></p>
   <div class="hero-text">
     <p><span data-lang="ja">AI プロダクトの作りは、エージェントの構成、harness(AI の周りで決まりを守らせるコード)、データと RAG、技術の組で決まります。</span><span data-lang="en">An AI product's architecture comes down to four things: the agent setup, the harness (the code that keeps the AI within its rules), data and RAG, and the tech stack.</span></p>
-    <p><span data-lang="ja">今は、構成と守りを動かして見せ、場面を回して測れます。作る前に人が読んで承認する段(AI 構成の審査)は、設計の案内の後に入りましたが、人の確かめはまだで、作っているものに置いています。<a href="#building">作っているもの</a>に分けて書きました。</span><span data-lang="en">Today you can run setups and guardrails, see how they work, and measure them with evals. The step where a person reads and approves the architecture before the build (the AI architecture review) now follows the design guide, but it has not been checked with people yet, so it stays under <a href="#building">In progress</a>.</span></p>
+    <p><span data-lang="ja">今は、目的の聞き出しから、設計の案内、AI 構成の審査(人が 4 つを承認する)、試して測る、人に見せる、引き継ぐまでが動きます。どれも、人の確かめ(初めての人や現場の会で使えるか)はまだです。まだできないことは<a href="#building">作っているもの</a>に分けて書きました。</span><span data-lang="en">Today it runs from the purpose interview through the design guide, the AI architecture review (a person approves four parts), trying and measuring, showing people, and handoff. None of it has been checked with people yet (whether first-time users or a live session can use it). What does not work yet is listed under <a href="#building">In progress</a>.</span></p>
     <p><span data-lang="ja">Studio が出すのは、日付と根拠のある、今日の一番良い推測です。本番の品質は約束しません。</span><span data-lang="en">What Studio gives you is today's best guess, with a date and evidence. It does not promise production quality.</span></p>
     <p><span data-lang="ja">試すのはモックで、料金はかかりません。本物の AI は、画面で同意したときと、<code>--real</code> で場面を回すときだけ使います。</span><span data-lang="en">Trying runs on a mock and costs nothing. The real model runs only when you consent on screen, or when you run evals with <code>--real</code>.</span></p>
   </div>
@@ -49,9 +49,9 @@
     <a class="button" data-cta="demo" href="assets/media/talk-guard.webm"><span data-lang="ja">動きを見る</span><span data-lang="en">Watch it run</span></a>
     <a class="button" data-cta="github" href="https://github.com/jyoka/agent-prototype-studio">GitHub</a>
   </div>
-  <a class="hero-shot shot" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md">
-    <img class="on-light" src="assets/media/try-and-fix-light.png" width="1280" height="800" alt="Studio の画面。左の「試す」で見本のバイト探しと話し、右の「言葉で直す」欄に依頼を書いたところ" data-en-alt="The Studio screen. Talking to the part-time job sample in Try on the left, with a request typed in the plain-word edit box on the right">
-    <img class="on-dark" src="assets/media/try-and-fix-dark.png" width="1280" height="800" alt="Studio の画面。左の「試す」で見本のバイト探しと話し、右の「言葉で直す」欄に依頼を書いたところ" data-en-alt="The Studio screen. Talking to the part-time job sample in Try on the left, with a request typed in the plain-word edit box on the right">
+  <a class="hero-shot shot" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md#ai-構成の審査で-4-つを承認する">
+    <img class="on-light" src="assets/media/review-light.png" width="1280" height="626" alt="Studio の画面。AI 構成の審査で、エージェントの構成を固定の流れにして承認し、承認が 2 / 4 になったところ。構成の図は、使う人、受付(コードの流れ)、AI(読み取りと言い方だけ)の順" data-en-alt="The Studio screen. The AI architecture review with the fixed-flow agent setup approved, at 2 of 4 approvals. The diagram runs from the user to the reception code flow to the AI, which only reads and phrases">
+    <img class="on-dark" src="assets/media/review-dark.png" width="1280" height="626" alt="Studio の画面。AI 構成の審査で、エージェントの構成を固定の流れにして承認し、承認が 2 / 4 になったところ。構成の図は、使う人、受付(コードの流れ)、AI(読み取りと言い方だけ)の順" data-en-alt="The Studio screen. The AI architecture review with the fixed-flow agent setup approved, at 2 of 4 approvals. The diagram runs from the user to the reception code flow to the AI, which only reads and phrases">
   </a>
 </section>
 
@@ -59,13 +59,13 @@
 <section class="layers" id="layers" aria-labelledby="layers-title">
   <div class="section-head">
     <h2 id="layers-title"><span data-lang="ja">AI の作りを、1 回のトークで見る。</span><span data-lang="en">See the AI architecture in one turn of a talk.</span></h2>
-    <p><span class="when-motion"><span data-lang="ja">スクロールすると、トークの画面が 6 つの層に分かれます。</span><span data-lang="en">Scroll to split the talk screen into six layers.</span></span><span class="when-still"><span data-lang="ja">トークの画面を、6 つの層に分けて並べました。</span><span data-lang="en">The talk screen, split into six layers.</span></span> <span data-lang="ja">例は見本「バイト探し(架空)」を、モックのまま回したものです。</span><span data-lang="en">The example is the "part-time job (fictional)" sample, run on the mock.</span></p>
+    <p><span class="when-motion"><span data-lang="ja">スクロールすると、トークの画面が 6 つの層に分かれ、7 つ目で人が承認します。</span><span data-lang="en">Scroll to split the talk screen into six layers. In the seventh, a person approves.</span></span><span class="when-still"><span data-lang="ja">トークの画面を 6 つの層に分けて並べ、7 つ目に人が承認する画面を置きました。</span><span data-lang="en">The talk screen, split into six layers, with the screen where a person approves as the seventh.</span></span> <span data-lang="ja">例は見本「バイト探し(架空)」を、モックのまま回したものです。7 つ目だけは、設計の案内を通した別の架空の題材(図書館の取り置き)です。</span><span data-lang="en">The example is the "part-time job (fictional)" sample, run on the mock. Only the seventh uses another fictional subject (library holds) that went through the design guide.</span></p>
   </div>
   <div class="layers-track">
     <div class="layers-stage">
       <div class="layers-side">
         <div class="layers-readout" aria-live="polite">
-          <p class="layer-count"><span class="layer-now">01</span> / 06</p>
+          <p class="layer-count"><span class="layer-now">01</span> / 07</p>
           <div class="layer-text"></div>
         </div>
         <ol class="talk-example" aria-label="例の会話(架空)" data-en-aria-label="Example conversation (fictional)">
@@ -83,7 +83,7 @@
                 <img class="on-dark" src="assets/media/layers/1-talk-dark.png" width="812" height="278" loading="lazy" alt="トークの画面。「そのまま保存して」に「記録「consent」がありません」と返る" data-en-alt="The talk screen. &quot;Save it as is&quot; gets the reply: no &quot;consent&quot; record">
               </div>
               <figcaption>
-                <span class="layer-num">01 / 06</span>
+                <span class="layer-num">01 / 07</span>
                 <strong class="layer-name"><span data-lang="ja">トークの画面</span><span data-lang="en">Talk screen</span></strong>
                 <span class="layer-line"><span data-lang="ja">利用者が送り、返事を受け取る所。</span><span data-lang="en">Where the user sends a message and gets a reply.</span></span>
                 <span class="layer-line"><span data-lang="ja">この例: 「そのまま保存して」に、止めた理由の文が返る。</span><span data-lang="en">Here: "Save it as is" gets back the reason it was stopped.</span></span>
@@ -97,7 +97,7 @@
                 <img class="on-dark" src="assets/media/layers/2-agent-dark.png" width="906" height="224" loading="lazy" alt="記録の参加者の行。そよかぜの案内役(模擬)、接続はモック" data-en-alt="The participant line in the trace: the simulated guide, on the mock">
               </div>
               <figcaption>
-                <span class="layer-num">02 / 06</span>
+                <span class="layer-num">02 / 07</span>
                 <strong class="layer-name"><span data-lang="ja">模擬のエージェント</span><span data-lang="en">Simulated agent</span></strong>
                 <span class="layer-line"><span data-lang="ja">相手の会社のエージェントの役。ツールを自分で選ぶ。</span><span data-lang="en">Plays the partner's agent and picks tools itself.</span></span>
                 <span class="layer-line"><span data-lang="ja">この例: そよかぜの案内役(模擬)が <code>save_wish</code> を選ぶ。</span><span data-lang="en">Here: the simulated guide picks <code>save_wish</code>.</span></span>
@@ -111,7 +111,7 @@
                 <img class="on-dark" src="assets/media/layers/3-prompt-dark.png" width="906" height="136" loading="lazy" alt="プロンプトの部品。前提の hostPrompt と、枠 ours-guide" data-en-alt="Prompt parts: the assumption's hostPrompt and the ours-guide slot">
               </div>
               <figcaption>
-                <span class="layer-num">03 / 06</span>
+                <span class="layer-num">03 / 07</span>
                 <strong class="layer-name"><span data-lang="ja">プロンプトの枠</span><span data-lang="en">Prompt slot</span></strong>
                 <span class="layer-line"><span data-lang="ja">相手が書く土台と、こちらが書ける枠。頼みは守られるとは限らない。</span><span data-lang="en">The partner's base prompt plus the slot you can write. An ask is not a guarantee.</span></span>
                 <span class="layer-line"><span data-lang="ja">この例: 土台(前提の <code>hostPrompt</code>)と、こちらの枠 <code>ours-guide</code>。</span><span data-lang="en">Here: the base (the assumption's <code>hostPrompt</code>) and your slot <code>ours-guide</code>.</span></span>
@@ -125,7 +125,7 @@
                 <img class="on-dark" src="assets/media/layers/4-tool-dark.png" width="906" height="182" loading="lazy" alt="ツール save_wish の呼び出し。引数は場所がみなと町、結果は失敗" data-en-alt="The save_wish tool call. The argument is the area Minato-machi, and the result is a failure">
               </div>
               <figcaption>
-                <span class="layer-num">04 / 06</span>
+                <span class="layer-num">04 / 07</span>
                 <strong class="layer-name"><span data-lang="ja">ツール(MCP)</span><span data-lang="en">Tools (MCP)</span></strong>
                 <span class="layer-line"><span data-lang="ja">こちらが出すツール。データで書き、Studio のツールの口が動かす。</span><span data-lang="en">Your tools, written as data and run by Studio's tool gate.</span></span>
                 <span class="layer-line"><span data-lang="ja">この例: <code>save_wish</code>(場所: みなと町)。</span><span data-lang="en">Here: <code>save_wish</code> (area: Minato-machi).</span></span>
@@ -140,7 +140,7 @@
                 <span class="stop-mark"><span data-lang="ja">止めた</span><span data-lang="en">Stopped</span></span>
               </div>
               <figcaption>
-                <span class="layer-num">05 / 06</span>
+                <span class="layer-num">05 / 07</span>
                 <strong class="layer-name"><span data-lang="ja">ガードレール</span><span data-lang="en">Guardrails</span></strong>
                 <span class="layer-line"><span data-lang="ja">3 つの層の守り。どの層が止めたかが分かる。</span><span data-lang="en">Guardrails in three layers. You see which one stopped the turn.</span></span>
                 <span class="layer-line"><span data-lang="ja">この例: ツールの守り <code>requires</code> が止めた。</span><span data-lang="en">Here: the tool guard <code>requires</code> stopped it.</span></span>
@@ -154,10 +154,24 @@
                 <img class="on-dark" src="assets/media/layers/6-record-dark.png" width="952" height="198" loading="lazy" alt="実行の記録。発言はそのまま保存して、返事は記録「consent」がありません" data-en-alt="The trace: the message and the reply that says there is no consent record">
               </div>
               <figcaption>
-                <span class="layer-num">06 / 06</span>
+                <span class="layer-num">06 / 07</span>
                 <strong class="layer-name"><span data-lang="ja">記録</span><span data-lang="en">Trace</span></strong>
                 <span class="layer-line"><span data-lang="ja">渡したもの、呼んだツール、守りの判定を残す。</span><span data-lang="en">Keeps what was sent, which tools ran, and each guardrail verdict.</span></span>
                 <span class="layer-line"><span data-lang="ja">この例: 止めた層、持ち主、理由。</span><span data-lang="en">Here: the layer that stopped it, its owner, and the reason.</span></span>
+              </figcaption>
+            </figure>
+          </li>
+          <li class="layer layer-review" data-layer="7">
+            <figure>
+              <div class="layer-shot shot">
+                <img class="on-light" src="assets/media/layers/7-review-light.png" width="1008" height="361" loading="lazy" alt="AI 構成の審査のエージェントの構成の欄。固定の流れを選び、承認済み。図は使う人、受付(コードの流れ)、AI(読み取りと言い方だけ)" data-en-alt="The agent setup part of the AI architecture review: fixed flow, approved. The diagram shows the user, the reception code flow, and the AI that only reads and phrases">
+                <img class="on-dark" src="assets/media/layers/7-review-dark.png" width="1008" height="361" loading="lazy" alt="AI 構成の審査のエージェントの構成の欄。固定の流れを選び、承認済み。図は使う人、受付(コードの流れ)、AI(読み取りと言い方だけ)" data-en-alt="The agent setup part of the AI architecture review: fixed flow, approved. The diagram shows the user, the reception code flow, and the AI that only reads and phrases">
+              </div>
+              <figcaption>
+                <span class="layer-num">07 / 07</span>
+                <strong class="layer-name"><span data-lang="ja">AI 構成の審査</span><span data-lang="en">AI architecture review</span></strong>
+                <span class="layer-line"><span data-lang="ja">人が作りを読み、4 つを承認する。承認するまで、作る AI は動かない。</span><span data-lang="en">A person reads the architecture and approves four parts. The maker AI waits until then.</span></span>
+                <span class="layer-line"><span data-lang="ja">この例: 別の架空の題材で、エージェントの構成(固定の流れ)を承認した。</span><span data-lang="en">Here: in another fictional subject, the agent setup (fixed flow) is approved.</span></span>
               </figcaption>
             </figure>
           </li>
@@ -165,14 +179,14 @@
       </div>
     </div>
   </div>
-  <p class="section-foot"><span data-lang="ja">プロンプトの枠で「保存の前に聞いて」と頼んでも、守るかは相手のエージェントしだいです。ツールの守りは、相手によらず必ず効きます。どちらが効いたかは、記録で分かります。絵は、今の Studio が撮った本物の画面です。これを読んで人が承認する段の画面は、まだありません。</span><span data-lang="en">Asking "check before you save" in the prompt slot depends on the partner's agent. The tool guard always applies, whoever the partner is. The trace shows which one worked. These are real screens from Studio today. The screen where a person approves the architecture does not exist yet.</span></p>
+  <p class="section-foot"><span data-lang="ja">プロンプトの枠で「保存の前に聞いて」と頼んでも、守るかは相手のエージェントしだいです。ツールの守りは、相手によらず必ず効きます。どちらが効いたかは、記録で分かります。7 つ目は、記録と構成を読んで人が承認する画面です。絵は、どれも今の Studio が撮った本物の画面です。</span><span data-lang="en">Asking "check before you save" in the prompt slot depends on the partner's agent. The tool guard always applies, whoever the partner is. The trace shows which one worked. The seventh is the screen where a person reads the trace and the setup and approves them. All of these are real screens from Studio today.</span></p>
 </section>
 
-<!-- 3. 今できること(docs/brand.md の 3 節。カード 9 枚) -->
+<!-- 3. 今できること(docs/brand.md の 3 節。カード 14 枚)。作っているものの多くを jyoka/tasks#394 で畳んだ -->
 <section class="features" id="features" aria-labelledby="features-title">
   <div class="section-head">
     <h2 id="features-title"><span data-lang="ja">今できること</span><span data-lang="en">What it does today</span></h2>
-    <p><span data-lang="ja">どれも今の Studio で動きます。絵は Studio が自分で撮った画面です。押すと、その機能の docs が開きます。</span><span data-lang="en">All of this works in Studio today. The images are screens Studio took of itself. Click one to open the docs for that feature.</span></p>
+    <p><span data-lang="ja">どれも今の Studio で動きます。人の確かめ(初めての人や現場の会で使えるか)は、まだです。絵は Studio が自分で撮った画面です。押すと、その機能の docs が開きます。</span><span data-lang="en">All of this works in Studio today. None of it has been checked with people yet (whether first-time users or a live session can use it). The images are screens Studio took of itself. Click one to open the docs for that feature.</span></p>
   </div>
   <ul class="cards">
     <li class="card">
@@ -184,20 +198,37 @@
       <p><span data-lang="ja">決まるのは「これで決める」を押したときだけ。文書は <code>.studio/intent.json</code> に残る。</span><span data-lang="en">Nothing is decided until you press the button. The document stays in <code>.studio/intent.json</code>.</span></p>
     </li>
     <li class="card">
-      <a class="card-shot card-type" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md#設計の案内6-つの段" aria-label="設計の案内の docs" data-en-aria-label="Design guide docs">
-        <code><span data-lang="ja">問題 → 使う人 → 場面 → 構成 → 画面</span><span data-lang="en">problem → users → scenes → setup → screens</span></code>
-      </a>
-      <h3><span data-lang="ja">設計の案内</span><span data-lang="en">Design guide</span></h3>
-      <p><span data-lang="ja">問題、使う人、場面、データ、構成、画面の 6 つの段で、2〜3 の案から選ぶ。</span><span data-lang="en">Pick from two or three proposals at each of six steps: problem, users, scenes, data, setup, and screens.</span></p>
-      <p><span data-lang="ja">案は出した日付つきの今日の推測で、まだ測っていない。選んだ場面と構成を Studio が書き、設計は <code>.studio/design.json</code> に残る。</span><span data-lang="en">Each proposal is today's guess, dated, and not measured yet. Studio writes the chosen scenes and setup, and the design stays in <code>.studio/design.json</code>.</span></p>
-    </li>
-    <li class="card">
       <a class="card-shot card-type" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md#ヒアリングを整理する聞き取りの欄と整理の板" aria-label="ヒアリングの整理の docs" data-en-aria-label="Hearing notes docs">
         <code><span data-lang="ja">要点 → 要求、使う人、場面、決まりごと、データ</span><span data-lang="en">notes → needs, users, scenes, rules, data</span></code>
       </a>
       <h3><span data-lang="ja">ヒアリングの整理</span><span data-lang="en">Hearing notes</span></h3>
       <p><span data-lang="ja">打った要点を AI が 5 つの欄に振り分け、決める人が確かめる。</span><span data-lang="en">The AI sorts the notes you type into five columns, and the person who decides checks them.</span></p>
       <p><span data-lang="ja">本物の AI は同意の後だけ動き、同意しないときは手で振り分ける。本物のお客さんの会には、まだ使わない。板は <code>.studio/organize.json</code> に残る。</span><span data-lang="en">The real model runs only after you consent. Without consent, you sort the notes by hand. Do not use it in real customer sessions yet. The board stays in <code>.studio/organize.json</code>.</span></p>
+    </li>
+    <li class="card">
+      <a class="card-shot card-type" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md#設計の案内6-つの段" aria-label="設計の案内の docs" data-en-aria-label="Design guide docs">
+        <code><span data-lang="ja">問題 → 使う人 → 場面 → データ → 構成 → 画面</span><span data-lang="en">problem → users → scenes → data → setup → screens</span></code>
+      </a>
+      <h3><span data-lang="ja">設計の案内</span><span data-lang="en">Design guide</span></h3>
+      <p><span data-lang="ja">問題、使う人、場面、データ、構成、画面の 6 つの段で、2〜3 の案から選ぶ。</span><span data-lang="en">Pick from two or three proposals at each of six steps: problem, users, scenes, data, setup, and screens.</span></p>
+      <p><span data-lang="ja">案は出した日付つきの今日の推測で、まだ測っていない。選んだ場面と構成と架空のデータを Studio が書き、設計は <code>.studio/design.json</code> に残る。</span><span data-lang="en">Each proposal is today's guess, dated, and not measured yet. Studio writes the chosen scenes, setup, and sample data, and the design stays in <code>.studio/design.json</code>.</span></p>
+    </li>
+    <li class="card">
+      <a class="card-shot shot crop crop-review" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md#ai-構成の審査で-4-つを承認する">
+        <img class="on-light" src="assets/media/review-light.png" width="1280" height="626" loading="lazy" alt="AI 構成の審査。エージェントの構成を承認し、承認 2 / 4 になったところ" data-en-alt="The AI architecture review at 2 of 4 approvals, with the agent setup approved">
+        <img class="on-dark" src="assets/media/review-dark.png" width="1280" height="626" loading="lazy" alt="AI 構成の審査。エージェントの構成を承認し、承認 2 / 4 になったところ" data-en-alt="The AI architecture review at 2 of 4 approvals, with the agent setup approved">
+      </a>
+      <h3><span data-lang="ja">AI 構成の審査</span><span data-lang="en">AI architecture review</span></h3>
+      <p><span data-lang="ja">エージェントの構成、harness、データと RAG、技術の組の 4 つを読み、欄ごとに承認する。4 つそろうまで作る AI は動かない。</span><span data-lang="en">Read the agent setup, harness, data and RAG, and tech stack, and approve each one. The maker AI waits until all four are approved.</span></p>
+      <p><span data-lang="ja">構成は固定の流れ、単一エージェント、マスターとサブから選び直せる。承認は AI 構成書(<code>.studio/reviews/</code>)に残り、承認の後に構成が変わると関門で止まる。</span><span data-lang="en">You can switch between a fixed flow, a single agent, and a master with sub-agents. Approvals stay in the AI architecture record (<code>.studio/reviews/</code>), and a later change to the setup stops at a gate.</span></p>
+    </li>
+    <li class="card">
+      <a class="card-shot card-type" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md#設計の案内6-つの段" aria-label="データの棚と RAG の判定の docs" data-en-aria-label="Data shelf and RAG check docs">
+        <code><span data-lang="ja">表 → ツールで引く、決まり → プロンプト、長い文書 → RAG?</span><span data-lang="en">table → tool, rule → prompt, long document → RAG?</span></code>
+      </a>
+      <h3><span data-lang="ja">データの棚と RAG の判定</span><span data-lang="en">Data shelf and RAG check</span></h3>
+      <p><span data-lang="ja">AI が何をどう読むかを棚で見せ、RAG が要るかを判定する。「要らない」とも言う。</span><span data-lang="en">A shelf shows what the AI reads and how, and checks whether RAG is needed. The answer can be no.</span></p>
+      <p><span data-lang="ja">最初の判定は今日の推測。RAG ありとなしを同じ場面の一覧で回すと、回した結果を根拠に判定し直す。</span><span data-lang="en">The first check is today's guess. Run the same evals with and without RAG, and the check is redone from those results.</span></p>
     </li>
     <li class="card">
       <a class="card-shot shot crop crop-choice" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/design/agent-simulation.md">
@@ -227,6 +258,15 @@
       <p><span data-lang="ja">試す欄の下の表か、ターミナル(<code>npm run evals</code>)で回す。モックの数は形の確かめで、振る舞いの差は実モデルで測る。</span><span data-lang="en">Run it from the table under the try pane or in the terminal (<code>npm run evals</code>). Mock numbers only check the shape. Differences in behavior need the real model.</span></p>
     </li>
     <li class="card">
+      <a class="card-shot shot crop crop-quality" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md#質の見直し">
+        <img class="on-light" src="assets/media/quality-light.png" width="1280" height="800" loading="lazy" alt="質の見直しの測ったものの表。アクセシビリティの違反と字と地の差の行" data-en-alt="The measured table in the quality review, with rows for accessibility issues and text contrast">
+        <img class="on-dark" src="assets/media/quality-dark.png" width="1280" height="800" loading="lazy" alt="質の見直しの測ったものの表。アクセシビリティの違反と字と地の差の行" data-en-alt="The measured table in the quality review, with rows for accessibility issues and text contrast">
+      </a>
+      <h3><span data-lang="ja">質の見直し</span><span data-lang="en">Quality review</span></h3>
+      <p><span data-lang="ja">アクセシビリティ、字と地の差、素材に合うか、場面の結果、費用を 1 つの表で見る。各行に「なぜ大事か」と「直す」が付く。</span><span data-lang="en">See accessibility, text contrast, fit with the design materials, eval results, and cost in one table. Each row says why it matters and how to fix it.</span></p>
+      <p><span data-lang="ja">測ったものと AI の判断を分け、見ていない項目は「まだ見ていない」と出す。アクセシビリティは Studio の小さな検査だけ。</span><span data-lang="en">Measured items are kept apart from AI judgments, and unchecked items say so. Accessibility uses only a small check built into Studio.</span></p>
+    </li>
+    <li class="card">
       <a class="card-shot shot crop crop-try" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md">
         <img class="on-light" src="assets/media/try-and-fix-light.png" width="1280" height="800" loading="lazy" alt="言葉で直す欄に依頼を書いたところ" data-en-alt="A request typed in the plain-word edit box">
         <img class="on-dark" src="assets/media/try-and-fix-dark.png" width="1280" height="800" loading="lazy" alt="言葉で直す欄に依頼を書いたところ" data-en-alt="A request typed in the plain-word edit box">
@@ -234,6 +274,22 @@
       <h3><span data-lang="ja">言葉で直す欄</span><span data-lang="en">Plain-word edits</span></h3>
       <p><span data-lang="ja">試しながら、画面や AI の振る舞いの直したい所を言葉で頼む。</span><span data-lang="en">While you try the prototype, ask in plain words for changes to the screens or the AI's behavior.</span></p>
       <p><span data-lang="ja">作る AI が書けるのは、試作品の <code>app/</code> だけ。</span><span data-lang="en">The maker AI can write only to the prototype's <code>app/</code>.</span></p>
+    </li>
+    <li class="card">
+      <a class="card-shot card-type" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md#人に見せる" aria-label="人に見せるの docs" data-en-aria-label="Showing people docs">
+        <code><span data-lang="ja">試作品 + 確かめたい問い → 答えを版に残す</span><span data-lang="en">prototype + questions → answers kept with the version</span></code>
+      </a>
+      <h3><span data-lang="ja">人に見せる</span><span data-lang="en">Showing people</span></h3>
+      <p><span data-lang="ja">試作品と確かめたい問いだけの画面にして、相手に触ってもらう。開発の欄は隠れる。</span><span data-lang="en">Switch to a screen with only the prototype and the questions to check, and let people try it. The developer panels are hidden.</span></p>
+      <p><span data-lang="ja">問いは目的の文書の成功の印から作り、答えは見せた版に残る。手元の PC で見せる形だけで、公開はしない。</span><span data-lang="en">The questions come from the success signs in the purpose document, and the answers stay with the version you showed. It works only on your own PC, with no public sharing.</span></p>
+    </li>
+    <li class="card">
+      <a class="card-shot card-type" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md#画面へのコメントと承認" aria-label="画面へのコメントと承認の docs" data-en-aria-label="Comments and approval docs">
+        <code><span data-lang="ja">コメント → 承認 → 作る AI が直す → 前と後</span><span data-lang="en">comment → approve → maker AI fixes → before and after</span></code>
+      </a>
+      <h3><span data-lang="ja">みんなで作る</span><span data-lang="en">Building together</span></h3>
+      <p><span data-lang="ja">見せる画面の場所にコメントを付け、承認したコメントだけを作る AI が直す。反応をいくつ付けても動かない。</span><span data-lang="en">Comment on a place in the showing screen. The maker AI acts only on approved comments, no matter how many reactions there are.</span></p>
+      <p><span data-lang="ja">1 台の PC でみんなで使う形。直した記録、前と後の比べ、元に戻すがある。構成のコメントは審査に戻す。</span><span data-lang="en">A group shares one PC. It keeps a fix record, a before-and-after view, and undo. Architecture comments go back to the review.</span></p>
     </li>
     <li class="card">
       <a class="card-shot card-type" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/handoff.md" aria-label="引き継ぎの docs" data-en-aria-label="Handoff docs">
@@ -254,47 +310,37 @@
   </ul>
 </section>
 
-<!-- 3-2. 作っているもの(docs/brand.md の 3 節)。まだ画面がないので、絵を載せない。全部できたら jyoka/tasks#394 が畳む -->
+<!-- 3-2. 作っているもの(docs/brand.md の 3 節)。まだ画面がないので、絵を載せない -->
 <section class="building" id="building" aria-labelledby="building-title">
   <div class="section-head">
     <h2 id="building-title"><span data-lang="ja">作っているもの</span><span data-lang="en">In progress</span></h2>
-    <p><span data-lang="ja">どれも、まだ使えません。画面がないので絵は載せません。できたら本物の画面を撮って載せます。</span><span data-lang="en">None of this works yet. There are no screens, so there are no images. Real screenshots will go here once they exist.</span></p>
+    <p><span data-lang="ja">どれも、まだ使えません。画面がないので絵は載せません。できたら本物の画面を撮って、今できることに移します。</span><span data-lang="en">None of this works yet. There are no screens, so there are no images. Once each one works, it moves to What it does today with a real screenshot.</span></p>
   </div>
   <ul class="building-list">
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
-      <h3><span data-lang="ja">AI 構成の審査</span><span data-lang="en">AI architecture review</span></h3>
-      <p><span data-lang="ja">エージェントの構成、harness、データと RAG、技術の組の案を見せる。人が 4 つを承認するまで、作る AI を起動しない。結果は AI 構成書に残す。審査の画面がある。人の確かめと、本物の AI で案ごとの数を測る段はまだ。</span><span data-lang="en">Shows a proposal for the agent setup, harness, data and RAG, and tech stack. The maker AI does not start until a person approves all four. The result stays in an AI architecture record. There is a review screen. It has not been checked with people, and measuring each proposal with the real model is not built yet.</span></p>
+      <h3><span data-lang="ja">人の確かめと現場の通し</span><span data-lang="en">Checks with people and a full session</span></h3>
+      <p><span data-lang="ja">初めての人が説明なしで進めるか、架空の題材の 1 時間の会で見せられるまでの時間を、人が通して測る。今の機能は、どれも人の確かめがまだ。</span><span data-lang="en">People run a one-hour session on a fictional subject to see whether first-time users can follow it without help, and how long it takes to show something. No feature has been checked with people yet.</span></p>
     </li>
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
-      <h3><span data-lang="ja">3 つの形の比べ</span><span data-lang="en">Three architecture shapes</span></h3>
-      <p><span data-lang="ja">固定の流れ、単一エージェント、マスターとサブを、同じ場面の一覧で比べる。簡単な方から問い、足りたら止まる。3 つの形とも構成に書け、審査の画面で切り替えて、お試しの AI で形を確かめられる。本物の AI では、試す欄の下の表かターミナルで比べる。</span><span data-lang="en">Compares a fixed flow, a single agent, and a master with sub-agents on the same evals. It asks about the simplest shape first and stops when that is enough. All three shapes can be written as a composition. You can switch between them on the review screen and check the shape with the mock AI. Compare them with the real model from the table under the try pane or in the terminal.</span></p>
+      <h3><span data-lang="ja">本物の AI で案ごとに測る</span><span data-lang="en">Measuring each proposal with the real model</span></h3>
+      <p><span data-lang="ja">審査の画面から、構成の案ごとに本物の AI で場面を回して比べる。今の審査の画面から回せるのはお試しの AI だけで、本物の AI の数は試す欄の下の表かターミナルで回したときに出る。</span><span data-lang="en">Run evals for each setup proposal with the real model, right from the review screen. Today the review screen runs only the mock AI. Real-model numbers appear after you run them from the table under the try pane or in the terminal.</span></p>
     </li>
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
-      <h3><span data-lang="ja">データの棚と RAG の判定</span><span data-lang="en">Data shelf and RAG check</span></h3>
-      <p><span data-lang="ja">AI が何をどう読むかを見せ、RAG が要るかを判定する。「要らない」とも言える。データの段と審査の画面で見て、審査の画面で承認できる。本物の AI で RAG ありとなしを比べるのは、試す欄の下の表かターミナル。</span><span data-lang="en">Shows what the AI reads and how, and checks whether RAG is needed. The answer can be no. You can see it in the data step and on the review screen, and approve it on the review screen. Compare with and without RAG on the real model from the table under the try pane or in the terminal.</span></p>
+      <h3><span data-lang="ja">AI の使いやすさの見直し</span><span data-lang="en">AI usability review</span></h3>
+      <p><span data-lang="ja">AI が試作品の画面を見て、使いやすさを判断する。質の見直しの表に行はあるが、今は「まだ見ていない」と出る。</span><span data-lang="en">The AI looks at the prototype screens and judges usability. The quality review has a row for it, but today it says the item has not been checked.</span></p>
     </li>
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
-      <h3><span data-lang="ja">記録と比べる表を主の画面に</span><span data-lang="en">Traces and tables on the main screen</span></h3>
-      <p><span data-lang="ja">試す欄の下に、1 ターンの記録と、場面の一覧と比べる表を出した。本物の AI は同意と費用の上限を通す。人の確かめはまだ。</span><span data-lang="en">The try pane now shows a one-turn trace and an eval table by setup. The real model runs only after consent and with a cost cap. It has not been checked with people yet.</span></p>
+      <h3><span data-lang="ja">何台もの PC で同時に作る</span><span data-lang="en">Building together on several devices</span></h3>
+      <p><span data-lang="ja">何人もが自分の PC から同じ試作品にコメントし、同時に直す。今は 1 台の PC でみんなで使う形だけ。</span><span data-lang="en">Several people comment on and edit the same prototype from their own devices at the same time. Today it works only with a group sharing one PC.</span></p>
     </li>
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
-      <h3><span data-lang="ja">質の見直し</span><span data-lang="en">Quality review</span></h3>
-      <p><span data-lang="ja">試す欄の下の「質の見直し」に、測ったもの(アクセシビリティの違反、字と地の差、素材に合わない色と部品、場面の結果、道具の呼び方、守りの効き、費用、待ち時間)と AI の判断を分けた表を出した。見ていない項目は「まだ見ていない」。アクセシビリティは Studio の小さな検査だけ。AI の使いやすさの見直しと人の確かめはまだ。</span><span data-lang="en">The try pane now shows a review table that separates measured items (accessibility issues, text contrast, colors and parts that do not fit the design materials, eval results, tool calls, guardrails, cost, and wait time) from AI judgments. Items not yet checked say so. Accessibility uses only a small check built into Studio. The AI usability review and checks with people are not done yet.</span></p>
-    </li>
-    <li class="building-item">
-      <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
-      <h3><span data-lang="ja">人に見せる</span><span data-lang="en">Showing people</span></h3>
-      <p><span data-lang="ja">その他の引き出しの「人に見せる」で、試作品と確かめたい問いだけの画面にする。問いは目的の文書の成功の印から作り、答えは見せた版に残す(版を戻しても消えない)。手元の PC で見せる形だけで、共有の公開はしない。人の確かめはまだ。</span><span data-lang="en">"Show to people" in the More drawer switches to a screen with only the prototype and the questions to check. The questions come from the success signs in the purpose document, and the answers stay with the version you showed, even after you roll back. It works only on your own PC, with no public sharing. It has not been checked with people yet.</span></p>
-    </li>
-    <li class="building-item">
-      <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
-      <h3><span data-lang="ja">みんなで作る</span><span data-lang="en">Building together</span></h3>
-      <p><span data-lang="ja">コメントと反応を付け、承認したコメントだけを作る AI が直す。1 台の PC でみんなで使う形を、見せる画面の上に作った(直した記録、前と後の比べ、元に戻す、構成のコメントは審査に戻す)。同時編集と人の確かめはまだ。</span><span data-lang="en">People comment and react, and the maker AI acts only on approved comments. The one-PC version now runs on the showing screen, with a fix record, a before-and-after view, undo, and architecture comments sent back to the review. Editing together on several devices and checks with people are not done yet.</span></p>
+      <h3><span data-lang="ja">部品のコードをつなぐ</span><span data-lang="en">Connecting component code</span></h3>
+      <p><span data-lang="ja">自分の部品集の npm のパッケージを、検査して試作品から使えるようにする。今つなげるのは、トークン、指針の文、Storybook の部品の一覧だけ。</span><span data-lang="en">Check your own component library's npm package and let prototypes use it. Today you can connect tokens, written guidelines, and the Storybook component list only.</span></p>
     </li>
   </ul>
 </section>
@@ -360,15 +406,15 @@
       <tbody>
         <tr>
           <th scope="row"><span data-lang="ja">AI の作りを見せるか</span><span data-lang="en">Does it show the AI architecture?</span></th>
-          <td><span data-lang="ja">一部は今できる。設計の案内で構成の案を並べ、AI 構成の審査で構成、harness、データと RAG、技術の組を見せ、実行の記録で構成、プロンプトの部品、ツール、守りの判定を見せる。人の確かめはまだ。</span><span data-lang="en">Partly, today. The design guide lists setup proposals, the AI architecture review shows the setup, harness, data and RAG, and tech stack, and the trace shows the setup, prompt parts, tools, and guardrail verdicts. It has not been checked with people yet.</span></td>
+          <td><span data-lang="ja">見せる。設計の案内で構成の案を並べ、AI 構成の審査で構成、harness、データと RAG、技術の組を図と表で見せ、実行の記録で構成、プロンプトの部品、ツール、守りの判定を見せる。人の確かめはまだ。</span><span data-lang="en">Yes. The design guide lists setup proposals, the AI architecture review shows the setup, harness, data and RAG, and tech stack in diagrams and tables, and the trace shows the setup, prompt parts, tools, and guardrail verdicts. It has not been checked with people yet.</span></td>
         </tr>
         <tr>
           <th scope="row"><span data-lang="ja">人が承認するか</span><span data-lang="en">Does a person approve it?</span></th>
-          <td><span data-lang="ja">一部。設計の案内の後の AI 構成の審査で、4 つを承認するまで作る AI を起動しない。人の確かめはまだ。ほかに、目的の文書と設計の案を人が押して決める段と、本物の AI を使う前の同意がある。</span><span data-lang="en">Partly. After the design guide, the AI architecture review holds the build until all four parts are approved. It has not been checked with people yet. A person also decides the purpose document and the design proposals, and consents before the real model runs.</span></td>
+          <td><span data-lang="ja">承認する。設計の案内の後の AI 構成の審査で、4 つを承認するまで作る AI を起動しない。承認の後に構成が変わると、関門で止まる。人の確かめはまだ。ほかに、目的の文書と設計の案を人が押して決める段、コメントを承認してから直す流れ、本物の AI を使う前の同意がある。</span><span data-lang="en">Yes. After the design guide, the AI architecture review holds the build until all four parts are approved, and a later change to the setup stops at a gate. It has not been checked with people yet. A person also decides the purpose document and the design proposals, approves comments before any fix, and consents before the real model runs.</span></td>
         </tr>
         <tr>
           <th scope="row"><span data-lang="ja">測るか</span><span data-lang="en">Does it measure?</span></th>
-          <td><span data-lang="ja">測る。<code>npm run evals</code> で場面を構成と前提ごとに回し、1 つの表で比べる。モックの数は形の確かめだけで、案の良し悪しの根拠にしない。</span><span data-lang="en">Yes. <code>npm run evals</code> runs evals per setup and assumption and compares them in one table. Mock numbers only check the shape, and are not evidence for choosing a proposal.</span></td>
+          <td><span data-lang="ja">測る。場面を構成と前提ごとに回し、1 つの表で比べる(試す欄の下か <code>npm run evals</code>)。質の見直しで、アクセシビリティ、字と地の差、費用も並べる。モックの数は形の確かめだけで、案の良し悪しの根拠にしない。</span><span data-lang="en">Yes. Evals run per setup and assumption and are compared in one table (under the try pane or with <code>npm run evals</code>). The quality review adds accessibility, text contrast, and cost. Mock numbers only check the shape, and are not evidence for choosing a proposal.</span></td>
         </tr>
       </tbody>
     </table>
@@ -389,7 +435,7 @@
     <a href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/architecture/hld.md"><span data-lang="ja">しくみ</span><span data-lang="en">Architecture</span></a>
     <a href="llms.txt">llms.txt</a>
   </nav>
-  <p class="foot-meta"><span data-lang="ja">更新 2026-11-02 · 版 0.1.0(公開前) · 例のデータは、どれも架空です。</span><span data-lang="en">Updated 2026-11-02 · version 0.1.0 (not yet released) · All example data is fictional.</span></p>
+  <p class="foot-meta"><span data-lang="ja">更新 2026-11-11 · 版 0.1.0(公開前) · 例のデータは、どれも架空です。</span><span data-lang="en">Updated 2026-11-11 · version 0.1.0 (not yet released) · All example data is fictional.</span></p>
 </footer>
 </body>
 </html>
