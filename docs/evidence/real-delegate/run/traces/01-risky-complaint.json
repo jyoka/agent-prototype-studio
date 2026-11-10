@@ -1,0 +1,185 @@
+[
+  {
+    "kind": "sim-turn",
+    "composition": {
+      "name": "固定の流れ: 手順はコードが決める(架空)",
+      "file": "composition.json",
+      "digest": "sha256:313b96cfc4be6fd603d5125a2051abdb63690544316a12908efc622f9f97d038"
+    },
+    "assumptions": {
+      "id": "stand-in",
+      "file": "assumptions/stand-in.json",
+      "digest": "sha256:5f76d522caf5c088f5f081524ea8c714e4a077b1420e58fcacfa1a4d86d34c2f",
+      "standIn": true
+    },
+    "turn": 1,
+    "input": {
+      "text": "荷物が壊れていました。責任者を出してください",
+      "action": null,
+      "history": 1
+    },
+    "nodes": [
+      "accept",
+      "harness:desk",
+      "handoff",
+      "human:staff",
+      "reply"
+    ],
+    "steps": [
+      {
+        "participant": "desk",
+        "kind": "harness",
+        "connection": "claude-code",
+        "real": true,
+        "model": "claude-sonnet-5-5",
+        "harness": {
+          "extract": {
+            "input": {
+              "text": "荷物が壊れていました。責任者を出してください",
+              "step": "ask_number",
+              "fields": [
+                "parcel_no",
+                "slot",
+                "complaint"
+              ],
+              "state": [
+                {
+                  "key": "parcel_no",
+                  "label": "荷物の番号",
+                  "value": "未定"
+                },
+                {
+                  "key": "slot",
+                  "label": "希望の時間帯",
+                  "value": "未定"
+                },
+                {
+                  "key": "complaint",
+                  "label": "お困りごと",
+                  "value": "未定"
+                }
+              ]
+            },
+            "via": "connection",
+            "output": {
+              "updates": {
+                "complaint": "苦情"
+              },
+              "intent": "answer"
+            },
+            "rejected": []
+          },
+          "flow": {
+            "calls": [],
+            "moves": [],
+            "escalate": {
+              "id": "complaint",
+              "to": "staff"
+            },
+            "unread": {
+              "parcel_no": 1
+            },
+            "failed": {}
+          },
+          "decision": {
+            "step": "ask_number",
+            "from": "ask_number",
+            "turn": 1,
+            "ask": null,
+            "say": null,
+            "done": true,
+            "intent": "answer",
+            "changes": [
+              {
+                "key": "complaint",
+                "label": "お困りごと",
+                "from": "未定",
+                "to": "苦情"
+              }
+            ],
+            "corrected": [],
+            "mustInclude": [
+              "担当の者におつなぎします。"
+            ],
+            "reason": "段「ask_number」の遷移の条件をどれも満たしていないので、この段に留まる。段「ask_number」で未定の最初の項目「荷物の番号」を聞く。人に渡す条件「complaint」を満たしたので、「staff」に渡す",
+            "tell": [
+              "担当の者におつなぎします。"
+            ],
+            "escalate": {
+              "id": "complaint",
+              "to": "staff"
+            }
+          },
+          "phrase": {
+            "input": {
+              "step": "ask_number",
+              "ask": null,
+              "say": null,
+              "done": true,
+              "mustInclude": [
+                "担当の者におつなぎします。"
+              ]
+            },
+            "via": "connection",
+            "stdin": "<これまでの会話>\n[AI] しおかぜ便の再配達の受付です(架空のサービスです)。荷物の番号を教えてください。\n</これまでの会話>\n\n<新しい発言>\n荷物が壊れていました。責任者を出してください\n</新しい発言>\n\n<今の状態>\n- parcel_no(荷物の番号): 未定\n- slot(希望の時間帯): 未定\n- complaint(お困りごと): 苦情\n</今の状態>\n\n<言うこと>\n- 今の発言から読み取った値(理解したと伝える): お困りごと「苦情」\n- 伝えること(この文をそのまま入れる): 担当の者におつなぎします。\n- 担当者に渡す: この後は担当者が話す。新しく聞かない\n</言うこと>",
+            "output": {
+              "reply": "荷物が壊れていたとのこと、申し訳ございません。お困りごとは「苦情」として承りました。担当の者におつなぎします。"
+            }
+          },
+          "guards": {
+            "result": "passed",
+            "failed": [],
+            "checks": [
+              {
+                "attempt": 1,
+                "reply": "荷物が壊れていたとのこと、申し訳ございません。お困りごとは「苦情」として承りました。担当の者におつなぎします。",
+                "failed": [],
+                "added": []
+              }
+            ]
+          }
+        },
+        "ms": 7220
+      },
+      {
+        "participant": "staff",
+        "kind": "human",
+        "mock": true
+      }
+    ],
+    "handoff": {
+      "from": "desk",
+      "to": "staff",
+      "effect": "passed",
+      "carry": {
+        "accepted": [],
+        "rejected": []
+      }
+    },
+    "active": {
+      "before": "desk",
+      "after": "staff"
+    },
+    "views": null,
+    "output": {
+      "parts": [
+        {
+          "from": "desk",
+          "parts": [
+            {
+              "kind": "text"
+            }
+          ]
+        },
+        {
+          "from": "staff",
+          "parts": [
+            {
+              "kind": "text"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "id": "tool-search-refuse",
+  "kind": "tool",
+  "about": "受け取りを断られたときの条を、文書の検索が返す",
+  "call": { "tool": "search_terms", "args": { "question": "届け先が受け取りを断ったらどうなりますか" } },
+  "expect": [{ "check": "retrieved", "docs": ["terms-6"] }]
+}

@@ -10,6 +10,7 @@ import {
   OBSERVE_SERVER,
   OBSERVE_TOOLS,
   observeMcpConfig,
+  REVIEW_RULE,
 } from '../../src/server/claude-args.js';
 import { STUDIO_ROOT } from '../../src/server/config.js';
 import { buildFixPrompt } from '../../src/server/fix-prompt.js';
@@ -157,4 +158,13 @@ test('直すラウンドも同じ引数で起動する。直す依頼は引数�
   // 前の会話は持ち込まない(S14)
   for (const flag of ['--resume', '--continue', '--session-id', '--fork-session']) assert.ok(!first.includes(flag), flag);
   assert.ok(first.includes('--no-session-persistence'));
+});
+
+test('AI 構成の審査で承認した試作品だけ、承認した構成を変えない決まりを足す。審査のない試作品の決まりは変えない', () => {
+  const plain = valueOf(buildClaudeArgs({ billing: describeBilling({}), mcpConfig: MCP_CONFIG }), '--append-system-prompt');
+  const reviewed = valueOf(buildClaudeArgs({ billing: describeBilling({}), mcpConfig: MCP_CONFIG, reviewed: true }), '--append-system-prompt');
+  assert.ok(!plain.includes(REVIEW_RULE));
+  assert.ok(!plain.includes('AI 構成の審査'));
+  assert.equal(reviewed, `${plain}\n${REVIEW_RULE}`);
+  assert.match(REVIEW_RULE, /変えないでください。変えたいときは、変えずに言葉で知らせてください/);
 });

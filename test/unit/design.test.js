@@ -77,7 +77,7 @@ test('AI の案: 形が足りない段と、「理想」「最適」を含む案
     problem: { recommended: 1, options: [{ title: '案 1', detail: '中身', reason: '理由' }, { title: '案 2', detail: '中身', reason: '理由' }, { title: '案 3', detail: '中身', reason: '最適です' }] },
     users: { recommended: 0, options: [{ title: '理想の人', detail: '中身', reason: '理由' }, { title: '人 2', detail: '中身', reason: '理由' }] },
     scenes: { recommended: 9, options: [{ title: '組 1', reason: '理由', scenes: [] }, { title: '組 2', reason: '理由', scenes: [{ category: 'refuse', text: '断る文' }] }] },
-    composition: { recommended: 'master-sub', reason: '難しい形' },
+    composition: { recommended: 'handoff', reason: '引き継ぎの形' },
     screens: { recommended: 'nope', reason: 'x' },
   });
   assert.deepEqual(merged.problem.map((option) => option.title), ['案 1', '案 2']);
@@ -87,7 +87,7 @@ test('AI の案: 形が足りない段と、「理想」「最適」を含む案
   // 足りない種類は Studio が足す。番号が範囲の外なら最初を勧める
   assert.deepEqual(missingScenes(merged.scenes[0].scenes), []);
   assert.equal(merged.scenes[0].recommended, true);
-  // まだ動かない形は勧めない。簡単な方を勧める
+  // 選択肢にない形(AI 同士の引き継ぎ)は勧めない。簡単な方を勧める
   assert.equal(merged.composition.find((option) => option.recommended).id, 'fixed-flow');
   assert.equal(merged.screens.find((option) => option.recommended).id, SCREENS[0].id);
 });
@@ -102,18 +102,20 @@ test('AI の案: 使わない言葉の案を捨てても、勧めた案を勧め
   assert.equal(merged.users.find((item) => item.recommended).title, '人 1');
 });
 
-test('構成の選択肢: 簡単な方から順に 3 つ。マスターとサブはまだ選べず、理由がある。AI から AI への引き継ぎは選択肢にない', () => {
+test('構成の選択肢: 簡単な方から順に 3 つ。マスターとサブも選べる(task 422)。AI から AI への引き継ぎは選択肢にない', () => {
   assert.deepEqual(COMPOSITION_OPTIONS.map((option) => option.id), ['fixed-flow', 'single-agent', 'master-sub']);
   assert.deepEqual(COMPOSITION_OPTIONS.map((option) => option.order), [1, 2, 3]);
   const options = compositionOptions('single-agent', '理由');
   assert.equal(options.find((option) => option.recommended).id, 'single-agent');
-  assert.equal(options.find((option) => option.id === 'master-sub').available, false);
-  assert.ok(options.find((option) => option.id === 'master-sub').limitation);
+  assert.equal(options.find((option) => option.id === 'master-sub').available, true);
+  assert.equal(options.find((option) => option.id === 'master-sub').limitation, null);
+  assert.equal(compositionOptions('master-sub', '仕事を分けると通る見込み').find((option) => option.recommended).id, 'master-sub');
+  assert.equal(compositionOptions('handoff', '引き継ぎ').find((option) => option.recommended).id, 'fixed-flow');
   // AI の理由に使わない言葉があれば、Studio の文に代える
   assert.doesNotMatch(compositionOptions('single-agent', '最適です').find((option) => option.recommended).reason, /最適/);
 });
 
-test('この試作品で選べる構成の案: AI の設定が残ると単一エージェントは選べず、おすすめは固定の流れに移る', () => {
+test('この試作品で選べる構成の案: AI の設定が残ると単一エージェントとマスターとサブは選べず、おすすめは固定の流れに移る', () => {
   const options = compositionOptions('single-agent', '理由');
   assert.equal(compositionChoices(options, {}), options);
 
@@ -121,6 +123,8 @@ test('この試作品で選べる構成の案: AI の設定が残ると単一エ
   assert.equal(kept.length, 3);
   assert.equal(kept.find((option) => option.id === 'single-agent').available, false);
   assert.ok(kept.find((option) => option.id === 'single-agent').limitation);
+  // マスターとサブも回し手が AI なので、AI の設定が残る試作品では選べない
+  assert.equal(kept.find((option) => option.id === 'master-sub').available, false);
   assert.deepEqual(kept.filter((option) => option.recommended).map((option) => option.id), ['fixed-flow']);
   assert.ok(kept.find((option) => option.recommended).reason);
 
@@ -134,14 +138,14 @@ test('この試作品で選べる構成の案: AI の設定が残ると単一エ
   assert.deepEqual(owner.filter((option) => option.recommended).map((option) => option.id), ['keep']);
 });
 
-test('案を出す AI の形: 構成は動く 2 つの形だけ勧められる。ファイルの名前を書く項目がない', () => {
-  assert.deepEqual(DESIGN_SCHEMA.properties.composition.properties.recommended.enum, ['fixed-flow', 'single-agent']);
+test('案を出す AI の形: 構成は Studio が書ける 3 つの形だけ勧められる。ファイルの名前を書く項目がない', () => {
+  assert.deepEqual(DESIGN_SCHEMA.properties.composition.properties.recommended.enum, ['fixed-flow', 'single-agent', 'master-sub']);
   assert.doesNotMatch(JSON.stringify(DESIGN_SCHEMA), /"file"|"path"|"status"|decided/);
   assert.equal(designOutputProblem(null), 'JSON の出力がなかった');
   assert.match(designOutputProblem({ problem: '形が違う' }), /problem/);
 });
 
-for (const chosen of ['fixed-flow', 'single-agent']) {
+for (const chosen of ['fixed-flow', 'single-agent', 'master-sub']) {
   test(`関門 G3: 「${chosen}」を選んで書いたファイルが構成の検査を通り、場面の検査も通る`, async () => {
     const appDir = await writeDesired(recordWith(chosen));
     try {

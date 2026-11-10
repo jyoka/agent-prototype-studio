@@ -129,8 +129,8 @@ test('関門の失敗を直す依頼にして作る AI に返し、直った版�
   assert.deepEqual(record.agentLaunches.launches.map((launch) => [launch.round, launch.outcome]), [[1, 'passed'], [2, 'passed']]);
   // ラウンドごとの節の列。直した後は G1 から回し直す
   assert.deepEqual(record.rounds.map((round) => round.nodes), [
-    ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', 'fix'],
-    ['agent', 'changes', 'inspect', 'contract', 'compile', 'evals', 'launch', 'scenarios', 'evidence'],
+    ['accept', 'fingerprint', 'agent', 'changes', 'architecture', 'inspect', 'contract', 'compile', 'fix'],
+    ['agent', 'changes', 'architecture', 'inspect', 'contract', 'compile', 'evals', 'launch', 'scenarios', 'evidence'],
   ]);
   assert.deepEqual(gateStatus(record.rounds[0].gates), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'failed', GE: 'skipped', G5: 'skipped', G6: 'skipped' });
   assert.deepEqual(gateStatus(record.rounds[1].gates), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', GE: 'passed', G5: 'passed', G6: 'passed' });
@@ -285,8 +285,8 @@ test('関門 GE: 場面を G4 の後、G5 の前にモックで回し、通ら�
   const record = await readRun(run);
   // 1 回目は GE で止まり、G5 と G6 は回さない。直した後は GE から先も回す
   assert.deepEqual(record.rounds.map((round) => round.nodes), [
-    ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', 'evals', 'fix'],
-    ['agent', 'changes', 'inspect', 'contract', 'compile', 'evals', 'launch', 'scenarios', 'evidence'],
+    ['accept', 'fingerprint', 'agent', 'changes', 'architecture', 'inspect', 'contract', 'compile', 'evals', 'fix'],
+    ['agent', 'changes', 'architecture', 'inspect', 'contract', 'compile', 'evals', 'launch', 'scenarios', 'evidence'],
   ]);
   assert.deepEqual(gateStatus(record.rounds[0].gates), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', GE: 'failed', G5: 'skipped', G6: 'skipped' });
   assert.equal(calls.length, 1);
@@ -541,8 +541,8 @@ test('関門 G6 で app/scenarios/ と基本のシナリオを回し、失敗を
   assert.equal(run.status, 'fixed', JSON.stringify(run.items, null, 2));
   const record = await readJson('sample-library', run.evidence.run);
   assert.deepEqual(record.rounds.map((round) => round.nodes), [
-    ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', 'evals', 'launch', 'scenarios', 'fix'],
-    ['agent', 'changes', 'inspect', 'contract', 'compile', 'evals', 'launch', 'scenarios', 'evidence'],
+    ['accept', 'fingerprint', 'agent', 'changes', 'architecture', 'inspect', 'contract', 'compile', 'evals', 'launch', 'scenarios', 'fix'],
+    ['agent', 'changes', 'architecture', 'inspect', 'contract', 'compile', 'evals', 'launch', 'scenarios', 'evidence'],
   ]);
   assert.deepEqual(record.rounds.map((round) => gateStatus(round.gates).G6), ['failed', 'passed']);
   assert.equal(record.rounds[1].fixOf.gate, 'G6');

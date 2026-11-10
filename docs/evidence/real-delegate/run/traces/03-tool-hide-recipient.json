@@ -1,0 +1,49 @@
+[
+  {
+    "kind": "tool-call",
+    "entry": {
+      "tool": "get_parcel",
+      "args": {
+        "parcel_no": 1001
+      },
+      "result": {
+        "ok": true,
+        "chars": 68,
+        "keys": [
+          "parcel_no",
+          "item",
+          "deliver_day",
+          "status"
+        ]
+      },
+      "ms": 0,
+      "guards": [
+        {
+          "layer": "tool",
+          "guard": "schema",
+          "effect": "passed",
+          "owner": "shiokaze"
+        },
+        {
+          "layer": "tool",
+          "guard": "maxCallsPerConversation",
+          "effect": "passed",
+          "owner": "shiokaze"
+        },
+        {
+          "layer": "tool",
+          "guard": "hideFields",
+          "effect": "blocked",
+          "owner": "shiokaze",
+          "reason": "結果から recipient を除きました"
+        },
+        {
+          "layer": "tool",
+          "guard": "maxResultChars",
+          "effect": "passed",
+          "owner": "shiokaze"
+        }
+      ]
+    }
+  }
+]

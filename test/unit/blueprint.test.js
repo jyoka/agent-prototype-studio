@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { FAKE_CLI } from '../../src/server/agent-connection.js';
-import { BLUEPRINT, BuildRequests } from '../../src/server/build-requests.js';
+import { BLUEPRINT, BuildRequests, ReviewRequiredError } from '../../src/server/build-requests.js';
 import { describeBilling } from '../../src/server/claude-args.js';
 import { STUDIO_ROOT } from '../../src/server/config.js';
 import { ensureSampleProjects } from '../../src/server/projects.js';
@@ -41,7 +41,7 @@ function scenariosReport() {
 }
 
 // observe は関門 G5 の観察、scenarios は関門 G6 の観察を差し替える
-async function setup(t, { connection = fakeConnection(), observe, scenarios = scenariosReport, onNode, onAgentEvent } = {}) {
+async function setup(t, { connection = fakeConnection(), observe, scenarios = scenariosReport, onNode, onAgentEvent, reviews = null } = {}) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-blueprint-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   await ensureSampleProjects(home, path.join(STUDIO_ROOT, 'samples'));
@@ -58,6 +58,7 @@ async function setup(t, { connection = fakeConnection(), observe, scenarios = sc
     env: ENV,
     onNode,
     onAgentEvent,
+    reviews,
     observe:
       observe === null
         ? null
@@ -111,9 +112,12 @@ test('作る run は節の並びで動き、通った節の列と関門の結果
   assert.equal(record.status, 'passed');
   assert.deepEqual(record.nodes.map((node) => node.name), PASSED_NODES);
   assert.deepEqual(record.nodes.map((node) => node.kind), BLUEPRINT.filter((node) => node.name !== 'fix').map((node) => node.kind));
-  assert.ok(record.nodes.every((node) => node.outcome === 'passed' && node.durationMs >= 0), JSON.stringify(record.nodes));
+  // 関門 GA(構成の承認)は、AI 構成の審査のない試作品では何もしない(skipped)。結果の関門の一覧にも出さない(R2)
+  assert.ok(record.nodes.every((node) => node.outcome === (node.name === 'architecture' ? 'skipped' : 'passed') && node.durationMs >= 0), JSON.stringify(record.nodes));
   assert.deepEqual(gateStatus(record), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'passed', GE: 'passed', G5: 'passed', G6: 'passed' });
   assert.deepEqual(record.changedFiles, [{ file: 'app/App.jsx', change: 'modified' }]);
+  // 審査のない試作品の run.json に、審査の項目は足さない(R2)
+  assert.equal(Object.hasOwn(record, 'review'), false);
   // 作る AI の起動の回数と時間
   assert.equal(record.agentLaunches.count, 1);
   assert.ok(record.agentLaunches.durationMs > 0);
@@ -154,9 +158,10 @@ test('作る run は節の並びで動き、通った節の列と関門の結果
   assert.equal(gates.detail, '関門の結果: G1 変更の確認: 通った、G2 検査: 通った、G3 契約: 通った、G4 ビルド: 通った、GE 場面: 通った(場面なし)、G5 起動の確認: 通った、G6 シナリオ: 通った');
 });
 
-test('関門の並びは安い順で、場面の関門 GE はビルド(G4)の後、ブラウザを使う起動の確認(G5)の前(S11)', () => {
+test('関門の並びは安い順で、場面の関門 GE はビルド(G4)の後、ブラウザを使う起動の確認(G5)の前(S11)。構成の承認 GA は G1 の直後、G2 の前', () => {
   const gates = BLUEPRINT.filter((node) => node.gate);
-  assert.deepEqual(gates.map((node) => node.gate), ['G1', 'G2', 'G3', 'G4', 'GE', 'G5', 'G6']);
+  assert.deepEqual(gates.map((node) => node.gate), ['G1', 'GA', 'G2', 'G3', 'G4', 'GE', 'G5', 'G6']);
+  assert.deepEqual(BLUEPRINT.find((node) => node.gate === 'GA'), { name: 'architecture', kind: 'code', gate: 'GA', label: '構成の承認' });
   assert.deepEqual(BLUEPRINT.find((node) => node.gate === 'GE'), { name: 'evals', kind: 'code', gate: 'GE', label: '場面' });
   // GE は決まった手順の節。作る AI の接続に触れない
   assert.equal(BLUEPRINT.filter((node) => node.kind === 'model').length, 1);
@@ -208,7 +213,7 @@ test('ビルドが失敗したら、起動の確認を行わず、失敗した�
   assert.equal(store.previewBuildId(PROJECT), before);
 
   const record = await readRun(run);
-  assert.deepEqual(record.rounds[0].nodes, ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'compile', 'fix']);
+  assert.deepEqual(record.rounds[0].nodes, ['accept', 'fingerprint', 'agent', 'changes', 'architecture', 'inspect', 'contract', 'compile', 'fix']);
   assert.equal(record.nodes.find((node) => node.name === 'compile').outcome, 'failed');
   assert.deepEqual(gateStatus(record), { G1: 'passed', G2: 'passed', G3: 'passed', G4: 'failed', GE: 'skipped', G5: 'skipped', G6: 'skipped' });
   assert.equal(record.build.stage, 'compile');
@@ -238,7 +243,7 @@ test('契約の誤りは G3 で止まり、ビルドと起動の確認を行わ�
   assert.equal(calls.length, 0);
   const record = await readRun(run);
   assert.deepEqual(gateStatus(record.rounds[0]), { G1: 'passed', G2: 'passed', G3: 'failed', G4: 'skipped', GE: 'skipped', G5: 'skipped', G6: 'skipped' });
-  assert.deepEqual(record.rounds[0].nodes, ['accept', 'fingerprint', 'agent', 'changes', 'inspect', 'contract', 'fix']);
+  assert.deepEqual(record.rounds[0].nodes, ['accept', 'fingerprint', 'agent', 'changes', 'architecture', 'inspect', 'contract', 'fix']);
   // 書くだけの作る AI は、直すラウンドで同じ中身を書くので app/ が変わらず、そこで止まる。前の失敗は結果に残る
   assert.deepEqual(record.rounds[1].nodes, ['agent', 'changes', 'evidence']);
   assert.deepEqual(gateStatus(record), { G1: 'unchanged', G2: 'passed', G3: 'failed', G4: 'skipped', GE: 'skipped', G5: 'skipped', G6: 'skipped' });
@@ -354,4 +359,66 @@ test('起動の確認が通っても、シナリオの関門で観察器が使�
   const item = run.items.find((entry) => entry.kind === 'scenarios-unverified');
   assert.equal(item.text, '決めた手順で試すことはできませんでした。試作品を開いて確かめる途中で問題が起きました。試す欄で、動きを確かめてください。');
   assert.equal(item.detail, 'G6 シナリオ: 未確認。試作品を開いて確かめる途中で問題が起きました。ブラウザが落ちました');
+});
+
+// AI 構成の審査(src/server/review.js。docs/design/ai-architecture-review.md の 6 節)。reviews は check と markStopped を持つ。
+// 審査の中身(指紋と承認)は test/unit/review.test.js が確かめる。ここでは作る run の節 accept と関門 GA の動きだけを見る
+function reviewsStub(results) {
+  const stopped = [];
+  let calls = 0;
+  return {
+    stopped,
+    get calls() {
+      return calls;
+    },
+    async check() {
+      const result = results[Math.min(calls, results.length - 1)];
+      calls += 1;
+      return result;
+    },
+    async markStopped(id, detail) {
+      stopped.push({ id, ...detail });
+    },
+  };
+}
+
+test('審査の要る試作品で 4 つの承認がそろっていなければ、作る AI を起動しない(節 accept で断る)', async (t) => {
+  const reviews = reviewsStub([{ applies: true, ok: false, code: 'review-not-approved', message: 'AI 構成の審査で、4 つを承認してから作ってください(承認 3 / 4)' }]);
+  const { requests, root } = await setup(t, { reviews });
+  await assert.rejects(requests.start(PROJECT, '見出しを「承認前の図書室」にして'), (error) => error instanceof ReviewRequiredError && error.code === 'review-not-approved');
+  assert.deepEqual(requests.list(PROJECT), []);
+  // 作る AI を起動していないので、run の記録もない
+  await assert.rejects(fs.readdir(path.join(root, '.studio', 'runs')));
+});
+
+test('承認した構成と同じなら関門 GA は通り、結果の G1 の後に出る', async (t) => {
+  const reviews = reviewsStub([{ applies: true, ok: true, reviewId: 'review-20261107-000000-abcdef', fingerprint: 'x' }]);
+  const { send, readRun } = await setup(t, { reviews });
+  const run = await send('見出しを「承認した図書室」にして');
+  assert.equal(run.status, 'passed', JSON.stringify(run.items));
+  const record = await readRun(run);
+  assert.deepEqual(record.gates.map((gate) => gate.id), ['G1', 'GA', 'G2', 'G3', 'G4', 'GE', 'G5', 'G6']);
+  assert.equal(record.gates.find((gate) => gate.id === 'GA').status, 'passed');
+  assert.ok(record.nodes.every((node) => node.outcome === 'passed'), JSON.stringify(record.nodes));
+  // どの AI 構成書の承認で作ったかが run.json に残る
+  assert.deepEqual(record.review, { id: 'review-20261107-000000-abcdef', fingerprint: 'x' });
+});
+
+test('作る AI が承認した構成を変えたら、関門 GA で止める。直すラウンドに回さず、G2〜G4 を回さないので試す欄は替わらない', async (t) => {
+  const changed = { applies: true, ok: false, code: 'review-changed', reviewId: 'review-20261107-000000-abcdef', changed: ['composition', 'harness'], fingerprint: 'y', message: '承認した構成と違います(変わった所: エージェントの構成、harness)。AI 構成の審査に戻ってください' };
+  const reviews = reviewsStub([{ applies: true, ok: true }, changed]);
+  const { send, readRun, store } = await setup(t, { reviews });
+  const shown = store.previewBuildId(PROJECT);
+  const run = await send('見出しを「承認と違う図書室」にして');
+  assert.equal(run.status, 'failed');
+  const record = await readRun(run);
+  assert.deepEqual(record.nodes.map((node) => node.name), ['accept', 'fingerprint', 'agent', 'changes', 'architecture', 'evidence']);
+  const ga = record.gates.find((gate) => gate.id === 'GA');
+  assert.equal(ga.status, 'failed');
+  assert.deepEqual(ga.changed, ['composition', 'harness']);
+  assert.equal(record.gates.find((gate) => gate.id === 'G2').status, 'skipped');
+  assert.equal(store.previewBuildId(PROJECT), shown);
+  assert.equal(record.rounds.length, 1);
+  assert.ok(run.items.some((item) => item.text.includes('承認した構成と違うので、止めました')));
+  assert.deepEqual(reviews.stopped.map((entry) => entry.changed), [['composition', 'harness']]);
 });

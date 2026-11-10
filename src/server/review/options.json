@@ -35,10 +35,42 @@
       "question": "分けると、通らない場面が通るか",
       "decidedBy": "モデル。深さと回数はコード",
       "modelRole": "順番、任せる先、読み取り、言い方",
-      "participantKinds": [],
-      "available": false,
-      "limitation": "今の Studio では動かせないので、まだ選べません。",
-      "addedOn": "2026-11-02"
+      "participantKinds": ["agent"],
+      "available": true,
+      "limitation": null,
+      "addedOn": "2026-11-02",
+      "availableOn": "2026-11-07"
     }
-  ]
+  ],
+  "stack": {
+    "addedOn": "2026-11-07",
+    "note": "本番の候補は案です。試作品ではつないでいません。確かめてもいません。",
+    "rows": [
+      { "id": "model", "label": "モデル", "plain": "文を読んで書く AI の本体", "candidates": ["未定。試作品の代わりのモデルと同じ系統か、ほかの会社のモデル"] },
+      { "id": "runner", "label": "回し方", "plain": "1 ターンをどう回すか(harness)", "candidates": ["本番の基盤の上に、試作品の構成と同じ手順を書く", "エージェントの部品(SDK)で回す"] },
+      { "id": "tools", "label": "ツールの接続", "plain": "AI が呼ぶ決まった処理のつなぎ方", "candidates": ["本番の業務の API を、試作品のツールの宣言と同じ形でつなぐ", "MCP のサーバーにまとめる"] },
+      { "id": "knowledge", "label": "知識(RAG)", "plain": "文書から探して読ませる仕組み", "candidates": ["データと RAG の判定に従い、要るときだけ足す", "全文検索か、埋め込みの検索の基盤"] },
+      { "id": "memory", "label": "記憶", "plain": "会話をまたいで覚えておくもの", "candidates": ["業務のデータベースに書く", "会話の記録だけを残し、覚えない"] },
+      { "id": "evals", "label": "評価", "plain": "同じ場面の一覧で測り直す仕組み", "candidates": ["試作品の場面の一覧を、そのまま本番の評価に持ち込む"] },
+      { "id": "trace", "label": "記録", "plain": "何が起きたかを後から読む仕組み", "candidates": ["本番の記録の基盤(ログと実行の記録)"] }
+    ]
+  },
+  "rag": {
+    "addedOn": "2026-11-07",
+    "questions": [
+      { "order": 1, "question": "AI がこのデータを読まなくても、場面は通るか", "read": "none" },
+      { "order": 2, "question": "表やキーで、1 件を引けるか", "read": "tool" },
+      { "order": 3, "question": "短くて、毎回プロンプトに入れられるか", "read": "prompt" },
+      { "order": 4, "question": "ここまでで通らない場面があるか", "read": "rag" }
+    ],
+    "addWhen": "長い文書(約款、手引きなど)を読む場面が出て、ツールで引く形とプロンプトに入れる形で通らなくなったら",
+    "documentWords": ["約款", "規約", "規程", "契約書", "マニュアル", "手引き", "説明書", "よくある質問", "FAQ", "取扱説明"],
+    "decide": [
+      { "id": "chunking", "label": "分割", "question": "文書をどの単位に分けて探すか", "prototype": "条や見出しごとに 1 件。Studio は自動で分けない(1 件は 2,000 文字まで)" },
+      { "id": "embedding", "label": "埋め込み", "question": "文の意味で探すか(埋め込みのモデルを使うか)", "prototype": "使わない。文字を 2 つずつ区切った語の重なり(BM25)で探す" },
+      { "id": "store", "label": "置き場", "question": "文書と索引をどこに置き、誰がいつ更新するか", "prototype": "試作品の中の架空の文書のファイル。探すたびに手元で索引を作る" },
+      { "id": "citation", "label": "引用", "question": "答えに、どの文書を読んだかをどう示すか", "prototype": "探した文書の見出しを返し、答えに書かせる。場面の回しで、答えに見出しがあるかを確かめる" },
+      { "id": "recall", "label": "再現率の測り方", "question": "探すべき文書を見つけたかを、どの場面で測るか", "prototype": "場面ごとに探すべき文書を書き、見つけた割合を比べる表に出す" }
+    ]
+  }
 }

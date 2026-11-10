@@ -29,6 +29,8 @@
     <button type="button" id="organize-mark" class="intent-mark" data-state="none" hidden>ヒアリングの整理</button>
     <!-- 設計の案内の印(user-journey.md の段 3、J2)。押すと、6 つの段の帯と案の比べを開く -->
     <button type="button" id="design-mark" class="intent-mark" data-state="none" hidden>設計なし</button>
+    <!-- AI 構成の審査の印(ai-architecture-review.md)。審査のある試作品だけに出す。押すと、4 つの承認の画面を開く -->
+    <button type="button" id="review-mark" class="intent-mark" data-state="none" hidden></button>
     <div class="topbar-end">
       <!-- STUDIO_AGENT=fake で起動したときだけ出す(ux-redesign.md 4 節) -->
       <span id="dev-agent-mark" class="dev-agent-mark" hidden>開発用: 偽の直す AI</span>
@@ -235,8 +237,22 @@
         <ul id="design-data-coverage" class="design-data-coverage" aria-label="整理の板のデータの欄"></ul>
         <p id="design-data-sample" class="muted"></p>
       </section>
+      <!-- AI が読むデータの棚と RAG の判定(task 421)。選んだ案と整理の板からの下書き。測っていないので推測 -->
+      <section id="design-shelf" class="design-shelf design-data" aria-labelledby="design-shelf-heading" hidden>
+        <h4 id="design-shelf-heading">AI が読むデータの棚</h4>
+        <p class="muted">AI が何をどう読むかの下書きです。変わる速さと個人情報は、本番のデータの話として確かめてください。</p>
+        <div id="design-shelf-table"></div>
+        <div id="design-rag" class="design-rag" role="group" aria-labelledby="design-rag-heading">
+          <h4 id="design-rag-heading">RAG の判定</h4>
+          <p class="muted">RAG は、文書から探した部分を AI に読ませて答えさせる仕組みです。簡単な読み方から順に問い、足りたらそこで止まります。</p>
+          <p id="design-rag-verdict" class="design-rag-verdict"></p>
+          <div id="design-rag-reason" class="design-rag-reason"></div>
+          <ol id="design-rag-steps" aria-label="RAG の判定の問い"></ol>
+          <div id="design-rag-decide"></div>
+        </div>
+      </section>
       <p id="design-owner" class="muted" hidden>この試作品には今の構成があります。Studio は書き換えません。</p>
-      <p id="design-review" class="muted" hidden>AI 構成の審査(4 つの承認)の画面は、まだありません。今は審査なしで作ります。記録にも「審査なし」と残します。</p>
+      <p id="design-review" class="muted" hidden>「この設計で作る」を押すと、作る前に AI 構成の審査(4 つの承認)に進みます。4 つを承認するまで作り始めません。</p>
       <div id="design-note-box" class="design-line" hidden>
         <label for="design-note">選んだ理由(書かなくても進めます)</label>
         <input id="design-note" type="text" maxlength="300" autocomplete="off">
@@ -252,6 +268,46 @@
     </div>
     <p id="design-note-message" class="intent-note" role="status" hidden></p>
     <p id="design-error" class="intent-error" role="alert" hidden></p>
+  </section>
+  <!-- AI 構成の審査(ai-architecture-review.md)。エージェントの構成、harness、データと RAG、技術の組の 4 つを上から順に並べ、欄ごとに承認する。
+       4 つそろうまで「この構成で作る」は押せない。技術の言葉は隠さず、平たい言葉と並べる。プロンプトの全文は閉じた details の中に置く -->
+  <section id="review" class="design review" aria-labelledby="review-heading" hidden>
+    <h2 id="review-heading" tabindex="-1">AI 構成の審査</h2>
+    <p class="muted">作る前に、AI の作りを 4 つに分けて読み、承認します。4 つそろうまで、作る AI は作り始めません。出している案は今日の一番良い推測です。</p>
+    <p id="review-count" class="review-count" role="status"></p>
+    <p id="review-state" class="intent-doc-state" role="status"></p>
+    <div id="review-stopped" class="review-stopped" role="alert" hidden>
+      <p id="review-stopped-text"></p>
+      <div class="design-actions">
+        <button type="button" id="review-back" class="primary">審査に戻る</button>
+        <button type="button" id="review-restore">承認した構成に戻す</button>
+      </div>
+    </div>
+    <div class="design-line review-who">
+      <label for="review-pressed">承認を押す人の名前(書かなくても進めます。Studio は本人を確かめません)</label>
+      <input id="review-pressed" type="text" maxlength="40" autocomplete="off">
+      <label for="review-spoken" id="review-spoken-label" hidden>声に出した人</label>
+      <input id="review-spoken" type="text" maxlength="40" autocomplete="off" hidden>
+    </div>
+    <div id="review-items"></div>
+    <p id="review-left" class="review-left" role="status"></p>
+    <div class="design-actions">
+      <button type="button" id="review-build" class="primary">この構成で作る</button>
+      <button type="button" id="review-measure">お試しの AI で場面を回す</button>
+      <button type="button" id="review-to-design" hidden>設計の案内に戻る</button>
+      <button type="button" id="review-close">試作品の画面に戻る</button>
+    </div>
+    <details id="review-skip-box" class="review-skip">
+      <summary>審査を飛ばす</summary>
+      <p class="muted">飛ばすと「審査なし」の印が残り、飛ばした人、時刻、理由を記録します。</p>
+      <div class="design-line">
+        <label for="review-skip-reason">飛ばす理由</label>
+        <input id="review-skip-reason" type="text" maxlength="300" autocomplete="off">
+        <button type="button" id="review-skip">審査なしで作る</button>
+      </div>
+    </details>
+    <p id="review-message" class="intent-note" role="status" hidden></p>
+    <p id="review-error" class="intent-error" role="alert" hidden></p>
   </section>
   <!-- ヒアリングの整理(user-journey.md の K1、field-session.md の段 1、段 2)。左に聞き取りの欄、右に整理の板。出している間は、下の 2 列を隠す -->
   <section id="organize" class="organize" aria-labelledby="organize-heading" hidden>

@@ -103,6 +103,7 @@ flowchart TD
 | 受け付け | コード | 依頼の形、上限、1 プロジェクト 1 実行、接続の問題 | `BuildRequests.start`(残す) |
 | 作る AI | モデル | `app/` を読み書きする。道具は Read、Edit、Write、Glob、Grep と、決まった名前の観察の道具。観察の道具で画面を見て、操作して直してよい。cwd は `app/` | `startAgentProcess`、`buildClaudeArgs`(残す。観察の道具を渡す所を足す) |
 | G1 変更の確認 | コード | 前と後の `app/` を SHA-256 で比べる。AI の報告に頼らない。直すラウンドで何も変わらなければ、直せなかったとして `failed` にする(前の失敗を隠さない) | `snapshotApp`、`diffSnapshots`(残す) |
+| GA 構成の承認 | コード | AI 構成の審査の要る試作品だけ。今の `app/` の AI 構成書の指紋が、承認したものと同じか。違えば止め、直すラウンドに回さない(task 422。[ai-architecture-review.md の 6 節](ai-architecture-review.md#関門-ga)) | `ProjectReviews.check`(`review.js`) |
 | G2 検査 | コード | 禁止の名前、シンボリックリンク、数と大きさ | `inspectApp`(残す) |
 | G3 契約の検査 | コード | `prototype.json`、`ai.json`、`scenarios/*.json` の形。つないだトークンがあれば、指紋と `app/` の中の変数の上書き(J4)。有効にした部品と指針があれば、`app/design/` の写しの指紋(J5) | `parseAiDefinition`(広げる)、目録とシナリオは新しく作る |
 | G4 ビルド | コード | esbuild で 1 つの IIFE にする。import は `app/` と同梱のライブラリだけ | `buildApp`(残す) |

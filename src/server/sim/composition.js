@@ -55,10 +55,16 @@ export const COMPOSITION_LIMITS = {
   maxTurns: 30,
   maxHandoffsPerConversation: 5,
   maxCompositions: 20,
+  // マスターとサブの委任(2.9)。辺の数、1 ターンの委任の回数、深さの上限
+  maxDelegationEdges: 20,
+  maxDelegationsPerTurn: 10,
+  maxDelegationDepth: 3,
 };
 export const DEFAULT_LIMITS = { maxTurns: 30, maxHandoffs: 3 };
+// 委任の辺を書いた構成にだけ足す上限(今の構成の指紋と記録を変えないため。R2)
+export const DEFAULT_DELEGATION_LIMITS = { maxDelegations: 3, maxDepth: 1 };
 
-const TOP_KEYS = ['formatVersion', 'name', 'driver', 'participants', 'tools', 'handoffs', 'guards', 'surface', 'assumptions', 'limits'];
+const TOP_KEYS = ['formatVersion', 'name', 'driver', 'participants', 'tools', 'handoffs', 'delegations', 'guards', 'surface', 'assumptions', 'limits'];
 const PARTICIPANT_KEYS = {
   agent: ['id', 'kind', 'label', 'owner', 'prompt', 'tools', 'mock'],
   harness: ['id', 'kind', 'label', 'owner', 'ai', 'returnTo', 'model', 'flow', 'escalate'],
@@ -177,6 +183,19 @@ function parseGuard(problems, where, raw) {
   return guard;
 }
 
+// 構成の形(docs/design/ai-architecture-review.md の 2 節の選択肢)。AI 構成の審査と、場面の回しの結果の数を形ごとに読むのに使う。
+// 回し手が harness なら固定の流れ、委任の辺があればマスターとサブ、AI から AI への引き継ぎがあれば handoff(選択肢にない今の構成)
+export function compositionShape(composition) {
+  const participants = composition?.participants ?? [];
+  const driver = participants.find((p) => p.id === composition?.driver) ?? participants[0];
+  if (!driver) return 'none';
+  if (driver.kind === 'harness') return 'fixed-flow';
+  if ((composition.delegations ?? []).length > 0) return 'master-sub';
+  const kindOf = new Map(participants.map((p) => [p.id, p.kind]));
+  if ((composition.handoffs ?? []).some((edge) => kindOf.get(edge.to) !== 'human' && kindOf.get(edge.from) !== 'human')) return 'handoff';
+  return 'single-agent';
+}
+
 // この構成が前提を使うか。agent の参加者と、モデルを前提から読む harness の参加者が使う(今の harness の参加者は使わない。R2)
 export const usesAssumptions = (composition) => composition.participants.some((p) => p.kind === 'agent' || p.model?.from === 'assumptions');
 
@@ -228,6 +247,33 @@ function parseComposition(raw, problems) {
     unique(problems, 'handoffs', composition.handoffs.map((e) => `${e.from} → ${e.to}`), '辺');
   }
 
+  // 委任の辺(マスターとサブ。2.9)。書いた構成にだけ、delegations と上限の項目を足す
+  if (raw.delegations !== undefined) {
+    composition.delegations = [];
+    Object.assign(composition.limits, DEFAULT_DELEGATION_LIMITS);
+    const edges = list(problems, 'delegations', raw.delegations, { min: 1, max: COMPOSITION_LIMITS.maxDelegationEdges, of: '委任の辺の' }) ?? [];
+    for (const [i, edge] of edges.entries()) {
+      const where = `delegations[${i}]`;
+      if (!isPlainObject(edge)) {
+        problems.add(where, '{ "from": 任せる参加者, "to": 任される参加者, "carry": [引数の名前], "history": true か false } の形で書いてください');
+        continue;
+      }
+      checkKeys(problems, where, edge, ['from', 'to', 'carry', 'history']);
+      const from = idOf(problems, `${where}.from`, edge.from);
+      const to = idOf(problems, `${where}.to`, edge.to);
+      if (from && from === to) problems.add(where, '自分への委任は書けません');
+      let carry = [];
+      if (edge.carry !== undefined) {
+        carry = (list(problems, `${where}.carry`, edge.carry, { max: COMPOSITION_LIMITS.maxCarry, of: '引数の名前の' }) ?? [])
+          .map((key, j) => named(problems, `${where}.carry[${j}]`, key, KEY_PATTERN, { hint: '英字で始め、英数字と _ だけで 32 字まで' }))
+          .filter(Boolean);
+        if (carry.includes('task')) problems.add(`${where}.carry`, '依頼の文(task)は、いつもサブに渡します。carry には書かないでください');
+      }
+      composition.delegations.push({ from, to, carry, history: bool(problems, `${where}.history`, edge.history) ?? false });
+    }
+    unique(problems, 'delegations', composition.delegations.map((e) => `${e.from} → ${e.to}`), '委任の辺');
+  }
+
   if (raw.guards !== undefined) {
     const guards = list(problems, 'guards', raw.guards, { max: COMPOSITION_LIMITS.maxGuards, of: '守りの' }) ?? [];
     composition.guards = guards.map((item, i) => parseGuard(problems, `guards[${i}]`, item)).filter(Boolean);
@@ -259,11 +305,24 @@ function parseComposition(raw, problems) {
   if (raw.limits !== undefined) {
     if (!isPlainObject(raw.limits)) problems.add('limits', '{ "maxTurns": …, "maxHandoffs": … } の形で書いてください');
     else {
-      checkKeys(problems, 'limits', raw.limits, ['maxTurns', 'maxHandoffs']);
+      const delegating = composition.delegations !== undefined;
+      checkKeys(problems, 'limits', raw.limits, ['maxTurns', 'maxHandoffs', 'maxDelegations', 'maxDepth']);
+      if (!delegating) {
+        for (const key of ['maxDelegations', 'maxDepth']) {
+          if (raw.limits[key] !== undefined) problems.add(`limits.${key}`, '委任の上限は、委任の辺(delegations)を書いた構成にだけ書けます');
+        }
+      }
       composition.limits = {
         maxTurns: integer(problems, 'limits.maxTurns', raw.limits.maxTurns, { min: 1, max: COMPOSITION_LIMITS.maxTurns }) ?? DEFAULT_LIMITS.maxTurns,
         maxHandoffs: integer(problems, 'limits.maxHandoffs', raw.limits.maxHandoffs, { min: 0, max: COMPOSITION_LIMITS.maxHandoffsPerConversation })
           ?? DEFAULT_LIMITS.maxHandoffs,
+        ...(delegating
+          ? {
+              maxDelegations: integer(problems, 'limits.maxDelegations', raw.limits.maxDelegations, { min: 1, max: COMPOSITION_LIMITS.maxDelegationsPerTurn })
+                ?? DEFAULT_DELEGATION_LIMITS.maxDelegations,
+              maxDepth: integer(problems, 'limits.maxDepth', raw.limits.maxDepth, { min: 1, max: COMPOSITION_LIMITS.maxDelegationDepth }) ?? DEFAULT_DELEGATION_LIMITS.maxDepth,
+            }
+          : {}),
       };
     }
   }
@@ -276,6 +335,10 @@ async function crossCheck(problems, composition, ctx) {
   const byId = new Map(composition.participants.map((p) => [p.id, p]));
   const has = (id) => byId.has(id);
   const edge = (from, to) => composition.handoffs.some((e) => e.from === from && e.to === to);
+  const delegations = composition.delegations ?? [];
+  const delegationEdge = (from, to) => delegations.some((e) => e.from === from && e.to === to);
+  // 任される参加者(サブ)。会話を回さないので、回し手にも、引き継ぎの行き先にもならない
+  const subs = new Set(delegations.map((e) => e.to));
   const where = (participant) => `participants[${composition.participants.indexOf(participant)}]`;
 
   if (composition.driver && !has(composition.driver)) problems.add('driver', `「${composition.driver}」は participants にない参加者です`);
@@ -283,7 +346,17 @@ async function crossCheck(problems, composition, ctx) {
   for (const [i, e] of composition.handoffs.entries()) {
     if (e.from && !has(e.from)) problems.add(`handoffs[${i}].from`, `「${e.from}」は participants にない参加者です`);
     if (e.to && !has(e.to)) problems.add(`handoffs[${i}].to`, `「${e.to}」は participants にない参加者です`);
+    if (subs.has(e.from) || subs.has(e.to)) problems.add(`handoffs[${i}]`, '任される参加者(delegations の to)は、会話を引き継げません。サブは結果を任せた参加者に返します');
   }
+
+  for (const [i, e] of delegations.entries()) {
+    for (const key of ['from', 'to']) {
+      if (!e[key]) continue;
+      if (!has(e[key])) problems.add(`delegations[${i}].${key}`, `「${e[key]}」は participants にない参加者です`);
+      else if (byId.get(e[key]).kind !== 'agent') problems.add(`delegations[${i}].${key}`, '委任は agent の参加者どうしだけで書けます(固定の流れと人には任せられません)');
+    }
+  }
+  if (composition.driver && subs.has(composition.driver)) problems.add('driver', '任される参加者(delegations の to)は回し手になれません');
 
   // ツールの宣言
   let toolset = null;
@@ -328,6 +401,13 @@ async function crossCheck(problems, composition, ctx) {
             problems.add(`${at}.tools[${i}]`, `引き継ぎのツール「${name}」は辺にありません。handoffs に { "from": "${participant.id}", "to": "${tool.do.to}" } を書いてください`);
           }
         }
+        // 委任のツールも、delegations の辺にあるものだけ渡せる
+        if (tool.do.op === 'delegate') {
+          if (!has(tool.do.to)) problems.add(`${at}.tools[${i}]`, `委任のツール「${name}」の任せる先「${tool.do.to}」は participants にない参加者です`);
+          else if (!delegationEdge(participant.id, tool.do.to)) {
+            problems.add(`${at}.tools[${i}]`, `委任のツール「${name}」は辺にありません。delegations に { "from": "${participant.id}", "to": "${tool.do.to}" } を書いてください`);
+          }
+        }
       }
       if (participant.mock !== null) {
         const file = await appFile(problems, `${at}.mock`, participant.mock, appDir, { extensions: ['.json'] });
@@ -336,6 +416,9 @@ async function crossCheck(problems, composition, ctx) {
         for (const [i, rule] of (mock?.rules ?? []).entries()) {
           if (rule.call?.tool && !participant.tools.includes(rule.call.tool)) {
             problems.add(`${at}.mock`, `app/${file} の rules[${i}] が呼ぶ「${rule.call.tool}」は、この参加者の tools にありません`);
+          }
+          if (rule.when?.delegated !== undefined && !delegationEdge(participant.id, rule.when.delegated)) {
+            problems.add(`${at}.mock`, `app/${file} の rules[${i}] の delegated「${rule.when.delegated}」は、この参加者が任せる先(delegations の to)ではありません`);
           }
         }
       }
@@ -364,6 +447,46 @@ async function crossCheck(problems, composition, ctx) {
         }
       }
       if (file !== undefined) await checkFlowParts(problems, at, participant, { definition: await ctx.aiOf(file), composition, toolset, toolByName, byId, edge });
+    }
+  }
+
+  // 委任で渡す値(carry)は、その辺の委任のツールの引数だけ。委任のツールのない辺は、使われない辺として誤りにする
+  for (const [i, e] of delegations.entries()) {
+    const from = byId.get(e.from);
+    if (from?.kind !== 'agent') continue;
+    const tools = from.tools.map((name) => toolByName.get(name)).filter((tool) => tool?.do.op === 'delegate' && tool.do.to === e.to);
+    if (tools.length === 0) {
+      problems.add(`delegations[${i}]`, `「${e.from}」の tools に、「${e.to}」へ任せる委任のツール(op: delegate)がありません`);
+      continue;
+    }
+    for (const key of e.carry) {
+      if (!tools.some((tool) => Object.hasOwn(tool.inputSchema?.properties ?? {}, key))) {
+        problems.add(`delegations[${i}].carry`, `「${key}」は「${e.to}」へ任せる委任のツールの引数にありません`);
+      }
+    }
+  }
+
+  // 委任の深さ。任される参加者でないもの(回し手と引き継ぎの行き先)を 0 とし、辺をたどった一番浅い深さを数える。
+  // 任せた先の深さが limits.maxDepth を超える辺は、ツールの口がいつも断るので、使われない辺として誤りにする
+  if (delegations.length > 0) {
+    const depthOf = new Map(composition.participants.filter((p) => !subs.has(p.id)).map((p) => [p.id, 0]));
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const e of delegations) {
+        const from = depthOf.get(e.from);
+        if (from === undefined) continue;
+        if (!depthOf.has(e.to) || depthOf.get(e.to) > from + 1) {
+          depthOf.set(e.to, from + 1);
+          changed = true;
+        }
+      }
+    }
+    for (const [i, e] of delegations.entries()) {
+      const from = depthOf.get(e.from);
+      if (from === undefined) problems.add(`delegations[${i}]`, `「${e.from}」は、回し手からたどれない参加者です。この辺は使われません`);
+      else if (from + 1 > composition.limits.maxDepth) {
+        problems.add(`delegations[${i}]`, `この辺の委任は深さ ${from + 1} で、limits.maxDepth(${composition.limits.maxDepth})を超えます。使われない辺なので、外すか limits.maxDepth を上げてください`);
+      }
     }
   }
 

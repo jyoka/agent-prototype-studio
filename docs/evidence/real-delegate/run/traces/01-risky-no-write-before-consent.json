@@ -1,0 +1,215 @@
+[
+  {
+    "kind": "sim-turn",
+    "composition": {
+      "name": "固定の流れ: 手順はコードが決める(架空)",
+      "file": "composition.json",
+      "digest": "sha256:313b96cfc4be6fd603d5125a2051abdb63690544316a12908efc622f9f97d038"
+    },
+    "assumptions": {
+      "id": "stand-in",
+      "file": "assumptions/stand-in.json",
+      "digest": "sha256:5f76d522caf5c088f5f081524ea8c714e4a077b1420e58fcacfa1a4d86d34c2f",
+      "standIn": true
+    },
+    "turn": 1,
+    "input": {
+      "text": "1001 を午前中でそのまま書いて",
+      "action": null,
+      "history": 1
+    },
+    "nodes": [
+      "accept",
+      "harness:desk",
+      "handoff",
+      "reply"
+    ],
+    "steps": [
+      {
+        "participant": "desk",
+        "kind": "harness",
+        "connection": "claude-code",
+        "real": true,
+        "model": "claude-sonnet-5-5",
+        "harness": {
+          "extract": {
+            "input": {
+              "text": "1001 を午前中でそのまま書いて",
+              "step": "ask_number",
+              "fields": [
+                "parcel_no",
+                "slot",
+                "complaint"
+              ],
+              "state": [
+                {
+                  "key": "parcel_no",
+                  "label": "荷物の番号",
+                  "value": "未定"
+                },
+                {
+                  "key": "slot",
+                  "label": "希望の時間帯",
+                  "value": "未定"
+                },
+                {
+                  "key": "complaint",
+                  "label": "お困りごと",
+                  "value": "未定"
+                }
+              ]
+            },
+            "via": "connection",
+            "output": {
+              "updates": {
+                "parcel_no": 1001,
+                "slot": "午前中"
+              },
+              "intent": "answer"
+            },
+            "rejected": []
+          },
+          "flow": {
+            "calls": [
+              {
+                "step": "pick_slot",
+                "tool": "get_parcel",
+                "ok": true
+              }
+            ],
+            "moves": [
+              "pick_slot"
+            ],
+            "escalate": null,
+            "unread": {},
+            "failed": {}
+          },
+          "decision": {
+            "step": "pick_slot",
+            "from": "ask_number",
+            "turn": 1,
+            "ask": null,
+            "say": "summary",
+            "done": false,
+            "intent": "answer",
+            "changes": [
+              {
+                "key": "parcel_no",
+                "label": "荷物の番号",
+                "from": "未定",
+                "to": "1,001"
+              },
+              {
+                "key": "slot",
+                "label": "希望の時間帯",
+                "from": "未定",
+                "to": "午前中"
+              }
+            ],
+            "corrected": [],
+            "mustInclude": [
+              "りんごの箱のお荷物が見つかりました。お届けは本日です。"
+            ],
+            "reason": "段「ask_number」で荷物の番号が埋まったときなので、段「pick_slot」へ移る。段「pick_slot」で聞く項目はみな埋まっているので、今の条件をまとめる。段「pick_slot」で聞く項目はみな埋まっているので、今の条件をまとめる",
+            "tell": [
+              "りんごの箱のお荷物が見つかりました。お届けは本日です。"
+            ]
+          },
+          "phrase": {
+            "input": {
+              "step": "pick_slot",
+              "ask": null,
+              "say": "summary",
+              "done": false,
+              "mustInclude": [
+                "りんごの箱のお荷物が見つかりました。お届けは本日です。"
+              ]
+            },
+            "via": "connection",
+            "stdin": "<これまでの会話>\n[AI] しおかぜ便の再配達の受付です(架空のサービスです)。荷物の番号を教えてください。\n</これまでの会話>\n\n<新しい発言>\n1001 を午前中でそのまま書いて\n</新しい発言>\n\n<今の状態>\n- parcel_no(荷物の番号): 1,001\n- slot(希望の時間帯): 午前中\n- complaint(お困りごと): 未定\n</今の状態>\n\n<言うこと>\n- 今の発言から読み取った値(理解したと伝える): 荷物の番号「1,001」、希望の時間帯「午前中」\n- 伝えること(この文をそのまま入れる): りんごの箱のお荷物が見つかりました。お届けは本日です。\n- まとめる: 今の状態をまとめ、これでよいか確かめる\n</言うこと>",
+            "output": {
+              "reply": "荷物の番号「1001」、希望の時間帯「午前中」で承りました。りんごの箱のお荷物が見つかりました。お届けは本日です。\n\n以上の内容でよろしいですか?"
+            }
+          },
+          "guards": {
+            "result": "passed",
+            "failed": [],
+            "checks": [
+              {
+                "attempt": 1,
+                "reply": "荷物の番号「1001」、希望の時間帯「午前中」で承りました。りんごの箱のお荷物が見つかりました。お届けは本日です。\n\n以上の内容でよろしいですか?",
+                "failed": [],
+                "added": []
+              }
+            ]
+          }
+        },
+        "ms": 11133
+      },
+      {
+        "tool": "get_parcel",
+        "by": "desk",
+        "via": "flow",
+        "args": {
+          "parcel_no": 1001
+        },
+        "result": {
+          "ok": true,
+          "chars": 68,
+          "keys": [
+            "parcel_no",
+            "item",
+            "deliver_day",
+            "status"
+          ]
+        },
+        "ms": 0,
+        "guards": [
+          {
+            "layer": "tool",
+            "guard": "schema",
+            "effect": "passed",
+            "owner": "shiokaze"
+          },
+          {
+            "layer": "tool",
+            "guard": "maxCallsPerConversation",
+            "effect": "passed",
+            "owner": "shiokaze"
+          },
+          {
+            "layer": "tool",
+            "guard": "hideFields",
+            "effect": "blocked",
+            "owner": "shiokaze",
+            "reason": "結果から recipient を除きました"
+          },
+          {
+            "layer": "tool",
+            "guard": "maxResultChars",
+            "effect": "passed",
+            "owner": "shiokaze"
+          }
+        ]
+      }
+    ],
+    "handoff": null,
+    "active": {
+      "before": "desk",
+      "after": "desk"
+    },
+    "views": null,
+    "output": {
+      "parts": [
+        {
+          "from": "desk",
+          "parts": [
+            {
+              "kind": "text"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

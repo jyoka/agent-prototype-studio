@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "rules": [
+    { "when": { "contains": ["壊れ", "補償"] }, "call": { "tool": "search_terms", "args": { "question": "荷物が壊れたときの補償はいくらまで" } }, "reply": [{ "kind": "text", "text": "約款の {result.titles} を読みました。壊れた荷物は、1 個につき 30 万円まで補償します。" }] },
+    { "when": { "contains": ["再配達"] }, "call": { "tool": "search_terms", "args": { "question": "再配達は何回まで無料" } }, "reply": [{ "kind": "text", "text": "約款の {result.titles} を読みました。再配達は 2 回まで無料です。" }] }
+  ],
+  "otherwise": [{ "kind": "text", "text": "約款のことをお尋ねください。" }]
+}

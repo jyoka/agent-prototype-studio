@@ -22,6 +22,7 @@ import { TOOL_LIMITS } from './tools.js';
 //                  前提のツールの呼び方、ツールの宣言のファイル、1 回の返事のツールの数の上限(sim-4。起動の引数は 3 つのまま)。
 //                  なければ単独の起動
 //   handoff.json … 引き継ぎのツールが通ったときの、行き先と受け渡す値(伏せない)。Studio が返事の後に読んで消す
+//   delegate.json … 委任のツール(2.9)が通ったときの、任せる先と依頼の文と受け渡す値(伏せない)。Studio が返事の後に読んで消す
 //   mcp.json     … 模擬のエージェントに渡す MCP の設定(Studio が書く。このサーバーは読まない)
 
 export const PROTOCOL_VERSIONS = Object.freeze(['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']);
@@ -47,13 +48,14 @@ export const SIM_FILES = Object.freeze({
   lock: 'server.lock',
   context: 'context.json',
   handoff: 'handoff.json',
+  delegate: 'delegate.json',
   mcp: 'mcp.json',
 });
 
 // 受け取る 1 行の長さ。ツールの引数はツールの口が 2 万文字で断るので、これより長いものは読まない
 const MAX_LINE = 1024 * 1024;
 // 書き途中のファイルの名前: <store.json か counts.json>.<書いたプロセスの番号>.<8 文字>.tmp
-const TEMP_NAME = /^(?:store|counts|handoff)\.json\.([1-9]\d*)\.[0-9a-f]{8}\.tmp$/;
+const TEMP_NAME = /^(?:store|counts|handoff|delegate)\.json\.([1-9]\d*)\.[0-9a-f]{8}\.tmp$/;
 
 export class ToolsMcpError extends Error {}
 
@@ -119,7 +121,7 @@ export async function ensureSimDir(projectDir, conversationId) {
     if (stat && !stat.isDirectory()) throw new ToolsMcpError(`${path.relative(projectDir, dir)} がフォルダーではありません`);
     if (!stat) await fs.mkdir(dir).catch((error) => (error.code === 'EEXIST' ? undefined : Promise.reject(error)));
   }
-  for (const name of [SIM_FILES.store, SIM_FILES.counts, SIM_FILES.calls, SIM_FILES.context, SIM_FILES.handoff, SIM_FILES.mcp]) {
+  for (const name of [SIM_FILES.store, SIM_FILES.counts, SIM_FILES.calls, SIM_FILES.context, SIM_FILES.handoff, SIM_FILES.delegate, SIM_FILES.mcp]) {
     const stat = await fs.lstat(path.join(dir, name)).catch(() => null);
     if (stat && !stat.isFile()) throw new ToolsMcpError(`${name} がファイルではありません`);
   }
@@ -189,6 +191,20 @@ export function parseContext(value) {
       return { from: edge.from, to: edge.to, carry: [...edge.carry] };
     });
   }
+  // 委任の辺と上限(2.9)。辺は from、to、carry、history。上限は会話の進め方が数えた残り
+  if (value.delegations !== undefined) {
+    if (!Array.isArray(value.delegations) || value.delegations.length > 20) fail('delegations');
+    context.delegations = value.delegations.map((edge) => {
+      const ok = isPlainObject(edge) && ID.test(edge.from ?? '') && ID.test(edge.to ?? '') && typeof edge.history === 'boolean'
+        && Array.isArray(edge.carry) && edge.carry.length <= 20 && edge.carry.every((key) => typeof key === 'string' && KEY.test(key));
+      if (!ok) fail('delegations');
+      return { from: edge.from, to: edge.to, carry: [...edge.carry], history: edge.history };
+    });
+    if (!intIn(value.depthLeft, 0, 3)) fail('depthLeft');
+    if (!intIn(value.delegationsLeft, 0, 10)) fail('delegationsLeft');
+    context.depthLeft = value.depthLeft;
+    context.delegationsLeft = value.delegationsLeft;
+  } else if (value.depthLeft !== undefined || value.delegationsLeft !== undefined) fail('delegations');
   if (value.toolCalling !== undefined) {
     const calling = value.toolCalling;
     if (!isPlainObject(calling)) fail('toolCalling');
@@ -337,6 +353,8 @@ export class ToolsSession {
     // このサーバーの起動の間(模擬のエージェントの 1 回の返事)に呼ばれた数。context の maxPerReply で切る
     this.replyCalls = 0;
     this.handoffs = [];
+    // この起動の間に通った委任の頼み。delegationsLeft から引いて、ツールの口に残りを渡す
+    this.delegates = [];
   }
 
   // 道具の一覧。文脈に参加者のツールの名前があれば、その名前だけを出す(ほかの参加者のツールの説明を渡さない。S14)
@@ -355,7 +373,7 @@ export class ToolsSession {
   // 書けなければ、メモリーの店と数を進めずに誤りを返す
   async dispatch(name, args) {
     if (this.closed) return { content: [{ type: 'text', text: 'ツールのサーバーは終わるところです' }], isError: true };
-    const { by, handoffs, assumption, userId, maxPerReply, allowedTools } = this.context;
+    const { by, handoffs, assumption, userId, maxPerReply, allowedTools, delegations, depthLeft, delegationsLeft } = this.context;
     this.replyCalls += 1;
     // 参加者に渡していないツールは、ツールの口に渡さず、記録だけ残す(模擬のエージェントのモックと同じ断り方。orchestrator.js)
     if (allowedTools && !allowedTools.includes(name)) {
@@ -375,6 +393,7 @@ export class ToolsSession {
         calls: this.counts,
         ...(by ? { by } : {}),
         ...(handoffs ? { handoffs } : {}),
+        ...(delegations ? { delegations, depthLeft, delegationsLeft: Math.max(0, delegationsLeft - this.delegates.length) } : {}),
         ...(assumption ? { assumption } : {}),
         ...(userId ? { userId } : {}),
       },
@@ -388,12 +407,14 @@ export class ToolsSession {
       await writeAtomic(this.conversation, SIM_FILES.counts, outcome.calls);
       // 引き継ぎの行き先と受け渡す値は、伏せずに別のファイルで Studio に渡す(記録の calls.jsonl は伏せた形のまま)
       if (outcome.handoff) await writeAtomic(this.conversation, SIM_FILES.handoff, [...this.handoffs, outcome.handoff]);
+      if (outcome.delegate) await writeAtomic(this.conversation, SIM_FILES.delegate, [...this.delegates, outcome.delegate]);
     } catch (error) {
       return { content: [{ type: 'text', text: `呼び出しの記録を書けませんでした: ${String(error?.message ?? error).slice(0, 300)}` }], isError: true };
     }
     this.store = outcome.store;
     this.counts = outcome.calls;
     if (outcome.handoff) this.handoffs.push(outcome.handoff);
+    if (outcome.delegate) this.delegates.push(outcome.delegate);
     if (!outcome.ok) return { content: [{ type: 'text', text: outcome.error }], isError: true };
     return { content: [{ type: 'text', text: JSON.stringify(outcome.result ?? null) }] };
   }

@@ -114,7 +114,7 @@
 
 | 項目 | 中身 |
 |---|---|
-| `compositions[]` | 構成。`file`、`default`(既定の構成か)、`name`、`driver`、`participants[]`(`id`、`kind`、`label`、`owner`。`agent` は `prompt`、`tools`、`mock`。`harness` は `ai`、`returnTo`)、`tools`(ツールの宣言のファイル)、`handoffs`、`guards`(層、持ち主、`enforce`)、`surface`、`assumptions`、`limits` |
+| `compositions[]` | 構成。`file`、`default`(既定の構成か)、`name`、`driver`、`participants[]`(`id`、`kind`、`label`、`owner`。`agent` は `prompt`、`tools`、`mock`。`harness` は `ai`、`returnTo`)、`tools`(ツールの宣言のファイル)、`handoffs`、`delegations`(マスターとサブの委任の辺。書いた構成だけ)、`guards`(層、持ち主、`enforce`)、`surface`、`assumptions`、`limits` |
 | `tools[]` | ツールの宣言のファイルごと。`file`、`owner`、`tools[]`(`name`、`description`、`owner`、`inputSchema`、`do`、`guards`) |
 | `assumptions[]` | 前提(相手の仕様の推測)。ファイルの中身のままと、`file`、`digest`(SHA-256) |
 | `prompts[]` | プロンプトの枠の文のファイル。`file`、`chars`(中身は写した `app/` にある) |

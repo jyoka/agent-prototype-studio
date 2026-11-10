@@ -292,8 +292,8 @@ test.describe('LP', () => {
     // 今できることの方に、作っているものの名前を混ぜない
     for (const name of names) await expect(page.locator('#features')).not.toContainText(name);
 
-    // 見出しの下の文で、承認の段がまだ使えないと言い、作っているものへ飛べる
-    await expect(page.locator('.hero-text')).toContainText('承認する段は作っているところで、まだ使えません', SHOWN);
+    // 見出しの下の文で、承認の段は人の確かめがまだだと言い、作っているものへ飛べる
+    await expect(page.locator('.hero-text')).toContainText('承認する段(AI 構成の審査)は、設計の案内の後に入りましたが、人の確かめはまだ', SHOWN);
     await page.locator('.hero-text a[href="#building"]:visible').click();
     await expect(page).toHaveURL(/#building$/);
 
@@ -301,10 +301,10 @@ test.describe('LP', () => {
     await expect(page.locator('#features h2')).toHaveText('What it does today', SHOWN);
     await expect(page.locator('#building h2')).toHaveText('In progress', SHOWN);
     await expect(building.first().locator('h3')).toHaveText('AI architecture review', SHOWN);
-    await expect(page.locator('.hero-text')).toContainText('is not ready yet', SHOWN);
+    await expect(page.locator('.hero-text')).toContainText('it has not been checked with people yet', SHOWN);
   });
 
-  test('3 つの問いは Studio だけの欄で答え、ほかの道具と比べない。承認は作っていると言う', async ({ page }) => {
+  test('3 つの問いは Studio だけの欄で答え、ほかの道具と比べない。承認は一部で、人の確かめはまだと言う', async ({ page }) => {
     await page.setViewportSize(DESKTOP);
     await page.goto(site.url);
     const rows = page.locator('.axes tbody tr');
@@ -314,14 +314,16 @@ test.describe('LP', () => {
     await expect(page.locator('.axes thead th')).toHaveText(['問い', 'Prototype Studio'], SHOWN);
     for (let i = 0; i < 3; i += 1) await expect(rows.nth(i).locator('td')).toHaveCount(1);
     await expect(page.locator('#questions')).not.toContainText(/ほかの道具|一般的な道具|記載なし/, SHOWN);
-    await expect(rows.nth(1).locator('td')).toContainText('作っている', SHOWN);
+    await expect(rows.nth(1).locator('td')).toContainText('一部', SHOWN);
+    await expect(rows.nth(1).locator('td')).toContainText('人の確かめはまだ', SHOWN);
     await page.locator('.bar-nav a[href="#questions"]').click();
     await expect(page).toHaveURL(/#questions$/);
 
     await page.locator('#lang-toggle').click();
     await expect(page.locator('#questions h2')).toHaveText('Three questions', SHOWN);
     await expect(page.locator('.axes tbody th')).toHaveText(['Does it show the AI architecture?', 'Does a person approve it?', 'Does it measure?'], SHOWN);
-    await expect(rows.nth(1).locator('td')).toContainText('In progress', SHOWN);
+    await expect(rows.nth(1).locator('td')).toContainText('Partly', SHOWN);
+    await expect(rows.nth(1).locator('td')).toContainText('not been checked with people yet', SHOWN);
   });
 
   test('日本語と英語、ダークとライトを切り替えられ、読み込み直しても残る', async ({ page }) => {

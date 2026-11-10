@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildFixPrompt, MAX_FAILURE_CHARS, MAX_FIX_FILES, readFixPrompt } from '../../src/server/fix-prompt.js';
+import { buildFixPrompt, MAX_FAILURE_CHARS, MAX_FIX_FILES, readFixPrompt, REVIEW_LINE } from '../../src/server/fix-prompt.js';
 
 // 直す依頼(docs/design/harness.md の 2.3、S14)。作る AI に渡す文脈を絞る
 const REQUEST = '見出しを「架空の図書室」にして';
@@ -178,4 +178,16 @@ test('場面(関門 GE)の失敗は、場面の id、通らなかった確かめ
   // report の場所は入れない
   assert.ok(!prompt.includes('.studio/runs'));
   assert.deepEqual(readFixPrompt(prompt), { request: REQUEST, gate: 'GE 場面' });
+});
+
+test('AI 構成の審査で承認した試作品の直す依頼だけ、承認した構成を変えない行を終わりの文の前に足す。読み取りは変わらない', () => {
+  const request = '見出しを直して';
+  const gate = compileGate([{ file: 'app/App.jsx', text: 'x' }]);
+  const plain = buildFixPrompt({ request, gate, changedFiles: [] });
+  const reviewed = buildFixPrompt({ request, gate, changedFiles: [], reviewed: true });
+  assert.ok(!plain.includes(REVIEW_LINE));
+  const lines = reviewed.split('\n');
+  assert.equal(lines.at(-2), REVIEW_LINE);
+  assert.equal(lines.at(-1), plain.split('\n').at(-1));
+  assert.deepEqual(readFixPrompt(reviewed), { request, gate: 'G4 ビルド' });
 });

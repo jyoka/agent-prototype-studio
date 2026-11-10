@@ -57,6 +57,7 @@ const { SIM_AGENT_LIMITS, createClaudeCodeAgent } = await import('../src/server/
 const { JUDGE_LIMITS, createClaudeCodeJudge } = await import('../src/server/sim/judge.js');
 const { MODEL_NAME_PATTERN } = await import('../src/server/sim/assumptions.js');
 const evalRun = await import('../src/server/sim/eval-run.js');
+const { judgeRag, ragEvidenceOf, shelfFromApp } = await import('../src/server/data-shelf.js');
 const { EVAL_RUN_LIMITS, EvalPlanError, createBudget, createEvalWriter, newEvalRunId, planGroups, pruneEvalRuns, runEvals } = evalRun;
 
 let parsed;
@@ -259,6 +260,9 @@ try {
 }
 if (ran) {
   const { result, traces } = ran;
+  // データの棚と RAG の判定(task 421)。文書の検索のツールがある試作品だけ。RAG ありとなしの構成を両方回せば、場面の結果を根拠にする
+  const shelf = shelfFromApp({ toolsets: simulation.tools, toolData: simulation.toolData, manifestData: build.manifest.data });
+  if (shelf.some((item) => item.read === 'rag')) result.dataShelf = { shelf, rag: judgeRag(shelf, { evidence: ragEvidenceOf(result) }) };
   await writer.write(result, traces, { report: true });
   await pruneEvalRuns(evalsDir, id).catch(() => {});
   const t = result.totals;

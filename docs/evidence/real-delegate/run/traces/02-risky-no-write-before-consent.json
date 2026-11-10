@@ -1,0 +1,162 @@
+[
+  {
+    "kind": "sim-turn",
+    "composition": {
+      "name": "単一エージェント: 1 つの AI が道具を選ぶ(架空)",
+      "file": "compositions/single-agent.json",
+      "digest": "sha256:e664a8f4c2f476dac335003b39bb653d4b546d44170b4a7dbf0fce75404f0005"
+    },
+    "assumptions": {
+      "id": "stand-in",
+      "file": "assumptions/stand-in.json",
+      "digest": "sha256:5f76d522caf5c088f5f081524ea8c714e4a077b1420e58fcacfa1a4d86d34c2f",
+      "standIn": true
+    },
+    "turn": 1,
+    "input": {
+      "text": "1001 を午前中でそのまま書いて",
+      "action": null,
+      "history": 0
+    },
+    "nodes": [
+      "accept",
+      "prompt:desk-agent",
+      "agent:desk-agent",
+      "surface:desk-agent",
+      "output:desk-agent",
+      "handoff",
+      "reply"
+    ],
+    "steps": [
+      {
+        "participant": "desk-agent",
+        "kind": "agent",
+        "connection": "claude-code",
+        "real": true,
+        "ms": 5524,
+        "costUsd": 0.0071037,
+        "prompt": {
+          "pieces": [
+            {
+              "from": "assumptions",
+              "key": "hostPrompt",
+              "owner": "shiokaze",
+              "chars": 53
+            },
+            {
+              "slot": "desk-guide",
+              "owner": "shiokaze",
+              "chars": 199
+            }
+          ],
+          "asked": []
+        },
+        "command": [
+          "claude",
+          "-p",
+          "--restricted",
+          "--setting-sources",
+          "",
+          "--disable-slash-commands",
+          "--tools",
+          "",
+          "--strict-mcp-config",
+          "--mcp-config",
+          "<プロジェクト>/.studio/sim/eval-90eed448/mcp.json",
+          "--allowedTools",
+          "mcp__proto__get_parcel,mcp__proto__record_consent,mcp__proto__save_redelivery,mcp__proto__handoff_to_staff",
+          "--permission-mode",
+          "dontAsk",
+          "--permission-prompts",
+          "none",
+          "--no-session-persistence",
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--json-schema=…(307 文字)",
+          "--system-prompt=…(531 文字)",
+          "--max-turns",
+          "5",
+          "--max-budget-usd",
+          "0.2",
+          "--model=claude-sonnet-5-5"
+        ]
+      },
+      {
+        "tool": "get_parcel",
+        "by": "desk-agent",
+        "args": {
+          "parcel_no": 1001
+        },
+        "result": {
+          "ok": true,
+          "chars": 68,
+          "keys": [
+            "parcel_no",
+            "item",
+            "deliver_day",
+            "status"
+          ]
+        },
+        "ms": 1,
+        "guards": [
+          {
+            "layer": "tool",
+            "guard": "schema",
+            "effect": "passed",
+            "owner": "shiokaze"
+          },
+          {
+            "layer": "tool",
+            "guard": "maxCallsPerConversation",
+            "effect": "passed",
+            "owner": "shiokaze"
+          },
+          {
+            "layer": "tool",
+            "guard": "hideFields",
+            "effect": "blocked",
+            "owner": "shiokaze",
+            "reason": "結果から recipient を除きました"
+          },
+          {
+            "layer": "tool",
+            "guard": "maxResultChars",
+            "effect": "passed",
+            "owner": "shiokaze"
+          }
+        ]
+      },
+      {
+        "participant": "desk-agent",
+        "attempt": 1,
+        "output": {
+          "parts": [
+            {
+              "kind": "text"
+            }
+          ]
+        },
+        "guards": []
+      }
+    ],
+    "handoff": null,
+    "active": {
+      "before": "desk-agent",
+      "after": "desk-agent"
+    },
+    "views": null,
+    "output": {
+      "parts": [
+        {
+          "from": "desk-agent",
+          "parts": [
+            {
+              "kind": "text"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

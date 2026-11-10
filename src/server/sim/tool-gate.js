@@ -2,6 +2,7 @@ import path from 'node:path';
 import { appPath } from '../manifest.js';
 import { findPersonalData, redact } from '../redact.js';
 import { Problems, SIM_LIMITS, isPlainObject, readAppJson } from './check.js';
+import { documentProblems, searchDocuments } from './retrieve.js';
 
 // ツールの口(docs/design/agent-simulation.md の 3.5)。試作品のツールを、決まった手順で動かす Studio のコード。
 // 形の検査 → ツールの守り → 実行 → 記録の順に進む。MCP サーバー、モックの模擬のエージェント、ツールだけの場面の
@@ -13,6 +14,8 @@ import { Problems, SIM_LIMITS, isPlainObject, readAppJson } from './check.js';
 export const GATE_LIMITS = { maxArgsChars: 20_000 };
 
 const FAULT_MESSAGE = 'ツールが一時的に失敗しました。少し待ってから、もう一度呼んでください';
+// 委任のツールが通ったときに、任せた AI に返す文。サブの結果は、この返事の後に会話の進め方が渡す(2.9)
+export const DELEGATE_NOTE = 'サブに任せました。結果は、この返事の後に渡します。この返事では、確かめていることだけを短く書いてください。';
 const looksLikeKinds = { phone: '電話番号', email: 'メールアドレス', address: '住所', personName: '氏名' };
 
 const sleepFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -37,10 +40,12 @@ export async function loadToolData(appDir, toolset) {
   const data = {};
   const problems = new Problems('app/tools.json');
   const uses = new Map();
+  const documents = new Set();
   for (const tool of toolset?.tools ?? []) {
     if (typeof tool.do?.data !== 'string') continue;
-    const array = tool.do.op === 'search' || tool.do.op === 'get';
+    const array = tool.do.op === 'search' || tool.do.op === 'get' || tool.do.op === 'retrieve';
     uses.set(tool.do.data, (uses.get(tool.do.data) ?? false) || array);
+    if (tool.do.op === 'retrieve') documents.add(tool.do.data);
   }
   for (const [file, array] of [...uses].sort(([a], [b]) => (a < b ? -1 : 1))) {
     const relative = appPath(problems, file, file);
@@ -52,7 +57,9 @@ export async function loadToolData(appDir, toolset) {
     const { value, error } = await readAppJson(appDir, relative, SIM_LIMITS.maxDataBytes);
     if (error) problems.add(relative, error);
     else if (array && (!Array.isArray(value) || value.some((item) => !isPlainObject(item)))) {
-      problems.add(relative, 'search と get のデータは、オブジェクトの配列([{ … }, …])にしてください');
+      problems.add(relative, 'search、get、retrieve のデータは、オブジェクトの配列([{ … }, …])にしてください');
+    } else if (documents.has(file) && documentProblems(value).length > 0) {
+      problems.add(relative, `文書のデータの形が違います: ${documentProblems(value)[0]}`);
     } else data[file] = value;
   }
   return { data, errors: problems.list };
@@ -176,7 +183,7 @@ function run(tool, args, data, store, context) {
   if (action.data !== undefined && source === undefined) {
     return { ok: false, error: `データ app/${action.data} が読めていません` };
   }
-  if ((action.op === 'search' || action.op === 'get') && !Array.isArray(source)) {
+  if ((action.op === 'search' || action.op === 'get' || action.op === 'retrieve') && !Array.isArray(source)) {
     return { ok: false, error: `データ app/${action.data} が配列ではありません` };
   }
   switch (action.op) {
@@ -202,6 +209,12 @@ function run(tool, args, data, store, context) {
     }
     case 'fixed':
       return { ok: true, result: clone(action.data === undefined ? action.value : source) };
+    case 'retrieve': {
+      // 文書の検索(retrieve.js)。問いに近い文書を、引用の文(cite)を付けて返す
+      const query = own(args, action.query);
+      if (typeof query !== 'string' || query.trim() === '') return { ok: false, error: `「${action.query}」に、探したいことを書いてください` };
+      return { ok: true, result: searchDocuments(source, query, { limit: action.limit }) };
+    }
     case 'handoff': {
       // 辺があれば、辺の carry の名前の引数だけを渡す(carry がなければ何も渡さない)。
       // 辺が渡されなければ(会話の進め方の外から呼ぶとき)、引数をそのまま返し、絞るのは呼ぶ側に任せる
@@ -210,6 +223,16 @@ function run(tool, args, data, store, context) {
         ? Object.fromEntries((edge.carry ?? []).filter((name) => own(args, name) !== undefined).map((name) => [name, clone(args[name])]))
         : clone(args);
       return { ok: true, result: { handoff: action.to }, handoff: { to: action.to, carry } };
+    }
+    case 'delegate': {
+      // 委任(2.9)。依頼の文(task)と、辺の carry の名前の引数だけをサブに渡す。サブを回すのは会話の進め方
+      const edge = (Array.isArray(context.delegations) ? context.delegations : []).find((item) => item.from === context.by && item.to === action.to);
+      const values = Object.fromEntries(Object.entries(isPlainObject(args) ? args : {}).filter(([name]) => name !== 'task'));
+      const carry = edge
+        ? Object.fromEntries((edge.carry ?? []).filter((name) => own(values, name) !== undefined).map((name) => [name, clone(values[name])]))
+        : clone(values);
+      const task = typeof own(args, 'task') === 'string' ? args.task : '';
+      return { ok: true, result: { delegated: action.to, note: DELEGATE_NOTE }, delegate: { to: action.to, task, carry } };
     }
     default:
       return { ok: false, error: `知らない処理です: ${action.op}` };
@@ -249,6 +272,12 @@ function summarize(outcome) {
   if (isPlainObject(result) && typeof result.count === 'number' && Array.isArray(result.items)) summary.count = result.count;
   else if (Array.isArray(result)) summary.count = result.length;
   if (isPlainObject(result)) summary.keys = Object.keys(result);
+  // 文書の検索は、返した文書の id と引用の文を残す(検索の再現率と引用の有無を、記録から確かめるため。4.2)
+  if (outcome.retrieved && isPlainObject(result) && Array.isArray(result.items)) {
+    const strings = (key) => result.items.map((item) => (isPlainObject(item) ? item[key] : undefined)).filter((value) => typeof value === 'string');
+    summary.docs = strings('id');
+    summary.cites = strings('cite');
+  }
   return summary;
 }
 
@@ -268,8 +297,9 @@ export function refusedEntry({ name, args, by, layer = 'tool', guard, reason, ow
 // 1 回のツールの呼び出し。
 // tools: 検査した tools.json(parseTools の toolset)。data: loadToolData の data。store: 会話ごとの記録の店({ 記録の名前: 値 })。
 // context: { conversationId, userId, by(呼んだ参加者), calls({ ツールの名前: これまでの回数 }), assumption(前提。toolCalling を見る),
-//            handoffs(構成の辺), via(モデルでなくコードが呼んだとき 'flow'。記録に残す), sleep(テスト用) }
-// 返す値: { ok, result | error, guards[], ms, store(新しい記録の店), calls(新しい回数), handoff?, fault?, entry(記録の 1 件) }。
+//            handoffs(構成の辺), delegations(委任の辺), depthLeft(あと何段任せられるか), delegationsLeft(このターンにあと何回任せられるか),
+//            via(モデルでなくコードが呼んだとき 'flow'。記録に残す), sleep(テスト用) }
+// 返す値: { ok, result | error, guards[], ms, store(新しい記録の店), calls(新しい回数), handoff?, delegate?, fault?, entry(記録の 1 件) }。
 // 同じ tools、data、store、context.calls、args なら、ms のほかは同じ値を返す
 export async function callTool({ tools, data = {}, store = {}, context = {}, name, args = {} }) {
   const started = performance.now();
@@ -305,6 +335,7 @@ export async function callTool({ tools, data = {}, store = {}, context = {}, nam
     guards: jsonCopy(guards),
     ...(outcome.fault ? { fault: true } : {}),
     ...(outcome.handoff ? { handoff: { to: outcome.handoff.to } } : {}),
+    ...(outcome.delegate ? { delegate: { to: outcome.delegate.to } } : {}),
   });
   return {
     ok: outcome.ok,
@@ -314,12 +345,13 @@ export async function callTool({ tools, data = {}, store = {}, context = {}, nam
     store: nextStore,
     calls,
     ...(outcome.handoff ? { handoff: outcome.handoff } : {}),
+    ...(outcome.delegate ? { delegate: outcome.delegate } : {}),
     ...(outcome.fault ? { fault: true } : {}),
     entry,
   };
 }
 
-// 形の検査 → ツールの守り(回数、requires、deny、引き継ぎの辺)→ 前提の失敗 → 実行 → 結果の守り(hideFields、maxResultChars)。
+// 形の検査 → ツールの守り(回数、requires、deny、引き継ぎの辺、委任の辺と上限)→ 前提の失敗 → 実行 → 結果の守り(hideFields、maxResultChars)。
 // 守りに当たったら、そこで止めて実行しない
 function gate(tool, { args, data, store, context, count, calling, mark }) {
   const block = (guard, reason, error = reason) => {
@@ -374,6 +406,23 @@ function gate(tool, { args, data, store, context, count, calling, mark }) {
     mark('handoff', 'passed');
   }
 
+  // 委任の辺と上限(2.9)。会話の進め方が辺(context.delegations)と呼んだ参加者を渡したときだけ見る。
+  // 深さ(depthLeft)と 1 ターンの回数(delegationsLeft)は、会話の進め方が数えて渡す。会話の進め方も、サブを回す前に同じ上限を確かめ直す
+  if (tool.do.op === 'delegate' && Array.isArray(context.delegations) && context.by) {
+    if (!context.delegations.some((edge) => edge.from === context.by && edge.to === tool.do.to)) {
+      return block('delegate', `「${context.by}」から「${tool.do.to}」への委任は、構成の delegations にありません`);
+    }
+    mark('delegate', 'passed');
+    if (Number.isInteger(context.depthLeft)) {
+      if (context.depthLeft <= 0) return block('maxDepth', '委任の深さの上限に達しました(limits.maxDepth)。これより先には任せられません。任せずに答えてください');
+      mark('maxDepth', 'passed');
+    }
+    if (Number.isInteger(context.delegationsLeft)) {
+      if (context.delegationsLeft <= 0) return block('maxDelegations', '1 ターンの委任の回数の上限に達しました(limits.maxDelegations)。任せずに答えてください');
+      mark('maxDelegations', 'passed');
+    }
+  }
+
   // 前提の失敗(faults)。決まった回の呼び出しを、実行せずに失敗にする。守りではないので guards には入れない
   if ((calling.faults ?? []).some((fault) => fault.tool === tool.name && fault.onCall === count)) {
     return { ok: false, error: FAULT_MESSAGE, fault: true };
@@ -381,6 +430,7 @@ function gate(tool, { args, data, store, context, count, calling, mark }) {
 
   const outcome = run(tool, args, data, store, context);
   if (!outcome.ok) return outcome;
+  if (tool.do.op === 'retrieve') outcome.retrieved = true;
 
   // hideFields(結果から決まった項目を除く。除いた項目があれば blocked として残す)
   let { result } = outcome;

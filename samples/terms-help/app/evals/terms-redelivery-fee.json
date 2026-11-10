@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "id": "terms-redelivery-fee",
+  "kind": "question",
+  "about": "再配達が何回まで無料かを聞かれ、約款の条を探して、見出しを書いて答える",
+  "turns": [{ "user": "再配達は何回まで無料ですか" }],
+  "expect": [
+    { "check": "retrieved", "docs": ["terms-4"] },
+    { "check": "cited" },
+    { "check": "replyContains", "text": "2 回まで無料", "only": "mock" },
+    { "check": "noNewNumbers" }
+  ]
+}

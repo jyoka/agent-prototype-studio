@@ -322,6 +322,8 @@ function describeSimulation(simulation, latestRun) {
     })),
     tools: composition.tools ? `app/${composition.tools}` : null,
     handoffs: composition.handoffs,
+    // マスターとサブの委任の辺(2.9)。書いた構成だけ
+    ...(composition.delegations ? { delegations: composition.delegations } : {}),
     guards: composition.guards,
     surface: composition.surface,
     assumptions: composition.assumptions,

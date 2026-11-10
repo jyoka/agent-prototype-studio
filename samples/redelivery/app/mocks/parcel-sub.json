@@ -1,0 +1,10 @@
+{
+  "formatVersion": 1,
+  "rules": [
+    { "when": { "contains": ["1009"] }, "call": { "tool": "get_parcel", "args": { "parcel_no": 1009 } }, "reply": [{ "kind": "text", "text": "このお荷物は調査中です。" }] },
+    { "when": { "contains": ["9999"] }, "call": { "tool": "get_parcel", "args": { "parcel_no": 9999 } }, "reply": [{ "kind": "text", "text": "お荷物が見つかりました。" }] },
+    { "when": { "contains": ["1002"] }, "call": { "tool": "get_parcel", "args": { "parcel_no": 1002 } }, "reply": [{ "kind": "text", "text": "本の包みのお荷物が見つかりました。お届けは本日です。" }] },
+    { "when": { "contains": ["1001"] }, "call": { "tool": "get_parcel", "args": { "parcel_no": 1001 } }, "reply": [{ "kind": "text", "text": "りんごの箱のお荷物が見つかりました。お届けは本日です。" }] }
+  ],
+  "otherwise": [{ "kind": "text", "text": "荷物の番号が分からないので、調べられませんでした。" }]
+}

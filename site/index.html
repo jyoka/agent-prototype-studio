@@ -40,7 +40,7 @@
   <p class="hero-line" id="sentence"><span data-lang="ja">思いつきを AI プロダクトにすると、どんな作りになるか。動かして測り、人が承認してから作る。</span><span data-lang="en">See how your idea works as an AI product, test it, and approve the architecture before you build.</span></p>
   <div class="hero-text">
     <p><span data-lang="ja">AI プロダクトの作りは、エージェントの構成、harness(AI の周りで決まりを守らせるコード)、データと RAG、技術の組で決まります。</span><span data-lang="en">An AI product's architecture comes down to four things: the agent setup, the harness (the code that keeps the AI within its rules), data and RAG, and the tech stack.</span></p>
-    <p><span data-lang="ja">今は、構成と守りを動かして見せ、場面を回して測れます。作る前に人が読んで承認する段は作っているところで、まだ使えません。<a href="#building">作っているもの</a>に分けて書きました。</span><span data-lang="en">Today you can run setups and guardrails, see how they work, and measure them with evals. The step where a person reads and approves the architecture before the build is not ready yet. See <a href="#building">In progress</a>.</span></p>
+    <p><span data-lang="ja">今は、構成と守りを動かして見せ、場面を回して測れます。作る前に人が読んで承認する段(AI 構成の審査)は、設計の案内の後に入りましたが、人の確かめはまだで、作っているものに置いています。<a href="#building">作っているもの</a>に分けて書きました。</span><span data-lang="en">Today you can run setups and guardrails, see how they work, and measure them with evals. The step where a person reads and approves the architecture before the build (the AI architecture review) now follows the design guide, but it has not been checked with people yet, so it stays under <a href="#building">In progress</a>.</span></p>
     <p><span data-lang="ja">Studio が出すのは、日付と根拠のある、今日の一番良い推測です。本番の品質は約束しません。</span><span data-lang="en">What Studio gives you is today's best guess, with a date and evidence. It does not promise production quality.</span></p>
     <p><span data-lang="ja">試すのはモックで、料金はかかりません。本物の AI は、画面で同意したときと、<code>--real</code> で場面を回すときだけ使います。</span><span data-lang="en">Trying runs on a mock and costs nothing. The real model runs only when you consent on screen, or when you run evals with <code>--real</code>.</span></p>
   </div>
@@ -264,17 +264,17 @@
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
       <h3><span data-lang="ja">AI 構成の審査</span><span data-lang="en">AI architecture review</span></h3>
-      <p><span data-lang="ja">エージェントの構成、harness、データと RAG、技術の組の案を見せる。人が 4 つを承認するまで、作る AI を起動しない。結果は AI 構成書に残す。</span><span data-lang="en">Shows a proposal for the agent setup, harness, data and RAG, and tech stack. The maker AI does not start until a person approves all four. The result stays in an AI architecture record.</span></p>
+      <p><span data-lang="ja">エージェントの構成、harness、データと RAG、技術の組の案を見せる。人が 4 つを承認するまで、作る AI を起動しない。結果は AI 構成書に残す。審査の画面がある。人の確かめと、本物の AI で案ごとの数を測る段はまだ。</span><span data-lang="en">Shows a proposal for the agent setup, harness, data and RAG, and tech stack. The maker AI does not start until a person approves all four. The result stays in an AI architecture record. There is a review screen. It has not been checked with people, and measuring each proposal with the real model is not built yet.</span></p>
     </li>
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
       <h3><span data-lang="ja">3 つの形の比べ</span><span data-lang="en">Three architecture shapes</span></h3>
-      <p><span data-lang="ja">固定の流れ、単一エージェント、マスターとサブを、同じ場面の一覧で比べる。簡単な方から問い、足りたら止まる。今は単一エージェントと、ツールを呼ぶ固定の流れを書ける。親子の委任は、まだない。</span><span data-lang="en">Compares a fixed flow, a single agent, and a master with sub-agents on the same evals. It asks about the simplest shape first and stops when that is enough. Today you can write the single agent and a fixed flow that calls tools. Parent-to-child delegation does not exist yet.</span></p>
+      <p><span data-lang="ja">固定の流れ、単一エージェント、マスターとサブを、同じ場面の一覧で比べる。簡単な方から問い、足りたら止まる。3 つの形とも構成に書け、審査の画面で切り替えて、お試しの AI で形を確かめられる。本物の AI で比べるのはターミナルだけ。</span><span data-lang="en">Compares a fixed flow, a single agent, and a master with sub-agents on the same evals. It asks about the simplest shape first and stops when that is enough. All three shapes can be written as a composition. You can switch between them on the review screen and check the shape with the mock AI. Comparing them with the real model is terminal only.</span></p>
     </li>
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
       <h3><span data-lang="ja">データの棚と RAG の判定</span><span data-lang="en">Data shelf and RAG check</span></h3>
-      <p><span data-lang="ja">AI が何をどう読むかを見せ、RAG が要るかを判定する。「要らない」とも言える。</span><span data-lang="en">Shows what the AI reads and how, and checks whether RAG is needed. The answer can be no.</span></p>
+      <p><span data-lang="ja">AI が何をどう読むかを見せ、RAG が要るかを判定する。「要らない」とも言える。データの段と審査の画面で見て、審査の画面で承認できる。本物の AI で RAG ありとなしを比べるのはターミナルだけ。</span><span data-lang="en">Shows what the AI reads and how, and checks whether RAG is needed. The answer can be no. You can see it in the data step and on the review screen, and approve it on the review screen. Comparing with and without RAG on the real model is terminal only.</span></p>
     </li>
     <li class="building-item">
       <span class="building-tag"><span data-lang="ja">作っている</span><span data-lang="en">In progress</span></span>
@@ -355,11 +355,11 @@
       <tbody>
         <tr>
           <th scope="row"><span data-lang="ja">AI の作りを見せるか</span><span data-lang="en">Does it show the AI architecture?</span></th>
-          <td><span data-lang="ja">一部は今できる。設計の案内で構成の案を並べ、実行の記録で構成、プロンプトの部品、ツール、守りの判定を見せる。データと RAG、技術の組は作っている。</span><span data-lang="en">Partly, today. The design guide lists setup proposals, and the trace shows the setup, prompt parts, tools, and guardrail verdicts. Data and RAG and the tech stack are in progress.</span></td>
+          <td><span data-lang="ja">一部は今できる。設計の案内で構成の案を並べ、AI 構成の審査で構成、harness、データと RAG、技術の組を見せ、実行の記録で構成、プロンプトの部品、ツール、守りの判定を見せる。人の確かめはまだ。</span><span data-lang="en">Partly, today. The design guide lists setup proposals, the AI architecture review shows the setup, harness, data and RAG, and tech stack, and the trace shows the setup, prompt parts, tools, and guardrail verdicts. It has not been checked with people yet.</span></td>
         </tr>
         <tr>
           <th scope="row"><span data-lang="ja">人が承認するか</span><span data-lang="en">Does a person approve it?</span></th>
-          <td><span data-lang="ja">作っている。AI の作りを承認するまで作らない段は、まだない。今あるのは、目的の文書と設計の案を人が押して決める段と、本物の AI を使う前の同意。</span><span data-lang="en">In progress. The step that holds the build until the architecture is approved does not exist yet. Today a person presses a button to decide the purpose document and the design proposals, and consents before the real model runs.</span></td>
+          <td><span data-lang="ja">一部。設計の案内の後の AI 構成の審査で、4 つを承認するまで作る AI を起動しない。人の確かめはまだ。ほかに、目的の文書と設計の案を人が押して決める段と、本物の AI を使う前の同意がある。</span><span data-lang="en">Partly. After the design guide, the AI architecture review holds the build until all four parts are approved. It has not been checked with people yet. A person also decides the purpose document and the design proposals, and consents before the real model runs.</span></td>
         </tr>
         <tr>
           <th scope="row"><span data-lang="ja">測るか</span><span data-lang="en">Does it measure?</span></th>

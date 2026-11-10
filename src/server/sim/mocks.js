@@ -4,6 +4,7 @@ import {
   Problems,
   checkKeys,
   formatVersion,
+  idOf,
   integer,
   isPlainObject,
   jsonValue,
@@ -20,10 +21,11 @@ import {
 // 模擬のエージェントのモックの決まり(app/mocks/*.json)。同じ入力で同じ返事と同じツールの呼び出しを返す。
 // 品質を測るものではなく、関門とテストで、ツールの口と会話の進め方を確かめるために使う(docs/design/agent-simulation.md の 3.3)。
 export const DEFAULT_MOCKS = 'mocks';
-// 決まりの語(when)。増やせるのは Studio のコードだけ
-export const MOCK_CONDITIONS = ['contains', 'action', 'turnsAtLeast'];
-// 返事の型で使える置き換え。ツールの結果の数と見出しだけ
-export const MOCK_PLACEHOLDERS = ['{result.count}', '{result.titles}'];
+// 決まりの語(when)。増やせるのは Studio のコードだけ。delegated は、任せた先(サブ)の結果を受け取った後の返事(2.9)
+export const MOCK_CONDITIONS = ['contains', 'action', 'turnsAtLeast', 'delegated'];
+// 返事の型で使える置き換え。ツールの結果の数と見出しと、受け取ったサブの返事の文だけ
+export const MOCK_PLACEHOLDERS = ['{result.count}', '{result.titles}', '{delegated.text}'];
+const RESULT_PLACEHOLDERS = ['{result.count}', '{result.titles}'];
 
 export const MOCK_LIMITS = {
   maxFiles: 50,
@@ -43,16 +45,17 @@ const PART_KEYS = {
   notice: ['kind', 'text'],
 };
 
-function placeholders(problems, where, value, { withResult }) {
+function placeholders(problems, where, value, { withResult, withDelegated }) {
   for (const found of value.match(/\{[^{}]*\}/g) ?? []) {
     if (!MOCK_PLACEHOLDERS.includes(found)) problems.add(where, `${found} は使えない置き換えです。使える置き換え: ${MOCK_PLACEHOLDERS.join('、')}`);
-    else if (!withResult) problems.add(where, `${found} は、ツールを呼ぶ決まり(call)の返事でだけ使えます`);
+    else if (RESULT_PLACEHOLDERS.includes(found) && !withResult) problems.add(where, `${found} は、ツールを呼ぶ決まり(call)の返事でだけ使えます`);
+    else if (found === '{delegated.text}' && !withDelegated) problems.add(where, `${found} は、when に delegated を書いた決まりの返事でだけ使えます`);
   }
 }
 
-function partText(problems, where, value, { required = true, withResult, max = ASSUMPTION_LIMITS.textMaxChars }) {
+function partText(problems, where, value, { required = true, withResult, withDelegated, max = ASSUMPTION_LIMITS.textMaxChars }) {
   const result = text(problems, where, value, { required, max });
-  if (result !== undefined) placeholders(problems, where, result, { withResult });
+  if (result !== undefined) placeholders(problems, where, result, { withResult, withDelegated });
   return result;
 }
 
@@ -83,7 +86,7 @@ function card(problems, where, value, options) {
 }
 
 // 返事の部品の並び。部品の種類は会話の枠の 5 つ(3.8)
-export function checkParts(problems, where, value, { withResult = false } = {}) {
+export function checkParts(problems, where, value, { withResult = false, withDelegated = false } = {}) {
   const parts = list(problems, where, value, { min: 1, max: ASSUMPTION_LIMITS.partsMax, of: '部品の' }) ?? [];
   for (const [i, part] of parts.entries()) {
     const at = `${where}[${i}]`;
@@ -93,7 +96,7 @@ export function checkParts(problems, where, value, { withResult = false } = {}) 
     }
     const kind = oneOf(problems, `${at}.kind`, part.kind, PART_KINDS, { label: '部品の種類' });
     if (!kind) continue;
-    const options = { withResult };
+    const options = { withResult, withDelegated };
     if (kind === 'card') {
       card(problems, at, part, options);
       continue;
@@ -140,6 +143,8 @@ export function parseMock(raw, { file }) {
         if (rule.when.contains !== undefined) texts(problems, `${where}.when.contains`, rule.when.contains, { min: 1, max: MOCK_LIMITS.maxWords, maxChars: 30 });
         named(problems, `${where}.when.action`, rule.when.action, ACTION_PATTERN, { required: false, hint: '英小文字で始め、英小文字、数字、_、- だけで 40 字まで' });
         integer(problems, `${where}.when.turnsAtLeast`, rule.when.turnsAtLeast, { min: 1, max: MOCK_LIMITS.maxTurns });
+        // 任せた先の参加者の id。その参加者の結果を受け取った後の返事でだけ当たる。任せる先かは構成の検査で確かめる
+        if (rule.when.delegated !== undefined) idOf(problems, `${where}.when.delegated`, rule.when.delegated);
       }
       let call = null;
       if (rule.call !== undefined) {
@@ -153,7 +158,7 @@ export function parseMock(raw, { file }) {
           call = { tool, args };
         }
       }
-      checkParts(problems, `${where}.reply`, rule.reply, { withResult: call !== null });
+      checkParts(problems, `${where}.reply`, rule.reply, { withResult: call !== null, withDelegated: isPlainObject(rule.when) && rule.when.delegated !== undefined });
       rules.push({ when: rule.when, call, reply: rule.reply });
     }
   }
