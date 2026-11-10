@@ -78,7 +78,7 @@ for (const [mark, expected] of [['[案が壊れる]', 'AI の返事を使えな�
   });
 }
 
-test('案を出す AI: 一度壊れた返事は 1 回やり直す。「理想」を含む案は使わない。難しい形は勧めない', posixOnly, async (t) => {
+test('案を出す AI: 一度壊れた返事は 1 回やり直す。「理想」を含む案は使わない。マスターとサブも、AI が勧めればそのまま勧める', posixOnly, async (t) => {
   const { studio, designCalls } = await boot(t, { STUDIO_AGENT: 'claude' });
   studio.consent.agree();
   const sentence = '[案が一度壊れる] [案に理想] [難しい形] 架空の 1 文';
@@ -88,7 +88,7 @@ test('案を出す AI: 一度壊れた返事は 1 回やり直す。「理想」
   assert.equal((await designCalls()).length, 2);
   // 残りが 1 つになった「問題」の段は決まった案に戻る
   assert.equal(stepOf(view, 'problem').options[0].title, '目的の文書のまま');
-  assert.equal(stepOf(view, 'composition').options.find((option) => option.recommended).id, 'fixed-flow');
+  assert.equal(stepOf(view, 'composition').options.find((option) => option.recommended).id, 'master-sub');
 });
 
 test('案を待つ間は止められ、止めると決まった案で進む', posixOnly, async (t) => {
@@ -121,7 +121,7 @@ test('AI を使えないとき、決まった案で進む。作る AI の動い�
   assert.equal(stepOf(await studio.designs.view(id), 'scenes').chosen, null);
 });
 
-test('段の決まり: 知らない案、まだ選べない案、自分の言葉のない案は断る。選んでいない段の先へは進めない。作る前に全部を選ぶ', async (t) => {
+test('段の決まり: 知らない案(選択肢にない AI 同士の引き継ぎも)、自分の言葉のない案は断る。選んでいない段の先へは進めない。作る前に全部を選ぶ', async (t) => {
   const { studio } = await boot(t, { STUDIO_AGENT: 'fake' });
   const id = await studio.intents.createProject({ sentence: '架空の 1 文', guide: 'fixed' });
   await assert.rejects(studio.designs.choose(id, { step: 'problem', option: 'x' }), { code: 'not-started' });
@@ -130,7 +130,7 @@ test('段の決まり: 知らない案、まだ選べない案、自分の言葉
   await assert.rejects(studio.designs.choose(id, { step: 'problem', option: 'x' }), { code: 'invalid' });
   await assert.rejects(studio.designs.choose(id, { step: 'problem', option: 'custom', text: '  ' }), { code: 'invalid' });
   await assert.rejects(studio.designs.choose(id, { step: 'composition', option: 'custom', text: '書く' }), { code: 'invalid' });
-  await assert.rejects(studio.designs.choose(id, { step: 'composition', option: 'master-sub' }), { code: 'not-available' });
+  await assert.rejects(studio.designs.choose(id, { step: 'composition', option: 'handoff' }), { code: 'invalid' });
   await assert.rejects(studio.designs.go(id, { step: 'users' }), { code: 'not-chosen' });
   await assert.rejects(studio.designs.decide(id), { code: 'not-ready' });
   await studio.designs.choose(id, { step: 'problem', option: stepOf(view, 'problem').options[0].id });

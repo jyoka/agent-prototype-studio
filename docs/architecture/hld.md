@@ -74,6 +74,7 @@ flowchart TB
         organize["ヒアリングの整理<br/>organize.js、organize-ai.js"]
         meeting["会の始めとお客さんのデータ<br/>meeting.js"]
         design["設計の案内<br/>design.js、design-ai.js、data-design.js、data-shelf.js、review/options.json"]
+        review["AI 構成の審査と AI 構成書<br/>review.js、architecture.js"]
         redact["伏せる、秘密を探す<br/>redact.js"]
     end
 
@@ -115,6 +116,10 @@ flowchart TB
     design -- "読み書き(.studio/design.json)" --> dotstudio
     design -- "案を出す AI(道具なし、cwd は空のフォルダー)" --> cli
     design -- "選んだ構成と場面を書く(作業のない間だけ)" --> app
+    api --> review
+    review -- "読み書き(.studio/reviews/、project.json)" --> dotstudio
+    review -- "指紋を取る(読むだけ)" --> app
+    requests -- "承認と指紋の比べ(節 accept、関門 GA)" --> review
     requests --> agent
     agent -- "子プロセス(cwd は app/)" --> cli
     cli -- "読み書き" --> app
@@ -172,7 +177,7 @@ flowchart TB
 | 作るループの証拠 | `src/server/evidence.js` | `/api/projects/<id>/evidence` で、終わった run と人の「確かめる」ごとに証拠が古いか(`stale`)を返す。run が確かめた `app/` の指紋(`run.appDigest`)と、今の `app/` の指紋を比べて決める。`/api/projects/<id>/evidence/screenshot?file=` で、結果の帯のスクリーンショットを返す。読むのは `.studio/runs/` と `.studio/observations/` の中の PNG だけで、シンボリックリンクで外を指していても読まない。ほかの API と同じくトークンを要る |
 | 試作品の配信 | `src/server/preview-server.js` | ビルドしたものを別ポートから CSP つきで出す。API はない |
 | 試作品とビルド | `src/server/store.js`、`src/server/projects.js`、`src/server/build.js`、`src/server/inspect.js`、`src/server/manifest.js` | 試作品の一覧と置き場、`app/` と目録の検査、esbuild で 1 つの classic script に束ねる。一覧の名前は、表示中の版の目録の `title` と AI の有無から作る。一覧の順はサンプル(`SAMPLES` の順)が先 |
-| 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1〜G4、GE、G5、G6 を安い順に回す。失敗したら直す依頼(`fix-prompt.js`)を作って作る AI に返し、2 回まで直させる。`run.json` に残す |
+| 作る AI | `src/server/build-requests.js` ほか | 作る run を節の並び(blueprint)で回す。依頼を受け、CLI を起動し、出力を画面に流す。終わったら、関門 G1、GA、G2〜G4、GE、G5、G6 を安い順に回す。失敗したら直す依頼(`fix-prompt.js`)を作って作る AI に返し、2 回まで直させる。`run.json` に残す |
 | プロダクト内 AI | `src/server/product-ai/` | 試作品ごとの会話、状態、実行の記録を持つ。1 ターンは harness(`harness.js`)が抽出 → 決定 → 言い方で回し、何を聞くか、段の遷移、終わるかはコードが決める。言い方の返事は `rules` で確かめる(`guards.js`)。接続はモックか Claude Code(抽出と言い方の 2 種の呼び出し)。実モデルの呼び出しの上限を数える(`limits.js`)。`app/ai.json` を検査する |
 | 構成 | `src/server/sim/` | `app/composition.json`、`compositions/`、`tools.json`、`assumptions/`、`mocks/`、`evals/` を検査する(G3)。`composition.json` がなければ、`ai.json` の harness 1 つの構成(構成 B)として読む。作る run の後に、構成とガードレールの変化を作る会話に出す(`changes.js`)。ツールの口(`tool-gate.js`)は、宣言のツールを形の検査、ツールの守り、実行の順に動かし、記録の店を値で返す。ファイルを書かず、外へ通信しない。文書の検索(`op: "retrieve"`)は `retrieve.js` の文字の 2 つ組の BM25 で、何も読み込まない。ツールの MCP サーバーと、モックの模擬のエージェント(会話の進め方の中)が同じ関数を呼ぶ |
 | 会話の進め方と模擬のエージェント | `src/server/sim/orchestrator.js`、`agent-mock.js`、`agent-claude-code.js`、`parts.js` | `composition.json` のある試作品の 1 ターンを、決まった節の並び(受け付け → 話す参加者 → 引き継ぎ → 返事)で回し、通った節を記録に残す(`sim-turn`)。誰が話すか、引き継ぎ(辺、1 ターン 1 回、`limits.maxHandoffs`)、受け渡す値の検査、上限、出口の確かめ(`enforce` でやり直しと型の文か、記録だけ)はコードが決める。harness の参加者は `harness.js` の `turn()` をそのまま使う。`flow` と `escalate` を書いた参加者(固定の流れ。設計の 2.8)は、決定の後、言い方の前に、コードが段の順にツールの口を呼び、条件で人に渡す。モデルにはツールを渡さない。`delegations` を書いた構成(マスターとサブ。設計の 2.9)では、模擬のエージェントが委任のツールを呼ぶと、返事の後にコードが辺、深さ(`limits.maxDepth`)、1 ターンの回数(`limits.maxDelegations`)を確かめてサブを 1 回話させ、結果を足して任せた参加者をもう一度呼ぶ。模擬のエージェントは、モック(`mocks/*.json`。ツールは同じプロセスのツールの口)か Claude Code(返事ごとに `claude -p` を 1 回。ツールは MCP サーバーを通す。`--safe-mode` の代わりに作る AI と同じ組み合わせと `--tools ""`、許可は構成の名前だけ、cwd は空の一時フォルダー)。返事の部品は前提の `messageTypes` から作り、合わない部品は文に落とす(`parts.js`)。会話と記録は `AiSessions`(`product-ai/session.js`)が持つ。設計は [agent-simulation.md の 3.2、3.3](../design/agent-simulation.md#32-1-ターンの進め方) |
@@ -221,7 +226,17 @@ flowchart TB
 
 人が案を選ぶと(`choose`)、Studio が場面を `app/evals/design-*.json` に、選んだデータ設計の架空のデータを `app/data/design-data.json` に(`sampleData`)、構成を `app/composition.json` と、それが読むファイルに書きます(`syncFiles`)。ファイルの名前は Studio が決め、AI と人の文は JSON の値にしか入れません。書くのは、作る AI、ビルド、版の操作のない間だけです(`store.claimVersions`)。Studio が書いた覚えのない中身のファイルと、ふつうのファイルでないものには触りません。書いた後に検査と表示の準備を回し、通らなければ元に戻して断ります。
 
-「決めた」の印は、人が「この設計で作る」を押す `decide` でだけ `.studio/design.json` に付きます。`decide` は目的の文書と設計から依頼の文を作って返し、画面は言葉で直す欄と同じ道で作る AI に送ります。本物の AI の同意も、その道で取ります。場面と構成はそのまま作るループの関門(G3、GE)が検査します。AI 構成の審査と AI 構成書は #422 で作ります。今は「審査なし」のまま作ります。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#j2-で決めたことtask-3852026-11-02)にあります。データの段は [K2 で決めたこと](../design/user-journey.md#k2-で決めたことtask-3872026-11-07)にあります。
+「決めた」の印は、人が「この設計で作る」を押す `decide` でだけ `.studio/design.json` に付きます。`decide` は目的の文書と設計から依頼の文を作って返し、画面は言葉で直す欄と同じ道で作る AI に送ります。本物の AI の同意も、その道で取ります。場面と構成はそのまま作るループの関門(G3、GE)が検査します。画面は依頼を送らず、AI 構成の審査を開きます(下の節)。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#j2-で決めたことtask-3852026-11-02)にあります。データの段は [K2 で決めたこと](../design/user-journey.md#k2-で決めたことtask-3872026-11-07)にあります。
+
+### AI 構成の審査(4 つの承認)
+
+「この設計で作る」の `decide` の後に、`review.js` の `start` が審査を始めます。`.studio/project.json` に `review: required` を書き、`.studio/reviews/<審査の ID>/architecture.json`(AI 構成書)と `.studio/reviews/current.json` を書きます。中身は、表示中のビルドの構成、AI の設定、ツール、前提と、設計の案内の記録から、Studio のコードが書きます(`architecture.js` の `compositionFigure`、`harnessRows`、`dataReview`、`stackRows`)。審査は AI を呼びません。
+
+指紋(`architectureFingerprint`)は、項目ごとに決まったファイルの中身から取ります。構成は構成のファイルと目録の指し先、harness は構成、AI の設定、ツールの宣言、プロンプトの枠と目録の指し先、データはツールの宣言、技術の組は前提のフォルダーです。ないこと、シンボリックリンク、`app/` の外も印として入れます。承認は項目ごとに、その時の指紋を持ちます。指紋が変わった項目の承認は効きません。
+
+構成の切り替え(`choose`)は、設計の案内の `chooseComposition` でファイルを書き直し、新しい審査にします(承認は全部消えます)。「お試しの AI で場面を回す」(`measure`)は、表示中のビルドの場面をモックで回し、`.studio/evals/` に置きます。案ごとの数は、`.studio/evals/` の結果の組を構成の形(`composition.shape`)で読みます。4 つの承認がそろうと、`build` が承認の時刻を入れ、構成のファイルの写しを `files/` に置き、依頼の文を返します。画面は言葉で直す欄と同じ道で送ります。
+
+作るループは、審査の要る試作品で、節 `accept` と関門 GA に `check` を呼びます。承認がそろっていないか、指紋が違えば、作る AI を起動しないか、GA で止めます(`markStopped`)。止めた後は、審査に戻る(`back`。変わらなかった項目の承認を写す)か、承認した構成に戻す(`restore`。`files/` の写しから戻す)。`review` のない試作品では、どれも何もしません。
 
 ### 作る(試作品を変える)
 
@@ -229,10 +244,11 @@ flowchart TB
 
 | 節 | 判断 | すること |
 |---|---|---|
-| 受け付け(`accept`) | コード | `BuildRequests.start` が依頼の形と上限、接続の問題、本物の AI の同意(Claude Code のとき)を確かめる。1 つの試作品で動く依頼は 1 つだけ(`ProjectStore.claimRun`) |
+| 受け付け(`accept`) | コード | `BuildRequests.start` が依頼の形と上限、接続の問題、AI 構成の審査の承認と指紋(審査の要る試作品だけ)、本物の AI の同意(Claude Code のとき)を確かめる。1 つの試作品で動く依頼は 1 つだけ(`ProjectStore.claimRun`) |
 | 前の指紋(`fingerprint`) | コード | `app/` の指紋(`snapshotApp`)と、表示中のプロダクト内 AI の設定を取る |
 | 作る AI(`agent`) | モデル | `startAgentProcess` が偽接続か Claude Code を `app/` で起動する。引数は `buildClaudeArgs`、依頼は標準入力。観察の道具の MCP の設定を、run ごとに `.studio/runs/<run-id>/mcp.json`(`app/` の外)に書き、`--mcp-config` で渡す。stream-json を `readMessage` で項目に直して画面に流し、道具の呼び出しを数える。道具の項目には、名前の入った文(`text`、開発者向け)と、ファイルや道具の名前を入れない短い文(`summary`、利用者向け)を持たせる。直すラウンドでも、引数(MCP の設定のファイルを含む)、cwd、時間の上限、止め方は同じで、標準入力が直す依頼になるだけ |
 | G1 変更の確認(`changes`) | コード | 指紋を取り直し、変わったファイルを出す。変わっていなければ、ここで終わる(`unchanged`)。直すラウンドで変わっていなければ、直せなかったとして `failed` で終わる |
+| GA 構成の承認(`architecture`) | コード | AI 構成の審査の要る試作品だけ。今の `app/` の AI 構成書の指紋が、承認したものと同じかを比べる(`review.js` の `check`)。違えば止める。直すラウンドに回さず、G2〜G4 も回さないので、試す画面は前のビルドのまま。審査のない試作品では何もせず、結果の関門にも出さない |
 | G2 検査、G3 契約、G4 ビルド(`inspect`、`contract`、`compile`) | コード | `ProjectStore.build` の 1 回の呼び出し。`buildApp` が誤りに段の名前を付けるので、どの関門で止まったかが分かる。G3 は目録、`ai.json`、目録が指すシナリオ(`readScenarios`)、構成とツール、前提、モック、場面(`readSimulation`)の形を検査し、シナリオの誤りはファイル、シナリオ、手順で返す。つないだトークンがあれば、指紋と、`app/` の中の変数の上書きも確かめる。失敗したら、試す画面は前のビルドのまま |
 | GE 場面(`evals`) | コード | G4 が通ったら入る。`app/evals/` の場面を、既定の構成と既定の前提で、模擬のエージェントも harness もモックにして回す(`runEvals`)。ブラウザを使わないので G5 より前。実モデルは呼ばない。場面がなければ「場面なし」で通る。通らなかった確かめごとに、場面の `id`、確かめ、期待と実際、ツールの呼び出しの要約を残す。結果は `.studio/runs/<run-id>/rounds/<ラウンド>/evals/` |
 | G5 起動の確認(`launch`) | コード | 新しいビルドを観察器で開く。基本のシナリオなしで、3 つの画面幅を撮る。読み込みが 15 秒以内に終わり、エラーと `console.error` がなく、画面が空でなければ通る。ビルドが失敗したら行わない |
@@ -354,6 +370,8 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | `projects/<id>/.studio/intent.json` | 目的の文書。1 文、案内の深さ、問いと答え、文書、決めた時刻か飛ばした時刻 | Studio(作る AI と聞き出す AI は書けない) |
 | `projects/<id>/.studio/organize.json` | 整理の板。要点、5 つの欄の項目と元の要点、聞くこと、人が消したもの、確かめた時刻 | Studio(作る AI と整理する AI は書けない) |
 | `projects/<id>/.studio/design.json` | 設計の案内。6 つの段の案(データ設計を含む)、選んだ案、捨てた案、理由、場面の一覧、Studio が書いたファイルの指紋、決めた時刻か飛ばした時刻 | Studio(作る AI と案を出す AI は書けない) |
+| `projects/<id>/.studio/reviews/<審査の ID>/architecture.json`、`files/`、`current.json`、`skipped.json` | AI 構成書。4 つの審査の中身、場面の指紋、項目ごとの指紋、承認した人と時刻と指紋、承認の時刻、関門 GA で止めた印。`files/` は承認した構成のファイルの写し。前の審査は消さない | Studio(作る AI は書けない) |
+| `projects/<id>/.studio/project.json` の `review` | 審査が要るか(`required`)、飛ばしたか(`skipped`)。書いていない試作品は審査なし | Studio |
 | `handoffs/` | 引き継ぎの書き出し | Studio |
 | Studio のメモリー | 作業中の会話と状態、実行の記録、作る欄の会話 | Studio(止めると消える) |
 
@@ -392,5 +410,6 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 - [ADR 0002: 観察器と harness](../adr/0002-observer-and-harness.md)(観察器のブラウザ、観察器の隔離、直すラウンドの回数)
 - [ADR 0003: エージェントの構成を模擬する基盤](../adr/0003-agent-simulation.md)(案。作ったのは構成の形の検査と構成 B の読み替え(sim-1)だけ。設計は [agent-simulation.md](../design/agent-simulation.md))
 - [ADR 0004: 共有の場と、お客さんのデータ](../adr/0004-shared-session-and-customer-data.md)(段 1 は採用、段 2 は未決。まだ作っていない。段 1 は 1 台の PC の中の形なので、段 2 を採るまで、この HLD の「範囲外: 複数人での共有」は変わらない)
+- [ADR 0005: AI の作りを見せて、人が承認する](../adr/0005-ai-architecture-review.md)(案。審査の画面、AI 構成書、関門 GA は task 422 で作った。設計は [ai-architecture-review.md](../design/ai-architecture-review.md))
 - [初見で分かる画面の設計](../design/ux-redesign.md)
 - [引き継ぎの形](../handoff.md)

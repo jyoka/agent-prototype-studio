@@ -11,6 +11,8 @@ const REQUEST_HEAD = '前の依頼: ';
 const GATE_HEAD = 'Studio が確かめたところ、次の関門で失敗しました: ';
 const FILES_HEAD = '変わったファイル: ';
 const CLOSING = '失敗だけを直してください。シナリオ(app/scenarios/)、場面(app/evals/)、ガードレール(構成の guards、tools.json の守り、ai.json の rules)を弱めたり消したりして通さないでください。';
+// AI 構成の審査で承認した試作品だけに足す行(review.js)。CLOSING の前に置く(readFixPrompt は CLOSING で終わるかを見る)
+export const REVIEW_LINE = 'AI 構成の審査で承認した構成のファイル(構成、AI の設定、ツールの宣言、プロンプトの枠、前提)は変えないでください。変えたいときは言葉で知らせてください。';
 const CLIPPED = '\n(長いので、ここで切りました)';
 
 export const ERROR_KIND_TEXT = {
@@ -78,13 +80,15 @@ function fileNames(changedFiles) {
   return `${names.join('、')}${more > 0 ? ` ほか ${more} 個` : ''}`;
 }
 
-// request: 利用者の依頼の文。gate: 直前のラウンドで失敗した関門(id、label と結果)。changedFiles: 依頼の前から変わったファイル
-export function buildFixPrompt({ request, gate, changedFiles }) {
+// request: 利用者の依頼の文。gate: 直前のラウンドで失敗した関門(id、label と結果)。changedFiles: 依頼の前から変わったファイル。
+// reviewed: AI 構成の審査で承認した試作品か
+export function buildFixPrompt({ request, gate, changedFiles, reviewed = false }) {
   return [
     `${REQUEST_HEAD}${request}`,
     `${GATE_HEAD}${gate.id} ${gate.label}`,
     clipFailure(describeFailure(gate)),
     `${FILES_HEAD}${fileNames(changedFiles)}`,
+    ...(reviewed ? [REVIEW_LINE] : []),
     CLOSING,
   ].join('\n');
 }

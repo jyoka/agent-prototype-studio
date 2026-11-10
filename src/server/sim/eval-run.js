@@ -5,7 +5,7 @@ import { createTurnMeter } from '../product-ai/limits.js';
 import { numbersIn } from '../product-ai/guards.js';
 import { redact, redactDeep } from '../redact.js';
 import { isPlainObject } from './check.js';
-import { usesAssumptions } from './composition.js';
+import { compositionShape, usesAssumptions } from './composition.js';
 import { RESULT_CHECKS, RETRIEVAL_CHECKS } from './evals.js';
 import { renderShelfSection } from '../data-shelf.js';
 import { SimError, newSimConversationId, prepareSimulation, runTurn, startConversation } from './orchestrator.js';
@@ -808,7 +808,7 @@ export async function runEvals({
       const connection = connectionFor(group.connection);
       for (let round = 1; round <= group.repeat; round += 1) {
         const entry = {
-          composition: { file: group.composition.file, label: compositionLabel(group.composition), name: group.composition.name ?? null, digest: sim.digest },
+          composition: { file: group.composition.file, label: compositionLabel(group.composition), name: group.composition.name ?? null, digest: sim.digest, shape: compositionShape(group.composition) },
           assumption: sim.assumption
             ? { id: sim.assumption.id, file: sim.assumptionFile, digest: sim.assumptionDigest, model: sim.assumption.model?.name ?? null, standIn: sim.assumption.model?.standIn ?? null }
             : null,

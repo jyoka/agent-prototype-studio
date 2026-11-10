@@ -7,7 +7,7 @@
 - task 416(2026-10-31)で、段 3、段 5、5 節、6 節を、AI 構成の審査を中心にする形に直した。段 3 と段 5 と 1 文は案で、運営者がその PR で決める。作る順は jyoka/tasks の Blocked by に合わせた
 - J1 を task 382(2026-10-31)で作った。聞き出しの AI と目的の文書の置き場所の決めたことは 7 節
 - K1 を task 384(2026-10-31)で作った。整理する AI と板の決めたことは 7 節
-- J2 を task 385(2026-11-02)で作った。案を出す AI、設計の置き場所、Studio が `app/` に書くファイルの決めたことは 7 節。審査の画面は #422 のまま
+- J2 を task 385(2026-11-02)で作った。案を出す AI、設計の置き場所、Studio が `app/` に書くファイルの決めたことは 7 節。審査の画面は #422(2026-11-08)で作った。決めたことは [ai-architecture-review.md の 14 節](ai-architecture-review.md#14-422-で決めたこと)
 - J4 を task 386(2026-11-02)で作った。決めたことは [design-materials.md の 4 節](design-materials.md#j4-で決めたこと)
 - 前提: [vision.md](../vision.md)、[AI 構成の審査](ai-architecture-review.md)、[PRD](../prd.md)、[ADR 0001](../adr/0001-local-runtime-and-isolation.md)、[ux-redesign.md](ux-redesign.md)。ADR 0001 の隔離は変えない
 - 人物、会社、題材は、どれも架空。気持ちの点は、利用者の調べをしていないので推測

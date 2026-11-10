@@ -27,6 +27,7 @@
     "check:sim": "node scripts/check-sim.js",
     "check:loop": "node scripts/check-loop.js",
     "check:organize": "node scripts/check-organize.js",
+    "check:review": "node scripts/check-review.js",
     "install:chromium": "playwright-core install --only-shell chromium"
   },
   "dependencies": {

@@ -1,0 +1,821 @@
+{
+  "id": "choose-tools",
+  "shapeHint": "道具を選ぶ必要がある",
+  "sentence": "架空の家電店「ことぶき電機」の問い合わせに、在庫、修理の進み具合、取扱説明書を使い分けて答えたい",
+  "seconds": 33.619,
+  "failure": null,
+  "costUsd": 0.08123599999999999,
+  "attempts": [
+    {
+      "ms": 33547,
+      "exitCode": 0,
+      "costUsd": 0.08123599999999999,
+      "subtype": "success",
+      "isError": false,
+      "numTurns": 2,
+      "durationMs": 32973,
+      "modelUsage": [
+        "claude-opus-5-5"
+      ],
+      "structuredOutput": {
+        "problem": {
+          "options": [
+            {
+              "title": "調べる所を AI が選び分ける",
+              "detail": "お客さんの問い合わせを読んで、在庫の表、修理の受付、取扱説明書のどれを調べるかを AI が選び、答えまで返す。分からないときは店員に回す。",
+              "reason": "目的の文書の「調べる所が毎回違う」にそのまま当たる案で、店員の手間を減らす形に近い。"
+            },
+            {
+              "title": "閉店後の問い合わせを受けて下調べだけする",
+              "detail": "閉店後に来た問い合わせに AI がその場で答えるのではなく、調べた結果をまとめて翌朝の店員に渡す。お客さんには「受け付けました」とだけ返す。",
+              "reason": "間違った答えをお客さんに直接返す心配は減るが、お客さんはその場で答えを受け取れない。"
+            },
+            {
+              "title": "在庫と修理だけ答え、使い方は店員へ",
+              "detail": "表で決まった答えが出る在庫と修理の進み具合だけ AI が答え、取扱説明書の長い文書から探す使い方の質問は店員に回す。",
+              "reason": "答えの確かさは上げやすいが、使い方の問い合わせについては店員の手間が減らない。"
+            }
+          ],
+          "recommended": 0
+        },
+        "users": {
+          "options": [
+            {
+              "title": "家電を買った人と、買いたい人",
+              "detail": "買った人は修理の進み具合や使い方を、買いたい人は在庫を聞く。1 つの画面で両方を受ける。",
+              "reason": "目的の文書の「使う人」をそのまま受けた案で、問い合わせの中身がばらばらになる場面を試せる。"
+            },
+            {
+              "title": "家電を買った人だけ",
+              "detail": "修理と使い方の問い合わせにしぼる。在庫の問い合わせは今まで通り店員が受ける。",
+              "reason": "試す範囲は狭くなるが、在庫と使い方を続けて聞かれる場面は試せなくなる。"
+            },
+            {
+              "title": "店の店員",
+              "detail": "お客さんからの問い合わせを店員が AI に渡し、調べた結果を見て店員が返事をする。",
+              "reason": "店員が間に入るので安心だが、閉店後の問い合わせには使えない。"
+            }
+          ],
+          "recommended": 0
+        },
+        "scenes": {
+          "options": [
+            {
+              "title": "ばらばらな問い合わせの組",
+              "reason": "在庫、修理、使い方、続けて聞く場合を一通り入れ、断る場面と人に渡す場面も含めた。",
+              "scenes": [
+                {
+                  "category": "normal",
+                  "text": "品番 KT-210 の電子レンジ、駅前店に在庫ありますか?"
+                },
+                {
+                  "category": "normal",
+                  "text": "修理の受付番号 R-0381 の掃除機、いつ戻ってきますか?"
+                },
+                {
+                  "category": "normal",
+                  "text": "在庫があるならついでに聞きたいんですが、そのレンジの解凍のやり方は?"
+                },
+                {
+                  "category": "unknown",
+                  "text": "10 年くらい前に買った型番の分からない炊飯器の使い方を知りたいです"
+                },
+                {
+                  "category": "refuse",
+                  "text": "修理するといくらかかるか、だいたいでいいので教えてください"
+                },
+                {
+                  "category": "refuse",
+                  "text": "2 台買うので値引きしてもらえますか?"
+                },
+                {
+                  "category": "slow",
+                  "text": "洗濯機の取扱説明書で、エラー表示 E3 のところを全部まとめてください"
+                },
+                {
+                  "category": "human",
+                  "text": "買ったばかりのドライヤーを返品したいんですが"
+                }
+              ]
+            },
+            {
+              "title": "閉店後に来る問い合わせの組",
+              "reason": "閉店後で店員がいない時間に、すぐ答えられないことをどう扱うかを中心に試す。",
+              "scenes": [
+                {
+                  "category": "normal",
+                  "text": "夜遅くにすみません、明日の朝に扇風機 FN-05 を買いに行けますか?"
+                },
+                {
+                  "category": "normal",
+                  "text": "受付番号 R-0420 の修理、今どうなっていますか?"
+                },
+                {
+                  "category": "unknown",
+                  "text": "受付番号をなくしてしまったんですが、修理の具合は分かりますか?"
+                },
+                {
+                  "category": "refuse",
+                  "text": "ほかの店より高いので安くしてください"
+                },
+                {
+                  "category": "slow",
+                  "text": "エアコンの取扱説明書から、お手入れの仕方を順番に教えてください"
+                },
+                {
+                  "category": "human",
+                  "text": "届いたテレビが映らないので、すぐ誰かと話したいです"
+                }
+              ]
+            }
+          ],
+          "recommended": 0
+        },
+        "data": {
+          "options": [
+            {
+              "title": "整理の板の 3 つをそのまま覚える",
+              "detail": "在庫、修理の受付、取扱説明書を別々の表にし、商品を中心につなぐ。",
+              "reason": "整理の板にある 3 つの材料と同じ形なので、お客さんの言葉と合わせやすい。",
+              "entities": [
+                {
+                  "name": "商品",
+                  "about": "店で扱う家電",
+                  "writer": "店員",
+                  "sources": [
+                    "i4",
+                    "i6"
+                  ],
+                  "fields": [
+                    {
+                      "name": "品番",
+                      "kind": "text",
+                      "examples": [
+                        "KT-210",
+                        "FN-05"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    },
+                    {
+                      "name": "商品名",
+                      "kind": "text",
+                      "examples": [
+                        "電子レンジ",
+                        "扇風機"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "店ごとの在庫",
+                  "about": "商品が店ごとにいくつあるか",
+                  "writer": "店員",
+                  "sources": [
+                    "i4"
+                  ],
+                  "fields": [
+                    {
+                      "name": "店",
+                      "kind": "choice",
+                      "examples": [
+                        "駅前店",
+                        "川沿い店"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    },
+                    {
+                      "name": "数",
+                      "kind": "number",
+                      "examples": [
+                        "3",
+                        "0"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "修理の受付",
+                  "about": "預かった修理の進み具合",
+                  "writer": "店員",
+                  "sources": [
+                    "i5"
+                  ],
+                  "fields": [
+                    {
+                      "name": "受付番号",
+                      "kind": "text",
+                      "examples": [
+                        "R-0381",
+                        "R-0420"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    },
+                    {
+                      "name": "状態",
+                      "kind": "choice",
+                      "examples": [
+                        "預かり中",
+                        "修理中",
+                        "戻り済み"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    },
+                    {
+                      "name": "戻る予定日",
+                      "kind": "date",
+                      "examples": [
+                        "2026-11-20"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "取扱説明書",
+                  "about": "商品ごとの長い説明の文書",
+                  "writer": "店員",
+                  "sources": [
+                    "i6"
+                  ],
+                  "fields": [
+                    {
+                      "name": "題名",
+                      "kind": "text",
+                      "examples": [
+                        "電子レンジ KT-210 取扱説明書"
+                      ],
+                      "sources": [
+                        "i6"
+                      ]
+                    },
+                    {
+                      "name": "本文",
+                      "kind": "text",
+                      "examples": [
+                        "解凍のしかた…"
+                      ],
+                      "sources": [
+                        "i6"
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "links": [
+                {
+                  "from": "商品",
+                  "to": "店ごとの在庫",
+                  "label": "店ごとの数"
+                },
+                {
+                  "from": "商品",
+                  "to": "修理の受付",
+                  "label": "修理"
+                },
+                {
+                  "from": "商品",
+                  "to": "取扱説明書",
+                  "label": "説明書"
+                }
+              ]
+            },
+            {
+              "title": "問い合わせも覚えておく",
+              "detail": "3 つの材料に加えて、お客さんの問い合わせと店員に回したかどうかを覚える。",
+              "reason": "店員に回した問い合わせを翌朝見返せるが、覚えるものが増える。",
+              "entities": [
+                {
+                  "name": "在庫",
+                  "about": "品番ごと、店ごとの数",
+                  "writer": "店員",
+                  "sources": [
+                    "i4"
+                  ],
+                  "fields": [
+                    {
+                      "name": "品番",
+                      "kind": "text",
+                      "examples": [
+                        "KT-210"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    },
+                    {
+                      "name": "店",
+                      "kind": "choice",
+                      "examples": [
+                        "駅前店"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    },
+                    {
+                      "name": "数",
+                      "kind": "number",
+                      "examples": [
+                        "2"
+                      ],
+                      "sources": [
+                        "i4"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "修理の受付",
+                  "about": "修理の進み具合",
+                  "writer": "店員",
+                  "sources": [
+                    "i5"
+                  ],
+                  "fields": [
+                    {
+                      "name": "受付番号",
+                      "kind": "text",
+                      "examples": [
+                        "R-0381"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    },
+                    {
+                      "name": "状態",
+                      "kind": "choice",
+                      "examples": [
+                        "修理中"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    },
+                    {
+                      "name": "戻る予定日",
+                      "kind": "date",
+                      "examples": [
+                        "2026-11-20"
+                      ],
+                      "sources": [
+                        "i5"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "取扱説明書",
+                  "about": "商品ごとの長い文書",
+                  "writer": "店員",
+                  "sources": [
+                    "i6"
+                  ],
+                  "fields": [
+                    {
+                      "name": "品番",
+                      "kind": "text",
+                      "examples": [
+                        "KT-210"
+                      ],
+                      "sources": [
+                        "i6"
+                      ]
+                    },
+                    {
+                      "name": "本文",
+                      "kind": "text",
+                      "examples": [
+                        "お手入れのしかた…"
+                      ],
+                      "sources": [
+                        "i6"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "問い合わせ",
+                  "about": "お客さんから来た問い合わせ",
+                  "writer": "AI",
+                  "sources": [],
+                  "fields": [
+                    {
+                      "name": "内容",
+                      "kind": "text",
+                      "examples": [
+                        "在庫はありますか?"
+                      ],
+                      "sources": []
+                    },
+                    {
+                      "name": "受けた日時",
+                      "kind": "date",
+                      "examples": [
+                        "2026-11-08 21:30"
+                      ],
+                      "sources": []
+                    },
+                    {
+                      "name": "店員に回した",
+                      "kind": "choice",
+                      "examples": [
+                        "はい",
+                        "いいえ"
+                      ],
+                      "sources": []
+                    }
+                  ]
+                },
+                {
+                  "name": "答え",
+                  "about": "問い合わせへの返事",
+                  "writer": "AI",
+                  "sources": [],
+                  "fields": [
+                    {
+                      "name": "調べた所",
+                      "kind": "choice",
+                      "examples": [
+                        "在庫",
+                        "修理",
+                        "説明書"
+                      ],
+                      "sources": []
+                    },
+                    {
+                      "name": "返事",
+                      "kind": "text",
+                      "examples": [
+                        "駅前店に 2 台あります"
+                      ],
+                      "sources": []
+                    }
+                  ]
+                }
+              ],
+              "links": [
+                {
+                  "from": "問い合わせ",
+                  "to": "答え",
+                  "label": "返事"
+                }
+              ]
+            }
+          ],
+          "recommended": 0
+        },
+        "composition": {
+          "recommended": "single-agent",
+          "reason": "問い 2 で止まった。1 つの問い合わせで在庫と使い方が続くなど聞く順番は決まらないが、在庫・修理・説明書を 1 つの AI が選んで調べれば足りる。"
+        },
+        "screens": {
+          "recommended": "web",
+          "reason": "閉店後に家電を買った人や買いたい人が自分で問い合わせるので、店の Web の相談画面が入り口として分かりやすい。"
+        }
+      },
+      "unreadableStdout": null
+    }
+  ],
+  "aiComposition": {
+    "recommended": "single-agent",
+    "reason": "問い 2 で止まった。1 つの問い合わせで在庫と使い方が続くなど聞く順番は決まらないが、在庫・修理・説明書を 1 つの AI が選んで調べれば足りる。"
+  },
+  "recommended": {
+    "id": "single-agent",
+    "label": "単一エージェント",
+    "reason": "問い 2 で止まった。1 つの問い合わせで在庫と使い方が続くなど聞く順番は決まらないが、在庫・修理・説明書を 1 つの AI が選んで調べれば足りる。"
+  },
+  "steps": {
+    "problem": {
+      "source": "ai",
+      "chosen": "調べる所を AI が選び分ける"
+    },
+    "users": {
+      "source": "ai",
+      "chosen": "家電を買った人と、買いたい人"
+    },
+    "scenes": {
+      "source": "ai",
+      "chosen": "ばらばらな問い合わせの組"
+    },
+    "data": {
+      "source": "ai",
+      "chosen": "整理の板の 3 つをそのまま覚える"
+    },
+    "composition": {
+      "source": "ai",
+      "chosen": "単一エージェント"
+    },
+    "screens": {
+      "source": "ai",
+      "chosen": "Web の相談画面"
+    }
+  },
+  "scenes": [
+    {
+      "category": "normal",
+      "text": "品番 KT-210 の電子レンジ、駅前店に在庫ありますか?"
+    },
+    {
+      "category": "normal",
+      "text": "修理の受付番号 R-0381 の掃除機、いつ戻ってきますか?"
+    },
+    {
+      "category": "normal",
+      "text": "在庫があるならついでに聞きたいんですが、そのレンジの解凍のやり方は?"
+    },
+    {
+      "category": "unknown",
+      "text": "10 年くらい前に買った型番の分からない炊飯器の使い方を知りたいです"
+    },
+    {
+      "category": "refuse",
+      "text": "修理するといくらかかるか、だいたいでいいので教えてください"
+    },
+    {
+      "category": "refuse",
+      "text": "2 台買うので値引きしてもらえますか?"
+    },
+    {
+      "category": "slow",
+      "text": "洗濯機の取扱説明書で、エラー表示 E3 のところを全部まとめてください"
+    },
+    {
+      "category": "human",
+      "text": "買ったばかりのドライヤーを返品したいんですが"
+    }
+  ],
+  "review": {
+    "errors": [],
+    "shape": "single-agent",
+    "fingerprint": "ecb0b1ccdad46911b533ea07bfca99e6d6e5704a083022febe297d25bd342fe1",
+    "mock": {
+      "passed": 8,
+      "total": 8,
+      "toolCalls": 0,
+      "verdict": "passed"
+    },
+    "harness": {
+      "rows": [
+        {
+          "part": "1 ターンの回し方",
+          "content": "1 つの AI が返事ごとに、道具を呼ぶか答えるかを選ぶ",
+          "decidedBy": "モデル",
+          "modelOnly": true
+        },
+        {
+          "part": "何を聞くか・いつ終えるか",
+          "content": "AI が決める。会話の上限(30 ターン)で必ず終わる",
+          "decidedBy": "モデル",
+          "modelOnly": true
+        },
+        {
+          "part": "プロンプト(AI に渡す指示の文)",
+          "content": "1 つ。全文は下で読める",
+          "decidedBy": "人",
+          "modelOnly": false
+        },
+        {
+          "part": "道具と権限",
+          "content": "道具なし。AI は何も呼べない",
+          "decidedBy": "コード",
+          "modelOnly": false
+        },
+        {
+          "part": "守り(ガードレール)の 3 層",
+          "content": "ツールの守り(コード): なし。プロンプトの頼み(モデル頼み): 分からないことは分からないと言い、作り話をしないでください。出口の確かめ(コード): 数字を作らない",
+          "decidedBy": "コード",
+          "modelOnly": false
+        },
+        {
+          "part": "人に渡す条件",
+          "content": "まだ決めていない。人に渡す条件はない",
+          "decidedBy": "人",
+          "modelOnly": false
+        },
+        {
+          "part": "上限",
+          "content": "1 つの会話は 30 ターンまで、引き継ぎは 3 回まで",
+          "decidedBy": "コード",
+          "modelOnly": false
+        },
+        {
+          "part": "文脈と記憶",
+          "content": "1 つの会話の中だけ覚える。会話をまたいでは覚えない",
+          "decidedBy": "コード",
+          "modelOnly": false
+        },
+        {
+          "part": "記録と評価",
+          "content": "実行の記録を試す画面で読める。場面の一覧(8 本)で同じように測る",
+          "decidedBy": "コード",
+          "modelOnly": false
+        }
+      ],
+      "modelDecides": [
+        "1 ターンの回し方",
+        "何を聞くか・いつ終えるか"
+      ],
+      "codeBinds": [
+        "道具と権限",
+        "守り(ガードレール)の 3 層",
+        "上限",
+        "文脈と記憶",
+        "記録と評価"
+      ],
+      "humanDecides": [
+        "プロンプト(AI に渡す指示の文)",
+        "人に渡す条件"
+      ],
+      "modelOnly": [
+        "1 ターンの回し方",
+        "何を聞くか・いつ終えるか"
+      ]
+    },
+    "data": {
+      "shelf": [
+        {
+          "id": "table-1",
+          "name": "商品",
+          "shape": "table",
+          "read": "tool",
+          "change": "unknown",
+          "personal": null,
+          "prototype": "架空の 3 件",
+          "source": "data-design"
+        },
+        {
+          "id": "table-2",
+          "name": "店ごとの在庫",
+          "shape": "table",
+          "read": "tool",
+          "change": "unknown",
+          "personal": null,
+          "prototype": "架空の 3 件",
+          "source": "data-design"
+        },
+        {
+          "id": "table-3",
+          "name": "修理の受付",
+          "shape": "table",
+          "read": "tool",
+          "change": "unknown",
+          "personal": null,
+          "prototype": "架空の 3 件",
+          "source": "data-design"
+        },
+        {
+          "id": "table-4",
+          "name": "取扱説明書",
+          "shape": "table",
+          "read": "tool",
+          "change": "unknown",
+          "personal": null,
+          "prototype": "架空の 3 件",
+          "source": "data-design"
+        },
+        {
+          "id": "rules",
+          "name": "整理の板の決まりごと",
+          "shape": "rules",
+          "read": "prompt",
+          "change": "unknown",
+          "personal": null,
+          "prototype": "決まりごと 1 つを、そのまま入れる",
+          "source": "board"
+        },
+        {
+          "id": "document-1",
+          "name": "取扱説明書(商品ごとの長い文書)",
+          "shape": "document",
+          "read": "rag",
+          "change": "unknown",
+          "personal": null,
+          "prototype": "架空の文書を、条や見出しごとに作る",
+          "source": "board"
+        }
+      ],
+      "rag": {
+        "needed": null,
+        "reason": "長い文書(取扱説明書(商品ごとの長い文書))がある。RAG なしの形で場面が通るかを測ってから決める",
+        "decide": [
+          {
+            "id": "chunking",
+            "label": "分割",
+            "question": "文書をどの単位に分けて探すか",
+            "prototype": "条や見出しごとに 1 件。Studio は自動で分けない(1 件は 2,000 文字まで)"
+          },
+          {
+            "id": "embedding",
+            "label": "埋め込み",
+            "question": "文の意味で探すか(埋め込みのモデルを使うか)",
+            "prototype": "使わない。文字を 2 つずつ区切った語の重なり(BM25)で探す"
+          },
+          {
+            "id": "store",
+            "label": "置き場",
+            "question": "文書と索引をどこに置き、誰がいつ更新するか",
+            "prototype": "試作品の中の架空の文書のファイル。探すたびに手元で索引を作る"
+          },
+          {
+            "id": "citation",
+            "label": "引用",
+            "question": "答えに、どの文書を読んだかをどう示すか",
+            "prototype": "探した文書の見出しを返し、答えに書かせる。場面の回しで、答えに見出しがあるかを確かめる"
+          },
+          {
+            "id": "recall",
+            "label": "再現率の測り方",
+            "question": "探すべき文書を見つけたかを、どの場面で測るか",
+            "prototype": "場面ごとに探すべき文書を書き、見つけた割合を比べる表に出す"
+          }
+        ],
+        "verdict": "まだ決めていない",
+        "steps": [
+          {
+            "order": 1,
+            "question": "AI がこのデータを読まなくても、場面は通るか",
+            "read": "none",
+            "items": []
+          },
+          {
+            "order": 2,
+            "question": "表やキーで、1 件を引けるか",
+            "read": "tool",
+            "items": [
+              "商品",
+              "店ごとの在庫",
+              "修理の受付",
+              "取扱説明書"
+            ]
+          },
+          {
+            "order": 3,
+            "question": "短くて、毎回プロンプトに入れられるか",
+            "read": "prompt",
+            "items": [
+              "整理の板の決まりごと"
+            ]
+          },
+          {
+            "order": 4,
+            "question": "ここまでで通らない場面があるか",
+            "read": "rag",
+            "items": [
+              "取扱説明書(商品ごとの長い文書)"
+            ]
+          }
+        ],
+        "measured": false,
+        "note": "今日の推測。まだ測っていない"
+      }
+    },
+    "stack": [
+      {
+        "part": "モデル",
+        "prototype": "claude-sonnet-5-5(代わりのモデル)"
+      },
+      {
+        "part": "回し方",
+        "prototype": "Studio の会話の進め方(単一エージェント)"
+      },
+      {
+        "part": "ツールの接続",
+        "prototype": "ツールなし"
+      },
+      {
+        "part": "知識(RAG)",
+        "prototype": "使わない"
+      },
+      {
+        "part": "記憶",
+        "prototype": "1 つの会話の中だけ。会話をまたいで覚えない"
+      },
+      {
+        "part": "評価",
+        "prototype": "場面の一覧(8 本)。お試しの AI と本物の AI で回せる"
+      },
+      {
+        "part": "記録",
+        "prototype": "Studio の実行の記録(試す画面で読める)"
+      }
+    ]
+  }
+}

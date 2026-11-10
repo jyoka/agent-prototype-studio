@@ -37,6 +37,10 @@ export const STUDIO_SYSTEM_PROMPT = [
   DEFAULT_MATERIAL_GUIDE,
 ].join('\n');
 
+// AI 構成の審査で 4 つを承認した試作品だけに足す決まり(docs/design/ai-architecture-review.md の 6 節。review.js)。
+// 審査のない試作品には足さない(今の振る舞いを変えない。R2)
+export const REVIEW_RULE = '- この試作品は、AI 構成の審査で人が構成を承認しています。承認した構成のファイル(構成 composition.json、AI の設定、ツールの宣言、プロンプトの枠、前提)は変えないでください。変えたいときは、変えずに言葉で知らせてください。変えると Studio の確かめで止まり、審査に戻ります。';
+
 function present(env, name) {
   return typeof env[name] === 'string' && env[name] !== '';
 }
@@ -106,7 +110,8 @@ export async function writeObserveMcpConfig({ dir, projectDir, maxSeconds }) {
 //   --disable-slash-commands: skills と commands を外す
 //   --strict-mcp-config --mcp-config <file>: MCP は観察の道具のサーバーだけ
 // materialGuide はつないだ素材の決まり(design-tokens.js の tokensGuide)。つないでいなければ足さない
-export function buildClaudeArgs({ billing, mcpConfig, maxBudgetUsd = DEFAULT_MAX_BUDGET_USD, materialGuide = null }) {
+// reviewed は、AI 構成の審査で承認した試作品か(REVIEW_RULE を足す)
+export function buildClaudeArgs({ billing, mcpConfig, maxBudgetUsd = DEFAULT_MAX_BUDGET_USD, materialGuide = null, reviewed = false }) {
   if (typeof mcpConfig !== 'string' || mcpConfig === '') throw new TypeError('mcpConfig(MCP の設定のファイル)を渡してください');
   const args = [
     '-p',
@@ -132,7 +137,7 @@ export function buildClaudeArgs({ billing, mcpConfig, maxBudgetUsd = DEFAULT_MAX
     '--max-turns',
     String(MAX_TURNS),
     '--append-system-prompt',
-    materialGuide ? `${STUDIO_SYSTEM_PROMPT}\n${materialGuide}` : STUDIO_SYSTEM_PROMPT,
+    [STUDIO_SYSTEM_PROMPT, materialGuide, reviewed ? REVIEW_RULE : null].filter(Boolean).join('\n'),
   ];
   if (needsBudget(billing)) args.push('--max-budget-usd', String(maxBudgetUsd));
   return args;

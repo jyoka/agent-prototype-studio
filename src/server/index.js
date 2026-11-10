@@ -11,6 +11,7 @@ import { ProjectHandoffs } from './handoff.js';
 import { ProjectIntents } from './intent.js';
 import { createIntentAi, INTENT_SYSTEM_PROMPT } from './intent-ai.js';
 import { ProjectDesigns } from './design.js';
+import { ProjectReviews } from './review.js';
 import { ProjectMaterials } from './materials.js';
 import { createDesignAi, DESIGN_SYSTEM_PROMPT } from './design-ai.js';
 import { ProjectMeetings, removeErasing } from './meeting.js';
@@ -61,6 +62,9 @@ export class PortInUseError extends Error {
     this.envName = name;
   }
 }
+
+// 試作品の番号を OS に任せたとき、::1 で使われていた番号を選び直す回数
+const PREVIEW_PORT_ATTEMPTS = 5;
 
 async function listenOrExplain(server, port, host, envName) {
   try {
@@ -114,6 +118,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       await organizes.forget(id);
       intents.forget(id);
       designs.forget(id);
+      reviews.forget(id);
       requests.forget(id);
       checks.forget(id);
       aiSessions.forgetProject(id);
@@ -181,6 +186,8 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     maxBudgetUsd: config.maxBudgetUsd,
     consent,
     meetingGate: (id, mode) => meetings.require(id, mode),
+    // AI 構成の審査(review.js)。審査の要る試作品は、4 つの承認の後だけ作る AI を起動し、承認と違う構成は関門 GA で止める
+    reviews: { check: (id) => reviews.check(id), markStopped: (id, detail) => reviews.markStopped(id, detail) },
     ...(scenarioLimits ? { scenarioLimits } : {}),
     ...(onAgentEvent ? { onAgentEvent } : {}),
   });
@@ -226,9 +233,13 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     talkGate,
     intentOf: (id) => intents.records.get(id) ?? null,
     boardOf: (id) => organizes.boards.get(id)?.items ?? [],
+    reviewOf: (id) => reviews.statusOf(id),
     log,
   });
   await designs.load();
+  // AI 構成の審査と AI 構成書。会の中では承認する役を分ける(docs/design/ai-architecture-review.md の 9 節)
+  const reviews = new ProjectReviews({ home: config.home, store, designs, modeOf: (id) => (meetings.records.has(id) ? 'meeting' : 'single'), log });
+  await reviews.load();
   const materials = new ProjectMaterials({ store, log });
   const servers = [];
   const versions = new ProjectVersions({ store, aiSessions, log });
@@ -245,6 +256,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       intents,
       organizes,
       designs,
+      reviews,
       materials,
       meetings,
       token,
@@ -270,21 +282,31 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   );
   servers.push(studioServer);
   const previewHandler = createPreviewHandler({ home: config.home, store, ports });
-  const previewServer = http.createServer(previewHandler);
-  servers.push(previewServer);
 
   try {
     ports.studio = await listenOrExplain(studioServer, config.studioPort, '127.0.0.1', 'STUDIO_PORT');
-    ports.preview = await listenOrExplain(previewServer, config.previewPort, '127.0.0.1', 'STUDIO_PREVIEW_PORT');
-    // ブラウザが localhost を ::1 で引いても届くようにする
-    const previewServerV6 = http.createServer(previewHandler);
-    try {
-      await listen(previewServerV6, ports.preview, '::1');
-      servers.push(previewServerV6);
-    } catch (error) {
-      // 他のプロセスが ::1 の同じポートにいると、ブラウザはそちらを試作品として開いてしまう
-      if (error.code === 'EADDRINUSE') throw new PortInUseError(`${ports.preview}(::1)`, 'STUDIO_PREVIEW_PORT');
-      log(`::1 では待ち受けません(${error.code ?? error.message})`);
+    // 番号を OS に任せたとき(0)は、127.0.0.1 で空いていた番号が ::1 では使われていることがある。そのときは番号を選び直す
+    const attempts = config.previewPort === 0 ? PREVIEW_PORT_ATTEMPTS : 1;
+    for (let attempt = 1; ; attempt += 1) {
+      const previewServer = http.createServer(previewHandler);
+      servers.push(previewServer);
+      ports.preview = await listenOrExplain(previewServer, config.previewPort, '127.0.0.1', 'STUDIO_PREVIEW_PORT');
+      // ブラウザが localhost を ::1 で引いても届くようにする
+      const previewServerV6 = http.createServer(previewHandler);
+      try {
+        await listen(previewServerV6, ports.preview, '::1');
+        servers.push(previewServerV6);
+        break;
+      } catch (error) {
+        if (error.code !== 'EADDRINUSE') {
+          log(`::1 では待ち受けません(${error.code ?? error.message})`);
+          break;
+        }
+        // 他のプロセスが ::1 の同じポートにいると、ブラウザはそちらを試作品として開いてしまう
+        if (attempt >= attempts) throw new PortInUseError(`${ports.preview}(::1)`, 'STUDIO_PREVIEW_PORT');
+        servers.pop();
+        await new Promise((resolve) => previewServer.close(() => resolve()));
+      }
     }
   } catch (error) {
     await Promise.all(servers.map((server) => new Promise((resolve) => server.close(() => resolve()))));
@@ -309,6 +331,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     intents,
     organizes,
     designs,
+    reviews,
     meetings,
     checks,
     observer,

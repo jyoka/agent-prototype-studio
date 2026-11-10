@@ -49,6 +49,15 @@ async function selectProject(page, id) {
   await page.locator(`[data-project-id="${id}"]`).click();
 }
 
+// 「この設計で作る」の後の AI 構成の審査(test/e2e/review.spec.js)。4 つを承認して「この構成で作る」を押す
+async function approveAndBuild(page) {
+  await expect(page.getByRole('heading', { level: 2, name: 'AI 構成の審査' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'この構成で作る' })).toBeDisabled();
+  for (const label of ['エージェントの構成', 'harness', 'データと RAG', '技術の組']) await page.getByRole('button', { name: `「${label}」を承認する` }).click();
+  await expect(page.locator('#review-count')).toHaveText('承認 4 / 4');
+  await page.getByRole('button', { name: 'この構成で作る' }).click();
+}
+
 // 新しい試作品の設計の案内を開き、案を作る
 async function openDesign(page, studio, id) {
   await page.goto(studio.url);
@@ -160,7 +169,7 @@ test('6 段を進んで戻れる。場面の段が下書きを書き、構成の
     expect((await readJson(appFile(home, id, 'evals/design-normal-1.json'))).turns[0].user).toBe('明日の閉店は何時ですか');
     expect((await readJson(appFile(home, id, 'evals/design-slow-1.json'))).turns[0].user).toBe('まだ待つのですか');
 
-    // 構成の段。簡単な方から順に並ぶ。技術の言葉と平たい言葉を並べ、まだ測っていないと出す。審査はまだないと書く
+    // 構成の段。簡単な方から順に並ぶ。技術の言葉と平たい言葉を並べ、まだ測っていないと出す。作る前に審査があると書く
     const cards = d.options.locator(':scope > li');
     await expect(cards).toHaveCount(3);
     await expect(cards.nth(0)).toContainText('固定の流れ');
@@ -168,10 +177,10 @@ test('6 段を進んで戻れる。場面の段が下書きを書き、構成の
     await expect(cards.nth(0)).toContainText('おすすめ');
     await expect(cards.nth(1)).toContainText('単一エージェント');
     await expect(cards.nth(2)).toContainText('マスターとサブ');
-    await expect(cards.nth(2)).toContainText('まだ選べません');
-    await expect(d.choose('マスターとサブ')).toBeDisabled();
+    await expect(cards.nth(2)).not.toContainText('まだ選べません');
+    await expect(d.choose('マスターとサブ')).toBeEnabled();
     await expect(d.options).toContainText('まだ測っていない');
-    await expect(page.locator('#design-review')).toContainText('審査なし');
+    await expect(page.locator('#design-review')).toContainText('AI 構成の審査(4 つの承認)');
     await expect(d.section).not.toContainText('理想');
     await expect(d.section).not.toContainText('最適');
     await expectNoDevWords(d.section);
@@ -201,8 +210,9 @@ test('6 段を進んで戻れる。場面の段が下書きを書き、構成の
     await d.mark.click();
     await expect(d.heading).toContainText('画面');
 
-    // この設計で作る。目的と設計が依頼に入り、1 回の依頼で動く試作品が出る
+    // この設計で作る。AI 構成の審査で 4 つを承認すると、目的と設計が依頼に入り、1 回の依頼で動く試作品が出る
     await d.build.click();
+    await approveAndBuild(page);
     await expect(d.section).toBeHidden();
     await expect(d.mark).toHaveText('設計: 決めた');
     const app = page.frameLocator('iframe[title="試作品"]');
@@ -232,7 +242,7 @@ test('6 段を進んで戻れる。場面の段が下書きを書き、構成の
     await page.screenshot({ path: path.join(UX_SHOTS, 'J2-built.png'), fullPage: true });
     await expectNoDevWordsOnScreen(page);
 
-    // 残るもの: 選んだ案、捨てた案、理由、審査なし
+    // 残るもの: 選んだ案、捨てた案、理由。構成を選んだときは審査の前(審査の結果は AI 構成書。test/e2e/review.spec.js)
     const record = await designRecord(home, id);
     expect(record.status).toBe('decided');
     expect(record.composition.chosen).toBe('fixed-flow');
@@ -268,6 +278,7 @@ test('単一エージェントを選ぶと検査が通り、場面が回り、�
     await d.next.click();
     await d.choose('Web の相談画面').click();
     await d.build.click();
+    await approveAndBuild(page);
     const app = page.frameLocator('iframe[title="試作品"]');
     await expect(app.getByRole('heading', { name: /問い合わせの数を減らす/ })).toBeVisible({ timeout: 60_000 });
     await expect(page.locator('body')).toContainText('AI の場面を確かめました', { timeout: 60_000 });
@@ -479,6 +490,7 @@ test('今の構成のある試作品では、構成を書き換えない', async
     expect((await projectView(studio, SAMPLES.partTime.id)).lastBuild.ok).toBe(true);
     // 今の構成のまま作っても、足した場面が今の構成で回る
     await d.build.click();
+    await approveAndBuild(page);
     await expect(page.locator('body')).toContainText('AI の場面を確かめました', { timeout: 60_000 });
     const run = (await studio.api(`/api/projects/${SAMPLES.partTime.id}/build-requests`)).runs.at(-1);
     expect(run.request).toContain('エージェントの構成: 今の構成のまま');
@@ -518,6 +530,7 @@ test('AI の設定のある試作品では、単一エージェントを選べ�
     await d.next.click();
     await d.choose('Web の相談画面').click();
     await d.build.click();
+    await approveAndBuild(page);
     await expect(page.locator('body')).toContainText('AI の場面を確かめました', { timeout: 60_000 });
 
     // 場面の知らせは最後の関門より先に出るので、実行の終わりまで待つ
@@ -644,6 +657,7 @@ test('データの段: 整理の板のデータの欄が全部データ設計に
     await d.next.click();
     await d.choose('Web の相談画面').click();
     await d.build.click();
+    await approveAndBuild(page);
     await expect(d.section).toBeHidden();
     const app = page.frameLocator('iframe[title="試作品"]');
     const shopTable = app.getByRole('table', { name: 'お店(架空)' });

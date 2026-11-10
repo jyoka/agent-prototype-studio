@@ -14,7 +14,7 @@ import { judgeRag, shelfFromDataDesign } from './data-shelf.js';
 // 置き場所は .studio/design.json。.studio/ は Studio だけが書く場所で、作る AI は読み書きできない。
 // AI は案を出すだけで、選ぶのは人。「決めた」の印は、人が「この設計で作る」を押したとき(decide)だけ付く。
 // 構成と場面は Studio が app/ に書く(docs/design/ai-architecture-review.md の 6 節)。書くファイルの名前は Studio が決め、AI の文は JSON の値にしか入れない。
-// 持ち主の構成(作る AI や人が書いたもの)は書き換えない。審査の画面と AI 構成書は #422 で作る。ここでは「審査なし」のまま作る。
+// 持ち主の構成(作る AI や人が書いたもの)は書き換えない。「この設計で作る」の後は AI 構成の審査(review.js。task 422)に進み、4 つの承認の後に作る。
 
 export const DESIGN_FILE = 'design.json';
 const FORMAT = 1;
@@ -201,17 +201,21 @@ export function compositionOptions(rawRecommended, rawReason) {
 }
 
 const KEEP_OPTION = { id: 'keep', title: '今の構成のまま', detail: 'この試作品にある構成を、そのまま使います。書き換えません。', available: true, recommended: true, reason: '持ち主の構成を、Studio は勝手に変えません。', question: null, decidedBy: null, modelRole: null, limitation: null };
+// 回し手が agent の構成(単一エージェント、マスターとサブ)。AI の設定(ai.json)のあいさつを出さない
+export const AGENT_DRIVEN = ['single-agent', 'master-sub'];
+// Studio が構成のファイルを書ける選択肢
+export const WRITABLE_COMPOSITIONS = ['fixed-flow', ...AGENT_DRIVEN];
 const KEPT_AI_LIMITATION = 'この試作品には AI の設定があるので、この形は選べません。この形では AI の設定のあいさつが出ず、作った後の確かめで止まります。';
 const KEPT_AI_REASON = 'この試作品には AI の設定があるので、それをそのまま使えるこの形を勧めます(今日の推測)。';
 
 // この試作品で選べる構成の案。動かない形を選ばせない。
-// 今の構成があれば「今の構成のまま」だけ。AI の設定が残る試作品では単一エージェントを選べない(回し手が agent だと、あいさつを出さず、基本のシナリオで止まる)
+// 今の構成があれば「今の構成のまま」だけ。AI の設定が残る試作品では単一エージェントとマスターとサブを選べない(回し手が agent だと、あいさつを出さず、基本のシナリオで止まる)
 export function compositionChoices(options, { owner = false, keptAi = false } = {}) {
   if (owner) return [KEEP_OPTION, ...options.map((option) => ({ ...option, available: false, recommended: false, reason: '', limitation: '今の構成があるので、書き換えません。比べるために並べています。' }))];
   if (!keptAi) return options;
-  const moved = options.some((option) => option.id === 'single-agent' && option.recommended);
+  const moved = options.some((option) => AGENT_DRIVEN.includes(option.id) && option.recommended);
   return options.map((option) => {
-    if (option.id === 'single-agent') return { ...option, available: false, recommended: false, reason: '', limitation: KEPT_AI_LIMITATION };
+    if (AGENT_DRIVEN.includes(option.id)) return { ...option, available: false, recommended: false, reason: '', limitation: KEPT_AI_LIMITATION };
     if (moved && option.id === 'fixed-flow') return { ...option, recommended: true, reason: KEPT_AI_REASON };
     return option;
   });
@@ -254,7 +258,8 @@ const chosenText = (step) => (step?.chosen === 'custom' ? step.text : (() => {
 
 // 作る AI に渡す依頼の文(「この設計で作る」)。目的の文書がなければ、そう書く
 // dataWritten は、Studio が架空のデータを書けたか(持ち主が直したファイルは書き換えないので、書けたとは言わない)
-export function designRequest({ doc, record, evalsDir = DEFAULT_EVALS, dataWritten = true }) {
+// reviewed は、AI 構成の審査で 4 つを承認したか(review.js)。承認した構成を変えないことを書く
+export function designRequest({ doc, record, evalsDir = DEFAULT_EVALS, dataWritten = true, reviewed = false }) {
   const compositionStep = record.steps.composition;
   const composition = chosenOf(compositionStep);
   const kept = compositionStep.chosen === 'keep';
@@ -271,7 +276,8 @@ export function designRequest({ doc, record, evalsDir = DEFAULT_EVALS, dataWritt
   lines.push(`問題: ${chosenText(record.steps.problem)}`);
   lines.push(`使う人: ${chosenText(record.steps.users)}`);
   lines.push(kept ? 'エージェントの構成: 今の構成のまま。' : `エージェントの構成: ${composition.title}(${composition.detail})。構成のファイルは Studio が書きました。変えないでください。変えたいときは言葉で知らせてください。`);
-  if (compositionStep.chosen === 'single-agent') lines.push('この形では構成が会話を動かします。AI の設定(ai.json)は置かないでください。置くと確かめで止まります。');
+  if (AGENT_DRIVEN.includes(compositionStep.chosen)) lines.push('この形では構成が会話を動かします。AI の設定(ai.json)は置かないでください。置くと確かめで止まります。');
+  if (reviewed) lines.push('AI 構成の審査で、人が構成、harness、データと RAG、技術の組の 4 つを承認しました。構成、AI の設定、ツールの宣言、プロンプトの枠、前提のファイルを変えないでください。変えると確かめで止まり、審査に戻ります。');
   lines.push(`画面: ${chosenText(record.steps.screens)}`);
   for (const step of STEPS) {
     const note = record.steps[step.id].note;
@@ -368,7 +374,7 @@ export function desiredFiles(record, { needsAi = true, evalsDir = DEFAULT_EVALS 
     }));
   }
   const chosen = record.steps?.composition?.chosen;
-  if (chosen !== 'fixed-flow' && chosen !== 'single-agent') return files;
+  if (!WRITABLE_COMPOSITIONS.includes(chosen)) return files;
   const screen = chosenOf(record.steps.screens);
   const surface = { kind: 'talk', theme: screen?.theme ?? 'web' };
   if (chosen === 'fixed-flow') {
@@ -402,6 +408,10 @@ export function desiredFiles(record, { needsAi = true, evalsDir = DEFAULT_EVALS 
     }
     return files;
   }
+  if (chosen === 'master-sub') {
+    masterSubFiles(record, files, surface);
+    return files;
+  }
   files.set('composition.json', jsonFile({
     formatVersion: 1,
     name: displayTitle(record, '単一エージェント'),
@@ -420,16 +430,7 @@ export function desiredFiles(record, { needsAi = true, evalsDir = DEFAULT_EVALS 
     surface,
     assumptions: { dir: 'assumptions', default: 'studio-default' },
   }));
-  files.set('assumptions/studio-default.json', jsonFile({
-    formatVersion: 1,
-    id: 'studio-default',
-    name: '試作品の前提(Studio が置いた)',
-    note: '本番の仕様ではない。代わりのモデルで試すための値',
-    model: { name: 'claude-sonnet-5-5', standIn: true },
-    hostPrompt: 'あなたは架空の試作品の中で話す案内役です。短く、やさしく話してください。',
-    slots: { guide: { maxChars: 4000 } },
-    messageTypes: ['text'],
-  }));
+  files.set('assumptions/studio-default.json', jsonFile(studioAssumptions()));
   const rules = (record.scenes ?? []).slice(0, 50).map((scene) => ({
     when: { contains: [scene.text.slice(0, 30)] },
     reply: [{ kind: 'text', text: MOCK_REPLIES[scene.category] }],
@@ -442,10 +443,80 @@ export function desiredFiles(record, { needsAi = true, evalsDir = DEFAULT_EVALS 
   return files;
 }
 
+// 単一エージェントとマスターとサブの前提。slots は、どちらの構成の枠も持つ(前提のファイルは 1 つ)
+const studioAssumptions = () => ({
+  formatVersion: 1,
+  id: 'studio-default',
+  name: '試作品の前提(Studio が置いた)',
+  note: '本番の仕様ではない。代わりのモデルで試すための値',
+  model: { name: 'claude-sonnet-5-5', standIn: true },
+  hostPrompt: 'あなたは架空の試作品の中で話す案内役です。短く、やさしく話してください。',
+  slots: { guide: { maxChars: 4000 }, 'helper-guide': { maxChars: 1500 } },
+  messageTypes: ['text'],
+});
+
+// マスターとサブを書いたときの、ファイルの名前(構成、ツールの宣言、子のモック)
+export const MASTER_SUB_TOOLS = 'studio-tools.json';
+const HELPER_TEXT = '親の AI から任された 1 つの仕事だけを調べて、短く答えてください。題材とデータはすべて架空です。分からないことは分からないと言い、作り話をしないでください。';
+const HELPER_REPLY = '任された件を確かめました。分かったことだけをお伝えします(架空の試作品です)。';
+
+// マスターとサブ(agent-simulation.md の 2.9)。親の案内役が、委任のツールで子の調べる係に仕事を任せ、結果を受け取って答える。
+// お試しの AI(モック)では、うまくいく場面で子に任せ、子の答えをそのまま返す
+function masterSubFiles(record, files, surface) {
+  files.set('composition.json', jsonFile({
+    formatVersion: 1,
+    name: displayTitle(record, 'マスターとサブ'),
+    driver: 'main',
+    participants: [
+      {
+        id: 'main',
+        kind: 'agent',
+        label: '案内役(親)',
+        prompt: [{ from: 'assumptions', key: 'hostPrompt' }, { slot: 'guide', text: guideText(record) }],
+        tools: ['ask_helper'],
+        mock: 'mocks/studio-main.json',
+      },
+      {
+        id: 'helper',
+        kind: 'agent',
+        label: '調べる係(子)',
+        prompt: [{ slot: 'helper-guide', text: HELPER_TEXT }],
+        mock: 'mocks/studio-helper.json',
+      },
+    ],
+    tools: MASTER_SUB_TOOLS,
+    delegations: [{ from: 'main', to: 'helper' }],
+    guards: [
+      { id: 'say-unknown', layer: 'prompt', on: 'main', text: '分からないことは分からないと言い、作り話をしないでください。' },
+      { id: 'no-made-up-numbers', layer: 'output', on: 'main', rules: { noNewNumbers: true } },
+    ],
+    surface,
+    assumptions: { dir: 'assumptions', default: 'studio-default' },
+  }));
+  files.set(MASTER_SUB_TOOLS, jsonFile({
+    formatVersion: 1,
+    tools: [{
+      name: 'ask_helper',
+      description: '調べる係(子の AI)に、1 つの仕事を任せる。係の結果は、この返事の後に届く',
+      inputSchema: { type: 'object', properties: { task: { type: 'string', maxLength: 200 } }, required: ['task'] },
+      do: { op: 'delegate', to: 'helper' },
+    }],
+  }));
+  files.set('assumptions/studio-default.json', jsonFile(studioAssumptions()));
+  const rules = [{ when: { delegated: 'helper' }, reply: [{ kind: 'text', text: '{delegated.text}' }] }];
+  for (const scene of (record.scenes ?? []).slice(0, 50)) {
+    const when = { contains: [scene.text.slice(0, 30)] };
+    if (scene.category === 'normal') rules.push({ when, call: { tool: 'ask_helper', args: { task: scene.text.slice(0, 200) } }, reply: [{ kind: 'text', text: '係に確かめます。' }] });
+    else rules.push({ when, reply: [{ kind: 'text', text: MOCK_REPLIES[scene.category] }] });
+  }
+  files.set('mocks/studio-main.json', jsonFile({ formatVersion: 1, rules, otherwise: [{ kind: 'text', text: MOCK_REPLIES.normal }] }));
+  files.set('mocks/studio-helper.json', jsonFile({ formatVersion: 1, rules: [], otherwise: [{ kind: 'text', text: HELPER_REPLY }] }));
+}
+
 // 設計の案内の状態。ファイルに書いたものを起動のときに読み、以降はメモリーとファイルの両方を直す。
 // aiMode(id) は intent.js と同じ。intentOf(id) は決めた目的の文書の材料、boardOf(id) は整理の板の項目
 export class ProjectDesigns {
-  constructor({ home, store, ai, consent, aiMode, talkGate = () => {}, intentOf = () => null, boardOf = () => [], log = () => {} }) {
+  constructor({ home, store, ai, consent, aiMode, talkGate = () => {}, intentOf = () => null, boardOf = () => [], reviewOf = () => 'none', log = () => {} }) {
     this.home = home;
     this.store = store;
     this.ai = ai;
@@ -455,6 +526,8 @@ export class ProjectDesigns {
     this.talkGate = talkGate;
     this.intentOf = intentOf;
     this.boardOf = boardOf;
+    // AI 構成の審査の状態(review.js の summary の status)。none は審査なし
+    this.reviewOf = reviewOf;
     this.log = log;
     this.records = new Map();
     this.calling = new Map();
@@ -598,7 +671,7 @@ export class ProjectDesigns {
       ownerComposition: limits.owner,
       ready: this.isReady(record) && this.compositionFits(record, limits),
       thinking: this.calling.has(id),
-      review: 'none',
+      review: this.reviewOf(id),
       categories: Object.fromEntries(Object.entries(SCENE_CATEGORIES).map(([key, { label }]) => [key, label])),
       requiredScenes: REQUIRED_SCENES,
     };
@@ -613,7 +686,7 @@ export class ProjectDesigns {
     const { chosen } = record.steps.composition;
     if (!chosen) return true;
     if ((chosen === 'keep') !== owner) return false;
-    return !(chosen === 'single-agent' && keptAi);
+    return !(AGENT_DRIVEN.includes(chosen) && keptAi);
   }
 
   requireRecord(id) {
@@ -781,7 +854,7 @@ export class ProjectDesigns {
           if (next.steps[later].chosen) next.steps[later].stale = true;
         }
       }
-      if (step === 'composition') next.composition = this.compositionDecision(next, option, limits);
+      if (step === 'composition') next.composition = this.compositionDecision(id, next, option, limits);
       if (changed || step === 'scenes' || next.status === 'skipped') {
         next.status = 'drafting';
         next.decidedAt = null;
@@ -794,8 +867,8 @@ export class ProjectDesigns {
     });
   }
 
-  // 選んだ案、捨てた案、理由(AI 構成書の composition の元。ai-architecture-review.md の 6 節)。審査は #422 で作るので、今は「審査なし」
-  compositionDecision(record, option, { keptAi }) {
+  // 選んだ案、捨てた案、理由(AI 構成書の composition の元。ai-architecture-review.md の 6 節)。review は選んだときの審査の状態(none は審査の前)
+  compositionDecision(id, record, option, { keptAi }) {
     const options = compositionChoices(record.steps.composition.options, { keptAi });
     const chosen = options.find((item) => item.id === option);
     const recommended = options.find((item) => item.recommended);
@@ -811,7 +884,8 @@ export class ProjectDesigns {
       // 問いの順を飛ばして難しい形を選んだ(ai-architecture-review.md の 2 節)
       outOfOrder: Boolean(chosen && recommended && chosen.order > recommended.order),
       evidence: { status: 'unmeasured', measuredAt: null },
-      review: 'none',
+      // 審査の結果は AI 構成書(.studio/reviews/。review.js)に残す。ここは選んだときの審査の状態
+      review: this.reviewOf(id) === 'none' ? 'none' : 'review',
       at: new Date().toISOString(),
     };
   }
@@ -866,6 +940,43 @@ export class ProjectDesigns {
       const { evals } = await this.layout(id);
       const dataWritten = Object.hasOwn(next.written ?? {}, DATA_FILE);
       return { design: await this.viewOf(id), request: designRequest({ doc: intent?.status === 'decided' ? intent.doc : null, record: next, evalsDir: evals, dataWritten }) };
+    });
+  }
+
+  // 決めた設計の、作る AI への依頼の文。AI 構成の審査の「この構成で作る」が使う(review.js)。状態は変えない
+  async requestFor(id, { reviewed = false } = {}) {
+    await this.requireProject(id);
+    const record = this.requireRecord(id);
+    if (record.status !== 'decided' || !this.isReady(record) || !this.compositionFits(record, await this.compositionLimits(id, record))) {
+      throw new IntentError(409, 'not-decided', '設計を決めてから押してください');
+    }
+    const intent = this.intentOf(id);
+    const { evals } = await this.layout(id);
+    const dataWritten = Object.hasOwn(record.written ?? {}, DATA_FILE);
+    return designRequest({ doc: intent?.status === 'decided' ? intent.doc : null, record, evalsDir: evals, dataWritten, reviewed });
+  }
+
+  // AI 構成の審査で構成を選び直す(review.js)。設計の構成の段だけを変え、ファイルを合わせる。
+  // 審査の中の選び直しなので、画面の段は確かめ直しにせず、「決めた」の印も残す(承認は審査の側で全部消す)
+  async chooseComposition(id, option) {
+    return this.exclusive(id, async () => {
+      const record = this.requireRecord(id);
+      if (record.status !== 'decided') throw new IntentError(409, 'not-decided', '設計を決めてから選んでください');
+      const limits = await this.compositionLimits(id, record);
+      if (limits.owner) throw new IntentError(409, 'owner-composition', '今の構成があるので、書き換えません');
+      const found = compositionChoices(record.steps.composition.options, limits).find((item) => item.id === option);
+      if (!found) throw new IntentError(400, 'invalid', '知らない案です');
+      if (found.available === false) throw new IntentError(409, 'not-available', found.limitation ?? 'この案は、まだ選べません');
+      const next = structuredClone(record);
+      next.steps.composition.chosen = option;
+      next.steps.composition.text = null;
+      next.steps.composition.decidedAt = new Date().toISOString();
+      next.steps.composition.stale = false;
+      next.composition = this.compositionDecision(id, next, option, limits);
+      next.note = null;
+      await this.syncFiles(id, next);
+      await this.write(id, next);
+      return null;
     });
   }
 

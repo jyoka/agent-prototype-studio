@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { STUDIO_ROOT } from './config.js';
 import { isAllowedHost, tokensEqual } from './security.js';
-import { AgentUnavailableError, RequestError } from './build-requests.js';
+import { AgentUnavailableError, RequestError, ReviewRequiredError } from './build-requests.js';
 import { CheckError } from './checks.js';
 import { AiError } from './product-ai/session.js';
 import { EvidenceError, evidenceState, readEvidenceImage } from './evidence.js';
@@ -105,7 +105,7 @@ const ORGANIZE_ACTIONS = {
   cancel: 'cancel',
 };
 
-function projectView(project, previewPort, runs, checks, firstSteps, intents, organizes, designs, meetings) {
+function projectView(project, previewPort, runs, checks, firstSteps, intents, organizes, designs, meetings, reviews) {
   return {
     id: project.id,
     title: project.title,
@@ -126,6 +126,8 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
     organize: organizes.summary(project.id),
     // 設計の案内の状態(design.js)。none と skipped は「設計なし」の印
     design: designs.summary(project.id),
+    // AI 構成の審査の状態(review.js)。none は審査なし。approved と total は承認の数
+    review: reviews.summary(project.id),
     // 会の状態(meeting.js)。none は会ではない試作品
     meeting: meetings.summary(project.id),
     previewUrl: project.previewBuildId
@@ -138,8 +140,9 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
 // realAi(projectId) は本物の AI を使う前の同意のカードの中身(real-ai.js の consentView)、consent は同意の状態。
 // firstSteps は最初の一歩の案内の進み方と、閉じたこと(first-steps.js)
 // intents は目的の聞き出しと目的の文書(intent.js)。organizes はヒアリングの整理(organize.js)。designs は設計の案内(design.js)
-export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, designs, materials, meetings, token, ports, realAi, consent, firstSteps }) {
-  const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes, designs, meetings);
+// reviews は AI 構成の審査と AI 構成書(review.js)
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, designs, reviews, materials, meetings, token, ports, realAi, consent, firstSteps }) {
+  const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes, designs, meetings, reviews);
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
   // EventSource はヘッダーにトークンを付けられないので、画面は fetch の応答をストリームで読む(ADR-0001)。
@@ -153,6 +156,7 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       if (error instanceof BusyError) return sendError(res, 409, 'busy', error.message);
       if (error instanceof RequestError || error instanceof BodyError) return sendError(res, 400, 'request', error.message);
       if (error instanceof AgentUnavailableError) return sendError(res, 503, 'agent', error.message);
+      if (error instanceof ReviewRequiredError) return sendError(res, 409, error.code, error.message);
       if (error instanceof ConsentRequiredError || error instanceof MeetingRefusedError) return sendError(res, 403, error.code, error.message, error.next);
       throw error;
     }
@@ -182,6 +186,8 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     }
     if (req.method === 'GET' && url.pathname === '/api/projects') {
       const projects = await store.list();
+      // 審査の印を今のファイルで取り直す(版を戻すなど、審査の外でファイルが変わったときも、承認の数を正しく出す)
+      await reviews.refreshAll();
       // consent は本物の AI を使う前の同意の状態。画面は、本物の AI を使っている間の印を、これで出す。
       // firstSteps は最初の一歩の案内を閉じたか(手順の済みは、試作品ごとの firstSteps)
       // start ははじめの画面を出すか
@@ -208,6 +214,9 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     // 設計の案内。GET は今の状態。「決めた」の印は decide でだけ付く
     const designMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/design(?:\/(start|choose|scenes|go|decide|skip|cancel))?$/.exec(url.pathname);
     if (designMatch && (designMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleDesign(req, res, designMatch[1], designMatch[2]);
+    // AI 構成の審査。GET は今の状態。承認は approve、作る前の承認の確かめは build でだけ
+    const reviewMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/review(?:\/(start|choose|approve|build|skip|measure|back|restore))?$/.exec(url.pathname);
+    if (reviewMatch && (reviewMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleReview(req, res, reviewMatch[1], reviewMatch[2]);
     // 自分のトークンをつなぐ。GET は今の状態。check は検査だけで何も書かない
     const materialsMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/materials(?:\/tokens(?:\/(check|remove))?)?$/.exec(url.pathname);
     if (materialsMatch) {
@@ -363,10 +372,27 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       if (!action) return sendJson(res, 200, { design: await designs.view(id) });
       const body = await readJson(req);
       if (action === 'cancel') return sendJson(res, 200, { cancelled: designs.cancel(id) });
-      // decide は依頼の文も返す
-      if (action === 'decide') return sendJson(res, 200, await designs.decide(id));
+      // decide は依頼の文も返す。決めたら AI 構成の審査を始める(作る AI は 4 つの承認の後。review.js)
+      if (action === 'decide') {
+        const decided = await designs.decide(id);
+        const review = await reviews.start(id, { origin: 'design' });
+        return sendJson(res, 200, { ...decided, design: await designs.view(id), review });
+      }
       const method = action === 'scenes' ? 'saveScenes' : action;
       return sendJson(res, 200, { design: await designs[method](id, body ?? {}) });
+    } catch (error) {
+      return sendIntentError(res, error);
+    }
+  }
+
+  async function handleReview(req, res, id, action) {
+    try {
+      if (!action) return sendJson(res, 200, { review: await reviews.view(id) });
+      const body = (await readJson(req)) ?? {};
+      // build と skip は依頼の文も返す
+      if (action === 'build' || action === 'skip') return sendJson(res, 200, await reviews[action](id, body));
+      if (action === 'start') return sendJson(res, 200, { review: await reviews.start(id, { origin: 'existing' }) });
+      return sendJson(res, 200, { review: await reviews[action](id, body) });
     } catch (error) {
       return sendIntentError(res, error);
     }
