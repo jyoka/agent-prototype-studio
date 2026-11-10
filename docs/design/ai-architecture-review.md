@@ -522,7 +522,7 @@ R2 との関係です。今の試作品の振る舞いは変わりません。GA
 - 日本語: 思いつきを AI プロダクトにすると、どんな作りになるか。動かして測り、人が承認してから作る。
 - 英語: See how your idea works as an AI product, test it, and approve the architecture before you build.
 
-#417 で、`docs/brand.md`、README、LP、バナー、`package.json` を全部この文に変えました(`test/unit/brand.test.js` が同じかを確かめます)。審査の段はまだないので、README と LP は「今できること」と「作っているもの」を分けて書きます。
+#417 で、`docs/brand.md`、README、LP、バナー、`package.json` を全部この文に変えました(`test/unit/brand.test.js` が同じかを確かめます)。README と LP は「今できること」と「作っているもの」を分けて書きます。審査の画面ができたので、#394(2026-11-11)で審査を今できることに移し、分解の絵とバナーにも足しました。
 
 ## 11. カードと確かめ方
 

@@ -31,6 +31,10 @@ test('1 文は README の太字、package.json の description、バナー、bra
     const lines = (size) => [...svg.matchAll(new RegExp(`<text x="80" y="\\d+" font-size="${size}"[^>]*>([^<]+)</text>`, 'g'))].map((m) => m[1]);
     assert.equal(lines(38).join(''), JA, file);
     assert.equal(lines(22).join(' '), EN, file);
+    // 分解の絵の 6 層の下に、人が承認する所(AI 構成の審査)を置く(jyoka/tasks#394)
+    const layers = [...svg.matchAll(/<text x="28" y="33" font-size="19"[^>]*>([^<]+)<\/text>/g)].map((m) => m[1]);
+    assert.deepEqual(layers, ['トークの画面', '模擬のエージェント', 'プロンプトの枠', 'ツール(MCP)', 'ガードレール', '記録', 'AI 構成の審査'], file);
+    assert.ok(svg.includes('text-anchor="middle"') && svg.includes('>承認</text>'), file);
   }
 });
 
@@ -120,22 +124,29 @@ test('見本のデータ、画面の文、README に、仕事の POC の名前�
   }
 });
 
-test('README は「今できること」と「作っているもの」を分け、作っているものに画像を載せない', async () => {
+test('README は「今できること」と「作っているもの」を分け、作っているものに画像を載せない。作っていたものは今できることに畳んだ', async () => {
   const readme = await read('README.md');
   const today = readme.indexOf('### 今できること');
   const building = readme.indexOf('### 作っているもの');
   const start = readme.indexOf('## はじめる');
   assert.ok(readme.indexOf('## 特長') < today && today < building && building < start);
   assert.doesNotMatch(readme.slice(building, start), /<img|<picture|!\[/);
-  for (const word of ['AI 構成の審査', '3 つの形の比べ', 'データの棚と RAG の判定', '記録と比べる表を主の画面に', '質の見直し', 'みんなで作る']) {
+  // まだできないものだけが残る(jyoka/tasks#394 で畳んだ)
+  for (const word of ['人の確かめと現場の通し', '本物の AI で案ごとに測る', 'AI の使いやすさの見直し', '何台もの PC で同時に作る', '部品のコードをつなぐ']) {
     assert.ok(readme.slice(building, start).includes(word), word);
   }
-  // 動くもの(設計の案内、ツールを呼ぶ固定の流れ)を、作っているものに「まだない」と書かない
-  assert.ok(readme.slice(today, building).includes('設計の案内'));
-  assert.doesNotMatch(readme.slice(building, start), /設計の案内|固定の流れからツールを呼ぶことと/);
-  // 1 文の後の 2〜3 行で、承認の段は人の確かめがまだだと言う(1 文だけを読んで、できあがったと思わせない)
+  // 動くもの(設計の案内、審査、質の見直し、人に見せる、みんなで作る)は、今できることに置き、作っているものの見出しに残さない
+  for (const word of ['設計の案内', 'AI 構成の審査', 'データの棚', '質の見直し', '人に見せて', '承認したコメント']) {
+    assert.ok(readme.slice(today, building).includes(word), word);
+  }
+  const rows = [...readme.slice(building, start).matchAll(/^\| ([^|]+) \|/gm)].map((m) => m[1].trim());
+  for (const word of ['AI 構成の審査', '3 つの形の比べ', 'データの棚と RAG の判定', '記録と比べる表を主の画面に', '質の見直し', '人に見せる', 'みんなで作る']) {
+    assert.ok(!rows.includes(word), word);
+  }
+  // 1 文の後の 2〜3 行で、人の確かめはまだだと言う(1 文だけを読んで、確かめ済みと思わせない)
   const lead = readme.slice(readme.indexOf(`**${JA}**`), readme.indexOf('## しくみ'));
-  assert.match(lead, /承認する段(.*)は、設計の案内の後に入りましたが、人の確かめはまだ/);
+  assert.match(lead, /どれも、人の確かめ\(初めての人や現場の会で使えるか\)はまだです/);
+  assert.doesNotMatch(lead, /作っているものに置いています/);
 });
 
 test('README と LP は「理想の構成」と言わず、日付と根拠のある今日の一番良い推測と書く', async () => {
@@ -164,7 +175,7 @@ test('README、LP、伝え方の文書は、比べる相手の道具の名前を
 // GitHub の見出しのリンク名(小文字にし、記号を除き、空白を - にする)
 const slug = (heading) => heading.trim().toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s/g, '-');
 
-test('README の上: バナー、1 文、動く画像の順。特長の画面 4 枚は docs の節へのリンク。画像は全部リポジトリの中にある', async () => {
+test('README の上: バナー、1 文、動く画像の順。特長の画面 6 枚は docs の節へのリンク。画像は全部リポジトリの中にある', async () => {
   const readme = await read('README.md');
   const lines = readme.split('\n');
   assert.ok(lines.length <= 180, `README が ${lines.length} 行です(多くても 180 行。CONTRIBUTING.md の「README の構成」)`);
@@ -196,16 +207,16 @@ test('README の上: バナー、1 文、動く画像の順。特長の画面 4 
   }
   // alt は絵の中身が分かる文にする(ファイル名や空ではない)
   const imgs = [...readme.matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
-  assert.equal(imgs.length, 6);
+  assert.equal(imgs.length, 8);
   for (const img of imgs) {
     const alt = /\balt="([^"]*)"/.exec(img)?.[1] ?? '';
     assert.ok(alt.length >= 40 && !/\.(png|gif|svg|avif)\b/.test(alt), img);
   }
 
-  // 特長の画面 4 枚。押すと docs の該当の節に飛ぶ
+  // 特長の画面 6 枚。押すと docs の該当の節に飛ぶ
   const features = readme.slice(at('## 特長'), at('## はじめる'));
   const links = [...features.matchAll(/<a href="([^"#]+)#([^"]+)"><picture><source media="\(prefers-color-scheme: dark\)" srcset="assets\/media\/([\w-]+)-dark\.png"><img [^>]*src="assets\/media\/([\w-]+)-light\.png"><\/picture><\/a><br>\s*<b>[^<]+<\/b><br>/g)];
-  assert.deepEqual(links.map((m) => m[3]), ['sim-choice', 'sim-trace', 'evals-compare', 'try-and-fix']);
+  assert.deepEqual(links.map((m) => m[3]), ['review', 'sim-choice', 'sim-trace', 'evals-compare', 'quality', 'try-and-fix']);
   for (const [, doc, anchor, dark, light] of links) {
     assert.equal(dark, light);
     const headings = (await read(doc)).split('\n').filter((line) => /^#{1,6} /.test(line)).map((line) => slug(line.replace(/^#+ /, '')));

@@ -124,9 +124,9 @@ test.describe('LP', () => {
     expect(demo.status()).toBe(200);
     expect(demo.headers()['content-type']).toBe('video/webm');
 
-    // 機能のカード 9 枚と見出しの絵 1 枚は、押すと docs に飛ぶ
+    // 機能のカード 14 枚と見出しの絵 1 枚は、押すと docs に飛ぶ
     const shots = await page.locator('.card-shot, .hero-shot').evaluateAll((links) => links.map((a) => a.href));
-    expect(shots).toHaveLength(10);
+    expect(shots).toHaveLength(15);
     for (const href of shots) expect(href.startsWith(`${REPO}/blob/main/docs/`), href).toBe(true);
 
     const hrefs = await page.locator('a[href]').evaluateAll((links) => links.map((a) => a.href));
@@ -150,7 +150,7 @@ test.describe('LP', () => {
   });
 
   for (const viewport of [DESKTOP, PHONE]) {
-    test(`スクロールで層の番号が 01 から 06 へ進み、ガードレールで止めた印が光る(幅 ${viewport.width})`, async ({ page }) => {
+    test(`スクロールで層の番号が 01 から 07 へ進み、ガードレールで止めた印が光り、最後に人が承認する審査に届く(幅 ${viewport.width})`, async ({ page }) => {
       await page.setViewportSize(viewport);
       await page.goto(site.url);
       await expect(page.locator('html')).toHaveClass(/\bmotion\b/);
@@ -165,8 +165,8 @@ test.describe('LP', () => {
 
       // 層ごとの区間の真ん中へ進む。番号は 1 つずつ進む
       const seen = [];
-      for (let i = 0; i < 6; i += 1) {
-        await scrollTrack(page, 0.1 + (0.9 * (i + 0.5)) / 6);
+      for (let i = 0; i < 7; i += 1) {
+        await scrollTrack(page, 0.1 + (0.9 * (i + 0.5)) / 7);
         const number = String(i + 1).padStart(2, '0');
         await expect(now).toHaveText(number, SHOWN);
         await expect(page.locator(`.layer[data-layer="${i + 1}"]`)).toHaveClass(/is-active/);
@@ -176,8 +176,9 @@ test.describe('LP', () => {
           await expect(stage).toHaveClass(/is-stopped/);
           await expect(page.locator('.layer-guard .stop-mark')).toHaveCSS('opacity', '1');
         }
+        if (i === 6) await expect(page.locator('.layer-text .layer-name')).toHaveText('AI 構成の審査', SHOWN);
       }
-      expect(seen).toEqual(['01', '02', '03', '04', '05', '06']);
+      expect(seen).toEqual(['01', '02', '03', '04', '05', '06', '07']);
       // 層が離れて、3D の変形がかかっている
       const split = await page.locator('.layers-stack').evaluate((el) => getComputedStyle(el).transform);
       expect(split).not.toBe(flat);
@@ -190,15 +191,15 @@ test.describe('LP', () => {
     });
   }
 
-  test('prefers-reduced-motion のときは動かさず、6 つの層を止まった絵で並べる', async ({ page }) => {
+  test('prefers-reduced-motion のときは動かさず、7 つの層を止まった絵で並べる', async ({ page }) => {
     await page.setViewportSize(DESKTOP);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto(site.url);
     await expect(page.locator('html')).not.toHaveClass(/\bmotion\b/);
 
     const layers = page.locator('.layer');
-    await expect(layers).toHaveCount(6);
-    await expect(page.locator('.layer .layer-num')).toHaveText(['01 / 06', '02 / 06', '03 / 06', '04 / 06', '05 / 06', '06 / 06'], SHOWN);
+    await expect(layers).toHaveCount(7);
+    await expect(page.locator('.layer .layer-num')).toHaveText(['01 / 07', '02 / 07', '03 / 07', '04 / 07', '05 / 07', '06 / 07', '07 / 07'], SHOWN);
     // 止めた層は、止まった絵でも印が出る
     await expect(page.locator('.layer-guard .stop-mark')).toBeVisible();
     await expect(page.locator('.layers-readout')).toBeHidden();
@@ -211,7 +212,7 @@ test.describe('LP', () => {
         animations: document.getAnimations().length,
       }));
     const before = await transforms();
-    expect(before).toEqual({ stack: 'none', layers: Array(6).fill('none'), stage: 'static', animations: 0 });
+    expect(before).toEqual({ stack: 'none', layers: Array(7).fill('none'), stage: 'static', animations: 0 });
 
     // 層をスクロールで通っても、何も変わらない
     await page.locator('#layers').scrollIntoViewIfNeeded();
@@ -229,7 +230,7 @@ test.describe('LP', () => {
   test('見ている途中で prefers-reduced-motion に変わったら、止まった絵に変わる。背の低い画面(横にしたスマホ)でも動かさない', async ({ page }) => {
     await page.setViewportSize(DESKTOP);
     await page.goto(site.url);
-    await scrollTrack(page, 0.8);
+    await scrollTrack(page, 0.7);
     await expect(page.locator('.layer-now')).toHaveText('05', SHOWN);
     await expect(page.locator('html')).toHaveClass(/\bmotion\b/);
 
@@ -271,40 +272,53 @@ test.describe('LP', () => {
     });
   }
 
-  test('今できることと作っているものが分かれて出る。作っているものには絵も押す先もない', async ({ page }) => {
+  test('今できることと作っているものが分かれて出る。作っていたものは今できることに畳み、まだできないものだけが残る。作っているものには絵も押す先もない', async ({ page }) => {
     await page.setViewportSize(DESKTOP);
     await page.goto(site.url);
 
     await expect(page.locator('#features h2')).toHaveText('今できること', SHOWN);
     await expect(page.locator('#building h2')).toHaveText('作っているもの', SHOWN);
-    await expect(page.locator('#features .card')).toHaveCount(9);
-    // 設計の案内(J2)は動くので、今できることに置き、作っているものに残さない
-    await expect(page.locator('#features .card h3', { hasText: '設計の案内' })).toHaveCount(1);
-    await expect(page.locator('#building')).not.toContainText('設計の案内');
+    // 作っていたもの(審査、データの棚、質の見直し、人に見せる、みんなで作る)は、今できることのカードに畳んだ(jyoka/tasks#394)
+    const cards = page.locator('#features .card h3');
+    await expect(cards).toHaveText(
+      ['目的の聞き出し', 'ヒアリングの整理', '設計の案内', 'AI 構成の審査', 'データの棚と RAG の判定', '構成の模擬', '守りの層', '場面の比較', '質の見直し', '言葉で直す欄', '人に見せる', 'みんなで作る', '版と引き継ぎ', '作るループの関門'],
+      SHOWN,
+    );
+    // 審査と質の見直しのカードは、本物の画面の絵を持つ
+    for (const name of ['AI 構成の審査', '質の見直し']) {
+      const card = page.locator('#features .card').filter({ has: page.locator('h3', { hasText: name }) });
+      await expect(card.locator('img.on-light')).toHaveAttribute('src', /^assets\/media\/(review|quality)-light\.png$/);
+    }
+    // 今できることでも、人の確かめはまだと言う
+    await expect(page.locator('#features .section-head')).toContainText('人の確かめ(初めての人や現場の会で使えるか)は、まだです', SHOWN);
+
     const building = page.locator('#building .building-item');
-    await expect(building).toHaveCount(7);
-    const names = ['AI 構成の審査', '3 つの形の比べ', 'データの棚と RAG の判定', '記録と比べる表を主の画面に', '質の見直し', '人に見せる', 'みんなで作る'];
+    const names = ['人の確かめと現場の通し', '本物の AI で案ごとに測る', 'AI の使いやすさの見直し', '何台もの PC で同時に作る', '部品のコードをつなぐ'];
     await expect(building.locator('h3')).toHaveText(names, SHOWN);
     // どの項目にも「作っている」の印があり、絵と押す先はない(想像図を本物の画面として載せない)
-    await expect(page.locator('#building .building-tag')).toHaveText(Array(7).fill('作っている'), SHOWN);
+    await expect(page.locator('#building .building-tag')).toHaveText(Array(names.length).fill('作っている'), SHOWN);
     await expect(page.locator('#building img')).toHaveCount(0);
     await expect(page.locator('#building a')).toHaveCount(0);
-    // 今できることの方に、作っているものの名前を混ぜない
+    // 今できることの方に、作っているものの名前を混ぜない。作っているものに、畳んだ機能の名前を残さない
     for (const name of names) await expect(page.locator('#features')).not.toContainText(name);
+    for (const name of ['AI 構成の審査', '3 つの形の比べ', '記録と比べる表を主の画面に', '人に見せる', 'みんなで作る']) {
+      await expect(building.locator('h3', { hasText: name })).toHaveCount(0);
+    }
 
-    // 見出しの下の文で、承認の段は人の確かめがまだだと言い、作っているものへ飛べる
-    await expect(page.locator('.hero-text')).toContainText('承認する段(AI 構成の審査)は、設計の案内の後に入りましたが、人の確かめはまだ', SHOWN);
+    // 見出しの下の文で、人の確かめはまだだと言い、作っているものへ飛べる。見出しの絵は審査の画面
+    await expect(page.locator('.hero-text')).toContainText('どれも、人の確かめ(初めての人や現場の会で使えるか)はまだです', SHOWN);
+    await expect(page.locator('.hero-shot img.on-light')).toHaveAttribute('src', 'assets/media/review-light.png');
     await page.locator('.hero-text a[href="#building"]:visible').click();
     await expect(page).toHaveURL(/#building$/);
 
     await page.locator('#lang-toggle').click();
     await expect(page.locator('#features h2')).toHaveText('What it does today', SHOWN);
     await expect(page.locator('#building h2')).toHaveText('In progress', SHOWN);
-    await expect(building.first().locator('h3')).toHaveText('AI architecture review', SHOWN);
-    await expect(page.locator('.hero-text')).toContainText('it has not been checked with people yet', SHOWN);
+    await expect(building.first().locator('h3')).toHaveText('Checks with people and a full session', SHOWN);
+    await expect(page.locator('.hero-text')).toContainText('None of it has been checked with people yet', SHOWN);
   });
 
-  test('3 つの問いは Studio だけの欄で答え、ほかの道具と比べない。承認は一部で、人の確かめはまだと言う', async ({ page }) => {
+  test('3 つの問いは Studio だけの欄で答え、ほかの道具と比べない。どの答えも、人の確かめはまだと言う', async ({ page }) => {
     await page.setViewportSize(DESKTOP);
     await page.goto(site.url);
     const rows = page.locator('.axes tbody tr');
@@ -314,15 +328,15 @@ test.describe('LP', () => {
     await expect(page.locator('.axes thead th')).toHaveText(['問い', 'Prototype Studio'], SHOWN);
     for (let i = 0; i < 3; i += 1) await expect(rows.nth(i).locator('td')).toHaveCount(1);
     await expect(page.locator('#questions')).not.toContainText(/ほかの道具|一般的な道具|記載なし/, SHOWN);
-    await expect(rows.nth(1).locator('td')).toContainText('一部', SHOWN);
-    await expect(rows.nth(1).locator('td')).toContainText('人の確かめはまだ', SHOWN);
+    await expect(rows.nth(1).locator('td')).toContainText('承認する。', SHOWN);
+    for (let i = 0; i < 2; i += 1) await expect(rows.nth(i).locator('td')).toContainText('人の確かめはまだ', SHOWN);
     await page.locator('.bar-nav a[href="#questions"]').click();
     await expect(page).toHaveURL(/#questions$/);
 
     await page.locator('#lang-toggle').click();
     await expect(page.locator('#questions h2')).toHaveText('Three questions', SHOWN);
     await expect(page.locator('.axes tbody th')).toHaveText(['Does it show the AI architecture?', 'Does a person approve it?', 'Does it measure?'], SHOWN);
-    await expect(rows.nth(1).locator('td')).toContainText('Partly', SHOWN);
+    await expect(rows.nth(1).locator('td')).toContainText('Yes.', SHOWN);
     await expect(rows.nth(1).locator('td')).toContainText('not been checked with people yet', SHOWN);
   });
 

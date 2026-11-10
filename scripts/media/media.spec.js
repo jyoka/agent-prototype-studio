@@ -7,10 +7,14 @@ import {
   SCENE_VIEWPORT,
   askToSave,
   expectNoLeaks,
+  expectNoLeaksInClip,
   hideDevOnlyMarks,
   openPartTime,
+  reviewClip,
   scrollDrawerTo,
   searchJobs,
+  showQuality,
+  showReview,
   showSimChoice,
   showSimTrace,
   talkOf,
@@ -124,7 +128,8 @@ for (const colorScheme of THEMES) {
   test.describe(`${colorScheme === 'dark' ? 'ダーク' : 'ライト'}`, () => {
     test.use({ colorScheme, viewport: SCENE_VIEWPORT, deviceScaleFactor: 1 });
 
-    test('画面 4 枚: 試す画面と言葉で直す欄、構成と前提、模擬の会話の記録、比べる表', async ({ page, home }) => {
+    test('画面 6 枚: AI 構成の審査、試す画面と言葉で直す欄、構成と前提、模擬の会話の記録、質の見直し、比べる表', async ({ page, home }) => {
+      test.setTimeout(180_000);
       const studio = await launchStudio(home);
       try {
         await talkScene(page, studio, home);
@@ -140,6 +145,19 @@ for (const colorScheme of THEMES) {
         await scrollDrawerTo(tool, { block: 'center' });
         await expectNoLeaks(page, '模擬の会話の記録', home);
         await shoot(page, `sim-trace-${colorScheme}.png`, home);
+
+        // 質の見直し。画面を確かめた後の表(観察器が試作品を開く)
+        await showQuality(page);
+        await expectNoLeaks(page, '質の見直し', home);
+        await shoot(page, `quality-${colorScheme}.png`, home);
+
+        // AI 構成の審査。架空の図書館の題材で、4 つのうち 2 つを承認したところ。
+        // 案の文には案を出した日付が入るので、その上(エージェントの構成の図)までを撮り、撮る範囲の文字だけを確かめる
+        await showReview(page, studio);
+        await hideDevOnlyMarks(page);
+        const clip = await reviewClip(page);
+        await expectNoLeaksInClip(page, clip, 'AI 構成の審査', home);
+        await shoot(page, `review-${colorScheme}.png`, home, { clip });
       } finally {
         await studio.stop();
       }
@@ -157,6 +175,7 @@ for (const colorScheme of THEMES) {
     test.use({ colorScheme, viewport: { width: 1280, height: 1000 }, deviceScaleFactor: 2 });
 
     test('分解の絵の素材: 層ごとの画面(docs/brand.md の 4 節の順)', async ({ page, home }) => {
+      test.setTimeout(180_000);
       const studio = await launchStudio(home);
       try {
         await talkScene(page, studio, home);
@@ -177,6 +196,18 @@ for (const colorScheme of THEMES) {
         const head = entry.locator(':scope > .trace-head');
         const reply = entry.locator(':scope > p').filter({ hasText: '返事:' });
         await shoot(page, `layers/6-record-${colorScheme}.png`, home, { clip: await unionClip(page, [head, reply]) });
+
+        // 7 番目は、記録と構成を人が読んで承認する所(AI 構成の審査)。見本には設計がないので、架空の図書館の題材で撮る
+        await showReview(page, studio);
+        await hideDevOnlyMarks(page);
+        const item = page.getByRole('region', { name: /^1\. エージェントの構成/ });
+        const diagram = item.getByRole('img').first();
+        await expect(diagram).toBeInViewport();
+        const top = await item.boundingBox();
+        const bottom = await diagram.boundingBox();
+        const clip = { x: top.x - 8, y: top.y - 8, width: top.width + 16, height: bottom.y + bottom.height + 8 - (top.y - 8) };
+        await expectNoLeaksInClip(page, clip, '層の審査', home);
+        await shoot(page, `layers/7-review-${colorScheme}.png`, home, { clip });
       } finally {
         await studio.stop();
       }
