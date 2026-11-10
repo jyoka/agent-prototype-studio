@@ -63,6 +63,9 @@ export class PortInUseError extends Error {
   }
 }
 
+// 試作品の番号を OS に任せたとき、::1 で使われていた番号を選び直す回数
+const PREVIEW_PORT_ATTEMPTS = 5;
+
 async function listenOrExplain(server, port, host, envName) {
   try {
     return await listen(server, port, host);
@@ -279,21 +282,31 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   );
   servers.push(studioServer);
   const previewHandler = createPreviewHandler({ home: config.home, store, ports });
-  const previewServer = http.createServer(previewHandler);
-  servers.push(previewServer);
 
   try {
     ports.studio = await listenOrExplain(studioServer, config.studioPort, '127.0.0.1', 'STUDIO_PORT');
-    ports.preview = await listenOrExplain(previewServer, config.previewPort, '127.0.0.1', 'STUDIO_PREVIEW_PORT');
-    // ブラウザが localhost を ::1 で引いても届くようにする
-    const previewServerV6 = http.createServer(previewHandler);
-    try {
-      await listen(previewServerV6, ports.preview, '::1');
-      servers.push(previewServerV6);
-    } catch (error) {
-      // 他のプロセスが ::1 の同じポートにいると、ブラウザはそちらを試作品として開いてしまう
-      if (error.code === 'EADDRINUSE') throw new PortInUseError(`${ports.preview}(::1)`, 'STUDIO_PREVIEW_PORT');
-      log(`::1 では待ち受けません(${error.code ?? error.message})`);
+    // 番号を OS に任せたとき(0)は、127.0.0.1 で空いていた番号が ::1 では使われていることがある。そのときは番号を選び直す
+    const attempts = config.previewPort === 0 ? PREVIEW_PORT_ATTEMPTS : 1;
+    for (let attempt = 1; ; attempt += 1) {
+      const previewServer = http.createServer(previewHandler);
+      servers.push(previewServer);
+      ports.preview = await listenOrExplain(previewServer, config.previewPort, '127.0.0.1', 'STUDIO_PREVIEW_PORT');
+      // ブラウザが localhost を ::1 で引いても届くようにする
+      const previewServerV6 = http.createServer(previewHandler);
+      try {
+        await listen(previewServerV6, ports.preview, '::1');
+        servers.push(previewServerV6);
+        break;
+      } catch (error) {
+        if (error.code !== 'EADDRINUSE') {
+          log(`::1 では待ち受けません(${error.code ?? error.message})`);
+          break;
+        }
+        // 他のプロセスが ::1 の同じポートにいると、ブラウザはそちらを試作品として開いてしまう
+        if (attempt >= attempts) throw new PortInUseError(`${ports.preview}(::1)`, 'STUDIO_PREVIEW_PORT');
+        servers.pop();
+        await new Promise((resolve) => previewServer.close(() => resolve()));
+      }
     }
   } catch (error) {
     await Promise.all(servers.map((server) => new Promise((resolve) => server.close(() => resolve()))));
