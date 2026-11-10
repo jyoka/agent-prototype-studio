@@ -14,6 +14,7 @@ import { ProjectDesigns } from './design.js';
 import { ProjectReviews } from './review.js';
 import { ProjectSceneRuns } from './scene-runs.js';
 import { ProjectQuality } from './quality.js';
+import { ProjectShows } from './show.js';
 import { ProjectMaterials } from './materials.js';
 import { createDesignAi, DESIGN_SYSTEM_PROMPT } from './design-ai.js';
 import { ProjectMeetings, removeErasing } from './meeting.js';
@@ -263,7 +264,9 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   const quality = new ProjectQuality({ store, sceneRuns, checks });
   const materials = new ProjectMaterials({ store, log });
   const servers = [];
-  const versions = new ProjectVersions({ store, aiSessions, log });
+  // 人に見せた答え(user-journey.md の J7)は、版の一覧に載せる。答えは版の写しの外に置くので、版を戻しても消えない
+  const versions = new ProjectVersions({ store, aiSessions, log, answersOf: (id) => shows.answersByVersion(id) });
+  const shows = new ProjectShows({ home: config.home, store, versions, intents, log });
   const handoffs = new ProjectHandoffs({ home: config.home, store, aiSessions, versions, requests, log });
   const studioServer = http.createServer(
     createStudioHandler({
@@ -280,6 +283,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       reviews,
       sceneRuns,
       quality,
+      shows,
       materials,
       meetings,
       token,
@@ -350,6 +354,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     consent,
     aiSessions,
     versions,
+    shows,
     handoffs,
     intents,
     organizes,

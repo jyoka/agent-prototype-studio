@@ -892,3 +892,40 @@ body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
 .quality-fix { color: var(--error); }
 .quality-places summary { cursor: pointer; color: var(--muted); }
 .quality-places ul { margin: 0.2rem 0; padding-left: 1.1rem; }
+
+/* 見せる画面(user-journey.md の J7)。試作品と確かめたい問いだけを出す。
+   上の帯、知らせ、言葉で直す、その他の引き出し、試す欄の道具と記録(data-studio-only)は隠す */
+body[data-show] > :not(.layout) { display: none !important; }
+/* 見せている間に、ほかの画面(目的、整理、設計、審査、会)が開いても、見せる画面を隠さない */
+body[data-show] .layout { display: grid !important; }
+body[data-show] .layout > .make,
+body[data-show] .preview > :not(#frame-host):not(#ai-waiting),
+body[data-show] [data-studio-only] { display: none !important; }
+.show[hidden] { display: none; }
+.show {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.8rem;
+  min-width: 0;
+  overflow: auto;
+}
+.show h2 { margin: 0 0 0.3rem; }
+.show-title { margin: 0 0 0.4rem; font-weight: 600; overflow-wrap: anywhere; }
+.show-notice { margin: 0 0 0.6rem; padding: 0.4rem 0.6rem; border-radius: 4px; background: var(--accent-bg); }
+.show-real-ai { margin: 0 0 0.6rem; padding: 0.4rem 0.6rem; border: 1px solid var(--violet); border-radius: 4px; background: var(--violet-bg); color: var(--violet-text); }
+.show-real-ai[hidden] { display: none; }
+.show-form { display: flex; flex-direction: column; gap: 0.4rem; }
+.show-questions { margin: 0 0 0.4rem; padding-left: 1.4rem; display: flex; flex-direction: column; gap: 0.8rem; }
+.show-question label { display: block; margin-bottom: 0.3rem; }
+.show-question textarea, .show-form input { width: 100%; font: inherit; }
+.show button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.show-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.4rem; }
+.show-status:empty { display: none; }
+.show-status { margin: 0.6rem 0 0; padding: 0.4rem 0.6rem; border-radius: 4px; background: var(--ok-bg); }
+.show-status[data-kind="failed"] { background: var(--error-bg); color: var(--error); }
+.show-answers { margin: 0.3rem 0; }
+.show-record { margin: 0.3rem 0 0.5rem; }
+.show-record-list { margin: 0; }
+.show-record-list dt { font-weight: 600; }
+.show-record-list dd { margin: 0 0 0.3rem 1rem; overflow-wrap: anywhere; white-space: pre-wrap; }

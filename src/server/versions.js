@@ -142,9 +142,11 @@ function versionView(record) {
 // 版は .studio/versions/<版の ID>/ に、app/ の写しと version.json(ファイルの指紋、プロダクト内 AI の会話と状態)を置く。
 // .studio/ はツールだけが書く場所で、作る AI は読み書きできない。git は使わない。
 export class ProjectVersions {
-  constructor({ store, aiSessions, log = () => {}, maxVersions = MAX_VERSIONS, maxAutoVersions = MAX_AUTO_VERSIONS }) {
+  // answersOf(id) は、版の ID ごとの人に見せた答え(show.js)。答えは版の写しの外にあるので、版を戻しても消えない
+  constructor({ store, aiSessions, log = () => {}, maxVersions = MAX_VERSIONS, maxAutoVersions = MAX_AUTO_VERSIONS, answersOf = async () => ({}) }) {
     this.store = store;
     this.aiSessions = aiSessions;
+    this.answersOf = answersOf;
     this.log = log;
     this.maxVersions = maxVersions;
     this.maxAutoVersions = maxAutoVersions;
@@ -177,7 +179,8 @@ export class ProjectVersions {
     const paths = await this.store.requireProject(id);
     const versions = await readVersions(paths);
     const { view } = await this.working(id, paths, versions);
-    return { versions: versions.map(versionView), working: view };
+    const answers = await this.answersOf(id);
+    return { versions: versions.map((record) => ({ ...versionView(record), shows: answers[record.id] ?? [] })), working: view };
   }
 
   async save(id, { name } = {}) {

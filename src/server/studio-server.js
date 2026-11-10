@@ -13,6 +13,7 @@ import { IntentError } from './intent.js';
 import { MaterialError } from './materials.js';
 import { MeetingRefusedError } from './meeting.js';
 import { SceneRunError } from './scene-runs.js';
+import { ShowError } from './show.js';
 import { VersionError } from './versions.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -146,8 +147,8 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
 // firstSteps は最初の一歩の案内の進み方と、閉じたこと(first-steps.js)
 // intents は目的の聞き出しと目的の文書(intent.js)。organizes はヒアリングの整理(organize.js)。designs は設計の案内(design.js)
 // reviews は AI 構成の審査と AI 構成書(review.js)。sceneRuns は主の画面の場面の回しと比べる表(scene-runs.js)。
-// quality は質の見直しの表(quality.js)
-export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, designs, reviews, sceneRuns, quality, materials, meetings, token, ports, realAi, consent, firstSteps }) {
+// quality は質の見直しの表(quality.js)。shows は人に見せる画面の問いと答え(show.js)
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, designs, reviews, sceneRuns, quality, shows, materials, meetings, token, ports, realAi, consent, firstSteps }) {
   const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes, designs, meetings, reviews, sceneRuns);
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
@@ -227,6 +228,9 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     // 質の見直しの表。GET だけ(測るのは「確かめる」と場面の回し。ここは読むだけ)
     const qualityMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/quality$/.exec(url.pathname);
     if (qualityMatch && req.method === 'GET') return handleQuality(res, qualityMatch[1]);
+    // 人に見せる(J7)。GET は問いと答えの記録。start は見せ始める(今の状態を版に結び付ける)。answer は答えを残す
+    const showMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/show(?:\/(start|answer))?$/.exec(url.pathname);
+    if (showMatch && (showMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleShow(req, res, showMatch[1], showMatch[2]);
     const reviewMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/review(?:\/(start|choose|approve|build|skip|measure|back|restore))?$/.exec(url.pathname);
     if (reviewMatch && (reviewMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleReview(req, res, reviewMatch[1], reviewMatch[2]);
     // 自分のトークンをつなぐ(J4)、部品と指針をつなぐ(J5)。GET は今の状態。check は検査だけで何も書かない
@@ -425,6 +429,21 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       return sendJson(res, 200, { quality: await quality.view(id) });
     } catch (error) {
       if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', error.message);
+      throw error;
+    }
+  }
+
+  async function handleShow(req, res, id, action) {
+    try {
+      if (!action) return sendJson(res, 200, { show: await shows.view(id) });
+      const body = (await readJson(req)) ?? {};
+      if (action === 'start') return sendJson(res, 200, { show: await shows.start(id) });
+      return sendJson(res, 200, await shows.answer(id, body));
+    } catch (error) {
+      if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', error.message);
+      if (error instanceof BusyError) return sendError(res, 409, 'busy', error.message);
+      if (error instanceof ShowError || error instanceof VersionError) return sendError(res, error.status, error.code, error.message);
+      if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
       throw error;
     }
   }

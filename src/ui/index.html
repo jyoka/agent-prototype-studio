@@ -438,6 +438,27 @@
         </div>
       </details>
     </section>
+    <!-- 見せる画面の問いの欄(user-journey.md の J7。サーバーは src/server/show.js)。見せている間だけ出し、「言葉で直す」の代わりに右に置く。
+         問いは目的の文書の成功の印から作る。答えは見せた版に結び付けて残し、版を戻しても消えない。開発の言葉と技術の言葉は出さない -->
+    <section id="show" class="show" aria-labelledby="show-heading" hidden>
+      <h2 id="show-heading" tabindex="-1">確かめたい問い</h2>
+      <p id="show-title" class="show-title"></p>
+      <p class="show-notice">これは試作品です。出てくるデータは、すべて架空です。</p>
+      <!-- 試作品の中の AI が本物の AI のときは、見せている間も印を出す(ux-redesign.md 6 節。試す欄の上の印は隠れるため) -->
+      <p id="show-real-ai" class="show-real-ai" hidden>試作品の中の AI は、本物の AI(あなたの Claude Code)を使っています。</p>
+      <p id="show-lead" class="muted"></p>
+      <form id="show-form" class="show-form">
+        <ol id="show-questions" class="show-questions" aria-label="確かめたい問い"></ol>
+        <label for="show-viewer">見せた相手(なくてもよい)</label>
+        <input id="show-viewer" type="text" maxlength="40" autocomplete="off">
+        <p class="muted">名前は書かず、「同僚」「お店の人」のように書いてください。</p>
+        <div class="show-actions">
+          <button type="submit" id="show-save" class="primary">答えを残す</button>
+          <button type="button" id="show-end">見せ終わる</button>
+        </div>
+      </form>
+      <p id="show-status" class="show-status" role="status"></p>
+    </section>
     <section class="make" aria-labelledby="make-heading">
       <div class="make-head">
         <h2 id="make-heading">言葉で直す</h2>
@@ -487,6 +508,13 @@
       <h2 id="more-heading">その他</h2>
       <button type="button" id="more-close" class="more-close" aria-label="閉じる" title="閉じる(Esc)">×</button>
     </div>
+    <!-- 人に見せる(user-journey.md の J7)。押すと見せる画面にする。試作品と確かめたい問いだけを出し、開発の欄を隠す。
+         上の帯は幅が足りず、試す欄の上はボタンを増やさない決まり(ux-redesign.md の U9)なので、引き出しに置く -->
+    <section aria-labelledby="show-start-heading">
+      <h3 id="show-start-heading">人に見せる</h3>
+      <p class="muted">試作品と確かめたい問いだけの画面にします。聞いた答えは、見せた保存に残ります。</p>
+      <button type="button" id="show-start" disabled>人に見せる</button>
+    </section>
     <section aria-labelledby="versions-heading">
       <h3 id="versions-heading">保存した状態</h3>
       <p id="working-status" class="working-status"></p>
