@@ -22,7 +22,7 @@ async function connectTokens(page, { source = '架空のデザイン担当', rea
   const panel = await openMore(page);
   await panel.getByLabel('トークンのファイル').setInputFiles(TOKENS_FILE);
   await expect(panel.locator('#tokens-summary')).toContainText('形を確かめました');
-  await panel.getByLabel('誰の素材か').fill(source);
+  await panel.getByRole('region', { name: '自分のトークンをつなぐ' }).getByLabel('誰の素材か').fill(source);
   if (reason) await panel.getByLabel('つなぐ理由').fill(reason);
   await panel.getByRole('button', { name: 'つなぐ', exact: true }).click();
   await expect(panel.locator('#tokens-message')).toHaveText('つなぎました。試す欄の試作品に入れました。');
@@ -90,7 +90,7 @@ test('架空のトークンをつなぐと、見本の色と字が変わる。�
     await expect(panel.locator('#tokens-missing')).toContainText('足りない役割: 失敗');
     await panel.getByRole('combobox', { name: '失敗' }).selectOption('color.error');
 
-    await panel.getByLabel('誰の素材か').fill('架空のデザイン担当');
+    await panel.getByRole('region', { name: '自分のトークンをつなぐ' }).getByLabel('誰の素材か').fill('架空のデザイン担当');
     await panel.getByLabel('つなぐ理由').fill('架空の会社の色で見せるため');
     await expect(connect).toBeEnabled();
     await connect.click();
@@ -189,7 +189,7 @@ test('小数を丸めた色は電話番号と取り違えずにつなぐ。色�
     await choose('rounded.tokens.json', { ...tokens, color: { ...tokens.color, accent: { $value: rounded } } });
     await expect(problems).toBeHidden();
     await expect(panel.locator('#tokens-summary')).toContainText('形を確かめました');
-    await panel.getByLabel('誰の素材か').fill('架空のデザイン担当');
+    await panel.getByRole('region', { name: '自分のトークンをつなぐ' }).getByLabel('誰の素材か').fill('架空のデザイン担当');
     await panel.getByRole('button', { name: 'つなぐ', exact: true }).click();
     await expect(panel.locator('#tokens-message')).toHaveText('つなぎました。試す欄の試作品に入れました。');
     await closeMore(page);

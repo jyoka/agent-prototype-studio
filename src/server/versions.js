@@ -5,6 +5,7 @@ import { snapshotApp } from './app-snapshot.js';
 import { BusyError } from './store.js';
 import { buildApp } from './build.js';
 import { inspectApp, LIMITS } from './inspect.js';
+import { restoreGuideCopies } from './materials.js';
 import { isValidProjectId, projectPaths, projectsDir } from './projects.js';
 
 // 利用者が保存した版の上限。自動の版は、新しいものから MAX_AUTO_VERSIONS 個だけ残す(復元を上限で止めないため)
@@ -281,6 +282,9 @@ export class ProjectVersions {
         }
       }
       await replaceApp(paths, source, { setAside, log: this.log });
+      // 版で戻しても素材は戻らない。有効にしている部品と指針の写し(app/design/)を、今の素材で書き直す(J5)
+      // 前に外した写しが版から戻っていれば消す
+      await restoreGuideCopies(paths.root, { pruneRetired: true });
       await writeWorking(paths, { baseVersionId: versionId });
       const build = await this.store.build(id, { byVersions: true });
       // ビルドできなければ、試す画面は前の版のまま。会話もそのままにする。
