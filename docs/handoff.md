@@ -1,13 +1,15 @@
-# 引き継ぎの形(handoff、形式 3)
+# 引き継ぎの形(handoff、形式 4)
 
-- 状態: **仮**(2026-10-28)。出典のタスク: jyoka/tasks#280(親 PRD: jyoka/tasks#269)。形式 2 は jyoka/tasks#313([harness.md](design/harness.md) の 5 節、基準 S7)。形式 3 は jyoka/tasks#344([agent-simulation.md](design/agent-simulation.md) の 4.5、基準 S6、S7)
-- 作るところ: `src/server/handoff.js`。画面は上の帯の「その他」の「本番開発へ渡す」
+- 状態: **仮**(2026-10-28)。出典のタスク: jyoka/tasks#280(親 PRD: jyoka/tasks#269)。形式 2 は jyoka/tasks#313([harness.md](design/harness.md) の 5 節、基準 S7)。形式 3 は jyoka/tasks#344([agent-simulation.md](design/agent-simulation.md) の 4.5、基準 S6、S7)。形式 4 は jyoka/tasks#392([user-journey.md](design/user-journey.md) の J8。原則 5「理由を残す」、原則 7「信頼できる」)
+- 作るところ: `src/server/handoff.js`。形式 4 で足した中身を読むところは `src/server/handoff-decisions.js`。画面は上の帯の「その他」の「本番開発へ渡す」
 
 試作品を本番開発の担当者に渡すときに、Studio が書き出すフォルダーの形です。中身は決まった手順で作ります。AI の判断は入れません(ADR-0001、Stripe の Minions の考え方)。標準化する契約は、使われ方を見て直します(親 PRD)。
 
 形式 2 では、目録(`app/prototype.json`)、シナリオ(`app/scenarios/`)、最新の証拠の要約を、`handoff.json` に機械が読める形で入れます。本番で作る人や AI が、試作品の意図、制約、確かめ方を、手で写さずに受け取れるようにするためです。
 
 形式 3 では、構成(`app/composition.json`、`app/compositions/`)、ツールの宣言、前提、プロンプトの枠、場面(`app/evals/`)と、最新の場面の回し(`npm run evals`)の要約を足しました。本番の担当者が、ツールの仕様と、ガードレールのどの層が効いたかを、そのまま読めるようにするためです。
+
+形式 4 では、決めたことと理由を足しました。目的の文書、設計の段ごとの決定と理由、質の見直しの結果、人に見せた答え、AI 構成書と承認の記録、既定の素材の出典とライセンスです。開発の担当者が、何を、なぜこの作りにしたのか、何を確かめていないのかを、聞き返さずに読めるようにするためです。どれも Studio が持つ記録(`.studio/`)から読むだけで、AI の判断は入れません。
 
 ## 置き場所
 
@@ -21,11 +23,13 @@
 
 | ファイル | 中身 |
 |---|---|
-| `README.md` | 人が読む資料。目的、作る AI が書いた意図と制約(目録)、決まったこと、未決事項、実機・モック・未接続の一覧、プロダクト内 AI の設定、試した会話と状態、構成とツール(模擬)、場面と最新の回し、シナリオ、最新の証拠、ソースの一覧、版、変更の経緯、入れていないもの |
+| `README.md` | 人が読む資料。目的、目的の文書、作る AI が書いた意図と制約(目録)、設計の段ごとの決定と理由、AI 構成の審査(AI 構成書)、決まったこと、未決事項、実機・モック・未接続の一覧、プロダクト内 AI の設定、試した会話と状態、構成とツール(模擬)、場面と最新の回し、シナリオ、最新の証拠、質の見直し、人に見せた答え、素材の出典とライセンス、ソースの一覧、版、変更の経緯、確かめていないこと、入れていないもの |
 | `handoff.json` | 機械が読む資料。下の「handoff.json」 |
 | `app/` | 試作品のソース(作業中の `app/` の写し)。目録の `app/prototype.json` とシナリオの `app/scenarios/` も入る。秘密を入れるファイルは外す |
 | `ai/system-prompt.md` | プロダクト内 AI を実モデルで動かすときの指示の全文。抽出の指示と、言い方の指示(`ai.json` の `instructions` と Studio の決まり)の 2 つ。AI のない試作品にはない |
 | `ai/response-schema.json` | 実モデルに求める応答の形(JSON スキーマ)。`extract` は抽出の形(`updates` と `intent`)、`phrase` は言い方の形(`reply`)。AI のない試作品にはない |
+| `materials/default/` | 既定の素材の出典の記録(`source.json`)とライセンスの文(`licenses/`、`licenses-upstream/`)。Studio の `materials/default/` の写し。どの書き出しにも入る |
+| `materials/tokens.json`、`tokens.css`、`source.json` | つないだトークンか、有効にした部品と指針があるときだけ(下の「materials」) |
 
 ## 区分
 
@@ -55,7 +59,7 @@
 
 | 項目 | 中身 |
 |---|---|
-| `format`、`formatVersion` | `"prototype-studio-handoff"`、`3`。形を変えるときは `formatVersion` を上げる |
+| `format`、`formatVersion` | `"prototype-studio-handoff"`、`4`。形を変えるときは `formatVersion` を上げる |
 | `createdAt`、`studioVersion` | 書き出した日時(UTC)と、Studio の版 |
 | `project` | `id`、`title` |
 | `notes` | 書き出した人のメモ。`purpose`(目的)、`decided`(決まったこと)、`undecided`(未決事項) |
@@ -65,7 +69,12 @@
 | `scenarios` | シナリオ。下の「scenarios」 |
 | `evidence` | 最新の証拠の要約。下の「evidence」 |
 | `simulation` | 構成、ツール、前提、プロンプトの枠、場面と、最新の場面の回しの要約。下の「simulation」 |
-| `materials` | つないだトークンか、有効にした部品と指針があるときだけ(J4、J5)。下の「materials」。なければ項目がない |
+| `materials` | 素材の出典とライセンス。既定の素材(`default`)はいつも入る。つないだトークン(`tokens`、J4)と有効にした部品と指針(`guides`、J5)は、あるときだけ。下の「materials」 |
+| `purpose` | 目的の文書(J1)。下の「purpose」 |
+| `design` | 設計の段ごとの決定と理由(J2)。下の「design」 |
+| `quality` | 質の見直しの結果(J6)。下の「quality」 |
+| `shows` | 人に見せた答え(J7)。下の「shows」 |
+| `review` | AI 構成の審査の状態と、AI 構成書の写しと承認の記録。下の「review」 |
 | `openQuestions[]` | 未決事項。`from` は `person`(書き出した人)か `studio`(Studio が見つけたもの) |
 | `ai` | プロダクト内 AI の設定(`fields`、`initialState`、`mock`)、書き出したときの接続(`real` は実際の AI モデルか)。なければ `null` |
 | `conversation` | 書き出したときの会話と状態。AI の発言には `via`(接続)、`viaLabel`、`real` が付く。`via` が `null` の発言は、設定の固定文(あいさつ) |
@@ -129,10 +138,73 @@
 
 場面があるのに回した結果がないとき、最新の回しが古いとき、モックでだけ回したとき、途中で止まったとき、前提(推測)があるときは、Studio が `openQuestions` にも書く。
 
+### purpose
+
+`.studio/intent.json`(目的の画面)を読んだもの。文は伏せてから入れる。聞き出しの問いと答えの全部は入れない。
+
+| 項目 | 中身 |
+|---|---|
+| `status` | `none`(聞き出していない)、`interviewing`(聞き出しの途中)、`draft`(下書き)、`decided`(人が「これで決める」を押した)、`skipped`(飛ばした) |
+| `decidedAt`、`skippedAt` | 決めた日時と、飛ばした日時 |
+| `sentence` | 最初の 1 文 |
+| `doc` | `who`(誰)、`problem`(何の問題)、`scene`(場面)、`success`(成功の印)、`notDoing[]`(しないこと)、`undecided[]`(決めていないこと)。`none` のときは `null` |
+
+### design
+
+`.studio/design.json`(設計の案内)を読んだもの。理由は選んだ案に付いていた理由で、案を出した日の推測。測った結果ではない。
+
+| 項目 | 中身 |
+|---|---|
+| `status`、`decidedAt`、`skippedAt` | `none`(使っていない)、`drafting`(決めている途中)、`decided`(「この設計で作る」を押した)、`skipped`(飛ばした)と、その日時 |
+| `optionsDate` | 案を出した日 |
+| `steps[]` | 6 つの段(問題、使う人、場面、データ、エージェントの構成、画面)。`none` のときは空。`id`、`label`、`question`、`chosen`(選んだ案の ID。`custom` は自分の言葉、`keep` は今の構成のまま)、`decision`(決めたこと)、`reason`(選んだ案の理由)、`note`(選んだ人のメモ)、`source`(`ai` か Studio の決まった案の `fixed`)、`decidedAt`、`stale`(前の段を選び直したので確かめ直しが要る)、`others[]`(選ばなかった案の `title` と `reason`) |
+| `scenes[]` | 場面の段で決めた場面。`category`(`normal`、`unknown`、`refuse`、`slow`、`human`)と `text` |
+| `composition` | 構成の段の決定。`chosen`、`rejected[]`(選ばなかった形の `option` と `reason`)、`outOfOrder`(簡単な形から順の問いを飛ばした)、`at` |
+
+### quality
+
+画面の「質の見直し」と同じ表(`src/server/quality.js` の `readQuality`)。「直す」の依頼の文は、作る AI への頼みなので入れない。
+
+| 項目 | 中身 |
+|---|---|
+| `summary` | 状態ごとの行の数。`fix`(直す)、`ok`(問題なし)、`info`(目安なし)、`unseen`(まだ見ていない)、`na`(当てはまらない) |
+| `audit` | 画面の検査(人の「確かめる」の観察)の日時、画面幅、古いか(`stale`)。測っていなければ `null` |
+| `scenes` | 表が使った場面の回しの日時、本物の AI か、状態、古いか。回していなければ `null` |
+| `rows[]` | 11 行。`id`、`group`(`measured` か `judged`)、`label`、`status`、`result`、`why`(なぜ大事か)、`fix`(直し方)、`places[]`(場所。10 まで)、`note` |
+
+### shows
+
+`.studio/show.json`(人に見せる)を読んだもの。文は伏せてから入れる。版の ID と日時は伏せない。見せた相手は役で書く決まりだが、名前を書いても見分けられない。
+
+| 項目 | 中身 |
+|---|---|
+| `questions` | 今の目的の文書から作る問い。`source`(`success` か `fallback`)と `items[]` |
+| `broken` | 答えのファイルを読めなかったか。読めた答えだけを入れる |
+| `records[]` | 見せて残した答え。`versionId`、`versionNumber`、`versionName`(版が消えていれば `null`)、`answeredAt`、`viewer`(相手の役)、`answers[]`(`question`、`answer`) |
+
+### review
+
+AI 構成の審査([ai-architecture-review.md の 6 節](design/ai-architecture-review.md#6-ai-構成書))。書き出す `app/` の写しの指紋を、AI 構成書の指紋と比べる。人が手で `app/` を直した場合もここで分かる。
+
+| 項目 | 中身 |
+|---|---|
+| `flag` | `.studio/project.json` の `review`。`none`(審査を受けていない)、`required`、`skipped` |
+| `status` | `none`、`skipped`(審査なし)、`missing`(要るのに AI 構成書を読めない)、`drafting`(承認の途中か、承認と違う)、`approved`(承認済みで、今の構成と同じ)、`stopped`(関門 GA で止めた) |
+| `matches`、`changed[]` | 今の構成が AI 構成書と同じか(AI 構成書がなければ `null`)と、指紋が変わった項目 |
+| `items[]` | 4 つの項目(`composition`、`harness`、`data`、`stack`)。`label`、`needs`(要る役)、`approved`(今の指紋で承認がそろっているか)、`by[]`(`role`、`roleLabel`、`pressedBy`、`spokenBy`、`at`、`valid`) |
+| `approvedAt`、`approvedUnmeasured` | 4 つの承認がそろった日時と、場面の数がないまま承認したか |
+| `skipped` | 審査を飛ばしたときの `at`、`by`、`reason` |
+| `record` | AI 構成書(`.studio/reviews/<審査の ID>/architecture.json`)の写し。文は伏せる処理を通す。押した人と声に出した人の名前は承認の記録なので残る(申告の名前。伏せる処理はメールアドレスなどの形だけを伏せ、名前だけの文字列は見分けられない)。指紋(`basis`、`evidence`、`fingerprint`、承認の `digest`)は伏せない(伏せると照合できない) |
+
 ### materials
 
 | 項目 | 中身 |
 |---|---|
+| `default.name`、`decidedIn` | 既定の素材の名前と、決めた文書 |
+| `default.file` | 書き出しの中の出典の記録(`materials/default/source.json`) |
+| `default.roles[]` | 役(土台、部品、色、アイコン、字)と、そのパッケージと中身 |
+| `default.licenses` | ライセンスごとのパッケージの数 |
+| `default.packages[]` | `name`、`version`、`license`、`source`(出典のリポジトリ)、`licenseFile`(書き出しの中のライセンスの文)、`imported`(試作品が直に import しているか) |
 | `tokens.files` | 書き出しの中のファイル。`tokens`(`materials/tokens.json`。元のファイルの写し)、`css`(`materials/tokens.css`。Studio がビルドで足す CSS)、`source`(`materials/source.json`。つないだ、外したの履歴) |
 | `tokens.spec`、`fileName`、`sha256`、`count` | 形の名前、元のファイルの名前、中身の指紋、トークンの数 |
 | `tokens.source`、`reason`、`connectedAt` | 誰の素材か、つないだ理由、つないだ日時 |
@@ -153,7 +225,7 @@
 - 同じ探し方を、Studio が `app/` の外から足す中身(`README.md`、`handoff.json`、`ai/`。証拠の要約を含む)にも使う。見つけたら書き出さず、`handoff.json:行` の形で場所を出す。
 - 証拠の要約の文(関門の `summary` や `reason`)は、作る run の記録のまま入れる。伏せずに、上の探し方で秘密を止める。
 - `.env`、`.env.*`、`*.pem`、`*.key`、`*.p12`、`*.pfx`、`id_rsa` などは、中を見ずに外す。外したことは README と `excluded` に書く。見本の `.env.example`、`.env.sample`、`.env.template` は外さず、ほかのファイルと同じく中を調べる。
-- 会話、メモ、依頼の文、試作品の名前、版の名前の中の、鍵らしい文字列と、メールアドレス、電話番号、住所、氏名らしい文字列は伏せる(`src/server/redact.js`)。改行は 1 行にまとめ、表の行を足させない。ソースの中のものは変えずに、未決事項に場所を書く。
+- 会話、メモ、依頼の文、試作品の名前、版の名前、目的の文書、設計の案と人のメモ、人に見せた答え、AI 構成書の文の中の、鍵らしい文字列と、メールアドレス、電話番号、住所、氏名らしい文字列は伏せる(`src/server/redact.js`)。改行は 1 行にまとめ、表の行を足させない。ソースの中のものは変えずに、未決事項に場所を書く。
 - AI の実行の記録、作る AI の返事、ログインの情報、環境変数、PC のフォルダーの場所は入れない。
 - 書き出しの間は、版の保存と同じ印を使い、作る AI、ビルド、版の操作、プロダクト内 AI への発言を断る。
 - 形で見分けるので、秘密や個人のデータを見落とすことがある。架空のデータだけで試す決まりは変わらない。
@@ -172,6 +244,14 @@
 - 構成のある試作品で、「模擬のエージェント」「ツール(宣言)」「会話の枠(studio-talk)」の行を足した。
 - `evidence.run.gates[]` に関門 GE が入る。`evidence.run.reports[]` に GE の場面の結果の要約が入る。
 
+## 形式 3 からの変更
+
+- `formatVersion` を `4` にした。
+- `purpose`、`design`、`quality`、`shows`、`review` を足した。形の違う記録(手で直したファイルなど)は、形の違う要素を捨てて読み、書き出しは止めない。
+- `materials` はいつも入れ、既定の素材の出典とライセンス(`materials.default`)を足した。書き出しに `materials/default/` を足した。
+- Studio が見つけたこと(`openQuestions` の `studio`)に、次を足した。目的の文書がない、または決めていない。設計の決定がない、または決めていない。確かめ直しの要る段がある。質の見直しに「直す」がある。画面の検査が古い。人に見せた答えがない。今の構成が AI 構成書の承認と違う。審査が承認の途中、審査なし、AI 構成書を読めない、測らずに承認した。
+- README に「目的の文書」「設計の段ごとの決定と理由」「AI 構成の審査(AI 構成書)」「質の見直し」「人に見せた答え」「素材の出典とライセンス」「確かめていないこと」の節を足した。
+
 ## まだしないこと
 
 - zip などの 1 ファイルにまとめる書き出しと、ブラウザからのダウンロード。
@@ -179,3 +259,5 @@
 - 書き出したものを Studio に読み込む画面(いまは `app/` を手で写す)。
 - 利用者の「確かめる」の report の要約。Studio がまだ report を残さない([harness.md の 8 節](design/harness.md#8-実装のカード)の P27 で足す)。
 - 版に report の要約を入れること。
+- 会の終わりの成果物(要件の文書、データ設計、直した記録の一覧)。K5(jyoka/tasks#395)で形式 4 に足す。
+- 目的の聞き出しの問いと答えの全部。決めた文書だけを入れる。

@@ -7,8 +7,9 @@ import test from 'node:test';
 import { FAKE_CLI } from '../../src/server/agent-connection.js';
 import { BuildRequests } from '../../src/server/build-requests.js';
 import { describeBilling } from '../../src/server/claude-args.js';
-import { STUDIO_ROOT } from '../../src/server/config.js';
+import { STUDIO_ROOT, loadConfig } from '../../src/server/config.js';
 import { HANDOFF_FORMAT, HandoffError, ProjectHandoffs } from '../../src/server/handoff.js';
+import { startStudio } from '../../src/server/index.js';
 import { ensureSampleProjects } from '../../src/server/projects.js';
 import { AiSessions } from '../../src/server/product-ai/session.js';
 import { createMockConnection } from '../../src/server/product-ai/mock.js';
@@ -90,7 +91,7 @@ test('ソース、意図、AI の設定、会話と状態、未接続と未決�
   const result = await handoffs.export('travel', NOTES);
   assert.equal(path.dirname(result.handoff.dir), path.join(home, 'handoffs'));
   assert.match(result.handoff.name, /^travel-\d{8}-\d{6}$/);
-  assert.deepEqual(result.handoff.counts, { real: 2, mock: 3, missing: 5, questions: 3 });
+  assert.deepEqual(result.handoff.counts, { real: 2, mock: 3, missing: 5, questions: 6 });
 
   // 別の場所に写しても、中身だけで読める
   const other = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-handoff-other-'));
@@ -98,7 +99,7 @@ test('ソース、意図、AI の設定、会話と状態、未接続と未決�
   await fs.cp(result.handoff.dir, other, { recursive: true });
   const manifest = JSON.parse(await fs.readFile(path.join(other, 'handoff.json'), 'utf8'));
   assert.equal(manifest.format, HANDOFF_FORMAT);
-  assert.equal(manifest.formatVersion, 3);
+  assert.equal(manifest.formatVersion, 4);
   // 名前は試作品の一覧と同じ(目録がないので ID に、AI と話せるかを添える)
   assert.deepEqual(manifest.project, { id: 'travel', title: 'travel(AI と話せる)' });
   assert.deepEqual(manifest.notes, NOTES);
@@ -165,6 +166,22 @@ test('ソース、意図、AI の設定、会話と状態、未接続と未決�
   assert.match(readme, /\| 3 \| AI \| モック \| /);
   assert.match(readme, /\| 5 \| AI \| 偽の実モデル\(実モデル\) \| 湖の町で 2 泊ですね。 \|/);
   assert.match(readme, /コードに未実装の印がある\(app\/main\.js:3\)/);
+
+  // 形式 4(J8): 目的の文書、設計、審査、見せた答えがない試作品でも、ないことを書く。質の見直しと素材の出典はいつも入る
+  assert.equal(manifest.purpose.status, 'none');
+  assert.equal(manifest.design.status, 'none');
+  assert.equal(manifest.review.status, 'none');
+  assert.deepEqual(manifest.shows.records, []);
+  assert.equal(manifest.quality.rows.length, 11);
+  assert.equal(manifest.materials.default.licenses.MIT > 0, true);
+  assert.equal(manifest.materials.tokens, undefined);
+  assert.ok(manifest.openQuestions.some((q) => q.text.startsWith('目的の文書がない')));
+  assert.ok(manifest.openQuestions.some((q) => q.text.startsWith('人に見せた答えがない')));
+  assert.match(readme, /## 目的の文書\n\n目的の文書はありません/);
+  assert.match(readme, /## 設計の段ごとの決定と理由\n\n設計の段ごとの決定はありません/);
+  assert.match(readme, /## AI 構成の審査\(AI 構成書\)\n\n- 状態: 審査なし\(この試作品は審査を受けていない\)/);
+  assert.match(readme, /## 確かめていないこと\n\n- アクセシビリティの違反: まだ見ていない/);
+  assert.ok((await fs.readFile(path.join(other, 'materials', 'default', 'source.json'), 'utf8')).includes('"license": "MIT"'));
 
   // 秘密と個人のデータ、PC の場所は入れない
   assert.equal(manifest.requests[0].request, '見出しを変えて。連絡先は [伏せた: メールアドレス]');
@@ -316,7 +333,7 @@ test('目録、シナリオ、最新の作る run と観察の report の要約�
 
   const result = await handoffs.export(JOB, { purpose: '求人を相談で絞れるか確かめる' });
   const { manifest, readme } = await readHandoff(result);
-  assert.equal(manifest.formatVersion, 3);
+  assert.equal(manifest.formatVersion, 4);
 
   // 目録: 作る AI が書いた意図、制約、未実装、架空のデータ
   assert.equal(manifest.prototype.file, 'app/prototype.json');
@@ -339,7 +356,8 @@ test('目録、シナリオ、最新の作る run と観察の report の要約�
   assert.match(manifest.capabilities.at(-1).prototype, /データはすべて架空、実在の企業、店舗、地名とは関係ない/);
   assert.match(readme, /\| 未接続 \| 求人への応募 \| 目録\(app\/prototype\.json の unimplemented\)/);
   // 書き出した人のメモと、作る AI の意図を並べる
-  assert.match(readme, /## 目的\n\n> 求人を相談で絞れるか確かめる\n\n## 作る AI が書いた意図と制約\(目録\)/);
+  // 間に、目的の画面で決めた目的の文書(形式 4。この試作品にはない)を置く
+  assert.match(readme, /## 目的\n\n> 求人を相談で絞れるか確かめる\n\n## 目的の文書\n\n目的の文書はありません[^\n]*\n\n## 作る AI が書いた意図と制約\(目録\)/);
   assert.match(readme, /- 意図: 求職者が希望を話すと/);
 
   // シナリオ: app/ のものと Studio の基本のもの。手順ごとに確かめることの文を付ける
@@ -508,4 +526,135 @@ test('構成、ツール、前提、プロンプトの枠、場面と最新の�
   assert.equal(after.manifest.simulation.latestRun.stale, true);
   assert.ok(after.manifest.openQuestions.some((q) => /最新の場面の回し\(.*\)は、今の app\/ と違う中身で回したもので、古い/.test(q.text)));
   assert.match(after.readme, /- 回した app\/ の中身: \*\*古い\*\*/);
+});
+
+// 形式 4(J8)。目的の聞き出しから設計、AI 構成の審査、質の見直し、人に見せるまでを、画面と同じ道(Studio の部品)で通してから書き出す。
+// 偽接続(STUDIO_AGENT=fake)で動かし、実モデルは呼ばない
+test('形式 4: 目的の文書、設計の段ごとの決定と理由、質の見直しの結果、素材の出典とライセンス、人に見せた答え、AI 構成書と承認の記録が handoff.json に入る。承認の後に構成が変われば「承認と違う」と出す', async (t) => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-handoff-j8-'));
+  const env = { PATH: process.env.PATH, HOME: home, STUDIO_AGENT: 'fake', STUDIO_CLAUDE_BIN: path.join(home, 'no-claude') };
+  const studio = await startStudio(loadConfig({ ...env, STUDIO_HOME: home, STUDIO_PORT: '0', STUDIO_PREVIEW_PORT: '0', STUDIO_NO_OPEN: '1' }), { env });
+  t.after(async () => {
+    await studio.close();
+    await fs.rm(home, { recursive: true, force: true });
+  });
+  const sentence = '架空の町の図書館で、本の取り置きの問い合わせに AI が答えられるようにしたい';
+  const id = await studio.intents.createProject({ sentence, guide: 'fixed' });
+  await studio.intents.start(id, { sentence, guide: 'fixed', depth: 'quick' });
+  const doc = { who: '図書館の利用者(架空)', problem: '取り置きの問い合わせに何度も答えている', scene: '開館前の問い合わせ', success: '電話が減る。返事を待たずに済む', notDoing: ['貸し出しの手続き'], undecided: ['休館日の扱い'] };
+  await studio.intents.decide(id, { doc });
+
+  // 設計の 6 段。問題の段にメモを残す。構成は固定の流れ
+  await studio.designs.start(id, { guide: 'ai' });
+  for (const step of ['problem', 'users', 'scenes', 'data', 'composition', 'screens']) {
+    const view = await studio.designs.view(id);
+    const options = view.steps.find((item) => item.id === step).options;
+    const option = step === 'composition' ? 'fixed-flow' : (options.find((item) => item.recommended) ?? options[0]).id;
+    await studio.designs.choose(id, { step, option, ...(step === 'problem' ? { note: '館長(架空)と話して、取り置きに絞った' } : {}) });
+  }
+  await studio.designs.decide(id);
+  // AI 構成の審査: 4 つを承認して「この構成で作る」
+  await studio.reviews.start(id, { origin: 'design' });
+  for (const item of ['composition', 'harness', 'data', 'stack']) await studio.reviews.approve(id, { item, pressedBy: '早瀬(架空)' });
+  await studio.reviews.build(id);
+  // 人に見せて、答えを残す。答えの中の連絡先は伏せる
+  const shown = await studio.shows.start(id);
+  await studio.shows.answer(id, {
+    versionId: shown.version.id,
+    viewer: '同僚',
+    answers: [
+      { question: shown.questions[0], answer: '開館前の電話は減りそう。連絡は hanako@example.com まで' },
+      { question: shown.questions.at(-1), answer: '取り置きの期限が分かりにくい' },
+    ],
+  });
+
+  const result = await studio.handoffs.export(id, { purpose: '取り置きの問い合わせを AI で減らせるか確かめる' });
+  // 別の場所に写しても、中身だけで読める
+  const other = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-handoff-j8-other-'));
+  t.after(() => fs.rm(other, { recursive: true, force: true }));
+  await fs.cp(result.handoff.dir, other, { recursive: true });
+  const manifest = JSON.parse(await fs.readFile(path.join(other, 'handoff.json'), 'utf8'));
+  const readme = await fs.readFile(path.join(other, 'README.md'), 'utf8');
+  assert.equal(manifest.formatVersion, 4);
+
+  // 1. 目的の文書
+  assert.equal(manifest.purpose.status, 'decided');
+  assert.match(manifest.purpose.decidedAt, /^\d{4}-/);
+  assert.equal(manifest.purpose.sentence, sentence);
+  assert.deepEqual(manifest.purpose.doc, doc);
+  assert.match(readme, /## 目的の文書\n[\s\S]*- 状態: 決めた[\s\S]*\| 誰 \| 図書館の利用者\(架空\) \|[\s\S]*\| しないこと \| 貸し出しの手続き \|/);
+
+  // 2. 設計の段ごとの決定と理由。選ばなかった案と、構成の捨てた案の理由も残る
+  assert.equal(manifest.design.status, 'decided');
+  assert.deepEqual(manifest.design.steps.map((step) => step.id), ['problem', 'users', 'scenes', 'data', 'composition', 'screens']);
+  for (const step of manifest.design.steps) {
+    assert.ok(step.decision, `${step.label} の決定`);
+    assert.ok(step.reason, `${step.label} の理由`);
+    assert.equal(step.stale, false);
+  }
+  assert.equal(manifest.design.steps[0].note, '館長(架空)と話して、取り置きに絞った');
+  assert.ok(manifest.design.steps[0].others.length > 0);
+  assert.equal(manifest.design.steps.find((step) => step.id === 'composition').chosen, 'fixed-flow');
+  assert.ok(manifest.design.composition.rejected.length > 0 && manifest.design.composition.rejected.every((item) => item.reason));
+  for (const category of ['unknown', 'refuse', 'slow']) assert.ok(manifest.design.scenes.some((scene) => scene.category === category), category);
+  assert.match(readme, /## 設計の段ごとの決定と理由\n[\s\S]*\| 段 \| 決めたこと \| 理由 \| 選んだ人のメモ \| 選ばなかった案 \|[\s\S]*館長\(架空\)と話して、取り置きに絞った/);
+  assert.match(readme, /構成の段で選ばなかった形と理由:\n\n- 単一エージェント: /);
+
+  // 3. 質の見直しの結果(画面の表と同じ 11 行)
+  assert.deepEqual(manifest.quality.rows.map((row) => row.id), ['a11y', 'contrast', 'colors', 'parts', 'scenes', 'tools', 'guards', 'cost', 'wait', 'natural', 'usability']);
+  assert.deepEqual(Object.keys(manifest.quality.summary), ['fix', 'ok', 'info', 'unseen', 'na']);
+  assert.equal(manifest.quality.rows.find((row) => row.id === 'usability').status, 'unseen');
+  assert.ok(manifest.quality.rows.every((row) => !('request' in row)));
+  assert.match(readme, /## 質の見直し\n[\s\S]*\| 測ったもの \| アクセシビリティの違反 \| まだ見ていない \|/);
+
+  // 4. 素材の出典とライセンス。ライセンスの文も写す
+  const material = manifest.materials.default;
+  assert.equal(material.file, 'materials/default/source.json');
+  assert.ok(material.packages.some((item) => item.name === '@radix-ui/themes' && item.license === 'MIT'));
+  for (const item of material.packages.filter((p) => p.licenseFile)) await fs.access(path.join(other, item.licenseFile));
+  assert.match(readme, /## 素材の出典とライセンス\n[\s\S]*- ライセンス: MIT \d+ 個/);
+
+  // 5. 人に見せた答え。見せた版と相手(役)が付き、連絡先は伏せる
+  assert.equal(manifest.shows.records.length, 1);
+  const [answered] = manifest.shows.records;
+  assert.equal(answered.versionNumber, shown.version.number);
+  assert.equal(answered.versionName, '人に見せた状態');
+  assert.equal(answered.viewer, '同僚');
+  assert.equal(answered.answers[0].answer, '開館前の電話は減りそう。連絡は [伏せた: メールアドレス] まで');
+  assert.deepEqual(manifest.shows.questions.items, shown.questions);
+  assert.match(readme, /## 人に見せた答え\n[\s\S]*相手: 同僚[\s\S]*\| 使ってみて、分かりにくいところや困ったところはありましたか\? \| 取り置きの期限が分かりにくい \|/);
+
+  // 6. AI 構成書と承認の記録。指紋は伏せずに写す
+  assert.equal(manifest.review.status, 'approved');
+  assert.equal(manifest.review.matches, true);
+  assert.deepEqual(manifest.review.items.map((item) => [item.id, item.approved]), [['composition', true], ['harness', true], ['data', true], ['stack', true]]);
+  assert.equal(manifest.review.items[0].by[0].pressedBy, '早瀬(架空)');
+  assert.equal(manifest.review.record.composition.chosen, 'fixed-flow');
+  assert.match(manifest.review.record.fingerprint.value, /^[0-9a-f]{64}$/);
+  assert.equal(manifest.review.record.approvals.stack.by[0].digest, manifest.review.record.fingerprint.items.stack.digest);
+  assert.equal(manifest.review.approvedUnmeasured, true);
+  assert.match(readme, /## AI 構成の審査\(AI 構成書\)\n\n- 状態: 承認済み\n- 今の構成と AI 構成書: 同じ/);
+  assert.match(readme, /\| harness \| 承認済み \| 早瀬\(架空\)\(本人\) \|/);
+  assert.ok(manifest.openQuestions.some((q) => q.text.startsWith('AI 構成書は、場面を回した数がないまま承認した')));
+  assert.ok(!manifest.openQuestions.some((q) => /目的の文書|設計の|人に見せた答えがない/.test(q.text)));
+
+  // 秘密と個人のデータ、PC の場所は入れない
+  for (const file of ['README.md', 'handoff.json']) {
+    const text = await fs.readFile(path.join(other, file), 'utf8');
+    assert.ok(!text.includes(home), `${file} に PC の場所が入っています`);
+    assert.ok(!text.includes('hanako@example.com'), `${file} にメールアドレスが入っています`);
+  }
+
+  // 承認の後に、人が手で構成を変える。書き出しで指紋を比べ、「承認と違う」と出す
+  const compositionFile = path.join(home, 'projects', id, 'app', 'composition.json');
+  const composition = JSON.parse(await fs.readFile(compositionFile, 'utf8'));
+  await fs.writeFile(compositionFile, `${JSON.stringify({ ...composition, name: '手で変えた構成(架空)' }, null, 2)}\n`);
+  await studio.store.build(id);
+  const changed = await studio.handoffs.export(id, {});
+  const after = JSON.parse(await fs.readFile(path.join(changed.handoff.dir, 'handoff.json'), 'utf8'));
+  assert.equal(after.review.matches, false);
+  assert.ok(after.review.changed.includes('composition'));
+  assert.equal(after.review.status, 'drafting');
+  assert.ok(after.openQuestions.some((q) => /承認と違う/.test(q.text)));
+  assert.match(await fs.readFile(path.join(changed.handoff.dir, 'README.md'), 'utf8'), /- 今の構成と AI 構成書: \*\*承認と違う\*\*\(変わった項目: エージェントの構成/);
 });

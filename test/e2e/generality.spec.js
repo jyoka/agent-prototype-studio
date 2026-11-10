@@ -190,8 +190,9 @@ async function runFlow(page, home, other, otherHome) {
     await handoff.getByLabel('未決事項').fill('講座の一覧を本物のデータにするか');
     await handoff.getByRole('button', { name: '渡すフォルダーを作る' }).click();
     const result = page.locator('#handoff-result');
-    // 未決事項は、書いた 1 件と、保存版と違う作業中から書き出したことを Studio が足した 1 件。未接続には、目録の未実装 3 つと制約が入る
-    await expect(result).toContainText('渡すフォルダーを作りました。本物につないだもの 2 件、お試しのもの 3 件、つないでいないもの 9 件、未決事項 2 件。');
+    // 未決事項は、書いた 1 件と、保存版と違う作業中から書き出したことを Studio が足した 1 件と、形式 4 で足す 4 件
+    // (目的の文書がない、設計の決定がない、質の見直しの「直す」、人に見せた答えがない)。未接続には、目録の未実装 3 つと制約が入る
+    await expect(result).toContainText('渡すフォルダーを作りました。本物につないだもの 2 件、お試しのもの 3 件、つないでいないもの 9 件、未決事項 6 件。');
     exported = await result.locator('code').textContent();
     await fs.cp(exported, other, { recursive: true });
 
@@ -208,7 +209,8 @@ async function runFlow(page, home, other, otherHome) {
   }
 
   // 渡した先で読む: 項目、データの場所、会話の接続の区別が、この題材のまま出る
-  const files = (await allFiles(other)).map((file) => path.relative(other, file).split(path.sep).join('/'));
+  // 既定の素材の出典とライセンスの文(materials/default/)は、題材によらず同じなので除いて比べる
+  const files = (await allFiles(other)).map((file) => path.relative(other, file).split(path.sep).join('/')).filter((file) => !file.startsWith('materials/default/'));
   expect(files).toEqual([
     'README.md',
     'ai/response-schema.json',

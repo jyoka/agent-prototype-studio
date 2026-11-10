@@ -174,6 +174,22 @@ export function allCompositions(simulation) {
   return ['default', ...new Set(files)];
 }
 
+// 一番新しい場面の回しの結果(.studio/evals/<回しの ID>/result.json)。質の見直しの表と引き継ぎが読む。
+// 回しの ID は始めた時刻から始まる(newEvalRunId)。新しい名前から読み、最初に読めた結果を使う
+export async function latestEvalResult(projectRoot) {
+  const dir = path.join(projectRoot, '.studio', 'evals');
+  const entries = await fsp.readdir(dir, { withFileTypes: true }).catch(() => []);
+  const names = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort().reverse();
+  for (const name of names) {
+    const result = await fsp
+      .readFile(path.join(dir, name, 'result.json'), 'utf8')
+      .then((text) => JSON.parse(text))
+      .catch(() => null);
+    if (result?.format === EVAL_RUN_FORMAT && Array.isArray(result.groups)) return result;
+  }
+  return null;
+}
+
 export class ProjectSceneRuns {
   // aiSessions は試作品の中の AI(本物の AI を使う前の確かめ useReal と、本物の接続)。
   // realConnection() は本物の AI で回すための新しい接続({ agent, harness, launchCapUsd })。回しが終わったら閉じる。
@@ -207,18 +223,7 @@ export class ProjectSceneRuns {
   // 一番新しい結果(.studio/evals/<回しの ID>/result.json)。npm run evals と審査の画面の回しも含む
   async latest(id) {
     const paths = await this.store.requireProject(id);
-    const dir = path.join(paths.root, '.studio', 'evals');
-    const entries = await fsp.readdir(dir, { withFileTypes: true }).catch(() => []);
-    // 回しの ID は始めた時刻から始まる(newEvalRunId)。新しい名前から読み、最初に読めた結果を使う
-    const names = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort().reverse();
-    for (const name of names) {
-      const result = await fsp
-        .readFile(path.join(dir, name, 'result.json'), 'utf8')
-        .then((text) => JSON.parse(text))
-        .catch(() => null);
-      if (result?.format === EVAL_RUN_FORMAT && Array.isArray(result.groups)) return result;
-    }
-    return null;
+    return latestEvalResult(paths.root);
   }
 
   // 画面に出す形。場面の一覧、回している最中の進み具合、一番新しい比べる表、本物の AI で回せるか

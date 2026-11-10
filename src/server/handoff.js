@@ -16,13 +16,28 @@ import { findPersonalData, findSecrets, redact, redactDeep } from './redact.js';
 import { BusyError } from './store.js';
 import { EVAL_RUN_FORMAT, failuresOf, outcomeOf, riskyText } from './sim/eval-run.js';
 import { digestOf } from './sim/orchestrator.js';
+import { SHAPE_LABELS } from './architecture.js';
+import { SCENE_CATEGORIES } from './design.js';
+import { latestEvalResult } from './scene-runs.js';
+import {
+  PURPOSE_LABELS,
+  decisionQuestions,
+  defaultMaterialFiles,
+  describeDefaultMaterial,
+  describeDesign,
+  describePurpose,
+  describeQuality,
+  describeReview,
+  describeShows,
+} from './handoff-decisions.js';
 
 // 本番開発への引き継ぎ(#280、#313)。試作品のソース、意図、AI の設定、モックと状態、未接続と未決事項、
 // 目録とシナリオ、最新の証拠の要約、構成とツールと前提、場面と最新の場面の回しの要約を、1 つのフォルダーに書き出す。中身は決まった手順で作り、AI の判断は入れない(ADR-0001、Stripe の Minions)。
+// 形式 4(J8)で、目的の文書、設計の段ごとの決定と理由、質の見直しの結果、人に見せた答え、AI 構成書と承認の記録、既定の素材の出典とライセンスを足した(handoff-decisions.js)。
 // 形は docs/handoff.md に書く。標準化は仮で、使われ方を見て直す。
 
 export const HANDOFF_FORMAT = 'prototype-studio-handoff';
-export const HANDOFF_FORMAT_VERSION = 3;
+export const HANDOFF_FORMAT_VERSION = 4;
 export const MAX_NOTE_LENGTH = 4000;
 const NOTE_KEYS = ['purpose', 'decided', 'undecided'];
 const NOTES_FILE = 'handoff-notes.json';
@@ -94,6 +109,8 @@ async function scanFiles(appDir) {
   const signs = { network: [], storage: [], todo: [] };
   const dataFiles = [];
   const studioParts = new Set();
+  // 試作品が import している npm のパッケージ(既定の素材の出典とライセンスに印を付ける)
+  const packages = new Set();
   async function walk(dir) {
     for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
@@ -117,6 +134,7 @@ async function scanFiles(appDir) {
         for (const match of text.matchAll(STUDIO_IMPORT)) {
           const name = match[1] ?? match[2];
           if (STUDIO_PACKAGES.includes(name)) studioParts.add(name);
+          else if (/^[@a-z]/i.test(name)) packages.add(name.split('/').slice(0, name.startsWith('@') ? 2 : 1).join('/'));
         }
         text.split(/\r?\n/).forEach((line, index) => {
           for (const [pattern, kind] of CODE_SIGNS) {
@@ -131,7 +149,7 @@ async function scanFiles(appDir) {
   }
   await walk(appDir);
   files.sort((a, b) => a.path.localeCompare(b.path));
-  return { files, secrets, personal, signs, dataFiles: dataFiles.sort(), studioParts: [...studioParts].sort() };
+  return { files, secrets, personal, signs, dataFiles: dataFiles.sort(), studioParts: [...studioParts].sort(), packages: [...packages].sort() };
 }
 
 const where = (found) => `${found.file}:${found.line}`;
@@ -781,6 +799,193 @@ function materialLines(materials) {
   ];
 }
 
+// 形式 4(J8)の README の節。中身は handoff.json の purpose、design、review、quality、shows、materials.default と同じ
+const PURPOSE_STATUS = { decided: '決めた', draft: '下書き(「決めた」の印がない)', interviewing: '聞き出しの途中(「決めた」の印がない)', skipped: '飛ばした' };
+
+function purposeLines(purpose) {
+  const lines = ['## 目的の文書', ''];
+  if (purpose.status === 'none') {
+    lines.push('目的の文書はありません(Studio の目的の画面で聞き出していない)。目的は、上の書き出した人のメモと、下の目録の意図で読みます。', '');
+    return lines;
+  }
+  const when = purpose.status === 'decided' ? `(${localTime(purpose.decidedAt)})` : purpose.status === 'skipped' ? `(${localTime(purpose.skippedAt)})` : '';
+  lines.push(
+    'Studio の目的の画面で、人が書いた文書です。「決めた」の印は、人が「これで決める」を押したときだけ付きます。',
+    '',
+    `- 状態: ${PURPOSE_STATUS[purpose.status] ?? cell(purpose.status)}${when}`,
+    ...(purpose.sentence ? [`- 最初の 1 文: ${oneLine(purpose.sentence)}`] : []),
+    '',
+  );
+  if (!purpose.doc) return lines;
+  const list = (items) => (items.length > 0 ? items.join('、') : '(なし)');
+  lines.push(
+    '| 項目 | 中身 |',
+    '|---|---|',
+    ...['who', 'problem', 'scene', 'success'].map((field) => `| ${PURPOSE_LABELS[field]} | ${cell(purpose.doc[field] || '(書かれていません)')} |`),
+    `| ${PURPOSE_LABELS.notDoing} | ${cell(list(purpose.doc.notDoing))} |`,
+    `| ${PURPOSE_LABELS.undecided} | ${cell(list(purpose.doc.undecided))} |`,
+    '',
+  );
+  return lines;
+}
+
+const DESIGN_STATUS = { decided: '決めた', drafting: '決めている途中(「この設計で作る」を押していない)', skipped: '飛ばした' };
+
+function designLines(design) {
+  const lines = ['## 設計の段ごとの決定と理由', ''];
+  if (design.status === 'none') {
+    lines.push('設計の段ごとの決定はありません(Studio の設計の案内を使っていない)。', '');
+    return lines;
+  }
+  const when = design.status === 'decided' ? `(${localTime(design.decidedAt)})` : design.status === 'skipped' ? `(${localTime(design.skippedAt)})` : '';
+  lines.push(
+    `Studio の設計の案内で、人が段ごとに案を選んだ記録です。AI か Studio が案を出し、選んだのは人です。理由は選んだ案に付いていた理由で、${design.optionsDate ? `案を出した日(${design.optionsDate})の` : ''}推測です。測った結果ではありません。`,
+    '',
+    `- 状態: ${DESIGN_STATUS[design.status] ?? cell(design.status)}${when}`,
+    '',
+    '| 段 | 決めたこと | 理由 | 選んだ人のメモ | 選ばなかった案 |',
+    '|---|---|---|---|---|',
+    ...design.steps.map((step) => {
+      const decided = step.decision ? `${cell(step.decision)}${step.stale ? '(**確かめ直しが要る**: 前の段を選び直した)' : ''}` : '(まだ選んでいない)';
+      const reason = step.decision ? (step.reason ? cell(step.reason) : step.chosen === 'custom' ? '(自分の言葉で決めた)' : '') : '';
+      return `| ${cell(step.label)} | ${decided} | ${reason} | ${cell(step.note ?? '')} | ${cell(step.others.map((o) => o.title).filter(Boolean).join('、'))} |`;
+    }),
+    '',
+  );
+  if (design.scenes.length > 0) {
+    lines.push(
+      '場面の段で決めた場面(自動で試す場面の一覧の下書き):',
+      '',
+      '| 種類 | 場面 |',
+      '|---|---|',
+      ...design.scenes.map((scene) => `| ${cell(SCENE_CATEGORIES[scene.category]?.label ?? scene.category)} | ${cell(scene.text)} |`),
+      '',
+    );
+  }
+  if (design.composition?.rejected.length > 0) {
+    lines.push(
+      '構成の段で選ばなかった形と理由:',
+      '',
+      ...design.composition.rejected.map((item) => `- ${oneLine(SHAPE_LABELS[item.option] ?? item.option)}: ${oneLine(item.reason || '(理由なし)')}`),
+      ...(design.composition.outOfOrder ? ['- 簡単な形から順の問いを飛ばして、難しい形を選んだ。'] : []),
+      '',
+    );
+  }
+  return lines;
+}
+
+const REVIEW_STATUS = {
+  approved: '承認済み',
+  drafting: '承認の途中',
+  stopped: '**承認と違う構成**(作るループの関門 GA で止めた)',
+  skipped: '審査なし(飛ばした)',
+  missing: '**AI 構成書を読めない**(審査が要る試作品)',
+  none: '審査なし(この試作品は審査を受けていない)',
+};
+const EVIDENCE_LABELS = { unmeasured: 'まだ測っていない', mock: 'お試しの AI で回した(形の確かめだけ)', real: '本物の AI で回した' };
+
+function reviewLines(review) {
+  const lines = ['## AI 構成の審査(AI 構成書)', ''];
+  lines.push(`- 状態: ${REVIEW_STATUS[review.status] ?? cell(review.status)}`);
+  if (review.skipped) lines.push(`- 飛ばした: ${localTime(review.skipped.at)}${review.skipped.by ? `、${oneLine(review.skipped.by)}` : ''}。理由: ${oneLine(review.skipped.reason || '(書かれていない)')}`);
+  if (!review.record) {
+    lines.push('', 'AI 構成書はありません。', '');
+    return lines;
+  }
+  const { record } = review;
+  lines.push(
+    `- 今の構成と AI 構成書: ${review.matches ? '同じ(承認した構成のまま)' : `**承認と違う**(変わった項目: ${review.changed.map((id) => review.items.find((item) => item.id === id)?.label ?? id).join('、')})`}`,
+    `- 構成: ${oneLine(SHAPE_LABELS[record.composition?.shape] ?? record.composition?.shape ?? '不明')}`,
+    `- 数: ${EVIDENCE_LABELS[record.evidence?.status] ?? '不明'}${review.approvedUnmeasured ? '。測らずに承認した' : ''}`,
+    ...(review.approvedAt ? [`- 4 つの承認がそろった日時: ${localTime(review.approvedAt)}`] : []),
+    '',
+    '作る前に、人が 4 つを読んで承認した記録です。名前は押した人の申告で、Studio は本人を確かめていません。AI 構成書の写しの全体は handoff.json の `review.record` にあります。',
+    '',
+    '| 項目 | 承認 | 承認した人(役) | 日時 |',
+    '|---|---|---|---|',
+    ...review.items.map((item) => {
+      const by = item.by.map((entry) => `${entry.pressedBy ?? '(名前なし)'}(${entry.roleLabel})${entry.valid ? '' : '、中身が変わったので効かない'}`).join('、');
+      return `| ${cell(item.label)} | ${item.approved ? '承認済み' : 'まだ'} | ${cell(by || '(なし)')} | ${cell(item.by.map((entry) => localTime(entry.at)).join('、'))} |`;
+    }),
+    '',
+  );
+  return lines;
+}
+
+const QUALITY_STATUS = { fix: '直す', ok: '問題なし', info: '目安なし', unseen: 'まだ見ていない', na: '当てはまらない' };
+const QUALITY_GROUP_LABELS = { measured: '測ったもの', judged: 'AI の判断' };
+
+function qualityLines(quality) {
+  const { summary } = quality;
+  const lines = [
+    '## 質の見直し',
+    '',
+    'Studio の「質の見直し」の表と同じ中身です。測ったものと AI の判断を分けます。「まだ見ていない」の行は、確かめていません。',
+    '',
+    `- 直す ${summary.fix}、問題なし ${summary.ok}、目安なし ${summary.info}、まだ見ていない ${summary.unseen}、当てはまらない ${summary.na}`,
+    `- 画面の検査: ${quality.audit ? `${localTime(quality.audit.at)}${quality.audit.viewport ? `、画面幅 ${oneLine(quality.audit.viewport)}` : ''}${quality.audit.stale ? '。**古い**(今の app/ か素材と違う状態で測った)' : ''}` : 'まだ測っていない'}`,
+    `- 場面の回し: ${quality.scenes ? `${localTime(quality.scenes.at)}、${quality.scenes.real ? '本物の AI' : 'お試しの AI'}` : 'まだ回していない'}`,
+    '',
+    '| 種類 | 項目 | 状態 | 結果 |',
+    '|---|---|---|---|',
+    ...quality.rows.map((row) => `| ${QUALITY_GROUP_LABELS[row.group] ?? cell(row.group)} | ${cell(row.label)} | ${QUALITY_STATUS[row.status] ?? cell(row.status)} | ${cell(row.result)} |`),
+    '',
+  ];
+  const places = quality.rows.filter((row) => row.status === 'fix' && row.places.length > 0);
+  for (const row of places) lines.push(`「${oneLine(row.label)}」の場所:`, '', ...row.places.map((place) => `- ${oneLine(place)}`), '');
+  return lines;
+}
+
+function showLines(shows) {
+  const lines = ['## 人に見せた答え', ''];
+  if (shows.records.length === 0) {
+    lines.push('試作品を人に見せた答えはありません。', '');
+    return lines;
+  }
+  lines.push(`Studio の「人に見せる」で、試作品を見せて聞いた答えです(${shows.records.length} 回)。見せた相手は、名前でなく役(「同僚」など)で書く決まりです。`, '');
+  for (const record of shows.records) {
+    const version = `保存 ${record.versionNumber}${record.versionName ? `「${oneLine(record.versionName)}」` : ''}`;
+    lines.push(
+      `### ${localTime(record.answeredAt)}(${version}${record.viewer ? `、相手: ${oneLine(record.viewer)}` : ''})`,
+      '',
+      '| 問い | 答え |',
+      '|---|---|',
+      ...record.answers.map((item) => `| ${cell(item.question)} | ${cell(item.answer)} |`),
+      '',
+    );
+  }
+  return lines;
+}
+
+function defaultMaterialLines(material) {
+  if (!material) return [];
+  const imported = material.packages.filter((item) => item.imported);
+  return [
+    '## 素材の出典とライセンス',
+    '',
+    `試作品は、Studio が同梱する${oneLine(material.name)}(npm のパッケージ)で作れます。出典とライセンスの一覧は ${code(material.file)}、ライセンスの文は ${code('materials/default/licenses/')} にあります。`,
+    '',
+    `- ライセンス: ${Object.entries(material.licenses).map(([name, count]) => `${name} ${count} 個`).join('、')}`,
+    `- 試作品が import しているもの: ${imported.length > 0 ? imported.map((item) => `${item.name} ${item.version}(${item.license})`).join('、') : '(なし)'}`,
+    '',
+    '| 役 | パッケージ | 中身 |',
+    '|---|---|---|',
+    ...material.roles.map((role) => `| ${cell(role.role)} | ${role.package ? code(role.package) : '(なし)'} | ${cell(role.about)} |`),
+    '',
+  ];
+}
+
+// 確かめていないこと(vision.md の原則 7「信頼できる」)。質の見直しの「まだ見ていない」の行と、見せていない、測らずに承認した、の印から作る
+function uncheckedLines(h) {
+  const items = [
+    ...h.quality.rows.filter((row) => row.status === 'unseen').map((row) => `${row.label}: ${row.result}`),
+    ...(h.shows.records.length === 0 ? ['人に見せて確かめていない(人に見せた答えがない)。'] : []),
+    ...(h.review.record && h.review.record.evidence?.status === 'unmeasured' ? ['AI 構成を、場面を回した数で確かめていない(まだ測っていない)。'] : []),
+    '本物のデータ、本番の環境、多くの人の利用では試していない(試作品は架空のデータだけで試す)。',
+  ];
+  return ['## 確かめていないこと', '', ...items.map((item) => `- ${oneLine(item)}`), ''];
+}
+
 function renderReadme(h) {
   const lines = [];
   const push = (...items) => lines.push(...items);
@@ -802,7 +1007,10 @@ function renderReadme(h) {
     '',
     noteBlock(h.notes.purpose),
     '',
+    ...purposeLines(h.purpose),
     ...prototypeLines(h.prototype),
+    ...designLines(h.design),
+    ...reviewLines(h.review),
     '## 決まったこと',
     '',
     noteBlock(h.notes.decided),
@@ -815,7 +1023,7 @@ function renderReadme(h) {
     '',
     '### Studio が見つけたこと(自動)',
     '',
-    ...(h.openQuestions.length > 0 ? h.openQuestions.map((q) => `- ${q}`) : ['(ありません)']),
+    ...(h.openQuestions.length > 0 ? h.openQuestions.map((q) => `- ${oneLine(q)}`) : ['(ありません)']),
     '',
     '## 実機・モック・未接続の一覧',
     '',
@@ -866,7 +1074,15 @@ function renderReadme(h) {
     push('## プロダクト内 AI', '', 'この試作品は、プロダクト内 AI を使っていません(`app/ai.json` がありません)。', '');
   }
 
-  push(...simulationLines(h.simulation), ...scenarioLines(h.scenarios), ...evidenceLines(h.evidence), ...materialLines(h.materials));
+  push(
+    ...simulationLines(h.simulation),
+    ...scenarioLines(h.scenarios),
+    ...evidenceLines(h.evidence),
+    ...qualityLines(h.quality),
+    ...showLines(h.shows),
+    ...defaultMaterialLines(h.materials.default),
+    ...materialLines(h.materials),
+  );
   push(
     '## ソース',
     '',
@@ -904,6 +1120,7 @@ function renderReadme(h) {
     push('Studio を起動してから、作る欄の依頼はありません(起動し直す前の依頼は残っていません)。', '');
   }
   push(
+    ...uncheckedLines(h),
     '## 入れていないもの',
     '',
     '- 秘密情報。Studio は書き出す前に、API キーやトークンらしい文字列を探す。見つかったら書き出さない。',
@@ -911,7 +1128,8 @@ function renderReadme(h) {
     '- AI の実行の記録(AI に渡した本文の全文を含む)、作る AI の返事、ログインの情報、環境変数、PC のフォルダーの場所。',
     '- 作る run の記録の全体と、観察のスクリーンショット。要約だけを「最新の証拠」と handoff.json の `evidence` に入れた。',
     '- 場面の回しの結果の全体と、その記録(.studio/evals/)。要約だけを「場面(確かめ方)と最新の回し」と handoff.json の `simulation.latestRun` に入れた。',
-    '- 会話の中のメールアドレスと電話番号らしい文字列は伏せた(`[伏せた: …]`)。',
+    '- 目的の聞き出しの問いと答えの全部、案を出す AI の返事の全部、質の見直しの「直す」の依頼の文。決めた文書、選んだ案と理由、表の結果だけを入れた。',
+    '- 会話、目的の文書、設計のメモ、人に見せた答えの中の、メールアドレス、電話番号、住所、氏名らしい文字列は伏せた(`[伏せた: …]`)。',
     '',
     '## 試作品を動かす',
     '',
@@ -1047,6 +1265,13 @@ export class ProjectHandoffs {
       const material = await readTokenMaterial(paths.root);
       const guides = await readGuideMaterial(paths.root);
       const { versions: versionList, working } = await this.versions.list(id);
+      // 形式 4(J8)。決めたことと理由、質の見直し、人に見せた答え、AI 構成書(書き出す app/ の写しの指紋と比べる)、既定の素材
+      const purpose = await describePurpose(paths);
+      const design = await describeDesign(paths);
+      const quality = await describeQuality({ paths, simulation: build.simulation, result: await latestEvalResult(paths.root) });
+      const shows = await describeShows({ paths, purpose, versions: versionList });
+      const review = await describeReview({ paths, appDir: appCopy });
+      const defaultMaterial = await describeDefaultMaterial(scan.packages);
       const manifest = {
         format: HANDOFF_FORMAT,
         formatVersion: HANDOFF_FORMAT_VERSION,
@@ -1059,12 +1284,19 @@ export class ProjectHandoffs {
         openQuestions: [
           ...(notes.undecided ? [{ from: 'person', text: redact(notes.undecided) }] : []),
           ...studioQuestions({ ai: definition, conversation, working, scan, excluded, evidence, simulation }).map((text) => ({ from: 'studio', text })),
+          ...decisionQuestions({ purpose, design, quality, shows, review }).map((text) => ({ from: 'studio', text })),
         ],
         prototype,
         scenarios,
         evidence,
         // 構成、ツール、前提、プロンプトの枠、場面、最新の場面の回しの要約(docs/design/agent-simulation.md の 4.5、S7)
         simulation,
+        // 目的の文書(J1)、設計の段ごとの決定と理由(J2)、質の見直しの結果(J6)、人に見せた答え(J7)、AI 構成書と承認の記録(task 422)
+        purpose,
+        design,
+        quality,
+        shows,
+        review,
         ai: definition
           ? {
               name: definition.name,
@@ -1095,11 +1327,12 @@ export class ProjectHandoffs {
           redactDeep({ request: run.request, status: run.status, startedAt: run.startedAt, changedFiles: run.changedFiles ?? [] }),
         ),
         excluded,
-        // つないだトークンがあるときだけ(J4)。素材の出典と、つないだ理由を残す
-        // 有効にした部品と指針があるときだけ(J5)。出典、ライセンス、写しの指紋を残す
-        ...(material || guides
-          ? { materials: { ...(material ? { tokens: describeTokens(material) } : {}), ...(guides ? { guides: describeGuides(guides.records) } : {}) } }
-          : {}),
+        // 素材の出典とライセンス。既定の素材(J3)はいつも。つないだトークン(J4)と有効にした部品と指針(J5)は、あるときだけ
+        materials: {
+          default: defaultMaterial,
+          ...(material ? { tokens: describeTokens(material) } : {}),
+          ...(guides ? { guides: describeGuides(guides.records) } : {}),
+        },
       };
 
       const readme = renderReadme({
@@ -1117,6 +1350,8 @@ export class ProjectHandoffs {
             ]
           : []),
         ...(material || guides ? [[MATERIAL_FILES.source, `${JSON.stringify(materialSourceCopy(material?.source ?? guides?.source ?? {}), null, 2)}\n`]] : []),
+        // 既定の素材の出典の記録とライセンスの文(Studio の materials/default/ の写し)
+        ...(defaultMaterial ? await defaultMaterialFiles() : []),
         ...(definition
           ? [
               // 実モデルは抽出と言い方の 2 種の呼び出しで動く。それぞれの指示と応答の形を書く
