@@ -150,7 +150,7 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
 // reviews は AI 構成の審査と AI 構成書(review.js)。sceneRuns は主の画面の場面の回しと比べる表(scene-runs.js)。
 // quality は質の見直しの表(quality.js)。shows は人に見せる画面の問いと答え(show.js)。
 // comments は画面へのコメント、反応、承認、列、直した記録、元に戻す(comments.js)
-export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, intents, organizes, designs, reviews, sceneRuns, quality, shows, comments, materials, meetings, token, ports, realAi, consent, firstSteps }) {
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, closings, intents, organizes, designs, reviews, sceneRuns, quality, shows, comments, materials, meetings, token, ports, realAi, consent, firstSteps }) {
   const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes, designs, meetings, reviews, sceneRuns);
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
@@ -303,6 +303,9 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       if (req.method === 'GET' && !restore) return handleVersions(req, res, id, null);
       if (req.method === 'POST') return handleVersions(req, res, id, restore ? versionId : undefined);
     }
+    // 会の終わりの成果物(closing.js、K5)。GET は 7 つの成果物と未決事項、POST owner は未決事項の持ち主と期日
+    const closingMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/closing(?:\/(owner))?$/.exec(url.pathname);
+    if (closingMatch && (closingMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleClosing(req, res, closingMatch[1], closingMatch[2]);
     const handoffMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/handoff$/.exec(url.pathname);
     if (handoffMatch && (req.method === 'GET' || req.method === 'POST')) return handleHandoff(req, res, handoffMatch[1]);
     const aiMatch = /^\/api\/projects\/([^/]+)\/ai(?:\/(messages|corrections|reset|connections|connection|simulation|cancel|retry|trace|clear-trace))?$/.exec(
@@ -589,6 +592,15 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       if (error instanceof VersionError) return sendError(res, error.status, error.code, error.message);
       if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
       throw error;
+    }
+  }
+
+  async function handleClosing(req, res, id, action) {
+    try {
+      if (!action) return sendJson(res, 200, { closing: await closings.view(id) });
+      return sendJson(res, 200, { closing: await closings.setOwner(id, (await readJson(req)) ?? {}) });
+    } catch (error) {
+      return sendIntentError(res, error);
     }
   }
 

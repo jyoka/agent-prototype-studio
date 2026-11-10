@@ -5574,6 +5574,8 @@ const MEETING_STATES = {
   trial: 'お試しの AI だけで進めます。外の AI には送りません。お客さんが送ってよいと決めたら、「同意して始める」を押せます。',
 };
 const meetingUi = { view: null, projectId: null, record: null, confirming: false, working: false, erased: null, seq: 0 };
+// 会の終わりの画面(view が 'closing')の中身。data はサーバーの closing.js の形
+const closingUi = { data: null, exported: null, busy: false };
 const meetingEls = {
   section: $('meeting'),
   heading: $('meeting-heading'),
@@ -5596,6 +5598,8 @@ const meetingEls = {
   error: $('meeting-error'),
   mark: $('meeting-mark'),
   due: $('meeting-due'),
+  closingOpen: $('meeting-closing-open'),
+  closing: $('meeting-closing'),
 };
 const meetingPath = (id, action = '') => `/api/projects/${encodeURIComponent(id)}/meeting${action ? `/${action}` : ''}`;
 
@@ -5676,6 +5680,7 @@ function renderMeeting() {
   meetingEls.newForm.hidden = view !== 'new';
   meetingEls.body.hidden = view !== 'meeting' || !record;
   meetingEls.erased.hidden = view !== 'erased';
+  meetingEls.closing.hidden = view !== 'closing';
   $('meeting-only-fiction').hidden = view === 'erased';
   if (view === 'new') {
     meetingEls.heading.textContent = '会の始め';
@@ -5694,6 +5699,10 @@ function renderMeeting() {
     meetingEls.notErased.replaceChildren(...erased.notErased.map((text) => element('li', text)));
     return;
   }
+  if (view === 'closing') {
+    renderClosing();
+    return;
+  }
   meetingEls.heading.textContent = '会の始め';
   if (!record) {
     meetingEls.state.textContent = '読み込んでいます…';
@@ -5706,7 +5715,8 @@ function renderMeeting() {
   meetingEls.agree.hidden = record.status === 'agreed';
   meetingEls.trial.hidden = record.status !== 'waiting';
   meetingEls.organize.hidden = record.status === 'waiting';
-  for (const button of [meetingEls.agree, meetingEls.trial, meetingEls.organize, meetingEls.erase, $('meeting-back'), $('meeting-erase-go'), $('meeting-erase-cancel')]) button.disabled = working;
+  meetingEls.closingOpen.hidden = record.status === 'waiting';
+  for (const button of [meetingEls.agree, meetingEls.trial, meetingEls.organize, meetingEls.closingOpen, meetingEls.erase, $('meeting-back'), $('meeting-erase-go'), $('meeting-erase-cancel')]) button.disabled = working;
   meetingEls.confirm.hidden = !confirming;
   meetingEls.erase.hidden = confirming;
   meetingEls.plan.replaceChildren(...record.erasable.map(erasedLine));
@@ -5744,6 +5754,7 @@ async function openMeeting(id) {
 
 function closeMeeting() {
   meetingUi.seq += 1;
+  Object.assign(closingUi, { data: null, exported: null, busy: false });
   if (!meetingUi.view) return;
   Object.assign(meetingUi, { view: null, projectId: null, record: null, confirming: false, working: false, erased: null });
   meetingError(null);
@@ -5891,6 +5902,212 @@ $('meeting-erase-cancel').addEventListener('click', () => {
 });
 $('meeting-erase-go').addEventListener('click', eraseMeeting);
 $('meeting-erased-close').addEventListener('click', closeMeeting);
+
+// 会の終わりの成果物(field-session.md の段 7、user-journey.md の K5)。サーバーは src/server/closing.js。
+// 会の画面の 1 つの view('closing')として出す。7 つの成果物、未決事項の持ち主と期日、要件の文書、データ設計、直した記録、書き出し。
+// 文は外から来た文字なので、ほかと同じく textContent と value でだけ出す
+const CLOSING_FROM_WORDS = { purpose: '目的の文書', point: '元の要点', checked: '人が確かめた', guess: '推測(話に出ていない)', comment: '承認したコメント' };
+const closingPath = (id, action = '') => `/api/projects/${encodeURIComponent(id)}/closing${action ? `/${action}` : ''}`;
+
+function closingSource(item) {
+  if (item.from === 'comment') return `コメント ${item.comment.number}(${item.comment.statusLabel})`;
+  if (item.from === 'point') return `元の要点 ${item.sources.map((source) => `${source.n}「${source.text}」`).join('、')}`;
+  return CLOSING_FROM_WORDS[item.from] ?? item.from;
+}
+
+function closingOpenLine(item, index) {
+  const li = element('li');
+  li.dataset.unowned = String(!item.owner);
+  const head = element('p', item.text);
+  const from = element('small', item.owner ? `${item.fromLabel}` : `${item.fromLabel}。持ち主なし`);
+  const form = element('form');
+  form.className = 'closing-owner';
+  const ownerId = `closing-owner-${index}`;
+  const dueId = `closing-due-${index}`;
+  const owner = element('input');
+  owner.type = 'text';
+  owner.id = ownerId;
+  owner.maxLength = 40;
+  owner.autocomplete = 'off';
+  owner.value = item.owner;
+  const due = element('input');
+  due.type = 'date';
+  due.id = dueId;
+  due.value = item.due;
+  const ownerLabel = element('label', '持ち主');
+  ownerLabel.htmlFor = ownerId;
+  const dueLabel = element('label', '期日');
+  dueLabel.htmlFor = dueId;
+  const save = element('button', '決める');
+  save.type = 'submit';
+  save.disabled = closingUi.busy;
+  form.append(ownerLabel, owner, dueLabel, due, save);
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    saveClosingOwner(item.key, owner.value, due.value);
+  });
+  li.append(head, from, form);
+  return li;
+}
+
+function closingDataView(data) {
+  const box = element('div');
+  if (data.status === 'chosen' || data.status === 'stale') {
+    box.append(element('p', `選んだ案: ${data.title ?? ''}${data.status === 'stale' ? '(確かめ直しが要る)' : ''}。型と細かい決まりは会の後に決めます。`));
+    const table = element('table');
+    table.className = 'closing-table';
+    const head = element('tr');
+    head.append(element('th', '覚えておくもの'), element('th', '誰が書くか'), element('th', '項目'));
+    table.append(head);
+    for (const entity of data.entities) {
+      const row = element('tr');
+      row.append(element('td', entity.name), element('td', entity.writer || '-'), element('td', entity.fields.map((field) => (field.kind === 'key' ? `${field.name}(主キー)` : field.kind === 'link' ? `${field.name}(${field.to}への外部キー)` : `${field.name}(${field.kindLabel})`)).join('、')));
+      table.append(row);
+    }
+    box.append(table);
+  } else {
+    box.append(element('p', data.status === 'skipped' ? '設計の案内を飛ばしたので、データ設計はありません。' : 'データの案を、まだ選んでいません。設計の案内のデータの段で選びます。'));
+  }
+  if (data.heard.length > 0) box.append(element('p', `整理の板のデータの欄: ${data.heard.map((item) => `「${item.text}」${item.onDesign ? '' : '(案に載っていない)'}`).join('、')}`));
+  return box;
+}
+
+function renderClosing() {
+  const data = closingUi.data;
+  meetingEls.heading.textContent = '会の終わり';
+  const unowned = $('closing-unowned');
+  if (!data) {
+    meetingEls.state.textContent = '読み込んでいます…';
+    delete meetingEls.state.dataset.state;
+    unowned.hidden = true;
+    return;
+  }
+  const allReady = data.deliverables.every((item) => item.status === 'ready');
+  meetingEls.state.textContent = `7 つの成果物のうち ${data.present} つがあります。${data.unowned === 0 ? '未決事項の全部に持ち主がいます。' : ''}次にすること: 未決事項を読み上げ、持ち主と期日を決めてから書き出してください。`;
+  meetingEls.state.dataset.state = allReady ? 'decided' : 'draft';
+  unowned.hidden = data.unowned === 0;
+  unowned.textContent = data.unowned > 0 ? `持ち主のない未決事項が ${data.unowned} 件あります。` : '';
+  $('closing-deliverables').replaceChildren(...data.deliverables.map((item) => {
+    const li = element('li');
+    li.className = 'closing-row';
+    const mark = element('span', item.statusLabel, 'closing-state');
+    mark.dataset.state = item.status;
+    li.append(element('strong', item.label), mark, element('span', item.note));
+    return li;
+  }));
+  $('closing-open').replaceChildren(...(data.openItems.length > 0 ? data.openItems.map(closingOpenLine) : [element('li', '会の記録から見つけた未決事項はありません。')]));
+  const req = data.requirements;
+  $('closing-requirements-state').textContent = req.status === 'none'
+    ? '目的の文書も、整理の板の項目もありません。'
+    : `${req.status === 'confirmed' ? '決める人が「この理解で合っている」を押しました。' : 'まだ「この理解で合っている」を押していない下書きです。'}項目 ${req.counts.items}、推測の印 ${req.counts.guesses}。`;
+  $('closing-requirements').replaceChildren(...req.sections.flatMap((section) => {
+    const dd = element('dd');
+    if (section.items.length === 0) dd.append('(なし)');
+    else {
+      const list = element('ul');
+      list.append(...section.items.map((item) => {
+        const li = element('li', item.text);
+        li.append(' ', element('small', `(${closingSource(item)})`));
+        return li;
+      }));
+      dd.append(list);
+    }
+    return [element('dt', section.label), dd];
+  }));
+  $('closing-data').replaceChildren(closingDataView(data.dataDesign));
+  $('closing-fixes').replaceChildren(...(data.fixRecords.length > 0
+    ? data.fixRecords.map((record) => element('li', `コメント ${record.comment.number}「${record.comment.text}」(${record.comment.kindLabel}): ${record.events.at(-1)?.label ?? record.status}。承認: ${record.approval.approvers.map((a) => a.roleLabel).join('、') || 'なし'}`))
+    : [element('li', '画面へのコメントから直した記録はありません。')]));
+  for (const button of [$('closing-export'), $('closing-reload'), $('closing-back')]) button.disabled = closingUi.busy;
+  $('closing-export').textContent = closingUi.busy ? '書き出しています…' : '書き出す';
+  const exported = $('closing-exported');
+  exported.hidden = !closingUi.exported;
+  if (closingUi.exported) {
+    const line = element('p', '書き出しました: ');
+    line.append(element('code', closingUi.exported.dir));
+    exported.replaceChildren(line);
+  }
+}
+
+async function loadClosing() {
+  const id = meetingUi.projectId;
+  const { seq } = meetingUi;
+  try {
+    const { closing } = await api(closingPath(id));
+    if (seq !== meetingUi.seq) return;
+    closingUi.data = closing;
+    renderMeeting();
+  } catch (error) {
+    if (seq === meetingUi.seq) meetingFailed(error);
+  }
+}
+
+async function openClosing(id) {
+  leaveIntent();
+  closeOrganize();
+  closeDesign();
+  closeReview();
+  meetingUi.seq += 1;
+  Object.assign(meetingUi, { view: 'closing', projectId: id, confirming: false, working: false, erased: null });
+  Object.assign(closingUi, { data: null, exported: null, busy: false });
+  meetingError(null);
+  renderMeeting();
+  meetingEls.heading.focus();
+  await loadClosing();
+}
+
+async function saveClosingOwner(key, owner, due) {
+  const id = meetingUi.projectId;
+  if (!id || closingUi.busy) return;
+  const { seq } = meetingUi;
+  closingUi.busy = true;
+  meetingError(null);
+  renderMeeting();
+  try {
+    const { closing } = await api(closingPath(id, 'owner'), { method: 'POST', json: { key, owner, due } });
+    if (seq !== meetingUi.seq) return;
+    closingUi.data = closing;
+  } catch (error) {
+    if (seq === meetingUi.seq) meetingFailed(error);
+  } finally {
+    if (seq === meetingUi.seq) {
+      closingUi.busy = false;
+      renderMeeting();
+    }
+  }
+}
+
+// 書き出しは、本番開発へ渡すフォルダー(引き継ぎ)と同じ。前に書いたメモを、そのまま使う
+async function exportClosing() {
+  const id = meetingUi.projectId;
+  if (!id || closingUi.busy) return;
+  const { seq } = meetingUi;
+  closingUi.busy = true;
+  meetingError(null);
+  renderMeeting();
+  try {
+    const { notes } = await api(`/api/projects/${encodeURIComponent(id)}/handoff`);
+    const { handoff: made } = await api(`/api/projects/${encodeURIComponent(id)}/handoff`, { method: 'POST', json: notes ?? {} });
+    if (seq !== meetingUi.seq) return;
+    closingUi.exported = made;
+  } catch (error) {
+    if (seq === meetingUi.seq) meetingFailed(error);
+  } finally {
+    if (seq === meetingUi.seq) {
+      closingUi.busy = false;
+      renderMeeting();
+    }
+  }
+}
+
+meetingEls.closingOpen.addEventListener('click', () => {
+  if (meetingUi.projectId) openClosing(meetingUi.projectId);
+});
+$('closing-export').addEventListener('click', exportClosing);
+$('closing-reload').addEventListener('click', loadClosing);
+$('closing-back').addEventListener('click', () => {
+  if (meetingUi.projectId) openMeeting(meetingUi.projectId);
+});
 
 // 設計の案内(user-journey.md の段 3、J2)。サーバーは src/server/design.js。
 // 案と場面は外から来た文字なので、ほかと同じく textContent と value でだけ出す。

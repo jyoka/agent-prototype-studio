@@ -7,7 +7,9 @@ import { BuildRequests, MAX_FIX_ROUNDS } from './build-requests.js';
 import { ProjectChecks } from './checks.js';
 import { STUDIO_ROOT } from './config.js';
 import { FirstSteps } from './first-steps.js';
-import { ProjectHandoffs } from './handoff.js';
+import { ProjectHandoffs, latestEvalRun, latestEvidence } from './handoff.js';
+import { ProjectClosings } from './closing.js';
+import { digestSnapshot, snapshotApp } from './app-snapshot.js';
 import { ProjectIntents } from './intent.js';
 import { createIntentAi, INTENT_SYSTEM_PROMPT } from './intent-ai.js';
 import { ProjectDesigns } from './design.js';
@@ -291,6 +293,17 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     log,
   });
   const handoffs = new ProjectHandoffs({ home: config.home, store, aiSessions, versions, requests, log });
+  // 会の終わりの成果物(K5)。7 つの成果物を記録から読み、未決事項の持ち主と期日だけを人が書く。証拠と場面の回しの読み方は引き継ぎと同じ
+  const closings = new ProjectClosings({
+    home: config.home,
+    store,
+    latestOf: async (paths) => {
+      const appDigest = digestSnapshot(await snapshotApp(paths.app));
+      return { evidence: await latestEvidence(paths, appDigest), latestRun: await latestEvalRun(paths, appDigest) };
+    },
+    talkGate,
+    log,
+  });
   const studioServer = http.createServer(
     createStudioHandler({
       store,
@@ -300,6 +313,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       aiSessions,
       versions,
       handoffs,
+      closings,
       intents,
       organizes,
       designs,

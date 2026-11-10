@@ -79,6 +79,7 @@ flowchart TB
         quality["質の見直しの表<br/>quality.js"]
         show["人に見せる画面の問いと答え<br/>show.js"]
         comments["画面へのコメント、承認、列、直した記録<br/>comments.js"]
+        closing["会の終わりの成果物と未決事項の持ち主<br/>closing.js"]
         redact["伏せる、秘密を探す<br/>redact.js"]
     end
 
@@ -139,6 +140,9 @@ flowchart TB
     comments -- "直す前と後を保存する、元に戻す" --> versions
     comments -- "構成のコメントは審査に戻す" --> review
     comments -- "読み書き(.studio/comments.json、.studio/fix-records/)" --> dotstudio
+    api --> closing
+    closing -- "読む(整理の板、目的、設計、審査、コメント、直した記録)。書く(.studio/closing.json)" --> dotstudio
+    handoff -- "会の終わりの成果物を足す" --> closing
     requests --> agent
     agent -- "子プロセス(cwd は app/)" --> cli
     cli -- "読み書き" --> app

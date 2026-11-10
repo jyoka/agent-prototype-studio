@@ -6,6 +6,7 @@ import { isValidProjectId, listProjects, projectPaths, projectsDir } from './pro
 import { findRecords } from './redact.js';
 import { SHOW_FILE } from './show.js';
 import { COMMENTS_FILE } from './comments.js';
+import { CLOSING_FILE } from './closing.js';
 import { BusyError, NotFoundError } from './store.js';
 
 // 会の始めとお客さんのデータ(docs/design/field-session.md の段 0、docs/design/collaboration.md の 7 節、K4)。
@@ -37,7 +38,7 @@ export const MEETING_FLOW = [
   { label: '試作品', ready: true },
   { label: '見せて、コメントをもらう', ready: false },
   { label: '承認して AI が直す', ready: false },
-  { label: '要件の文書と引き継ぎ', ready: false },
+  { label: '要件の文書と引き継ぎ', ready: true },
 ];
 
 const SENDS = ['お客さんの話(打った要点)', '整理の板の項目', '目的の文書', '試作品のソース'];
@@ -251,7 +252,7 @@ export class ProjectMeetings {
       { key: 'fixes', label: '直した記録', count: await countEntries(path.join(paths.studio, FIX_RECORDS_DIR)) },
       { key: 'runs', label: '作る AI の実行の記録(run)', count: await countEntries(path.join(paths.studio, 'runs')) },
       { key: 'checks', label: '確かめた記録', count: (await countEntries(path.join(paths.studio, 'observations'))) + (await countEntries(path.join(paths.studio, 'evals'))) },
-      { key: 'talk', label: '聞いた要点、整理の板、目的の文書、設計、人に見せた答え、画面へのコメント、会の記録', count: await countFilesIn(paths.studio, ['organize.json', 'intent.json', 'design.json', SHOW_FILE, COMMENTS_FILE, MEETING_FILE]) },
+      { key: 'talk', label: '聞いた要点、整理の板、目的の文書、設計、人に見せた答え、画面へのコメント、未決事項の持ち主、会の記録', count: await countFilesIn(paths.studio, ['organize.json', 'intent.json', 'design.json', SHOW_FILE, COMMENTS_FILE, CLOSING_FILE, MEETING_FILE]) },
       { key: 'handoffs', label: '引き継ぎの書き出し', count: handoffs.length, names: handoffs.map((dir) => path.basename(dir).replace(/^\./, '')) },
     ];
   }
