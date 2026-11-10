@@ -2,10 +2,14 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { checkTokenUse, countTokenReferences, parseDesignTokens, ROLES, tokensCss, tokensGuide, TOKEN_LIMITS } from './design-tokens.js';
+import { checkGuideMaterial, GUIDE_LIMITS, guidesRule, KINDS, LICENSE_ANSWERS, licenseLabel, sha256 } from './guides.js';
+import { LIMITS as APP_LIMITS } from './inspect.js';
 
-// 自分の素材の置き場所(docs/design/user-journey.md の J4)。今はトークンだけ。
+// 自分の素材の置き場所(docs/design/user-journey.md の J4、J5)。トークン(J4)と、部品と指針(J5)。
 // 置き場所は .studio/materials/。.studio/ は Studio だけが書く場所で、作る AI は読み書きできない。
-// 版で戻しても素材は戻らない(目的の文書や設計と同じ扱い)。つないだ理由と出典は source.json に残し、引き継ぎに入れる
+// 版で戻しても素材は戻らない(目的の文書や設計と同じ扱い)。つないだ理由と出典は source.json に残し、引き継ぎに入れる。
+// 部品と指針は、作る AI が読めるように app/design/ にも写す。写しが変わっていないかを関門 G3 で確かめる。
+// 「これからの試作品全部」に有効にした部品と指針は、データの置き場の materials/ に置き、新しい試作品を作るときに写す
 
 const DIR = 'materials';
 const TOKENS_FILE = 'tokens.json';
@@ -28,8 +32,12 @@ export class MaterialError extends Error {
   }
 }
 
-const sha = (text) => crypto.createHash('sha256').update(text).digest('hex');
+const sha = sha256;
 const materialsDir = (root) => path.join(root, '.studio', DIR);
+// Studio 全体の素材(これからの試作品全部)。home はデータの置き場
+const studioMaterialsDir = (home) => path.join(home, DIR);
+const GUIDE_KINDS = Object.keys(KINDS);
+const SCOPES = new Set(['project', 'all']);
 
 async function readRegularFile(file) {
   const stat = await fs.lstat(file).catch(() => null);
@@ -45,8 +53,12 @@ async function writeAtomic(file, content) {
 }
 
 async function readSource(root) {
+  return readSourceIn(materialsDir(root));
+}
+
+async function readSourceIn(dir) {
   try {
-    const text = await readRegularFile(path.join(materialsDir(root), SOURCE_FILE));
+    const text = await readRegularFile(path.join(dir, SOURCE_FILE));
     const parsed = text === null ? null : JSON.parse(text);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
   } catch {
@@ -100,6 +112,222 @@ export async function materialChangedAt(root) {
   return typeof at === 'string' ? at : null;
 }
 
+// 部品と指針の元の置き場所(.studio/materials/<kind>/<name>)と、写しの場所(app/<copy>)
+const originalPath = (dir, kind, name) => path.join(dir, kind, name);
+const copyPath = (appDir, copy) => path.join(appDir, ...copy.split('/'));
+const guideProblem = (file, text) => ({ file, line: null, column: null, lineText: null, text, locked: true });
+const RESTORE_WORDS = 'その他の「部品と指針をつなぐ」で、写しを戻すか外してください';
+
+// app/ の中のフォルダーを、シンボリックリンクをたどらずに用意する。途中がリンクかファイルなら消して作り直す(app/ の外に書かない)
+async function ensureAppDir(appDir, relDir) {
+  let current = appDir;
+  for (const part of relDir.split('/').filter(Boolean)) {
+    current = path.join(current, part);
+    const stat = await fs.lstat(current).catch(() => null);
+    if (stat?.isDirectory()) continue;
+    if (stat) await fs.rm(current, { force: true });
+    await fs.mkdir(current);
+  }
+  return current;
+}
+
+// 途中のフォルダーの場所に、フォルダーでないもの(ファイル、リンク)があれば、その場所を返す
+async function blockingParent(appDir, copy) {
+  let current = appDir;
+  const parts = path.posix.dirname(copy).split('/').filter(Boolean);
+  for (let i = 0; i < parts.length; i += 1) {
+    current = path.join(current, parts[i]);
+    const stat = await fs.lstat(current).catch(() => null);
+    if (!stat) return null;
+    if (!stat.isDirectory()) return parts.slice(0, i + 1).join('/');
+  }
+  return null;
+}
+
+// 試作品のフォルダーのファイルの数と大きさ(inspect.js と同じ数え方。リンクは数えない)
+async function appSize(appDir) {
+  let files = 0;
+  let bytes = 0;
+  async function walk(dir) {
+    for (const entry of await fs.readdir(dir, { withFileTypes: true }).catch(() => [])) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.isFile()) {
+        files += 1;
+        bytes += (await fs.lstat(full)).size;
+      }
+    }
+  }
+  await walk(appDir);
+  return { files, bytes };
+}
+
+async function copiesBytes(appDir, files) {
+  let total = 0;
+  for (const file of files) {
+    const stat = await fs.lstat(copyPath(appDir, file.copy)).catch(() => null);
+    if (stat?.isFile()) total += stat.size;
+  }
+  return total;
+}
+
+// 写しを書く。rename で置くので、写しの場所がリンクでも、たどらずに置き換わる
+async function writeCopy(appDir, copy, text) {
+  const dir = await ensureAppDir(appDir, path.posix.dirname(copy));
+  await writeAtomic(path.join(dir, path.posix.basename(copy)), text);
+}
+
+// 写しを消す。途中がリンクのときは消さない(app/ の外を消さない)
+async function removeCopy(appDir, copy) {
+  let current = appDir;
+  for (const part of path.posix.dirname(copy).split('/').filter(Boolean)) {
+    current = path.join(current, part);
+    const stat = await fs.lstat(current).catch(() => null);
+    if (!stat?.isDirectory()) return;
+  }
+  await fs.rm(path.join(current, path.posix.basename(copy)), { force: true, recursive: true });
+}
+
+function guideRecords(source) {
+  return GUIDE_KINDS.map((kind) => source?.[kind]).filter((record) => record && Array.isArray(record.files));
+}
+
+// 有効にした部品と指針を読む。有効にしていなければ null。
+// 関門 G3 で確かめるので、元が記録の指紋と違う、写しが元と違う、というときは problems に入れて返す。
+// 写しは app/ にあるが、作る AI は元を読めないので直せない(locked)。人が「写しを戻す」で戻す
+export async function readGuideMaterial(root) {
+  const source = await readSource(root);
+  const records = guideRecords(source);
+  if (records.length === 0) return null;
+  const problems = [];
+  const dir = materialsDir(root);
+  for (const record of records) {
+    for (const file of record.files) {
+      const original = await readRegularFile(originalPath(dir, record.kind, file.name)).catch(() => undefined);
+      if (original === undefined || original === null || sha(original) !== file.sha256) {
+        problems.push(guideProblem(`.studio/${DIR}/${record.kind}/${file.name}`, `有効にした${KINDS[record.kind].label}の元のファイルが、有効にしたときから変わっているか、なくなっています。素材は Studio の外から変えられません。その他の「部品と指針をつなぐ」で外して、有効にし直してください`));
+        continue;
+      }
+      const copy = await readRegularFile(copyPath(path.join(root, 'app'), file.copy)).catch(() => undefined);
+      if (copy === null || copy === undefined) problems.push(guideProblem(`app/${file.copy}`, `${KINDS[record.kind].label}の写し(試作品のフォルダーの ${file.copy})がなくなっています。${RESTORE_WORDS}`));
+      else if (sha(copy) !== file.sha256) problems.push(guideProblem(`app/${file.copy}`, `${KINDS[record.kind].label}の写し(試作品のフォルダーの ${file.copy})が、有効にしたときから変わっています。写しは Studio だけが書きます。${RESTORE_WORDS}`));
+    }
+  }
+  return { records, problems, source, rule: guidesRule(records) };
+}
+
+// 外した写し、置き換えた写しの場所と指紋。版で戻すと、版の中から戻ってくることがある
+const MAX_RETIRED = 200;
+function retiredWith(source, files) {
+  const current = Array.isArray(source?.retired) ? source.retired : [];
+  const added = files.map((file) => ({ copy: file.copy, sha256: file.sha256 }));
+  const seen = new Set();
+  return [...added, ...current].filter((file) => {
+    const key = `${file.copy}:${file.sha256}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, MAX_RETIRED);
+}
+
+// 写しを元から書き直す。元が壊れていれば書かない(problems を返す)。
+// pruneRetired を付けると、前に外した写しのうち、中身がそのときのままのものを消す(版で戻したとき。今は有効でない素材を残さない)
+export async function restoreGuideCopies(root, { pruneRetired = false } = {}) {
+  const source = await readSource(root);
+  const dir = materialsDir(root);
+  const problems = [];
+  let restored = 0;
+  if (pruneRetired) {
+    const live = new Set(guideRecords(source).flatMap((record) => record.files.map((file) => file.copy)));
+    for (const file of Array.isArray(source?.retired) ? source.retired : []) {
+      if (typeof file?.copy !== 'string' || live.has(file.copy) || !file.copy.startsWith('design/')) continue;
+      const text = await readRegularFile(copyPath(path.join(root, 'app'), file.copy)).catch(() => null);
+      if (text !== null && sha(text) === file.sha256) await removeCopy(path.join(root, 'app'), file.copy);
+    }
+  }
+  for (const record of guideRecords(source)) {
+    for (const file of record.files) {
+      const original = await readRegularFile(originalPath(dir, record.kind, file.name)).catch(() => null);
+      if (original === null || sha(original) !== file.sha256) {
+        problems.push(`${KINDS[record.kind].label}の元のファイル(${file.name})が変わっているので、写しを戻せません。外して、有効にし直してください`);
+        continue;
+      }
+      const current = await readRegularFile(copyPath(path.join(root, 'app'), file.copy)).catch(() => undefined);
+      if (current !== null && current !== undefined && sha(current) === file.sha256) continue;
+      // フォルダーに置き換わっていたら、消してから書く
+      if (current === undefined) await removeCopy(path.join(root, 'app'), file.copy);
+      await writeCopy(path.join(root, 'app'), file.copy, original);
+      restored += 1;
+    }
+  }
+  return { restored, problems };
+}
+
+// 作る AI に足す決まりの文。トークン(J4)と、部品と指針(J5)。どちらもなければ null
+export async function materialRule(root) {
+  const tokens = await readTokenMaterial(root);
+  const guides = await readGuideMaterial(root);
+  const parts = [tokens?.guide, guides?.rule].filter(Boolean);
+  return parts.length > 0 ? parts.join('\n') : null;
+}
+
+// 新しい試作品に、Studio 全体の部品と指針(これからの試作品全部)を写す。intent.js の createStarterProject から呼ぶ
+export async function applyStudioMaterials(home, root) {
+  const studioDir = studioMaterialsDir(home);
+  const studioSource = await readSourceIn(studioDir);
+  const records = guideRecords(studioSource);
+  if (records.length === 0) return 0;
+  const dir = materialsDir(root);
+  const previous = await readSource(root);
+  const now = new Date().toISOString();
+  const fields = { changedAt: now };
+  const entries = [];
+  for (const record of records) {
+    const files = [];
+    for (const file of record.files) {
+      const text = await readRegularFile(originalPath(studioDir, record.kind, file.name)).catch(() => null);
+      if (text === null || sha(text) !== file.sha256) continue;
+      files.push({ ...file, text });
+    }
+    if (files.length !== record.files.length) continue;
+    await fs.mkdir(path.join(dir, record.kind), { recursive: true });
+    for (const file of files) {
+      await writeAtomic(originalPath(dir, record.kind, file.name), file.text);
+      await writeCopy(path.join(root, 'app'), file.copy, file.text);
+    }
+    fields[record.kind] = { ...record, enabledAt: now, from: 'studio' };
+    entries.push({ action: 'enable', kind: record.kind, at: now, source: record.source, reason: record.reason, scope: 'all', from: 'studio' });
+  }
+  if (entries.length === 0) return 0;
+  await writeSourceIn(dir, previous, fields, entries);
+  return entries.length;
+}
+
+async function writeSourceIn(dir, previous, fields, entries) {
+  await fs.mkdir(dir, { recursive: true });
+  const { history: oldHistory, formatVersion: _format, ...kept } = previous ?? {};
+  const history = [...(Array.isArray(oldHistory) ? oldHistory : []), ...entries].slice(-MAX_HISTORY);
+  await writeAtomic(path.join(dir, SOURCE_FILE), `${JSON.stringify({ formatVersion: FORMAT, ...kept, ...fields, history }, null, 2)}\n`);
+}
+
+function guideRecordView(record) {
+  if (!record) return null;
+  return {
+    kind: record.kind,
+    label: KINDS[record.kind].label,
+    source: record.source,
+    license: record.license,
+    licenseLabel: licenseLabel(record),
+    reason: record.reason,
+    scope: record.scope,
+    from: record.from ?? 'project',
+    enabledAt: record.enabledAt,
+    files: record.files.map((file) => ({ name: file.name, copy: file.copy, title: file.title })),
+    componentCount: record.componentCount ?? 0,
+    urlCount: record.urlCount ?? 0,
+  };
+}
+
 function cleanText(value, max) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
@@ -138,7 +366,7 @@ export class ProjectMaterials {
     const material = await readTokenMaterial(paths.root);
     const source = await readSource(paths.root);
     const history = Array.isArray(source?.history) ? source.history.slice(-5) : [];
-    const base = { roles: this.roleList(), limitBytes: TOKEN_LIMITS.maxBytes, history };
+    const base = { roles: this.roleList(), limitBytes: TOKEN_LIMITS.maxBytes, history, guides: await this.guidesView(paths.root, source) };
     if (!material) return { ...base, connected: null, problems: [] };
     if (material.problems.length > 0) return { ...base, connected: null, problems: material.problems.map((p) => p.text) };
     const { record } = material;
@@ -158,10 +386,155 @@ export class ProjectMaterials {
     };
   }
 
-  // 作る AI に足す決まりの文。つないでいなければ null
+  // 部品と指針の画面の中身。この試作品のものと、これからの試作品全部のもの
+  async guidesView(root, source) {
+    const material = await readGuideMaterial(root);
+    const studio = await readSourceIn(studioMaterialsDir(this.store.home));
+    return {
+      kinds: Object.fromEntries(GUIDE_KINDS.map((kind) => [kind, guideRecordView(source?.[kind])])),
+      studioWide: Object.fromEntries(GUIDE_KINDS.map((kind) => [kind, guideRecordView(studio?.[kind])])),
+      problems: material?.problems.map((p) => p.text) ?? [],
+      licenseAnswers: LICENSE_ANSWERS,
+      limits: { maxFiles: GUIDE_LIMITS.maxFiles, maxFileBytes: GUIDE_LIMITS.maxFileBytes, maxTotalBytes: GUIDE_LIMITS.maxTotalBytes, maxIndexBytes: GUIDE_LIMITS.maxIndexBytes },
+    };
+  }
+
+  // 作る AI に足す決まりの文。トークンと、部品と指針。どれもなければ null
   async guide(id) {
     const paths = await this.store.requireProject(id);
-    return (await readTokenMaterial(paths.root))?.guide ?? null;
+    return materialRule(paths.root);
+  }
+
+  // 部品と指針の検査だけ。何も書かない(案内の「2. 確かめる」)
+  async checkGuides(id, { kind, files, answers } = {}) {
+    await this.store.requireProject(id);
+    return { check: checkGuideMaterial({ kind, files, answers }) };
+  }
+
+  // 部品と指針を有効にする(案内の「4. 有効にする」)。検査をもう一度行い、ライセンスが分からなければ断る
+  async enableGuides(id, { kind, files, answers, source, reason, scope = 'project' } = {}) {
+    const paths = await this.store.requireProject(id);
+    const check = checkGuideMaterial({ kind, files, answers });
+    if (!check.ok) return { enabled: false, check, materials: await this.view(id) };
+    if (!check.license.ok) throw new MaterialError(409, 'license-unknown', check.license.reason);
+    const owner = cleanText(source, MAX_SOURCE);
+    if (!owner) throw new MaterialError(400, 'invalid', '誰の素材かを書いてください。引き継ぎの出典になります');
+    if (!SCOPES.has(scope)) throw new MaterialError(400, 'invalid', '有効にする範囲は、この試作品だけか、これからの試作品全部です');
+    this.store.claimVersions(id);
+    try {
+      const previous = await readSource(paths.root);
+      const before = previous?.[kind];
+      const ownCopies = new Set((before?.files ?? []).map((file) => file.copy));
+      // 人が置いたファイルを上書きしない。前に Studio が写したものだけを置き換える。
+      // 途中のフォルダー(design/ など)がファイルのときも、消さずに断る
+      const clashes = [];
+      for (const copy of check.copies) {
+        const rel = copy.path;
+        const parent = await blockingParent(paths.app, rel);
+        if (parent) {
+          clashes.push(parent);
+          continue;
+        }
+        if (ownCopies.has(rel) || !(await fs.lstat(copyPath(paths.app, rel)).catch(() => null))) continue;
+        // 前に外した写しが版から戻ったときなど、中身が同じなら置き換えてよい
+        const same = await readRegularFile(copyPath(paths.app, rel)).then((text) => text === copy.text, () => false);
+        if (!same) clashes.push(rel);
+      }
+      if (clashes.length > 0) {
+        throw new MaterialError(409, 'clash', `写す場所に、ほかのファイルがあります: ${[...new Set(clashes)].slice(0, 5).join('、')}。名前を変えるか、そのファイルを動かしてから、もう一度有効にしてください`);
+      }
+      // 写しを足すと試作品のフォルダーの上限を超えるなら、書く前に断る(超えるとビルドが止まり、作る AI にも直せない)
+      const size = await appSize(paths.app);
+      const oldBytes = await copiesBytes(paths.app, before?.files ?? []);
+      const newBytes = check.copies.reduce((n, copy) => n + Buffer.byteLength(copy.text, 'utf8'), 0);
+      const files = size.files - (before?.files.length ?? 0) + check.copies.length;
+      if (size.bytes - oldBytes + newBytes > APP_LIMITS.maxTotalBytes || files > APP_LIMITS.maxFiles) {
+        throw new MaterialError(409, 'too-large', `写しを足すと、試作品のフォルダーが上限(${APP_LIMITS.maxTotalBytes / 1024 / 1024} MB、${APP_LIMITS.maxFiles} 個)を超えます。素材を小さくしてください`);
+      }
+      const now = new Date().toISOString();
+      const record = {
+        kind,
+        source: owner,
+        license: check.license.license,
+        licenseName: check.license.licenseName,
+        reason: cleanText(reason, MAX_REASON),
+        scope,
+        enabledAt: now,
+        files: check.copies.map((copy) => ({ name: copy.name, copy: copy.path, title: copy.title, from: cleanText(copy.from, MAX_NAME), sha256: sha(copy.text) })),
+        componentCount: check.components.length,
+        urlCount: check.urlCount,
+      };
+      const dir = materialsDir(paths.root);
+      // 前の写しと元を消してから書く。記録は最後に書く(途中で止まっても、関門が気づいて止める)
+      for (const file of before?.files ?? []) await removeCopy(paths.app, file.copy);
+      await fs.rm(path.join(dir, kind), { recursive: true, force: true });
+      await fs.mkdir(path.join(dir, kind), { recursive: true });
+      for (const copy of check.copies) {
+        await writeAtomic(originalPath(dir, kind, copy.name), copy.text);
+        await writeCopy(paths.app, copy.path, copy.text);
+      }
+      const entry = { action: 'enable', kind, at: now, source: record.source, reason: record.reason, scope, license: licenseLabel(record) };
+      await writeSourceIn(dir, previous, { [kind]: record, changedAt: now, retired: retiredWith(previous, (before?.files ?? []).filter((file) => !record.files.some((next) => next.copy === file.copy && next.sha256 === file.sha256))) }, [entry]);
+      if (scope === 'all') await this.writeStudioWide(kind, record, check.copies, entry);
+      this.log(`${KINDS[kind].label}を有効にしました: ${id}(${record.files.length} 個${scope === 'all' ? '。これからの試作品全部' : ''})`);
+      const build = await this.store.build(id, { byVersions: true });
+      return { enabled: true, check, build: buildView(build), materials: await this.view(id) };
+    } finally {
+      this.store.releaseVersions(id);
+    }
+  }
+
+  async writeStudioWide(kind, record, copies, entry) {
+    const dir = studioMaterialsDir(this.store.home);
+    const previous = await readSourceIn(dir);
+    await fs.rm(path.join(dir, kind), { recursive: true, force: true });
+    await fs.mkdir(path.join(dir, kind), { recursive: true });
+    for (const copy of copies) await writeAtomic(originalPath(dir, kind, copy.name), copy.text);
+    await writeSourceIn(dir, previous, { [kind]: record, changedAt: record.enabledAt }, [entry]);
+  }
+
+  // 外す。from が studio なら、これからの試作品全部の分だけを外す(今ある試作品の写しはそのまま)
+  async disableGuides(id, { kind, from = 'project', reason } = {}) {
+    const paths = await this.store.requireProject(id);
+    if (!Object.hasOwn(KINDS, kind)) throw new MaterialError(400, 'invalid', '外す素材を選んでください');
+    const now = new Date().toISOString();
+    const entry = { action: 'disable', kind, at: now, reason: cleanText(reason, MAX_REASON), scope: from === 'studio' ? 'all' : 'project' };
+    if (from === 'studio') {
+      const dir = studioMaterialsDir(this.store.home);
+      const previous = await readSourceIn(dir);
+      await fs.rm(path.join(dir, kind), { recursive: true, force: true });
+      await writeSourceIn(dir, previous, { [kind]: null, changedAt: now }, [{ ...entry, source: previous?.[kind]?.source ?? null }]);
+      this.log(`これからの試作品全部の${KINDS[kind].label}を外しました`);
+      return { materials: await this.view(id) };
+    }
+    this.store.claimVersions(id);
+    try {
+      const previous = await readSource(paths.root);
+      const dir = materialsDir(paths.root);
+      for (const file of previous?.[kind]?.files ?? []) await removeCopy(paths.app, file.copy);
+      await fs.rm(path.join(dir, kind), { recursive: true, force: true });
+      await writeSourceIn(dir, previous, { [kind]: null, changedAt: now, retired: retiredWith(previous, previous?.[kind]?.files ?? []) }, [{ ...entry, source: previous?.[kind]?.source ?? null }]);
+      this.log(`${KINDS[kind].label}を外しました: ${id}`);
+      const build = await this.store.build(id, { byVersions: true });
+      return { build: buildView(build), materials: await this.view(id) };
+    } finally {
+      this.store.releaseVersions(id);
+    }
+  }
+
+  // 写しを元から書き直す(作る AI が写しを変えたとき)
+  async restoreGuides(id) {
+    const paths = await this.store.requireProject(id);
+    this.store.claimVersions(id);
+    try {
+      const { restored, problems } = await restoreGuideCopies(paths.root);
+      if (problems.length > 0) throw new MaterialError(409, 'broken', problems[0]);
+      this.log(`部品と指針の写しを戻しました: ${id}(${restored} 個)`);
+      const build = await this.store.build(id, { byVersions: true });
+      return { restored, build: buildView(build), materials: await this.view(id) };
+    } finally {
+      this.store.releaseVersions(id);
+    }
   }
 
   // 検査だけ。何も書かない
@@ -233,14 +606,13 @@ export class ProjectMaterials {
   }
 
   // 記録を先に書かない。トークンのファイルと記録がずれた瞬間に止まっても、関門が気づいて止める
+  // 部品と指針の記録(J5)は残す
   async writeRecord(root, previous, fields, entry, tokensText) {
     const dir = materialsDir(root);
     await fs.mkdir(dir, { recursive: true });
-    const history = [...(Array.isArray(previous?.history) ? previous.history : []), entry].slice(-MAX_HISTORY);
-    const source = { formatVersion: FORMAT, ...fields, history };
     if (tokensText === null) await fs.rm(path.join(dir, TOKENS_FILE), { force: true });
     else await writeAtomic(path.join(dir, TOKENS_FILE), tokensText);
-    await writeAtomic(path.join(dir, SOURCE_FILE), `${JSON.stringify(source, null, 2)}\n`);
+    await writeSourceIn(dir, previous, fields, [{ kind: 'tokens', ...entry }]);
   }
 }
 
