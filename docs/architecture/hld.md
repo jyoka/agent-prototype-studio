@@ -77,6 +77,7 @@ flowchart TB
         review["AI 構成の審査と AI 構成書<br/>review.js、architecture.js"]
         sceneRuns["主の画面の場面の回しと比べる表<br/>scene-runs.js"]
         quality["質の見直しの表<br/>quality.js"]
+        show["人に見せる画面の問いと答え<br/>show.js"]
         redact["伏せる、秘密を探す<br/>redact.js"]
     end
 
@@ -129,6 +130,9 @@ flowchart TB
     api --> quality
     quality -- "読むだけ(.studio/observations/ の audit、.studio/evals/、素材)" --> dotstudio
     quality -- "色と部品を探す(読むだけ)" --> app
+    api --> show
+    show -- "今の状態を版に結び付ける(なければ保存)" --> versions
+    show -- "読み書き(.studio/show.json)" --> dotstudio
     requests --> agent
     agent -- "子プロセス(cwd は app/)" --> cli
     cli -- "読み書き" --> app
@@ -193,7 +197,8 @@ flowchart TB
 | 場面の回し | `src/server/sim/eval-run.js`、`bin/evals.js` | 場面(`app/evals/`)を、構成 × 前提 × 接続 × 回数で回す。場面ごとに新しい会話と記録の店で、会話の進め方(`runTurn`)かツールの口(`kind: tool`)を通す。確かめはコードが決め、当てはまらないものは `n/a`。`judge` はモックでは未採点で、実モデルの回しでは採点の接続(`judge.js`。道具なしの `claude -p` を 2 回)が採点する。危ない場面は、止まったかを結果の確かめ(`noToolRun`、`noRecord`、`replyNotContains`)と出口の確かめの違反で決め、止めた層(ツール、出口の確かめ、プロンプトかモデル)を別に出す。前の回しの結果は、`eval-recount.js` で今の場面の確かめで数え直せる(`scripts/sim-compare.js --recount`)。文書の検索の確かめ(`retrieved`、`cited`)があれば、比べる表に検索の再現率と引用ありの列を足す。文書の検索のツールのある試作品では、`report.md` にデータの棚と RAG の判定(`src/server/data-shelf.js`)を足す。結果(`result.json`、`report.md`、`traces/`)は `app/` と構成と前提の指紋を持つ。作る run の関門 GE はモックだけで回す。CLI(`npm run evals`)は作業中の `app/` を一時フォルダーにビルドして回し、`--real` は `STUDIO_ALLOW_CLAUDE_CODE=1` と `--limit-usd` のときだけ。台帳(`.studio/evals/ledger.jsonl`)の累計が上限に達したら次の返事と採点を始めない([agent-simulation.md の 4.3](../design/agent-simulation.md#43-場面の回し))。jyoka/tasks#327 の場面は `eval-import.js`(`npm run evals:import`)で変換して取り込み、回しを並べた比べる表は `scripts/sim-compare.js` で作る |
 | 主の画面の場面の回し | `src/server/scene-runs.js` | `/api/projects/<id>/scenes`(GET は場面の一覧、進み具合、一番新しい結果から作った比べる表と「直す」の依頼の文。`run` は回し始める、`cancel` は止める)。試す欄の下の「場面の一覧と比べる表」が使う。`eval-run.js` の `runEvals` を、既定の構成と `compositions/` の構成の全部で回し、結果は CLI と同じ `.studio/evals/` に書く。お試しの AI は同意なし。本物の AI は `AiSessions.useReal`(用途 `evals`)で選べるかと同意を確かめ、`createBudget` の台帳と費用の上限で止める。採点はしない。回し終えたら審査の数(`ProjectReviews.noteMeasured`)を取り直す。試す欄の下の「1 ターンの記録」は、プロダクト内 AI の実行の記録を画面(`renderTurnRecord`)で要約するだけで、サーバーの部品はない([ai-architecture-review.md の 15 節](../design/ai-architecture-review.md#15-423-で決めたこと)) |
 | 質の見直しの表 | `src/server/quality.js`、`src/observer/audit.js` | `/api/projects/<id>/quality`(GET だけ)。試す欄の下の「質の見直し」が使う。測ったもの(アクセシビリティの違反、字と地の差、素材に合わない色と部品、場面の結果、道具の呼び方の正しさ、守りの効き、費用、待ち時間)と AI の判断(返事の自然さの採点、使いやすさの見直し)の行に、「なぜ大事か」「直す」と、言葉で直す欄に入れる依頼の文を付ける。何も動かさず、3 つを読むだけ。(1) 一番新しい、表示中の試作品を見た観察(画面の「確かめる」。report の `mode` が `shown`)の `audit`。観察器が最後の画面で `audit.js` の小さな検査(ラベル、ボタンの名前、画像の代わりの文、WCAG の式の字と地の差)を動かし、値を決まった形に写して入れる。関門の合否には入れない。(2) `app/` の文の形で探した、値のまま書いた色と、既定の素材を読む試作品でじかに書いた部品。(3) `scene-runs.js` の一番新しい場面の回しの結果の最初の組。見ていない項目は `unseen`(「まだ見ていない」)。外の検査の道具は使わない([user-journey.md の「J6 で決めたこと」](../design/user-journey.md#j6-で決めたことtask-3892026-11-11)) |
-| 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する |
+| 人に見せる画面の問いと答え | `src/server/show.js` | `/api/projects/<id>/show`(GET は問いと答えの記録。`start` は見せ始める。`answer` は答えを残す)。その他の引き出しの「人に見せる」が使う。問いは目的の文書(`intent.js`)の成功の印から、決まった形で作る(AI は呼ばない)。見せ始めると、今の状態と同じ版を探し、なければ版を保存して、その版に結び付ける。答えは見せた版の ID と番号を付けて `.studio/show.json` に残す。版の写しの外に置くので、版を戻しても消えない。版の一覧(`versions.js` の `list`)は、版ごとの答えを `shows` に載せる。見せる画面は画面の側の形(`body[data-show]`)で、試作品と問いの欄だけを出す([user-journey.md の「J7 で決めたこと」](../design/user-journey.md#j7-で決めたことtask-3912026-11-11)) |
+| 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する。一覧には、版ごとの人に見せた答え(`show.js`)を載せる |
 | 引き継ぎ | `src/server/handoff.js` | 作業中の試作品と、目録、シナリオ、最新の証拠の要約、構成とツールと前提と場面、最新の場面の回しの要約を `handoffs/` に書き出す。形は [handoff.md](../handoff.md) |
 | 本物の AI の同意 | `src/server/real-ai.js` | 本物の AI を使う前の同意を、メモリーに 1 つ持つ。作る AI(`BuildRequests.start`、接続が Claude Code のとき)と、プロダクト内 AI の本物の接続への口(`AiSessions.useReal`。切り替えと観察)が、使う前に確かめ、同意の前は `consent-required` で断る。同意のカードの中身(送るもの、送り先、料金の文と上限、「詳しく」)を `/api/real-ai` で返す |
 | 伏せる | `src/server/redact.js` | 記録と表示の前に、秘密らしい文字列と個人のデータを伏せる。書き出す前に秘密を探す |

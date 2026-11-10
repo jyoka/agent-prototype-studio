@@ -119,6 +119,18 @@ const els = {
   projectMenu: $('project-menu'),
   saveMark: $('save-mark'),
   saveNow: $('save-now'),
+  showStart: $('show-start'),
+  show: $('show'),
+  showHeading: $('show-heading'),
+  showTitle: $('show-title'),
+  showLead: $('show-lead'),
+  showForm: $('show-form'),
+  showQuestions: $('show-questions'),
+  showViewer: $('show-viewer'),
+  showSave: $('show-save'),
+  showEnd: $('show-end'),
+  showStatus: $('show-status'),
+  showRealAi: $('show-real-ai'),
   more: $('more'),
   morePanel: $('more-panel'),
   moreClose: $('more-close'),
@@ -281,6 +293,9 @@ const waitingByProject = new Map();
 const waitingFor = (projectId) => waitingByProject.get(projectId) ?? 0;
 // その他の引き出しの「保存した状態」。保存した版の一覧と、作業中がどの版と同じか
 const versions = { projectId: null, data: null, seq: 0, busy: false, message: null };
+// 見せる画面(J7)。open の間は、試作品と確かめたい問いだけを出す。version は見せている版、questions は問い。
+// warned は、残していない答えがあるまま「見せ終わる」を 1 回押したか
+const showUi = { open: false, starting: false, saving: false, projectId: null, version: null, questions: [], source: null, savedNow: false, message: null, warned: false };
 // 自分のトークン(J4)。file は選んだファイルの名前と中身、check はサーバーの検査の結果。つなぐまで何も書かれない
 const tokens = { projectId: null, data: null, seq: 0, busy: false, file: null, check: null, problems: [], message: null, buildAt: null };
 // 部品と指針をつなぐ案内の 4 歩(user-journey.md の J5)。サーバーの中身は tokens.data.guides(同じ素材の API で読む)。
@@ -1745,8 +1760,14 @@ function declineConsent() {
 
 // 本物の AI を使っている間の小さな印(試す欄の上と直す欄の上)。押すと、カードの中身をもう一度見られる。
 // 試す欄は試作品の中の AI が本物のとき、直す欄は同意の後で直す AI が Claude Code のとき
+// 試作品の中の AI が、本物の AI(料金のかかる接続)か
+function tryRealAi() {
+  return Boolean(ai.session && ai.projectId === selectedId && ai.choices?.options.find((o) => o.kind === ai.session.connection.kind)?.billing);
+}
+
 function renderRealAiMarks() {
-  const tryReal = Boolean(ai.session && ai.projectId === selectedId && ai.choices?.options.find((o) => o.kind === ai.session.connection.kind)?.billing);
+  const tryReal = tryRealAi();
+  els.showRealAi.hidden = !tryReal;
   const makeReal = consent.agreed && agent?.kind === 'claude' && agent.ready;
   renderRealAiMark(els.realAiTry, els.realAiTryInfo, tryReal, 'try');
   renderRealAiMark(els.realAiMake, els.realAiMakeInfo, makeReal, 'make');
@@ -2227,7 +2248,26 @@ function versionItem(project, version, working, locked) {
   button.title = '保存したときのファイルと会話に戻します。今の状態がどの保存とも違えば、先に自動で保存します';
   button.addEventListener('click', () => restoreVersion(project, version));
   li.append(head, element('p', meta.join('・'), 'muted'), button);
+  if (version.shows?.length > 0) li.append(showAnswers(version));
   return li;
+}
+
+// 版に残した、人に見せた答え(J7)。版を戻しても消えない
+function showAnswers(version) {
+  const box = element('details', undefined, 'show-answers');
+  keepOpenAs(box, `show-answers:${version.id}`);
+  box.append(element('summary', `人に見せた答え(${version.shows.length} 回)`));
+  for (const record of version.shows) {
+    const section = element('section', undefined, 'show-record');
+    const when = new Date(record.answeredAt).toLocaleString('ja-JP');
+    section.setAttribute('aria-label', `${when}に見せた答え`);
+    section.append(element('p', `${when}${record.viewer ? `・相手: ${record.viewer}` : ''}`, 'muted'));
+    const list = element('dl', undefined, 'show-record-list');
+    for (const item of record.answers) list.append(element('dt', item.question), element('dd', item.answer));
+    section.append(list);
+    box.append(section);
+  }
+  return box;
 }
 
 function renderVersions(project) {
@@ -2240,6 +2280,7 @@ function renderVersions(project) {
   els.versionsMessage.textContent = versions.message?.text ?? '';
   els.versionsMessage.dataset.kind = versions.message?.kind ?? '';
   els.saveNow.disabled = locked;
+  renderShowStart(project);
   renderSaveMark(project);
   if (!data) {
     els.workingStatus.textContent = project ? '読み込んでいます…' : '';
@@ -2307,6 +2348,143 @@ async function saveVersion() {
     if (selectedId !== project.id) versions.message = null;
     renderVersions(selectedProject());
   }
+}
+
+// 人に見せる(J7)。表示できる試作品があり、作業中でないときだけ押せる
+function renderShowStart(project) {
+  els.showStart.disabled =
+    showUi.starting || !project?.previewUrl || project.running || project.building || project.versioning || project.checking || versions.busy || handoff.busy;
+}
+
+const SHOW_FALLBACK_NOTE = '目的の文書に「成功の印」がないので、決まった問いを出しています。成功の印を書くと、そこから問いを作ります。';
+
+// 見せる画面にする。今の状態をどれかの版に結び付け(どの版とも違えば保存し)、問いを受け取る。
+// 開いている画面(目的、整理、設計、審査、会)と引き出しは閉じる
+async function startShow() {
+  const project = selectedProject();
+  if (!project || showUi.starting) return;
+  showUi.starting = true;
+  renderShowStart(project);
+  try {
+    const { show } = await api(`/api/projects/${encodeURIComponent(project.id)}/show/start`, { method: 'POST' });
+    if (selectedId !== project.id) return;
+    setProjectMenu(false);
+    setMorePanel(false);
+    leaveIntent();
+    closeOrganize();
+    renderOrganize();
+    closeDesign();
+    renderDesign();
+    closeReview();
+    closeMeeting();
+    Object.assign(showUi, {
+      open: true,
+      projectId: project.id,
+      version: show.version,
+      questions: show.questions,
+      source: show.source,
+      savedNow: show.savedNow,
+      message: null,
+      warned: false,
+    });
+    els.showQuestions.replaceChildren(...show.questions.map(showQuestionItem));
+    els.showViewer.value = '';
+    renderShow();
+    els.showHeading.focus();
+    loadVersions();
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    else showBanner(null, `見せる画面を開けませんでした: ${error.message}`);
+  } finally {
+    showUi.starting = false;
+    renderShowStart(selectedProject());
+  }
+}
+
+function showQuestionItem(question, index) {
+  const li = element('li', undefined, 'show-question');
+  const label = element('label', question);
+  label.htmlFor = `show-answer-${index}`;
+  const answer = element('textarea');
+  answer.id = `show-answer-${index}`;
+  answer.rows = 2;
+  answer.maxLength = 1000;
+  answer.dataset.question = question;
+  answer.addEventListener('input', () => {
+    showUi.warned = false;
+  });
+  li.append(label, answer);
+  return li;
+}
+
+function showAnswerFields() {
+  return [...els.showQuestions.querySelectorAll('textarea')];
+}
+
+function renderShow() {
+  els.show.hidden = !showUi.open;
+  if (showUi.open) document.body.dataset.show = 'open';
+  else delete document.body.dataset.show;
+  if (!showUi.open) return;
+  const project = projects.find((p) => p.id === showUi.projectId);
+  els.showTitle.textContent = project?.title ?? '';
+  els.showLead.textContent = [
+    showUi.savedNow ? `見せる前に、今の状態を${versionSubject(showUi.version)}として保存しました。` : '',
+    `答えは${versionSubject(showUi.version)}に残します。`,
+    showUi.source === 'fallback' ? SHOW_FALLBACK_NOTE : '',
+  ]
+    .filter(Boolean)
+    .join('');
+  els.showRealAi.hidden = !tryRealAi();
+  els.showSave.disabled = showUi.saving;
+  els.showStatus.textContent = showUi.message?.text ?? '';
+  els.showStatus.dataset.kind = showUi.message?.kind ?? '';
+}
+
+async function saveShowAnswers() {
+  if (!showUi.open || showUi.saving) return;
+  const answers = showAnswerFields().map((field) => ({ question: field.dataset.question, answer: field.value.trim() }));
+  if (!answers.some((item) => item.answer)) {
+    showUi.message = { kind: 'failed', text: '答えが 1 つもありません。聞いた答えを書いてから残してください。' };
+    renderShow();
+    return;
+  }
+  showUi.saving = true;
+  showUi.message = null;
+  renderShow();
+  const projectId = showUi.projectId;
+  try {
+    const { record } = await api(`/api/projects/${encodeURIComponent(projectId)}/show/answer`, {
+      method: 'POST',
+      json: { versionId: showUi.version.id, viewer: els.showViewer.value, answers },
+    });
+    for (const field of showAnswerFields()) field.value = '';
+    els.showViewer.value = '';
+    showUi.warned = false;
+    showUi.message = { kind: 'ok', text: `${versionSubject(showUi.version)}に答えを残しました(${record.answers.length} 問)。次の人に見せるときは、そのまま続けられます。` };
+    loadVersions();
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    showUi.message = { kind: 'failed', text: `答えを残せませんでした: ${error.message}` };
+  } finally {
+    showUi.saving = false;
+    renderShow();
+  }
+}
+
+// 見せ終わる。残していない答えがあれば、1 回目は知らせて止まる(もう一度押すと閉じる)
+function endShow() {
+  if (!showUi.open) return;
+  if (!showUi.warned && showAnswerFields().some((field) => field.value.trim())) {
+    showUi.warned = true;
+    showUi.message = { kind: 'failed', text: '残していない答えがあります。「答えを残す」を押すか、残さずに閉じるときは、もう一度「見せ終わる」を押してください。' };
+    renderShow();
+    return;
+  }
+  Object.assign(showUi, { open: false, projectId: null, version: null, questions: [], source: null, savedNow: false, message: null, warned: false });
+  els.showQuestions.replaceChildren();
+  renderShow();
+  els.more.focus();
 }
 
 // 版の保存や復元の間も押せないようにする。renderVersions からも呼ぶ
@@ -4005,6 +4183,12 @@ document.addEventListener('keydown', (event) => {
 });
 
 els.saveNow.addEventListener('click', () => saveVersion());
+els.showStart.addEventListener('click', () => startShow());
+els.showForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  saveShowAnswers();
+});
+els.showEnd.addEventListener('click', () => endShow());
 
 // 上の帯の「その他」で、右から引き出しを開く。閉じるボタン、もう一度「その他」、Esc で閉じる。
 // 開いている間も、左の試作品は使える(開発者向けの詳細の記録を見ながら試すため)

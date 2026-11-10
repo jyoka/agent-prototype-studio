@@ -282,11 +282,11 @@ test.describe('LP', () => {
     await expect(page.locator('#features .card h3', { hasText: '設計の案内' })).toHaveCount(1);
     await expect(page.locator('#building')).not.toContainText('設計の案内');
     const building = page.locator('#building .building-item');
-    await expect(building).toHaveCount(6);
-    const names = ['AI 構成の審査', '3 つの形の比べ', 'データの棚と RAG の判定', '記録と比べる表を主の画面に', '質の見直し', 'みんなで作る'];
+    await expect(building).toHaveCount(7);
+    const names = ['AI 構成の審査', '3 つの形の比べ', 'データの棚と RAG の判定', '記録と比べる表を主の画面に', '質の見直し', '人に見せる', 'みんなで作る'];
     await expect(building.locator('h3')).toHaveText(names, SHOWN);
     // どの項目にも「作っている」の印があり、絵と押す先はない(想像図を本物の画面として載せない)
-    await expect(page.locator('#building .building-tag')).toHaveText(Array(6).fill('作っている'), SHOWN);
+    await expect(page.locator('#building .building-tag')).toHaveText(Array(7).fill('作っている'), SHOWN);
     await expect(page.locator('#building img')).toHaveCount(0);
     await expect(page.locator('#building a')).toHaveCount(0);
     // 今できることの方に、作っているものの名前を混ぜない
