@@ -204,7 +204,7 @@ test('ツールの失敗は onFail の段へ戻り、値を消す。2 回で人�
   assert.equal(turns[1].record.steps[0].harness.decision.escalate.id, 'parcel-not-found');
 });
 
-test('人に渡す条件の語: 読めない 2 回、項目の値、ツールの結果。質問や脱線は読めなかったに数えない', async (t) => {
+test('人に渡す条件の語: 読めない 2 回、項目の値、ツールの結果。脱線は読めなかったに数えない', async (t) => {
   const sim = (await buildSample(t)).prepare();
   const unread = await talk(sim, ['えーと', 'えーと']);
   assert.equal(unread.conversation.active, 'staff');
@@ -225,6 +225,16 @@ test('人に渡す条件の語: 読めない 2 回、項目の値、ツールの
   assert.equal(held.turns[0].record.steps[0].harness.decision.escalate.id, 'parcel-held');
   // 渡す値は辺の carry の名前だけ
   assert.deepEqual(held.turns[0].record.handoff.carry, { accepted: ['parcel_no'], rejected: [] });
+});
+
+// 場面 escalate-unread を実モデルで回したとき、2 回目の「えーと、どこだろう」は質問(clarify)と読まれた(docs/evidence/real-delegate)
+test('番号を聞かれて質問を返した回も、読めなかったに数える', async (t) => {
+  const sim = (await buildSample(t)).prepare();
+  const { connection } = scripted({ extract: ({ text }) => ({ updates: {}, intent: text.includes('どこ') ? 'clarify' : 'answer' }) });
+  const { conversation, turns } = await talk(sim, ['えーと', 'えーと、どこだろう'], { harnessConnection: connection });
+  assert.equal(conversation.active, 'staff');
+  assert.equal(turns[1].record.steps[0].harness.decision.escalate.id, 'no-parcel-number');
+  assert.deepEqual(toolOrder(turns), []);
 });
 
 test('抽出が壊れた回は、読めなかったに数えない', async (t) => {
