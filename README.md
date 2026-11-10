@@ -1,6 +1,6 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/brand/banner-dark.svg">
-  <img alt="agent-prototype-studio のバナー。左に 1 文「思いつきを AI プロダクトにすると、どんな作りになるか。動かして測り、人が承認してから作る。」と英語の同じ文。右にトークの画面、模擬のエージェント、プロンプトの枠、ツール(MCP)、ガードレール、記録の 6 つの層が縦に並び、ガードレールに「止めた」の印が付いている" src="assets/brand/banner-light.svg">
+  <img alt="agent-prototype-studio のバナー。左に 1 文「思いつきを AI プロダクトにすると、どんな作りになるか。動かして測り、人が承認してから作る。」と英語の同じ文。右にトークの画面、模擬のエージェント、プロンプトの枠、ツール(MCP)、ガードレール、記録の 6 つの層と、AI 構成の審査が縦に並ぶ。ガードレールに「止めた」の印、AI 構成の審査に「承認」の印が付いている" src="assets/brand/banner-light.svg">
 </picture>
 
 # agent-prototype-studio
@@ -15,7 +15,7 @@
 </picture>
 
 AI プロダクトを思いつき、決める立場にいる人のための、手元で動く道具です。AI の作りとは、エージェントの構成、harness(AI の周りで決まりを守らせるコード)、データと RAG、技術の組のことです。
-今は、構成と守りを動かして見せ、場面を回して測れます。作る前に人が読んで承認する段(AI 構成の審査)は、設計の案内の後に入りましたが、人の確かめはまだで、作っているものに置いています([作っているもの](#作っているもの))。
+今は、目的の聞き出しから、設計の案内、AI 構成の審査(人が 4 つを承認する)、試して測る、人に見せる、引き継ぐまでが動きます。どれも、人の確かめ(初めての人や現場の会で使えるか)はまだです([作っているもの](#作っているもの))。
 Studio が出すのは、日付と根拠のある、今日の一番良い推測です。本番の品質は約束しません。
 
 ## しくみ
@@ -35,10 +35,10 @@ flowchart LR
     comp -- "agent" --> sim["模擬のエージェント<br/>モック / Claude Code"]
     sim -- "MCP(決まった名前だけ)" --> tools["ツールの MCP サーバー<br/>ツールの守り"]
     comp --> trace[("AI の実行の記録<br/>比べる表 report.md")]
-    trace -. "読んで承認する" .-> review
+    trace -- "読んで承認する" --> review
 ```
 
-- 点線は作っているものです。設計の案内の「この設計で作る」は、AI 構成の審査に進みます。4 つを承認すると作る AI が動き、承認と違う構成になると関門で止まります([AI 構成の審査](docs/design/ai-architecture-review.md)、[使い方](docs/usage.md#ai-構成の審査で-4-つを承認する))
+- 設計の案内の「この設計で作る」は、AI 構成の審査に進みます。4 つを承認すると作る AI が動き、承認と違う構成になると関門で止まります([AI 構成の審査](docs/design/ai-architecture-review.md)、[使い方](docs/usage.md#ai-構成の審査で-4-つを承認する))
 - AI は 2 種類あります。作る AI は試作品のファイル(`app/`)を変えます。プロダクト内 AI は試作品の中で話し、構成を書いた試作品では参加者(模擬のエージェント、harness、人)の組になります。構成はデータで、ツールの守りは Studio のコードが必ず効かせます([agent-simulation.md](docs/design/agent-simulation.md))
 - 既定は料金なしです。プロダクト内 AI と場面の回しはモックで動きます。実モデルは、画面で同意したとき(場面の回しは費用の上限も)と、`--real` に費用の上限を付けたときだけです。試作品は `sandbox` の iframe で動き、作る AI が書けるのは `app/` だけです([ADR 0001](docs/adr/0001-local-runtime-and-isolation.md))
 
@@ -48,55 +48,48 @@ flowchart LR
 
 <table>
   <tr>
-    <td width="50%" valign="top">
-      <a href="docs/usage.md#構成と前提を選ぶ"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/sim-choice-dark.png"><img width="400" alt="その他の引き出しの「構成と前提」。構成を選ぶ欄に、相手の会社のエージェントとこちらのツール、自社の harness だけ、受付と相談役と担当者の引き継ぎ、ツールだけを出す構成の 4 つ。前提を選ぶ欄に、カードを使える相手と、文とボタンだけの相手の 2 つ" src="assets/media/sim-choice-light.png"></picture></a><br>
-      <b>構成の模擬</b><br>
-      構成と前提を選ぶと、同じ試作品が別の組み方で話す。
-    </td>
-    <td width="50%" valign="top">
-      <a href="docs/usage.md#ai-の実行の記録を見る"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/sim-trace-dark.png"><img width="400" alt="AI の実行の記録。模擬の案内役のプロンプトの部品、ツール save_wish の引数と失敗の結果、ツールの守り schema は通した、requires は止めたと理由が赤い字で並ぶ。最後に出口の確かめ 2 つが通した" src="assets/media/sim-trace-light.png"></picture></a><br>
-      <b>守りの層</b><br>
-      どの層の守りが止めたかと、その理由が記録に出る。
-    </td>
+    <td width="50%" valign="top"><a href="docs/usage.md#ai-構成の審査で-4-つを承認する"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/review-dark.png"><img width="400" alt="AI 構成の審査の画面。上の帯に「目的: 決めた」「設計: 決めた」「審査: 承認 2 / 4」。エージェントの構成の欄で固定の流れを選んで承認済み。構成の図は、使う人、受付(コードの流れ)、AI(読み取りと言い方だけ)の順" src="assets/media/review-light.png"></picture></a><br>
+      <b>AI 構成の審査</b><br>作りを 4 つに分けて読み、承認するまで作る AI は動かない。</td>
+    <td width="50%" valign="top"><a href="docs/usage.md#構成と前提を選ぶ"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/sim-choice-dark.png"><img width="400" alt="その他の引き出しの「構成と前提」。構成を選ぶ欄に、相手の会社のエージェントとこちらのツール、自社の harness だけ、受付と相談役と担当者の引き継ぎ、ツールだけを出す構成の 4 つ。前提を選ぶ欄に、カードを使える相手と、文とボタンだけの相手の 2 つ" src="assets/media/sim-choice-light.png"></picture></a><br>
+      <b>構成の模擬</b><br>構成と前提を選ぶと、同じ試作品が別の組み方で話す。</td>
   </tr>
   <tr>
-    <td width="50%" valign="top">
-      <a href="docs/usage.md#場面を回すnpm-run-evals"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/evals-compare-dark.png"><img width="400" alt="場面を回した比べる表。構成と前提の組 4 行に、接続(モック)、場面の数、確かめの合格、自然さ、ツールの再現率、誤った呼び出し、ツールが止めた数、止まらなかった数、費用 0 ドルが並ぶ" src="assets/media/evals-compare-light.png"></picture></a><br>
-      <b>場面の比較</b><br>
-      場面を構成と前提ごとに回し、1 つの表で比べる(<code>npm run evals</code>)。
-    </td>
-    <td width="50%" valign="top">
-      <a href="docs/usage.md#ai-の振る舞いを言葉で直す架空の求人相談"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/try-and-fix-dark.png"><img width="400" alt="左の試す画面で、架空のバイト探しの会話が進んでいる。「そのまま保存して」に「記録「consent」がありません」と返っている。右の言葉で直す欄の依頼に「保存する前に、保存してよいかを必ず聞くようにして」と書いてある" src="assets/media/try-and-fix-light.png"></picture></a><br>
-      <b>言葉で直す欄</b><br>
-      試す画面で話しながら、直したいことを右の欄に言葉で頼む。
-    </td>
+    <td width="50%" valign="top"><a href="docs/usage.md#ai-の実行の記録を見る"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/sim-trace-dark.png"><img width="400" alt="AI の実行の記録。模擬の案内役のプロンプトの部品、ツール save_wish の引数と失敗の結果、ツールの守り schema は通した、requires は止めたと理由が赤い字で並ぶ。最後に出口の確かめ 2 つが通した" src="assets/media/sim-trace-light.png"></picture></a><br>
+      <b>守りの層</b><br>どの層の守りが止めたかと、その理由が記録に出る。</td>
+    <td width="50%" valign="top"><a href="docs/usage.md#場面を回すnpm-run-evals"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/evals-compare-dark.png"><img width="400" alt="場面を回した比べる表。構成と前提の組 4 行に、接続(モック)、場面の数、確かめの合格、自然さ、ツールの再現率、誤った呼び出し、ツールが止めた数、止まらなかった数、費用 0 ドルが並ぶ" src="assets/media/evals-compare-light.png"></picture></a><br>
+      <b>場面の比較</b><br>場面を構成と前提ごとに回し、1 つの表で比べる(<code>npm run evals</code>)。</td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><a href="docs/usage.md#質の見直し"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/quality-dark.png"><img width="400" alt="試す欄の下の質の見直し。「画面を確かめて見直す」の後の測ったものの表に、アクセシビリティの違反は問題なし、字と地の差は問題なしと出て、行ごとになぜ大事かと直し方が並ぶ" src="assets/media/quality-light.png"></picture></a><br>
+      <b>質の見直し</b><br>測ったものと AI の判断を分けた表で、直す所を上から片付ける。</td>
+    <td width="50%" valign="top"><a href="docs/usage.md#ai-の振る舞いを言葉で直す架空の求人相談"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/try-and-fix-dark.png"><img width="400" alt="左の試す画面で、架空のバイト探しの会話が進んでいる。「そのまま保存して」に「記録「consent」がありません」と返っている。右の言葉で直す欄の依頼に「保存する前に、保存してよいかを必ず聞くようにして」と書いてある" src="assets/media/try-and-fix-light.png"></picture></a><br>
+      <b>言葉で直す欄</b><br>試す画面で話しながら、直したいことを右の欄に言葉で頼む。</td>
   </tr>
 </table>
 
 どの画像も、Studio が自分で撮ったものです(`npm run media`。撮り方は [CONTRIBUTING.md](CONTRIBUTING.md#画像と動く画像を撮り直す))。
 
-- **目的の聞き出しと設計の案内**: 思いつきを 1 文書くと、問いが 1 つずつ返り、目的の文書になります。続く設計の案内では、問題、使う人、場面、データ、エージェントの構成、画面の 6 つの段で、2〜3 の案から選びます。データの段は、整理の板のデータの欄を全部載せた表と図です。選んだ場面と構成と架空のデータを Studio が書き、「この設計で作る」の後の AI 構成の審査で 4 つを承認すると、作る AI に渡します。目的も設計も、決まるのは自分がボタンを押したときだけです。案は出した日付つきの今日の推測で、まだ測っていません
-- **ヒアリングの整理**: 打った要点を AI が 5 つの欄に振り分け、決める人が確かめます。同意しないときは手で振り分けます。本物のお客さんの会には、まだ使いません([実モデルで 3 回通した記録](docs/evidence/real-organize/README.md))
-- **構成を模擬する**: 構成 A(相手の会社のエージェントがこちらのツールを呼ぶ)、B(自社の harness が回す)、C(受付から相談役と担当者へ引き継ぐ)を、同じ試作品で選んで話せます
-- **守りの層が記録で分かる**: ツールの守り(必ず効く)、プロンプトの頼み(相手しだい)、出口の確かめのどれが効いたかが、記録と場面の結果に出ます。最後の 1 ターンの要約(参加者、道具、守り、時間、費用)は試す欄の下に、全部の中身は「開発者向けの詳細」にあります
-- **場面の一覧で比べる**: `app/evals/` の場面を構成 × 前提 × 接続で回し、ツールの呼び方、守り、費用、待ち時間を 1 つの表で比べます([実機の例](docs/evidence/sim-compare/README.md))。試す欄の下の「場面の一覧と比べる表」から構成ごとに回せ、通らない場面の「直す」で言葉で直す欄に依頼が入ります([使い方](docs/usage.md#場面の一覧と比べる表))。モックの数は形の確かめで、振る舞いの差は実モデルで測ります
+- **目的の聞き出しと設計の案内**: 思いつきを 1 文書くと、問いが 1 つずつ返り、目的の文書になります。続く設計の案内で、問題、使う人、場面、データ、エージェントの構成、画面の 6 つの段を、2〜3 の案から選びます。決まるのは自分がボタンを押したときだけです。案は出した日付つきの今日の推測です
+- **AI 構成の審査**: エージェントの構成、harness、データと RAG、技術の組の 4 つを読み、欄ごとに承認します。構成は固定の流れ、単一エージェント、マスターとサブから選び直せます。データの棚で AI が何をどう読むかを見せ、RAG が要るかを判定します。承認は AI 構成書に残り、承認の後に構成が変わると関門で止まります
+- **ヒアリングと会**: 打った要点を AI が 5 つの欄に振り分け、決める人が確かめます。会の始めの同意と、会の終わりの 7 つの成果物の書き出しもあります。本物のお客さんの会には、まだ使いません([実モデルで 3 回通した記録](docs/evidence/real-organize/README.md))
+- **構成の模擬と守りの層**: 構成 A(相手の会社のエージェントがこちらのツールを呼ぶ)、B(自社の harness が回す)、C(受付から相談役と担当者へ引き継ぐ)を、同じ試作品で選んで話せます。ツールの守り、プロンプトの頼み、出口の確かめのどれが効いたかが記録に出ます
+- **場面の一覧と質の見直し**: `app/evals/` の場面を構成 × 前提 × 接続で回し、1 つの表で比べます([実機の例](docs/evidence/sim-compare/README.md))。試す欄の下で 1 ターンの記録、比べる表、質の見直しの表を見られ、通らない場面の「直す」で言葉で直す欄に依頼が入ります。モックの数は形の確かめで、振る舞いの差は実モデルで測ります
+- **人に見せて、みんなで直す**: 試作品と確かめたい問いだけの画面で見せ、答えを版に残します。画面にコメントを付け、承認したコメントだけを作る AI が直します。1 台の PC でみんなで使う形です
 - **モックと実モデル**: 同じ試作品のまま、モックと Claude Code を切り替えられます。モックはいつも同じ応答を返します
-- **版と引き継ぎ**: 版を保存していつでも戻せます。ソース、AI の設定、構成、場面の回しの要約を、1 つのフォルダーに書き出します
-- **自分の素材をつなぐ**: 色と字のトークン、指針の文、Storybook の部品の一覧を、案内に沿ってつなげます。Studio が決まった手順で確かめ、ライセンスが分からない素材は有効にしません([トークン](docs/usage.md#自分のトークンをつなぐ)、[部品と指針](docs/usage.md#部品と指針をつなぐ))。npm のパッケージ(部品のコード)は、まだつなげません
+- **版と引き継ぎ**: 版を保存していつでも戻せます。ソース、AI の設定、構成、目的と設計、質の結果、AI 構成書を、1 つのフォルダーに書き出します
+- **自分の素材をつなぐ**: 色と字のトークン、指針の文、Storybook の部品の一覧を、案内に沿ってつなげます。ライセンスが分からない素材は有効にしません([トークン](docs/usage.md#自分のトークンをつなぐ)、[部品と指針](docs/usage.md#部品と指針をつなぐ))
 
 ### 作っているもの
 
-どれも、人の確かめが済んでいません。画像は載せません。設計は [AI 構成の審査](docs/design/ai-architecture-review.md)、[目的](docs/vision.md)にあります。
+どれも、まだ使えません。画像は載せません。設計は [AI 構成の審査](docs/design/ai-architecture-review.md)、[目的](docs/vision.md)にあります。
 
 | 作っているもの | 中身 |
 |---|---|
-| AI 構成の審査 | エージェントの構成、harness、データと RAG、技術の組の案を見せる。人が 4 つを承認するまで、作る AI を起動しない。結果は AI 構成書に残す。審査の画面がある。人の確かめと、本物の AI で案ごとの数を測る段はまだ |
-| 3 つの形の比べ | 固定の流れ、単一エージェント、マスターとサブを、同じ場面の一覧で比べる。簡単な方から問い、足りたら止まる。3 つの形とも構成に書け、審査の画面で切り替えて、お試しの AI で形を確かめられる。本物の AI では、`compositions/` に置いた構成を試す欄の下の表かターミナルで比べる |
-| データの棚と RAG の判定 | AI が何をどう読むかを見せ、RAG が要るかを判定する。「要らない」とも言える。データの段と審査の画面で見て、審査の画面で承認できる。本物の AI で RAG ありとなしを比べるのは、試す欄の下の表かターミナル |
-| 記録と比べる表を主の画面に | 試す欄の下に、1 ターンの記録と、場面の一覧と比べる表を出した(本物の AI は同意と費用の上限を通す)。人の確かめはまだ |
-| 質の見直し | 試す欄の下の「質の見直し」に、測ったもの(アクセシビリティの違反、字と地の差、素材に合わない色と部品、場面の結果、道具の呼び方、守りの効き、費用、待ち時間)と AI の判断を分けた表を出した。見ていない項目は「まだ見ていない」。アクセシビリティは Studio の小さな検査だけ。AI の使いやすさの見直しと人の確かめはまだ([使い方](docs/usage.md#質の見直し)) |
-| 人に見せる | その他の引き出しの「人に見せる」で、試作品と確かめたい問いだけの画面にする。問いは目的の文書の成功の印から作り、答えは見せた版に残す(版を戻しても消えない)。手元の PC で見せる形だけで、共有の公開はしない。人の確かめはまだ([使い方](docs/usage.md#人に見せる)) |
-| みんなで作る | コメントと反応を付け、承認したコメントだけを作る AI が直す。1 台の PC でみんなで使う形を、見せる画面の上に作った(直した記録、前と後の比べ、元に戻す、構成のコメントは審査に戻す)。同時編集と人の確かめはまだ([使い方](docs/usage.md#画面へのコメントと承認)) |
+| 人の確かめと現場の通し | 初めての人が説明なしで進めるか、架空の題材の 1 時間の会で見せられるまでの時間を、人が通して測る。今の機能は、どれも人の確かめがまだ |
+| 本物の AI で案ごとに測る | 審査の画面から、構成の案ごとに本物の AI で場面を回して比べる。今の審査の画面から回せるのはお試しの AI だけで、本物の AI の数は試す欄の下の表かターミナルで回したときに出る |
+| AI の使いやすさの見直し | AI が試作品の画面を見て、使いやすさを判断する。質の見直しの表に行はあるが、今は「まだ見ていない」と出る |
+| 何台もの PC で同時に作る | 何人もが自分の PC から同じ試作品にコメントし、同時に直す。今は 1 台の PC でみんなで使う形だけ |
+| 部品のコードをつなぐ | 自分の部品集の npm のパッケージを、検査して試作品から使えるようにする。今つなげるのは、トークン、指針の文、Storybook の部品の一覧だけ |
 
 ## はじめる
 
@@ -172,7 +165,7 @@ npm run evals -- sample-part-time --composition composition.json,compositions/b.
 
 ```sh
 npm test            # 単体と結合のテスト(1 分ほど)
-npm run test:e2e    # ブラウザの E2E(Playwright、全体でおよそ 3 分半)
+npm run test:e2e    # ブラウザの E2E(Playwright、全体でおよそ 7〜10 分)
 npm run site        # LP(site/)を手元で開く。公開はしていない(site/README.md)
 ```
 

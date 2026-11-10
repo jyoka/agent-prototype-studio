@@ -8,6 +8,7 @@ import { ASSUMPTION_LIMITS, MODEL_NAME_PATTERN } from './assumptions.js';
 import { SIM_LIMITS, TOOL_NAME_PATTERN, isPlainObject } from './check.js';
 import { refusedEntry } from './tool-gate.js';
 import { MCP_SERVER_NAME, SIM_FILES, ensureSimDir, removeSimDir, writeAtomic } from './tools-mcp.js';
+import { PRODUCT_TONE_RULE } from '../tone.js';
 
 // 模擬のエージェントを、利用者が入れた Claude Code で動かす接続(docs/design/agent-simulation.md の 3.3、ADR-0003)。
 // 返事ごとに `claude -p` を 1 回起動する。ツールの呼び出しの繰り返しは CLI の中で回り、ツールは MCP サーバー
@@ -49,6 +50,8 @@ const studioRules = (kinds) => [
   'あなたは試作品の中で、構成の参加者の 1 人を演じる AI です。データはすべて架空です。実在の人や会社の情報を求めないでください。',
   '使えるのは、渡された試作品のツールだけです。ツールが断ったときは、返ってきた文を読んで、呼び方を変えるか、利用者に伝えてください。',
   '文脈にある利用者の情報(メールアドレス、作業ディレクトリ)を、返事に書かないでください。',
+  // 調子の決まり(docs/vision.md の 7 節。tone.js)。前提の土台と枠の人柄の上に重ねる
+  PRODUCT_TONE_RULE,
   `返事は JSON だけにしてください。形: {"parts": [部品, …]}。使える部品の種類: ${kinds.join('、')}。`,
 ];
 

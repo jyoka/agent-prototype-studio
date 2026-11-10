@@ -152,6 +152,7 @@ main > section { padding-top: 5rem; }
 .layer[data-layer="4"] { --layer-color: var(--layer-tool); --i: 3; }
 .layer[data-layer="5"] { --layer-color: var(--layer-guard); --i: 4; }
 .layer[data-layer="6"] { --layer-color: var(--layer-record); --i: 5; }
+.layer[data-layer="7"] { --layer-color: var(--layer-review); --i: 6; }
 
 .layers-readout { display: none; }
 /* 動くときと止まったときで、見出しの下の文を替える */
@@ -212,7 +213,7 @@ main > section { padding-top: 5rem; }
 }
 
 /* 2. 分解のアニメ: 動くとき。--sep(0 から 1)は site.js がスクロールの位置から決める */
-.motion .layers-track { height: 700vh; }
+.motion .layers-track { height: 800vh; }
 .motion .layers-stage {
   position: sticky;
   top: 0;
@@ -234,6 +235,7 @@ main > section { padding-top: 5rem; }
 .layers-stage[data-active="4"] { --active-color: var(--layer-tool); }
 .layers-stage[data-active="5"] { --active-color: var(--layer-guard); }
 .layers-stage[data-active="6"] { --active-color: var(--layer-record); }
+.layers-stage[data-active="7"] { --active-color: var(--layer-review); }
 .motion .layer-count { font-family: var(--font-mono); font-size: var(--text-lg); color: var(--muted); margin: 0; }
 .motion .layer-now { font-size: 3rem; font-weight: 700; color: var(--active-color, var(--text)); }
 .motion .layer-text { display: grid; gap: var(--space-1); }
@@ -243,7 +245,7 @@ main > section { padding-top: 5rem; }
 
 /* 層の間(--gap)と板の幅は、場面の枠(.layers-scene)の大きさに合わせて縮める(cqw、cqh) */
 .motion .layers-scene {
-  --gap: min(84px, 11cqh);
+  --gap: min(74px, 9.5cqh);
   container-type: size;
   height: 100%;
   min-height: 0;
@@ -265,7 +267,7 @@ main > section { padding-top: 5rem; }
 .motion .layer {
   position: absolute;
   inset: 0;
-  transform: translateZ(calc((5 - var(--i)) * (var(--sep, 0) * var(--gap) + 1px)));
+  transform: translateZ(calc((6 - var(--i)) * (var(--sep, 0) * var(--gap) + 1px)));
 }
 /* 離した後は、今の層だけをはっきり出す。板は透かさず、中の絵だけを薄くする */
 .motion .layer-shot img { transition: opacity var(--motion-fast) var(--ease); }
@@ -313,7 +315,7 @@ main > section { padding-top: 5rem; }
   .motion .layer-text .layer-name { font-size: var(--text-md); }
   .motion .layer-text { font-size: var(--text-sm); }
   .motion .talk-example { font-size: var(--text-xs); padding: var(--space-2); gap: var(--space-1); }
-  .motion .layers-scene { --gap: min(58px, 11cqh); }
+  .motion .layers-scene { --gap: min(50px, 9.5cqh); }
   .motion .layers-stack { width: min(19rem, 86cqw); }
   .motion .layer figure { padding: var(--space-4) var(--space-2) var(--space-2); }
   .motion .layer figcaption { top: var(--space-1); left: var(--space-2); font-size: var(--text-xs); }
@@ -340,6 +342,8 @@ main > section { padding-top: 5rem; }
 .crop-choice { --iw: 1280; --ih: 800; --cw: 440; --cx: 808; --cy: 60; }
 .crop-trace { --iw: 1280; --ih: 800; --cw: 440; --cx: 815; --cy: 290; }
 .crop-evals { --iw: 1280; --ih: 427; --cw: 460; --cx: 50; --cy: 60; }
+.crop-review { --iw: 1280; --ih: 626; --cw: 520; --cx: 140; --cy: 140; }
+.crop-quality { --iw: 1280; --ih: 800; --cw: 520; --cx: 30; --cy: 420; }
 .card-shot:hover { border-color: var(--accent); }
 .card-type {
   display: grid;

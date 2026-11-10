@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { redact } from '../redact.js';
+import { PRODUCT_TONE_RULE } from '../tone.js';
 import { INTENTS, formatValue } from './definition.js';
 
 // プロダクト内 AI を、利用者が入れた Claude Code(未改変の CLI)で動かす接続(#276)。
@@ -185,6 +186,8 @@ export function phrasePrompt(definition) {
     '- 「会話を終える」とあれば、<今の状態> の値でまとめて終えてください。新しく聞かないでください。',
     '- 利用者がまだ言っていない値を、決まったこととして言わないでください。<今の状態> と発言にない数を作らないでください。',
     `- 返事は ${definition.rules.maxReplyChars} 文字以内にしてください。`,
+    // 調子の決まり(docs/vision.md の 7 節。tone.js)。作り手の人柄と口調の上に重ねる
+    PRODUCT_TONE_RULE,
     '応答は JSON だけにしてください。形: {"reply": "利用者への返事"}。',
   ].join('\n');
 }

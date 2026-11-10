@@ -14,38 +14,45 @@
     <text x="80" y="330" font-size="38" font-weight="700" fill="#1f1f1d">動かして測り、人が承認してから作る。</text>
     <text x="80" y="398" font-size="22" fill="#6b6b66">See how your idea works as an AI product, test it,</text>
     <text x="80" y="430" font-size="22" fill="#6b6b66">and approve the architecture before you build.</text>
-    <path d="M 864 154 V 538" stroke="#d9d9d4" stroke-width="2" stroke-dasharray="4 6"/>
-    <g transform="translate(880 128)">
+    <path d="M 864 118 V 570" stroke="#d9d9d4" stroke-width="2" stroke-dasharray="4 6"/>
+    <g transform="translate(880 92)">
       <rect width="320" height="52" rx="8" fill="#ffffff" stroke="#d9d9d4" stroke-width="1"/>
       <rect x="0" y="0" width="8" height="52" rx="4" fill="#2459c4"/>
       <text x="28" y="33" font-size="19" fill="#1f1f1d">トークの画面</text>
     </g>
-    <g transform="translate(880 196)">
+    <g transform="translate(880 160)">
       <rect width="320" height="52" rx="8" fill="#ffffff" stroke="#d9d9d4" stroke-width="1"/>
       <rect x="0" y="0" width="8" height="52" rx="4" fill="#7a3fb4"/>
       <text x="28" y="33" font-size="19" fill="#1f1f1d">模擬のエージェント</text>
     </g>
-    <g transform="translate(880 264)">
+    <g transform="translate(880 228)">
       <rect width="320" height="52" rx="8" fill="#ffffff" stroke="#d9d9d4" stroke-width="1"/>
       <rect x="0" y="0" width="8" height="52" rx="4" fill="#c77700"/>
       <text x="28" y="33" font-size="19" fill="#1f1f1d">プロンプトの枠</text>
     </g>
-    <g transform="translate(880 332)">
+    <g transform="translate(880 296)">
       <rect width="320" height="52" rx="8" fill="#ffffff" stroke="#d9d9d4" stroke-width="1"/>
       <rect x="0" y="0" width="8" height="52" rx="4" fill="#1d7a43"/>
       <text x="28" y="33" font-size="19" fill="#1f1f1d">ツール(MCP)</text>
     </g>
-    <g transform="translate(880 400)">
+    <g transform="translate(880 364)">
       <rect width="320" height="52" rx="8" fill="#fdecea" stroke="#b42318" stroke-width="2"/>
       <rect x="0" y="0" width="8" height="52" rx="4" fill="#b42318"/>
       <text x="28" y="33" font-size="19" fill="#1f1f1d">ガードレール</text>
       <rect x="232" y="13" width="72" height="26" rx="13" fill="#b42318"/>
       <text x="268" y="31" font-size="15" font-weight="700" text-anchor="middle" fill="#f6f6f4">止めた</text>
     </g>
-    <g transform="translate(880 468)">
+    <g transform="translate(880 432)">
       <rect width="320" height="52" rx="8" fill="#ffffff" stroke="#d9d9d4" stroke-width="1"/>
       <rect x="0" y="0" width="8" height="52" rx="4" fill="#6b6b66"/>
       <text x="28" y="33" font-size="19" fill="#1f1f1d">記録</text>
+    </g>
+    <g transform="translate(880 500)">
+      <rect width="320" height="52" rx="8" fill="#ffffff" stroke="#1d7a43" stroke-width="2"/>
+      <rect x="0" y="0" width="8" height="52" rx="4" fill="#1d7a43"/>
+      <text x="28" y="33" font-size="19" fill="#1f1f1d">AI 構成の審査</text>
+      <rect x="232" y="13" width="72" height="26" rx="13" fill="#1d7a43"/>
+      <text x="268" y="31" font-size="15" font-weight="700" text-anchor="middle" fill="#f6f6f4">承認</text>
     </g>
   </g>
 </svg>

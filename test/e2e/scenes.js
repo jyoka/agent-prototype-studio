@@ -182,3 +182,98 @@ export async function showSimTrace(page, { pace = 0 } = {}) {
   await pause(page, 600, pace);
   return { trace, entry, summary, agent, tool, blocked };
 }
+
+// AI 構成の審査の場面(docs/design/ai-architecture-review.md)。見本には設計がないので、架空の題材のプロジェクトを API で作り、
+// 目的を決め、設計の 6 段をお試しの AI の案で選び、固定の流れで審査に進む。2 つを承認したところで止める(作る AI は起動しない)
+export const REVIEW_SCENE = {
+  sentence: '架空の町の図書館で、本の取り置きの問い合わせに AI が答えられるようにしたい',
+  doc: { who: '図書館の利用者(架空)', problem: '取り置きの問い合わせに何度も答えている', scene: '開館前の問い合わせ', success: '電話が減る', notDoing: ['貸し出しの手続き'], undecided: [] },
+  steps: ['problem', 'users', 'scenes', 'data', 'composition', 'screens'],
+  composition: 'fixed-flow',
+  approved: ['エージェントの構成', 'harness'],
+};
+
+async function reviewProject(studio) {
+  const { sentence, doc, steps, composition } = REVIEW_SCENE;
+  const ok = (result) => {
+    expect(result.status, result.text).toBe(200);
+    return JSON.parse(result.text);
+  };
+  const { id } = ok(await studio.post('/api/projects', { sentence, guide: 'fixed' })).project;
+  ok(await studio.post(`/api/projects/${id}/intent/start`, { sentence, guide: 'fixed', depth: 'quick' }));
+  ok(await studio.post(`/api/projects/${id}/intent/decide`, { doc }));
+  ok(await studio.post(`/api/projects/${id}/design/start`, { guide: 'ai' }));
+  for (const step of steps) {
+    const { design } = await studio.api(`/api/projects/${id}/design`);
+    const options = design.steps.find((item) => item.id === step).options;
+    const option = step === 'composition' ? composition : (options.find((item) => item.recommended) ?? options[0]).id;
+    ok(await studio.post(`/api/projects/${id}/design/choose`, { step, option }));
+  }
+  ok(await studio.post(`/api/projects/${id}/design/go`, { step: 'screens' }));
+  ok(await studio.post(`/api/projects/${id}/design/decide`));
+  return id;
+}
+
+// 審査の画面を開き、上の 2 つを承認する。返すのは審査の欄
+export async function showReview(page, studio) {
+  const id = await reviewProject(studio);
+  await page.goto(studio.url);
+  await page.locator('#project-menu-button').click();
+  await page.locator(`[data-project-id="${id}"]`).click();
+  const mark = page.locator('#review-mark');
+  await expect(mark).toHaveText('審査: 承認 0 / 4');
+  await mark.click();
+  const review = page.locator('#review');
+  await expect(review).toBeVisible();
+  for (const label of REVIEW_SCENE.approved) await page.getByRole('button', { name: `「${label}」を承認する` }).click();
+  await expect(page.locator('#review-count')).toHaveText(`承認 ${REVIEW_SCENE.approved.length} / 4`);
+  await page.locator('#review-heading').evaluate((el) => el.scrollIntoView({ block: 'start', behavior: 'instant' }));
+  return review;
+}
+
+// 撮る範囲(clip。画面の座標)に描かれた文字だけを返す。範囲の外の文字(審査の案の日付など)は撮らないので数えない
+export async function textInClip(page, clip) {
+  return page.evaluate(({ x, y, width, height }) => {
+    const texts = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const range = document.createRange();
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.textContent.trim() || !node.parentElement?.checkVisibility()) continue;
+      range.selectNodeContents(node);
+      const hit = [...range.getClientRects()].some((r) => r.width > 0 && r.right > x && r.left < x + width && r.bottom > y && r.top < y + height);
+      if (hit) texts.push(node.textContent);
+    }
+    return texts.join('\n');
+  }, clip);
+}
+
+// 撮る範囲の文字に、日付、作業ディレクトリ、メールアドレスがない
+export async function expectNoLeaksInClip(page, clip, where, home) {
+  const leaks = findLeaks(await textInClip(page, clip), { paths: defaultPaths([home, ROOT]) });
+  expect(leaks, describeLeaks(where, leaks)).toEqual([]);
+}
+
+// 審査の画面のうち、撮る範囲。上の帯から、エージェントの構成の図まで(図の下の案の文には、案を出した日付が入るので撮らない)
+export async function reviewClip(page) {
+  const diagram = page.getByRole('region', { name: /^1\. エージェントの構成/ }).getByRole('img').first();
+  await expect(diagram).toBeInViewport();
+  const box = await diagram.boundingBox();
+  const viewport = page.viewportSize();
+  return { x: 0, y: 0, width: viewport.width, height: Math.min(viewport.height, Math.ceil(box.y + box.height + 8)) };
+}
+
+// 試す欄の下の「質の見直し」を開いて、見える所まで動かす
+export async function showQuality(page) {
+  await closeMore(page);
+  const box = page.locator('#quality');
+  await expect(page.locator('#quality-summary')).toContainText('質の見直し(直す ');
+  if (!(await box.evaluate((el) => el.open))) await page.locator('#quality-summary').click();
+  const table = box.getByRole('table', { name: '質の見直し: 測ったもの' });
+  await expect(table).toBeVisible();
+  // 画面を確かめる(観察器が試作品を開く)。確かめた後は、アクセシビリティの行が「まだ見ていない」でなくなる
+  await box.getByRole('button', { name: '画面を確かめて見直す' }).click();
+  const a11y = table.locator('tbody tr').filter({ has: page.getByRole('rowheader', { name: 'アクセシビリティの違反' }) });
+  await expect(a11y.locator('td').first()).not.toHaveText(/^まだ見ていない/, { timeout: 60_000 });
+  await page.locator('#quality-summary').evaluate((el) => el.scrollIntoView({ block: 'start', behavior: 'instant' }));
+  return { box, table };
+}

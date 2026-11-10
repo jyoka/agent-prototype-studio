@@ -1,5 +1,20 @@
 import { expect, launchStudio, test } from './studio.js';
-import { SCENE_VIEWPORT, askToSave, expectNoLeaks, hideDevOnlyMarks, openPartTime, scrollDrawerTo, searchJobs, showSimChoice, showSimTrace, writeFixRequest } from './scenes.js';
+import {
+  SCENE_VIEWPORT,
+  askToSave,
+  expectNoLeaks,
+  expectNoLeaksInClip,
+  hideDevOnlyMarks,
+  openPartTime,
+  reviewClip,
+  scrollDrawerTo,
+  searchJobs,
+  showQuality,
+  showReview,
+  showSimChoice,
+  showSimTrace,
+  writeFixRequest,
+} from './scenes.js';
 
 // npm run media が撮る場面(test/e2e/scenes.js)が、今の画面で通るかを確かめる。画像は書かない。
 // 画面が変わって場面が通らなくなったら、npm run media より先にここで分かる。
@@ -32,6 +47,29 @@ for (const colorScheme of ['light', 'dark']) {
         await scrollDrawerTo(tool, { block: 'center' });
         await expect(blocked).toBeInViewport();
         await expectNoLeaks(page, '模擬の会話の記録', home);
+      } finally {
+        await studio.stop();
+      }
+    });
+
+    test(`撮る場面(${colorScheme}): 質の見直しで画面を確かめ、AI 構成の審査で 2 つを承認する。審査の撮る範囲に日付が入らない`, async ({ page, home }) => {
+      test.setTimeout(120_000);
+      const studio = await launchStudio(home);
+      try {
+        await openPartTime(page, studio);
+        await hideDevOnlyMarks(page);
+        await searchJobs(page);
+        await askToSave(page);
+        const { table } = await showQuality(page);
+        await expect(table).toBeInViewport();
+        await expectNoLeaks(page, '質の見直し', home);
+
+        const review = await showReview(page, studio);
+        await expect(review.getByRole('heading', { name: 'AI 構成の審査' })).toBeInViewport();
+        const clip = await reviewClip(page);
+        // 撮る範囲は、上の帯から構成の図まで。承認の数と、承認済みの印が入る
+        expect(clip.height).toBeGreaterThan(400);
+        await expectNoLeaksInClip(page, clip, 'AI 構成の審査', home);
       } finally {
         await studio.stop();
       }
