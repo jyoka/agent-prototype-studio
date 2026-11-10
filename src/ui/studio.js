@@ -193,6 +193,37 @@ const els = {
   tokensSource: $('tokens-source'),
   tokensReason: $('tokens-reason'),
   tokensConnect: $('tokens-connect'),
+  guidesEnabled: $('guides-enabled'),
+  guidesMessage: $('guides-message'),
+  guidesSteps: $('guides-steps'),
+  guidesAsk: $('guides-ask'),
+  guidesHaveNote: $('guides-have-note'),
+  guidesOwner: $('guides-owner'),
+  guidesSource: $('guides-source'),
+  guidesLicense: $('guides-license'),
+  guidesLicenseNameBox: $('guides-license-name-box'),
+  guidesLicenseName: $('guides-license-name'),
+  guidesAskNext: $('guides-ask-next'),
+  guidesCheck: $('guides-check'),
+  guidesFilesBox: $('guides-files-box'),
+  guidesFiles: $('guides-files'),
+  guidesFolderBox: $('guides-folder-box'),
+  guidesFolder: $('guides-folder'),
+  guidesProblems: $('guides-problems'),
+  guidesChecked: $('guides-checked'),
+  guidesCheckBack: $('guides-check-back'),
+  guidesCheckNext: $('guides-check-next'),
+  guidesTry: $('guides-try'),
+  guidesUrls: $('guides-urls'),
+  guidesPreview: $('guides-preview'),
+  guidesTryBack: $('guides-try-back'),
+  guidesTryNext: $('guides-try-next'),
+  guidesEnableForm: $('guides-enable-form'),
+  guidesReason: $('guides-reason'),
+  guidesSummary: $('guides-summary'),
+  guidesBlocked: $('guides-blocked'),
+  guidesEnableBack: $('guides-enable-back'),
+  guidesEnable: $('guides-enable'),
   handoffForm: $('handoff-form'),
   handoffNotes: { purpose: $('handoff-purpose'), decided: $('handoff-decided'), undecided: $('handoff-undecided') },
   handoffExport: $('handoff-export'),
@@ -251,7 +282,10 @@ const waitingFor = (projectId) => waitingByProject.get(projectId) ?? 0;
 // その他の引き出しの「保存した状態」。保存した版の一覧と、作業中がどの版と同じか
 const versions = { projectId: null, data: null, seq: 0, busy: false, message: null };
 // 自分のトークン(J4)。file は選んだファイルの名前と中身、check はサーバーの検査の結果。つなぐまで何も書かれない
-const tokens = { projectId: null, data: null, seq: 0, busy: false, file: null, check: null, problems: [], message: null };
+const tokens = { projectId: null, data: null, seq: 0, busy: false, file: null, check: null, problems: [], message: null, buildAt: null };
+// 部品と指針をつなぐ案内の 4 歩(user-journey.md の J5)。サーバーの中身は tokens.data.guides(同じ素材の API で読む)。
+// enabledKey は「有効にしている」の欄を描いたときの中身。変わったときだけ描き直す(押そうとしたボタンを消さない)
+const guidesFlow = { step: 1, kind: null, files: null, check: null, busy: false, problems: [], message: null, seq: 0, enabledKey: '' };
 // その他の引き出しの「本番開発へ渡す」(#280)。メモは試作品を選んだときだけ読み、書いている途中の文を上書きしない
 // target は読み込みを頼んだ試作品、projectId は読み終えた試作品
 const handoff = { target: undefined, projectId: null, seq: 0, busy: false, result: null, message: null, last: null };
@@ -395,8 +429,15 @@ function render() {
   renderVersions(project);
   if ((project?.id ?? null) !== handoff.target) loadHandoff(project?.id ?? null);
   renderHandoff(project);
-  if ((project?.id ?? null) !== tokens.projectId) loadTokens(project?.id ?? null);
+  if ((project?.id ?? null) !== tokens.projectId) {
+    tokens.buildAt = project?.lastBuild?.finishedAt ?? null;
+    loadTokens(project?.id ?? null);
+  } else if (project && tokens.data && !tokens.busy && !guidesFlow.busy && (project.lastBuild?.finishedAt ?? null) !== tokens.buildAt) {
+    // ビルドのたびに読み直す。作る AI が写しを変えたことなどを、素材の欄にも出す(案内の途中の答えは消さない)
+    reloadMaterials(project);
+  }
   renderTokens(project);
+  renderGuides(project);
   syncScenes(project);
   if (!project) {
     showPlaceholder('試作品がありません。');
@@ -2351,6 +2392,8 @@ async function loadHandoff(projectId) {
 async function loadTokens(projectId) {
   const seq = ++tokens.seq;
   Object.assign(tokens, { projectId, data: null, file: null, check: null, problems: [], message: null });
+  resetGuidesFlow();
+  guidesFlow.message = null;
   els.tokensFile.value = '';
   els.tokensSource.value = '';
   els.tokensReason.value = '';
@@ -2365,6 +2408,22 @@ async function loadTokens(projectId) {
     if (seq === tokens.seq) tokens.projectId = undefined;
   }
   renderTokens(selectedProject());
+  renderGuides(selectedProject());
+}
+
+async function reloadMaterials(project) {
+  tokens.buildAt = project.lastBuild?.finishedAt ?? null;
+  const seq = tokens.seq;
+  try {
+    const { materials } = await api(`/api/projects/${encodeURIComponent(project.id)}/materials`);
+    if (seq !== tokens.seq || tokens.projectId !== project.id) return;
+    tokens.data = materials;
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    return;
+  }
+  renderTokens(selectedProject());
+  renderGuides(selectedProject());
 }
 
 // 今の役割の選択。まだ選んでいなければ、サーバーの見立て
@@ -2577,6 +2636,402 @@ async function disconnectTokens(project) {
     if (tokens.projectId === project.id) tokens.message = { kind: 'failed', text: `外せませんでした: ${error.message}` };
   } finally {
     tokens.busy = false;
+    lastSnapshot = '';
+    await refresh();
+    render();
+  }
+}
+
+// ---- 部品と指針をつなぐ(user-journey.md の J5)。聞く、確かめる、見本で試す、有効にする ----
+
+const GUIDE_KIND_LABELS = { guides: '指針の文', storybook: 'Storybook の部品の一覧' };
+const GUIDE_LICENSE_LABELS = { listed: '公開のライセンスがある', internal: '社内の素材で、使う許可がある', unknown: '分からない' };
+// 「何を持っていますか」の答えごとの案内。指針の文と Storybook のほかは、この案内で進むのをやめる
+const GUIDE_HAVE_NOTES = {
+  tokens: '色と字のトークンは、上の「自分のトークンをつなぐ」でつなぎます。',
+  npm: 'npm のパッケージ(部品のコード)は、まだつなげません。今つなげるのは、指針の文と Storybook の部品の一覧です。部品のコードを試作品で使えるようにするのは、次の段で足します。',
+  none: '既定の素材(Radix Themes、Lucide、OS の字)で作れます。何もしなくて大丈夫です。',
+  unknown: 'デザイナーに、次のように聞いてください。「試作品に使える、デザインの決まりの文(Markdown)か、Storybook を書き出したフォルダーはありますか。誰の素材で、試作品に使ってよいか(ライセンスや社内の許可)も教えてください」',
+};
+
+function guidesHave() {
+  return els.guidesAsk.querySelector('input[name="guides-have"]:checked')?.value ?? null;
+}
+
+function guideAnswers() {
+  return { license: els.guidesLicense.value || 'unknown', licenseName: els.guidesLicenseName.value };
+}
+
+function guideLicenseText(answers) {
+  if (answers.license === 'listed') return `公開のライセンス(${answers.licenseName.trim() || '名前を書いていません'})`;
+  return GUIDE_LICENSE_LABELS[answers.license] ?? GUIDE_LICENSE_LABELS.unknown;
+}
+
+function resetGuidesFlow() {
+  Object.assign(guidesFlow, { step: 1, kind: null, files: null, check: null, problems: [], enabledKey: '' });
+  for (const field of [els.guidesSource, els.guidesLicenseName, els.guidesReason, els.guidesFiles, els.guidesFolder]) field.value = '';
+  els.guidesLicense.value = '';
+  for (const radio of els.guidesAsk.querySelectorAll('input[name="guides-have"]')) radio.checked = false;
+  const scope = els.guidesEnableForm.querySelector('input[name="guides-scope"][value="project"]');
+  if (scope) scope.checked = true;
+}
+
+function guidesStep(step) {
+  guidesFlow.step = step;
+  if (step === 3) renderGuidesPreview();
+  if (step === 4) renderGuidesSummary();
+  renderGuides(selectedProject());
+  // 次の歩の見出しへ。読み上げでも、どこまで進んだかが分かる
+  const heading = { 1: 'guides-ask-heading', 2: 'guides-check-heading', 3: 'guides-try-heading', 4: 'guides-enable-heading' }[step];
+  $(heading)?.scrollIntoView({ block: 'nearest' });
+}
+
+function renderGuides(project) {
+  const data = tokens.data?.guides ?? null;
+  const lock = !project || !data || guidesFlow.busy || tokens.busy || project.running || project.building || project.versioning || project.checking;
+  renderGuidesEnabled(project, data, lock);
+
+  els.guidesMessage.hidden = !guidesFlow.message;
+  els.guidesMessage.textContent = guidesFlow.message?.text ?? '';
+  els.guidesMessage.dataset.kind = guidesFlow.message?.kind ?? '';
+
+  const { step, check } = guidesFlow;
+  for (const item of els.guidesSteps.children) {
+    const n = Number(item.dataset.step);
+    item.dataset.state = n < step ? 'done' : n === step ? 'current' : 'todo';
+    if (n === step) item.setAttribute('aria-current', 'step');
+    else item.removeAttribute('aria-current');
+  }
+  els.guidesAsk.hidden = step !== 1;
+  els.guidesCheck.hidden = step !== 2;
+  els.guidesTry.hidden = step !== 3;
+  els.guidesEnableForm.hidden = step !== 4;
+
+  // 1. 聞く
+  const have = guidesHave();
+  const note = GUIDE_HAVE_NOTES[have];
+  els.guidesHaveNote.hidden = !note;
+  els.guidesHaveNote.textContent = note ?? '';
+  const usable = have === 'guides' || have === 'storybook';
+  els.guidesOwner.hidden = !usable;
+  els.guidesLicenseNameBox.hidden = els.guidesLicense.value !== 'listed';
+  for (const field of els.guidesAsk.querySelectorAll('input, select')) field.disabled = lock;
+  els.guidesAskNext.disabled = lock || !usable || els.guidesSource.value.trim() === '' || els.guidesLicense.value === '';
+
+  // 2. 確かめる
+  els.guidesFilesBox.hidden = guidesFlow.kind !== 'guides';
+  els.guidesFolderBox.hidden = guidesFlow.kind !== 'storybook';
+  els.guidesFiles.disabled = lock;
+  els.guidesFolder.disabled = lock;
+  els.guidesCheckBack.disabled = guidesFlow.busy;
+  els.guidesProblems.hidden = guidesFlow.problems.length === 0;
+  if (guidesFlow.problems.length > 0) {
+    const list = element('ul');
+    for (const text of guidesFlow.problems) list.append(element('li', text));
+    els.guidesProblems.replaceChildren(element('p', '次の所を直して、選び直してください。'), list);
+  }
+  const checked = Boolean(check?.ok && guidesFlow.files);
+  els.guidesChecked.hidden = !checked;
+  if (checked && els.guidesChecked.dataset.for !== String(guidesFlow.seq)) {
+    els.guidesChecked.dataset.for = String(guidesFlow.seq);
+    const box = [element('p', guidesCheckedText(check))];
+    if (check.urlCount > 0) box.push(element('p', `外への URL が ${check.urlCount} 個あります。次の「見本で試す」で場所を出します。`, 'guides-warning-text'));
+    for (const warning of check.warnings) box.push(element('p', `${warning.file}${warning.line ? ` ${warning.line} 行目` : ''}: ${warning.text}`, 'muted'));
+    if (check.license.detected) box.push(element('p', `フォルダーの中のライセンスの書き方: 「${check.license.detected}」。「1. 聞く」の答えと合っているかを確かめてください。`, 'muted'));
+    els.guidesChecked.replaceChildren(...box);
+  }
+  els.guidesCheckNext.disabled = lock || !checked;
+
+  // 3. 見本で試す、4. 有効にする
+  els.guidesTryNext.disabled = !checked;
+  const license = check?.license;
+  const blocked = Boolean(check && !license?.ok);
+  els.guidesBlocked.hidden = !blocked;
+  els.guidesBlocked.textContent = blocked ? `有効にできません。${license.reason}` : '';
+  for (const field of els.guidesEnableForm.querySelectorAll('input')) field.disabled = lock;
+  els.guidesEnable.disabled = lock || blocked || !checked;
+  els.guidesEnableBack.disabled = guidesFlow.busy;
+}
+
+function guidesCheckedText(check) {
+  if (check.kind === 'storybook') return `部品の一覧を確かめました。部品が ${check.components.length} 個あります。`;
+  return `指針の文を確かめました。ファイルが ${check.copies.length} 個あります。`;
+}
+
+// 有効にしている部品と指針と、これからの試作品全部のもの。写しが変わったときは、戻す操作を出す
+function renderGuidesEnabled(project, data, lock) {
+  const key = JSON.stringify({ id: project?.id ?? null, kinds: data?.kinds, studioWide: data?.studioWide, problems: data?.problems, lock });
+  if (key === guidesFlow.enabledKey) return;
+  guidesFlow.enabledKey = key;
+  const box = [];
+  for (const record of Object.values(data?.kinds ?? {}).filter(Boolean)) {
+    const item = element('div', null, 'guides-record');
+    const count = record.kind === 'storybook' ? `部品 ${record.componentCount} 個` : `ファイル ${record.files.length} 個`;
+    item.append(
+      element('p', `有効にしています: ${record.label}(${count})`),
+      element('p', `誰の素材か: ${record.source}`),
+      element('p', `使ってよいか: ${record.licenseLabel}`),
+      element('p', `どこで使うか: ${record.scope === 'all' ? 'これからの試作品全部' : 'この試作品だけ'}${record.from === 'studio' ? '(Studio 全体の素材から入れました)' : ''}`),
+    );
+    if (record.reason) item.append(element('p', `有効にした理由: ${record.reason}`));
+    item.append(element('p', `写し: ${record.files.map((file) => file.copy).join('、')}`, 'muted'));
+    if (record.urlCount > 0) item.append(element('p', `外への URL が ${record.urlCount} 個あります。試作品からは読めません。`, 'guides-warning-text'));
+    const remove = element('button', `${record.label}を外す`, 'detail-button');
+    remove.type = 'button';
+    remove.disabled = lock;
+    remove.addEventListener('click', () => disableGuides(project, record.kind, 'project'));
+    item.append(remove);
+    box.push(item);
+  }
+  for (const record of Object.values(data?.studioWide ?? {}).filter(Boolean)) {
+    const item = element('div', null, 'guides-record');
+    item.append(element('p', `これからの試作品全部に入れます: ${record.label}(誰の素材か: ${record.source}、使ってよいか: ${record.licenseLabel})`));
+    const remove = element('button', `${record.label}を、これからの試作品から外す`, 'detail-button');
+    remove.type = 'button';
+    remove.disabled = lock;
+    remove.addEventListener('click', () => disableGuides(project, record.kind, 'studio'));
+    item.append(remove);
+    box.push(item);
+  }
+  if (data?.problems?.length > 0) {
+    const item = element('div', null, 'tokens-problems');
+    for (const text of data.problems) item.append(element('p', text));
+    const restore = element('button', '写しを戻す');
+    restore.type = 'button';
+    restore.disabled = lock;
+    restore.addEventListener('click', () => restoreGuides(project));
+    item.append(restore);
+    box.push(item);
+  }
+  els.guidesEnabled.hidden = box.length === 0;
+  els.guidesEnabled.replaceChildren(...box);
+}
+
+// 見本で試す。写しと決まりの文は文字だけで描く(画像や字を読まないので、外へ通信しない)
+function renderGuidesPreview() {
+  const { check } = guidesFlow;
+  if (!check?.ok) return;
+  els.guidesUrls.hidden = check.urlCount === 0;
+  if (check.urlCount > 0) {
+    const list = element('ul');
+    for (const found of check.urls) list.append(element('li', `${found.component ? `部品「${found.component}」` : `${found.file}${found.line ? ` ${found.line} 行目` : ''}`}: ${found.url}`));
+    els.guidesUrls.replaceChildren(
+      element('p', `外への URL が ${check.urlCount} 個あります。試作品は外へ通信できないので、この URL の字や画像は試作品に出ません。使うなら、字や画像を素材のファイルに入れてください。`),
+      list,
+    );
+  }
+  const box = [];
+  if (check.components.length > 0) {
+    const table = element('table', null, 'guides-components');
+    table.setAttribute('aria-label', '部品の一覧の見本');
+    const head = element('tr');
+    head.append(element('th', '部品'), element('th', '見本'), element('th', '使い方'));
+    table.append(head);
+    for (const component of check.components) {
+      const row = element('tr');
+      row.append(element('td', component.name), element('td', component.stories.join('、')), element('td', component.description || '(書いてありません)'));
+      table.append(row);
+    }
+    box.push(element('p', 'Storybook から読んだ部品の一覧', 'card-label'), table);
+  }
+  box.push(element('p', '直す AI が読む写し(試作品のフォルダーに置きます)', 'card-label'));
+  check.copies.forEach((copy, index) => {
+    const details = document.createElement('details');
+    details.open = index === 0;
+    details.append(element('summary', `${copy.path}(${copy.title})`), element('pre', copy.text.length > 20000 ? `${copy.text.slice(0, 20000)}\n…(ここまで)` : copy.text, 'guides-copy'));
+    box.push(details);
+  });
+  if (check.rule) box.push(element('p', '直す AI への決まりに足す文', 'card-label'), element('pre', check.rule, 'guides-copy'));
+  els.guidesPreview.replaceChildren(...box);
+}
+
+// 有効にする前の、出典とライセンスの一覧
+function renderGuidesSummary() {
+  const { check } = guidesFlow;
+  if (!check) return;
+  const list = element('dl', null, 'guides-facts');
+  const add = (term, value) => list.append(element('dt', term), element('dd', value));
+  add('素材', `${GUIDE_KIND_LABELS[check.kind]}(${check.kind === 'storybook' ? `部品 ${check.components.length} 個` : `ファイル ${check.copies.length} 個`})`);
+  add('誰の素材か', els.guidesSource.value.trim());
+  add('使ってよいか', guideLicenseText(guideAnswers()));
+  add('写す場所', check.copies.map((copy) => copy.path).join('、'));
+  add('外への URL', check.urlCount > 0 ? `${check.urlCount} 個(試作品からは読めません)` : 'ありません');
+  els.guidesSummary.replaceChildren(element('p', '出典とライセンスの一覧', 'card-label'), list, element('p', '外せば、いつでも前の素材に戻せます。', 'muted'));
+}
+
+// Storybook のフォルダーから送るファイル。選んだフォルダーの中か、1 つ下のフォルダーの中(1 つ上を選んだとき)
+const STORYBOOK_WANTED = /^(?:[^/]+\/)?(?:index\.json|package\.json|manifests\/components\.json|licen[cs]e(?:\.[a-z]+)?)$/i;
+
+// 選んだファイルを読む。フォルダーからは、部品の一覧と使い方の文とライセンスの手がかりだけを送る
+async function readGuideFiles(kind, fileList) {
+  const limits = tokens.data.guides.limits;
+  const files = [];
+  const problems = [];
+  for (const file of fileList) {
+    const relative = file.webkitRelativePath || file.name;
+    const parts = relative.split('/');
+    const inner = parts.length > 1 ? parts.slice(1).join('/') : relative;
+    if (kind === 'storybook') {
+      if (!STORYBOOK_WANTED.test(inner)) continue;
+      if (file.size > limits.maxIndexBytes) {
+        problems.push(`${relative}: 大きすぎます(上限 ${limits.maxIndexBytes / 1024 / 1024} MB)`);
+        continue;
+      }
+    } else {
+      if (!/\.(md|markdown)$/i.test(file.name)) continue;
+      if (file.size > limits.maxFileBytes) {
+        problems.push(`${relative}: 大きすぎます(上限 ${limits.maxFileBytes / 1024} KB)`);
+        continue;
+      }
+    }
+    files.push({ path: relative, text: await file.text() });
+  }
+  return { files, problems };
+}
+
+// 2. 確かめる。検査だけで、何も書かない
+async function checkGuideFiles(fileList) {
+  const project = selectedProject();
+  if (!project || !tokens.data?.guides || !guidesFlow.kind) return;
+  Object.assign(guidesFlow, { files: null, check: null, problems: [] });
+  const seq = ++guidesFlow.seq;
+  guidesFlow.busy = true;
+  renderGuides(project);
+  try {
+    const { files, problems } = await readGuideFiles(guidesFlow.kind, fileList);
+    if (problems.length > 0) {
+      guidesFlow.problems = problems;
+      return;
+    }
+    await runGuideCheck(project, files, seq);
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    if (seq === guidesFlow.seq) guidesFlow.problems = [`ファイルを確かめられませんでした: ${error.message}`];
+  } finally {
+    if (seq === guidesFlow.seq) guidesFlow.busy = false;
+    renderGuides(selectedProject());
+  }
+}
+
+async function runGuideCheck(project, files, seq) {
+  const { check } = await api(`/api/projects/${encodeURIComponent(project.id)}/materials/guides/check`, {
+    method: 'POST',
+    json: { kind: guidesFlow.kind, files, answers: guideAnswers() },
+  });
+  if (seq !== guidesFlow.seq) return;
+  guidesFlow.check = check;
+  if (check.ok) {
+    guidesFlow.files = files;
+  } else {
+    const more = check.errorCount - check.errors.length;
+    guidesFlow.problems = [...check.errors.map((error) => `${error.file ? `${error.file}${error.line ? ` ${error.line} 行目` : ''}: ` : ''}${error.text}`), ...(more > 0 ? [`ほかに ${more} 件あります`] : [])];
+  }
+}
+
+// 1. 聞く の答えで進む。選び直した答え(ライセンスなど)で、選んだファイルを確かめ直す
+async function submitGuideAsk() {
+  const project = selectedProject();
+  const have = guidesHave();
+  if (!project || (have !== 'guides' && have !== 'storybook')) return;
+  if (guidesFlow.kind !== have) {
+    Object.assign(guidesFlow, { kind: have, files: null, check: null, problems: [] });
+    els.guidesFiles.value = '';
+    els.guidesFolder.value = '';
+  } else if (guidesFlow.files) {
+    const seq = ++guidesFlow.seq;
+    guidesFlow.busy = true;
+    renderGuides(project);
+    try {
+      await runGuideCheck(project, guidesFlow.files, seq);
+    } catch (error) {
+      if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+      if (seq === guidesFlow.seq) guidesFlow.problems = [`ファイルを確かめられませんでした: ${error.message}`];
+    } finally {
+      if (seq === guidesFlow.seq) guidesFlow.busy = false;
+    }
+  }
+  guidesStep(2);
+}
+
+// 4. 有効にする。サーバーがもう一度確かめ、ライセンスが分からなければ断る
+async function enableGuides() {
+  const project = selectedProject();
+  const { check, files, kind } = guidesFlow;
+  if (!project || !check?.ok || !check.license.ok || !files || guidesFlow.busy) return;
+  guidesFlow.busy = true;
+  guidesFlow.message = null;
+  renderGuides(project);
+  const scope = els.guidesEnableForm.querySelector('input[name="guides-scope"]:checked')?.value ?? 'project';
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(project.id)}/materials/guides`, {
+      method: 'POST',
+      json: { kind, files, answers: guideAnswers(), source: els.guidesSource.value, reason: els.guidesReason.value, scope },
+    });
+    if (tokens.projectId !== project.id) return;
+    tokens.data = data.materials;
+    if (!data.enabled) {
+      guidesFlow.check = data.check;
+      guidesFlow.problems = data.check.errors.map((error) => error.text);
+      guidesStep(2);
+      return;
+    }
+    resetGuidesFlow();
+    const where = scope === 'all' ? '。これからの試作品にも入れます' : '';
+    guidesFlow.message = data.build.ok
+      ? { kind: 'ok', text: `有効にしました${where}。直す AI は次の依頼から、${GUIDE_KIND_LABELS[kind]}を読みます。` }
+      : { kind: 'failed', text: `有効にしましたが、試作品を表示できません。試す欄は前の状態のままです。${data.build.firstError ?? ''}` };
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    if (tokens.projectId === project.id) guidesFlow.message = { kind: 'failed', text: `有効にできませんでした: ${error.message}` };
+  } finally {
+    guidesFlow.busy = false;
+    lastSnapshot = '';
+    await refresh();
+    render();
+  }
+}
+
+async function disableGuides(project, kind, from) {
+  if (!project || guidesFlow.busy) return;
+  guidesFlow.busy = true;
+  guidesFlow.message = null;
+  renderGuides(project);
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(project.id)}/materials/guides/remove`, { method: 'POST', json: { kind, from } });
+    if (tokens.projectId !== project.id) return;
+    tokens.data = data.materials;
+    if (from === 'studio') guidesFlow.message = { kind: 'ok', text: `これからの試作品には、${GUIDE_KIND_LABELS[kind]}を入れません。今ある試作品はそのままです。` };
+    else guidesFlow.message = data.build.ok
+      ? { kind: 'ok', text: `${GUIDE_KIND_LABELS[kind]}を外しました。写しを消し、直す AI への決まりからも外しました。` }
+      : { kind: 'failed', text: `外しましたが、試作品を表示できません。試す欄は前の状態のままです。${data.build.firstError ?? ''}` };
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    if (tokens.projectId === project.id) guidesFlow.message = { kind: 'failed', text: `外せませんでした: ${error.message}` };
+  } finally {
+    guidesFlow.busy = false;
+    lastSnapshot = '';
+    await refresh();
+    render();
+  }
+}
+
+async function restoreGuides(project) {
+  if (!project || guidesFlow.busy) return;
+  guidesFlow.busy = true;
+  guidesFlow.message = null;
+  renderGuides(project);
+  try {
+    const data = await api(`/api/projects/${encodeURIComponent(project.id)}/materials/guides/restore`, { method: 'POST' });
+    if (tokens.projectId !== project.id) return;
+    tokens.data = data.materials;
+    guidesFlow.message = data.build.ok
+      ? { kind: 'ok', text: '写しを戻しました。試す欄の試作品を作り直しました。' }
+      : { kind: 'failed', text: `写しを戻しましたが、試作品を表示できません。${data.build.firstError ?? ''}` };
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    if (tokens.projectId === project.id) guidesFlow.message = { kind: 'failed', text: `写しを戻せませんでした: ${error.message}` };
+  } finally {
+    guidesFlow.busy = false;
     lastSnapshot = '';
     await refresh();
     render();
@@ -3652,6 +4107,29 @@ els.tokensForm.addEventListener('submit', (event) => {
 els.handoffForm.addEventListener('submit', (event) => {
   event.preventDefault();
   exportHandoff();
+});
+for (const field of [els.guidesSource, els.guidesLicense, els.guidesLicenseName]) {
+  field.addEventListener('input', () => renderGuides(selectedProject()));
+  field.addEventListener('change', () => renderGuides(selectedProject()));
+}
+for (const radio of els.guidesAsk.querySelectorAll('input[name="guides-have"]')) radio.addEventListener('change', () => renderGuides(selectedProject()));
+els.guidesAsk.addEventListener('submit', (event) => {
+  event.preventDefault();
+  submitGuideAsk();
+});
+for (const input of [els.guidesFiles, els.guidesFolder]) {
+  input.addEventListener('change', () => {
+    if (input.files?.length > 0) checkGuideFiles([...input.files]);
+  });
+}
+els.guidesCheckBack.addEventListener('click', () => guidesStep(1));
+els.guidesCheckNext.addEventListener('click', () => guidesStep(3));
+els.guidesTryBack.addEventListener('click', () => guidesStep(2));
+els.guidesTryNext.addEventListener('click', () => guidesStep(4));
+els.guidesEnableBack.addEventListener('click', () => guidesStep(3));
+els.guidesEnableForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  enableGuides();
 });
 
 els.saveForm.addEventListener('submit', (event) => {

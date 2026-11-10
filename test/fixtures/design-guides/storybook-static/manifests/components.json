@@ -1,0 +1,8 @@
+{
+  "v": 0,
+  "components": {
+    "minato-button": { "id": "minato-button", "name": "Button", "description": "押せる所。1 画面に強い色の Button は 1 つだけ置く(架空)。" },
+    "minato-shopcard": { "id": "minato-shopcard", "name": "ShopCard", "description": "お店の名前と案内の文を並べるカード(架空)。" },
+    "minato-banner": { "id": "minato-banner", "name": "Banner", "description": "上に出す知らせ。背景の絵は https://cdn.example.com/minato/banner.png から読む(架空)。" }
+  }
+}

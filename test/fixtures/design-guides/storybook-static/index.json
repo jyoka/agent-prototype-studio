@@ -1,0 +1,10 @@
+{
+  "v": 5,
+  "entries": {
+    "minato-button--primary": { "id": "minato-button--primary", "title": "Minato/Button", "name": "Primary", "importPath": "./src/Button.stories.tsx", "type": "story", "tags": ["autodocs"] },
+    "minato-button--disabled": { "id": "minato-button--disabled", "title": "Minato/Button", "name": "Disabled", "importPath": "./src/Button.stories.tsx", "type": "story", "tags": [] },
+    "minato-button--docs": { "id": "minato-button--docs", "title": "Minato/Button", "name": "Docs", "importPath": "./src/Button.stories.tsx", "type": "docs", "tags": ["autodocs"] },
+    "minato-shopcard--default": { "id": "minato-shopcard--default", "title": "Minato/ShopCard", "name": "Default", "importPath": "./src/ShopCard.stories.tsx", "type": "story", "tags": [] },
+    "minato-banner--default": { "id": "minato-banner--default", "title": "Minato/Banner", "name": "Default", "importPath": "./src/Banner.stories.tsx", "type": "story", "tags": [] }
+  }
+}

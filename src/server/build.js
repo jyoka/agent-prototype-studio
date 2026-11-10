@@ -7,7 +7,7 @@ import { readScenarios } from '../observer/scenario.js';
 import { inspectApp } from './inspect.js';
 import { checkTokenUse } from './design-tokens.js';
 import { ENTRY_NAMES, readManifest } from './manifest.js';
-import { readTokenMaterial } from './materials.js';
+import { readGuideMaterial, readTokenMaterial } from './materials.js';
 import { readAiDefinition } from './product-ai/definition.js';
 import { numbersIn } from './product-ai/guards.js';
 import { createBuildId } from './security.js';
@@ -176,6 +176,7 @@ export const BUILD_STAGES = ['inspect', 'contract', 'compile'];
 // 構成、ツール、前提、モック、場面を simulation で返す(simulation.composition は既定の構成。AI がなければ null)。
 // 失敗したら、止まった段の名前を stage に、各誤りにも stage を付けて返す。
 // projectRoot を渡すと、そのプロジェクトのつないだトークンを関門 G3 で確かめ、CSS を app.css の最後に足す(materials.js)。
+// 有効にした部品と指針の写しも、関門 G3 で確かめる。
 // import の名前にしないので、作る AI が読み込みを消せず、書き出したソースも Studio の外の名前を持たない
 export async function buildApp({ appDir, buildsDir, projectRoot = null }) {
   const started = Date.now();
@@ -205,6 +206,9 @@ export async function buildApp({ appDir, buildsDir, projectRoot = null }) {
     const conflicts = await checkTokenUse(appDir, material.tokens, material.roles);
     if (conflicts.length > 0) return fail('contract', conflicts.map((problem) => ({ ...problem, material: true })));
   }
+  // 有効にした部品と指針の写し(app/design/)が変わっていないか(J5)
+  const guides = projectRoot ? await readGuideMaterial(projectRoot) : null;
+  if (guides?.problems.length > 0) return fail('contract', guides.problems.map((problem) => ({ ...problem, material: true })));
   if (!manifest.entry) {
     return fail('contract', [{
       file: 'app/',

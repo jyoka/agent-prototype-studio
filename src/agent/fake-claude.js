@@ -311,6 +311,74 @@ async function overrideMaterial(argv) {
   return finish({ text });
 }
 
+// 有効にした部品と指針の写し(Studio が app/design/ に書く。J5)
+async function designCopies() {
+  const found = [];
+  async function walk(dir) {
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.isFile() && entry.name.endsWith('.md')) found.push({ file: full, text: await fs.readFile(full, 'utf8') });
+    }
+  }
+  await walk(path.join(process.cwd(), 'design'));
+  return found;
+}
+
+// 写しを読み、指針の見出しと部品の名前を、見出しの下に並べる。
+// 写しに外への URL があれば、そのまま画像に使う(試作品の CSP が止めるかの確かめ)
+async function followGuides(argv) {
+  // Studio の決まりの文に、写しの場所が入っているか(materials.js の materialRule)。入っていなければ作らない
+  const rules = argv[argv.indexOf('--append-system-prompt') + 1] ?? '';
+  if (!/部品と指針/.test(rules)) {
+    const text = 'Studio の決まりに、部品と指針がありません。何も変えませんでした。';
+    await say(text);
+    return finish({ text });
+  }
+  const copies = (await designCopies()).filter((copy) => rules.includes(path.relative(process.cwd(), copy.file).split(path.sep).join('/')));
+  if (copies.length === 0) {
+    const text = '有効にした部品と指針がないので、何も変えませんでした。';
+    await say(text);
+    return finish({ text });
+  }
+  for (const copy of copies) await useTool('Read', { file_path: copy.file }, { result: `${copy.text.split('\n').length} 行を読みました` });
+  const titles = copies.filter((copy) => path.basename(copy.file) !== 'components.md').map((copy) => /^#\s+(.+)$/m.exec(copy.text)?.[1].trim()).filter(Boolean);
+  const parts = copies.filter((copy) => path.basename(copy.file) === 'components.md').flatMap((copy) => [...copy.text.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1].trim()));
+  const url = copies.map((copy) => /\bhttps?:\/\/[^\s<>"'`)\]]+/.exec(copy.text)?.[0]).find(Boolean);
+  const target = await findHeadingFile();
+  const heading = target && HEADING_PATTERN.exec(target.text);
+  if (!heading) {
+    const text = '見出しのあるファイルが見つからないので、何も変えませんでした。';
+    await say(text);
+    return finish({ text });
+  }
+  const items = [...titles, ...parts].slice(0, 20);
+  const image = url ? `<img src={${JSON.stringify(url)}} alt="指針にあった画像" data-testid="outside-image" />` : '';
+  const added = `<ul data-testid="guided">{${JSON.stringify(items)}.map((item) => <li key={item}>{item}</li>)}</ul>${image}`;
+  await editFile(target, heading[0], `${heading[0]}${added}`);
+  const text = `指針と部品の一覧(${copies.length} 個のファイル)を読み、見出しの下に並べました。`;
+  await say(text);
+  return finish({ text });
+}
+
+// 写しを書き換える動き(関門 G3 で止まるかの確かめ)
+async function editGuideCopy() {
+  const [copy] = await designCopies();
+  if (!copy) {
+    const text = '有効にした部品と指針がないので、何も変えませんでした。';
+    await say(text);
+    return finish({ text });
+  }
+  const content = `${copy.text}\n- 作る AI が書き足した行\n`;
+  await fs.writeFile(copy.file, content);
+  await useTool('Write', { file_path: copy.file, content }, { result: `The file ${copy.file} has been updated.` });
+  const text = `指針の写し ${path.relative(process.cwd(), copy.file)} を書き換えました。`;
+  await say(text);
+  return finish({ text });
+}
+
 async function writeOutside() {
   const target = path.resolve(process.cwd(), '..', 'outside-note.txt');
   const id = await useTool(
@@ -843,6 +911,8 @@ async function main() {
     return finish({ isError: true, text: '偽接続: 依頼どおりに失敗しました' });
   }
   if (/素材の色を書き換え/.test(request)) return overrideMaterial(argv);
+  if (/指針に沿って作/.test(request)) return followGuides(argv);
+  if (/指針の写しを書き換え/.test(request)) return editGuideCopy();
   if (/外/.test(request)) return writeOutside();
   if (/シナリオ/.test(request)) return addScenarioAndScramble();
   if (/ゆっくり/.test(request)) return slow();

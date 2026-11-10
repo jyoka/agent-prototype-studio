@@ -815,6 +815,38 @@ body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
 .check-consent { margin: 0.4rem 0; font-size: 0.9rem; }
 .check-message { margin: 0.4rem 0 0; font-size: 0.85rem; }
 
+/* 部品と指針をつなぐ(user-journey.md の J5)。案内の 4 歩 */
+.guides-steps { display: flex; gap: 0.3rem; margin: 0.4rem 0; padding: 0; list-style: none; counter-reset: guides-step; font-size: 0.8rem; }
+.guides-steps li { flex: 1; padding: 0.2rem 0.3rem; border-bottom: 3px solid var(--line); color: var(--muted); counter-increment: guides-step; }
+.guides-steps li::before { content: counter(guides-step) ". "; }
+.guides-steps li[data-state="done"] { border-color: var(--accent); }
+.guides-steps li[data-state="current"] { border-color: var(--accent); color: inherit; font-weight: 600; }
+.guides-step[hidden], .guides-owner[hidden] { display: none; }
+.guides-step h4 { margin: 0.2rem 0; font-size: 0.9rem; }
+.guides-step fieldset { border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.6rem 0.5rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.guides-step fieldset label { color: inherit; font-size: 0.85rem; }
+.guides-step input[type="text"], .guides-step select { font: inherit; padding: 0.25rem 0.4rem; border: 1px solid var(--line); border-radius: 6px; }
+.guides-owner { display: flex; flex-direction: column; gap: 0.25rem; }
+.guides-note { margin: 0.2rem 0; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid var(--line); }
+.guides-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.guides-actions button { margin-top: 0.2rem; }
+.guides-checked p, .guides-enabled p, .guides-summary p { margin: 0.2rem 0; }
+.guides-warning { margin: 0.3rem 0; padding: 0.4rem 0.6rem; border-radius: 6px; background: var(--warn-bg); color: var(--warn-text); }
+.guides-warning ul { margin: 0.2rem 0 0; padding-left: 1.1rem; overflow-wrap: anywhere; }
+.guides-warning[hidden] { display: none; }
+.guides-warning-text { color: var(--warn-text); }
+.guides-preview { display: flex; flex-direction: column; gap: 0.3rem; }
+.guides-copy { margin: 0.2rem 0; max-height: 14rem; overflow: auto; padding: 0.4rem; border: 1px solid var(--line); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.8rem; }
+.guides-components { border-collapse: collapse; font-size: 0.8rem; }
+.guides-components th, .guides-components td { border: 1px solid var(--line); padding: 0.2rem 0.35rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.guides-facts { display: grid; grid-template-columns: 7rem 1fr; gap: 0.15rem 0.5rem; margin: 0.2rem 0; font-size: 0.85rem; }
+.guides-facts dt { color: var(--muted); }
+.guides-facts dd { margin: 0; overflow-wrap: anywhere; }
+.guides-enabled { margin: 0.3rem 0 0.6rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.guides-enabled[hidden] { display: none; }
+.guides-record { padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid var(--line); }
+.guides-record button { margin-top: 0.3rem; }
+
 /* 1 ターンの記録と、場面の一覧と比べる表(task 423)。試す欄の下に置く。どちらも高さに上限を付け、長いときは欄の中でスクロールする(試作品を押し出しすぎない) */
 .turn-record { margin-top: 0.5rem; padding: 0.4rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font-size: 0.85rem; max-height: 9rem; overflow: auto; flex-shrink: 0; }
 .turn-record[hidden], .scene-runs[hidden] { display: none; }
