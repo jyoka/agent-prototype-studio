@@ -131,6 +131,19 @@ const els = {
   showEnd: $('show-end'),
   showStatus: $('show-status'),
   showRealAi: $('show-real-ai'),
+  // 画面へのコメント(K3)
+  commentForm: $('comment-form'),
+  commentPlace: $('comment-place'),
+  commentPlaceText: $('comment-place-text'),
+  commentText: $('comment-text'),
+  commentAuthor: $('comment-author'),
+  commentAdd: $('comment-add'),
+  commentPressed: $('comment-pressed'),
+  commentSpoken: $('comment-spoken'),
+  commentQueue: $('comment-queue'),
+  commentResume: $('comment-resume'),
+  commentList: $('comment-list'),
+  commentStatus: $('comment-status'),
   more: $('more'),
   morePanel: $('more-panel'),
   moreClose: $('more-close'),
@@ -296,6 +309,14 @@ const versions = { projectId: null, data: null, seq: 0, busy: false, message: nu
 // 見せる画面(J7)。open の間は、試作品と確かめたい問いだけを出す。version は見せている版、questions は問い。
 // warned は、残していない答えがあるまま「見せ終わる」を 1 回押したか
 const showUi = { open: false, starting: false, saving: false, projectId: null, version: null, questions: [], source: null, savedNow: false, message: null, warned: false };
+// 画面へのコメント(K3。サーバーは src/server/comments.js)。見せる画面の中に出す。data はサーバーの一覧、snapshot は前に描いた中身。
+// place は書く前に選んだ画面の場所({ x, y } は見えている枠の中の %)、picking は場所を選んでいる最中か。
+// confirmRevert は「後のものも一緒に戻る」と知らせたコメント(もう一度押すと戻す)
+const commentsUi = { projectId: null, data: null, snapshot: '', seq: 0, busy: false, place: null, picking: false, message: null, confirmRevert: null };
+// 画面の場所を選ぶ層。試作品の枠の上に重ねる(試作品の中は読まない。ADR 0001 の層 2)
+const commentLayer = document.createElement('div');
+commentLayer.className = 'comment-layer';
+commentLayer.setAttribute('aria-hidden', 'true');
 // 自分のトークン(J4)。file は選んだファイルの名前と中身、check はサーバーの検査の結果。つなぐまで何も書かれない
 const tokens = { projectId: null, data: null, seq: 0, busy: false, file: null, check: null, problems: [], message: null, buildAt: null };
 // 部品と指針をつなぐ案内の 4 歩(user-journey.md の J5)。サーバーの中身は tokens.data.guides(同じ素材の API で読む)。
@@ -413,6 +434,8 @@ async function refresh() {
     // 作業中のファイルは、Studio の外でも変わり得るので、毎回確かめる(保存の印と、証拠が古いかの印)
     await loadVersions();
     await loadEvidence();
+    // 見せている間は、コメントの列と直した記録を読み直す(作る AI が終わると、状態が変わる)
+    if (showUi.open) await loadComments();
   } catch (error) {
     if (seq < appliedSeq) return;
     handleError(error);
@@ -2389,9 +2412,11 @@ async function startShow() {
     });
     els.showQuestions.replaceChildren(...show.questions.map(showQuestionItem));
     els.showViewer.value = '';
+    Object.assign(commentsUi, { projectId: project.id, data: null, snapshot: '', place: null, picking: false, message: null, confirmRevert: null });
     renderShow();
     els.showHeading.focus();
     loadVersions();
+    loadComments();
   } catch (error) {
     if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
     else showBanner(null, `見せる画面を開けませんでした: ${error.message}`);
@@ -2439,6 +2464,7 @@ function renderShow() {
   els.showSave.disabled = showUi.saving;
   els.showStatus.textContent = showUi.message?.text ?? '';
   els.showStatus.dataset.kind = showUi.message?.kind ?? '';
+  renderComments();
 }
 
 async function saveShowAnswers() {
@@ -2483,8 +2509,303 @@ function endShow() {
   }
   Object.assign(showUi, { open: false, projectId: null, version: null, questions: [], source: null, savedNow: false, message: null, warned: false });
   els.showQuestions.replaceChildren();
+  commentsUi.seq += 1;
+  Object.assign(commentsUi, { projectId: null, data: null, snapshot: '', place: null, picking: false, message: null, confirmRevert: null });
   renderShow();
   els.more.focus();
+}
+
+// ---- 画面へのコメント(K3) ----
+
+const COMMENT_ROLE_WORDS = { facilitator: '進行役', decider: '決める人' };
+
+function commentsPath(projectId, tail = '') {
+  return `/api/projects/${encodeURIComponent(projectId)}/comments${tail}`;
+}
+
+async function loadComments() {
+  const projectId = commentsUi.projectId;
+  if (!projectId) return;
+  const seq = ++commentsUi.seq;
+  try {
+    const { comments } = await api(commentsPath(projectId));
+    if (seq !== commentsUi.seq || projectId !== commentsUi.projectId) return;
+    applyComments(comments);
+  } catch (error) {
+    if (seq !== commentsUi.seq) return;
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    else commentsUi.message = { kind: 'failed', text: `コメントを読めませんでした: ${error.message}` };
+    renderComments();
+  }
+}
+
+// 一覧を受け取る。直した版ができたときと戻したときは、見せている版(答えを残す先)を今の版に合わせる
+function applyComments(data) {
+  const before = commentsUi.data;
+  commentsUi.data = data;
+  const latest = (list) => list?.comments.flatMap((c) => c.records).flatMap((r) => r.events.map((e) => ({ ...e, record: r }))).sort((a, b) => a.at.localeCompare(b.at)).at(-1) ?? null;
+  const prev = latest(before);
+  const now = latest(data);
+  if (showUi.open && before && now && (!prev || now.at !== prev.at)) {
+    const version = now.type === 'reverted' ? now.version : now.type === 'fixed' ? now.record.versions.after : null;
+    if (version && version.id !== showUi.version?.id) {
+      showUi.version = version;
+      showUi.savedNow = false;
+      loadVersions();
+    }
+  }
+  renderShow();
+}
+
+function renderComments() {
+  const data = commentsUi.data;
+  const open = showUi.open && commentsUi.projectId === showUi.projectId;
+  commentLayer.dataset.on = String(open);
+  commentLayer.classList.toggle('picking', open && commentsUi.picking);
+  els.commentPlace.setAttribute('aria-pressed', String(commentsUi.picking));
+  els.commentPlace.textContent = commentsUi.picking ? '場所を選ぶのをやめる' : '画面の場所を選ぶ';
+  els.commentPlaceText.textContent = commentsUi.picking
+    ? '試作品の画面の上で、コメントを付けたい所を押してください(Esc でやめる)。'
+    : `場所: ${commentsUi.place ? `見えている画面の、左から ${commentsUi.place.x}%、上から ${commentsUi.place.y}% のあたり` : '画面の全体'}`;
+  els.commentAdd.disabled = commentsUi.busy || !data || data.broken;
+  els.commentStatus.textContent = commentsUi.message?.text ?? '';
+  els.commentStatus.dataset.kind = commentsUi.message?.kind ?? '';
+  if (!open) return;
+  const comments = data?.comments ?? [];
+  // 試作品の枠の上の印(番号)。開いている、待っている、直しているコメントだけ
+  const pins = comments.filter((c) => c.place && ['open', 'queued', 'fixing', 'review'].includes(c.status)).map((c) => {
+    const pin = element('span', String(c.number), 'comment-pin');
+    pin.style.left = `${c.place.x}%`;
+    pin.style.top = `${c.place.y}%`;
+    return pin;
+  });
+  if (commentsUi.place) {
+    const pin = element('span', '新', 'comment-pin comment-pin-new');
+    pin.style.left = `${commentsUi.place.x}%`;
+    pin.style.top = `${commentsUi.place.y}%`;
+    pins.push(pin);
+  }
+  commentLayer.replaceChildren(...pins);
+  const queued = comments.filter((c) => c.status === 'queued');
+  const fixing = comments.find((c) => c.status === 'fixing');
+  const held = queued.find((c) => c.held);
+  els.commentQueue.textContent = [
+    fixing ? `直す AI が、コメント ${fixing.number} を直しています。` : '',
+    queued.length > 0 ? `列に ${queued.length} 件が待っています(${queued.map((c) => `コメント ${c.number}`).join('、')})。前の直しが終わってから、1 件ずつ送ります。` : '',
+    held ? `列を止めています: ${held.held.message}${held.held.next ? ` ${held.held.next}` : ''}` : '',
+  ]
+    .filter(Boolean)
+    .join('');
+  els.commentResume.hidden = !held;
+  els.commentResume.disabled = commentsUi.busy;
+  const snapshot = JSON.stringify([data, commentsUi.busy, commentsUi.confirmRevert]);
+  if (snapshot === commentsUi.snapshot) return;
+  commentsUi.snapshot = snapshot;
+  els.commentList.replaceChildren(...[...comments].reverse().map(commentItem));
+}
+
+function approvalWords(comment) {
+  const by = (role) => comment.approvals.find((a) => a.role === role);
+  const who = (a) => [a.pressedBy ? `押した人: ${a.pressedBy}` : '', a.spokenBy ? `声に出した人: ${a.spokenBy}` : ''].filter(Boolean).join('、');
+  const one = (role) => {
+    const a = by(role);
+    return a ? `${COMMENT_ROLE_WORDS[role]} 済み${who(a) ? `(${who(a)})` : ''}` : `${COMMENT_ROLE_WORDS[role]} まだ`;
+  };
+  if (comment.needsBoth) return `承認(2 人が要ります): ${one('facilitator')}、${one('decider')}`;
+  const done = comment.approvals[0];
+  return done ? `承認: ${COMMENT_ROLE_WORDS[done.role]}${who(done) ? `(${who(done)})` : ''}` : '承認: まだ(進行役か決める人の 1 人)';
+}
+
+function commentButton(text, onClick, { primary = false, disabled = false } = {}) {
+  const button = element('button', text);
+  button.type = 'button';
+  if (primary) button.className = 'primary';
+  button.disabled = commentsUi.busy || disabled;
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+function commentItem(comment) {
+  const li = element('li', undefined, 'comment-item');
+  li.dataset.status = comment.status;
+  li.dataset.commentId = comment.id;
+  const head = element('p', undefined, 'comment-head');
+  head.append(element('strong', `コメント ${comment.number}`), element('span', comment.kindLabel, 'comment-kind-mark'));
+  const state = element('span', `${comment.statusLabel}${comment.queuePosition ? `(列の ${comment.queuePosition} 番目)` : ''}`, 'comment-state');
+  head.append(state);
+  li.append(head, element('p', comment.text, 'comment-text'));
+  const meta = [`場所: ${comment.placeWords}`, comment.author ? `書いた人: ${comment.author}` : ''].filter(Boolean).join('。');
+  li.append(element('p', meta, 'muted'));
+  if (comment.near?.length > 0) li.append(element('p', `同じ所に向いたコメント: ${comment.near.map((n) => `コメント ${n}`).join('、')}。承認の前に読み比べてください。`, 'comment-near'));
+  if (!['closed', 'returned'].includes(comment.status)) li.append(element('p', approvalWords(comment), 'comment-approvals'));
+  if (comment.status === 'returned') li.append(element('p', '承認したので、作る AI には送らず、AI 構成の審査に戻しました。審査で 4 つを承認し直すまで、作る AI は作り始めません。', 'comment-note'));
+  if (comment.held && comment.status !== 'queued') li.append(element('p', comment.held.message, 'comment-note'));
+  const actions = element('div', undefined, 'show-actions comment-actions');
+  const id = comment.id;
+  const react = commentButton(`同じ意見(反応 ${comment.reactions})`, () => commentAct(id, 'react'), { disabled: comment.status === 'closed' });
+  react.setAttribute('aria-label', `コメント ${comment.number} に反応を付ける(今 ${comment.reactions})`);
+  if (['open', 'queued'].includes(comment.status)) actions.append(react);
+  if (comment.status === 'open') {
+    for (const role of ['facilitator', 'decider']) {
+      const done = comment.approvals.some((a) => a.role === role);
+      actions.append(commentButton(`${COMMENT_ROLE_WORDS[role]}として承認`, () => commentAct(id, 'approve', { role, ...whoFields() }), { primary: true, disabled: done }));
+    }
+  }
+  if (['open', 'queued'].includes(comment.status) && comment.approvals.length > 0) actions.append(commentButton('承認を取り消す', () => commentAct(id, 'unapprove')));
+  if (comment.status === 'open') actions.append(commentButton('閉じる', () => commentAct(id, 'close')));
+  if (comment.status === 'review') actions.append(commentButton('直った', () => commentAct(id, 'resolve', whoFields()), { primary: true }));
+  if (['review', 'resolved', 'failed'].includes(comment.status) && comment.recordId) {
+    const confirming = commentsUi.confirmRevert === id;
+    actions.append(commentButton(confirming ? '後の直しも一緒に戻す' : '元に戻す', () => revertComment(id, confirming)));
+  }
+  if (['reverted', 'failed', 'closed'].includes(comment.status)) actions.append(commentButton('開き直す', () => commentAct(id, 'reopen')));
+  if (comment.status === 'returned') actions.append(commentButton('審査を開く', () => openReviewFromShow()));
+  if (actions.childElementCount > 0) li.append(actions);
+  for (const record of comment.records ?? []) li.append(fixRecordBox(record));
+  return li;
+}
+
+// 直した記録。前と後の画面を並べ、起きたこと(送った、直した、直った、戻した)を出す。関門と依頼の全文は開発者向けに閉じて出す
+function fixRecordBox(record) {
+  const box = element('section', undefined, 'fix-record');
+  box.setAttribute('aria-label', `直した記録(コメント ${record.comment.number})`);
+  const label = (v) => (v ? versionSubject(v) : 'なし');
+  box.append(element('p', `直す前: ${label(record.versions.before)}。直した後: ${label(record.versions.after)}`, 'muted'));
+  if (record.compare?.before || record.compare?.after) {
+    const pair = element('div', undefined, 'fix-compare');
+    for (const [key, caption] of [['before', '直す前'], ['after', '直した後']]) {
+      const figure = element('figure');
+      if (record.compare[key]) figure.append(shotImage(commentsUi.projectId, record.compare[key], `${caption}の画面(コメント ${record.comment.number})`));
+      else figure.append(element('p', '画面を撮れませんでした', 'muted'));
+      figure.append(element('figcaption', caption));
+      pair.append(figure);
+    }
+    box.append(pair);
+  }
+  if (record.changes?.summary) box.append(element('p', `変わったもの: ${record.changes.files.length} 個のファイル`, 'muted'));
+  const events = element('ol', undefined, 'fix-events');
+  events.setAttribute('aria-label', `起きたこと(コメント ${record.comment.number})`);
+  for (const event of record.events) {
+    const who = event.by ? [event.by.pressedBy ? `押した人: ${event.by.pressedBy}` : '', event.by.spokenBy ? `声に出した人: ${event.by.spokenBy}` : ''].filter(Boolean).join('、') : '';
+    events.append(element('li', `${formatTime(event.at)} ${event.label}${who ? `(${who})` : ''}${event.note && event.type !== 'failed' ? `。${event.note}` : ''}`));
+  }
+  box.append(events);
+  const dev = element('details', undefined, 'card-dev');
+  dev.append(element('summary', '開発者向け: 依頼の全文と確かめた結果'));
+  dev.append(element('pre', record.request.text, 'fix-request'));
+  dev.append(element('p', `変わったファイル: ${record.changes.files.join('、') || 'なし'}`));
+  dev.append(element('p', `関門: ${record.gates.results.map((g) => `${g.id} ${g.label}: ${g.status}`).join('、') || 'なし'}(${record.gates.run ?? '記録なし'})`));
+  dev.append(element('p', `記録: .studio/fix-records/${record.id}/record.json`));
+  box.append(dev);
+  return box;
+}
+
+function whoFields() {
+  return { pressedBy: els.commentPressed.value, spokenBy: els.commentSpoken.value };
+}
+
+async function commentRequest(path, json) {
+  const projectId = commentsUi.projectId;
+  if (!projectId || commentsUi.busy) return null;
+  commentsUi.busy = true;
+  commentsUi.message = null;
+  renderComments();
+  try {
+    const result = await api(commentsPath(projectId, path), { method: 'POST', json });
+    if (projectId === commentsUi.projectId) {
+      commentsUi.seq += 1;
+      applyComments(result.comments);
+    }
+    return result;
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    if (projectId === commentsUi.projectId) commentsUi.message = { kind: 'failed', text: error.message, code: error.code };
+    return null;
+  } finally {
+    commentsUi.busy = false;
+    commentsUi.snapshot = '';
+    renderComments();
+  }
+}
+
+async function addComment() {
+  const text = els.commentText.value.trim();
+  if (!text) {
+    commentsUi.message = { kind: 'failed', text: 'コメントを書いてください。' };
+    renderComments();
+    return;
+  }
+  const kind = els.commentForm.querySelector('input[name="comment-kind"]:checked')?.value ?? 'look';
+  const result = await commentRequest('', { text, kind, place: commentsUi.place, author: els.commentAuthor.value });
+  if (!result) return;
+  els.commentText.value = '';
+  commentsUi.place = null;
+  setPicking(false);
+  commentsUi.message = { kind: 'ok', text: `コメント ${result.comment.number} を書きました。承認するまで、直す AI には送りません。` };
+  renderComments();
+}
+
+async function commentAct(commentId, action, json = {}) {
+  commentsUi.confirmRevert = null;
+  const result = await commentRequest(`/${commentId}/${action}`, json);
+  if (!result?.comment) return;
+  const c = result.comment;
+  const done = {
+    react: null,
+    approve: c.status === 'queued' ? `コメント ${c.number} を承認しました。列に並べ、順に直す AI に送ります。` : c.status === 'returned' ? `コメント ${c.number} を承認しました。構成のコメントなので、直す AI には送らず、AI 構成の審査に戻しました。` : `コメント ${c.number} に承認を 1 つ付けました。もう 1 人の承認がそろうまで送りません。`,
+    unapprove: `コメント ${c.number} の承認を取り消しました。直す AI には送りません。`,
+    close: `コメント ${c.number} を閉じました。`,
+    reopen: `コメント ${c.number} を開き直しました。`,
+    resolve: `コメント ${c.number} を「直った」にしました。`,
+  }[action];
+  if (done) {
+    commentsUi.message = { kind: 'ok', text: done };
+    renderComments();
+  }
+}
+
+// 元に戻す。後に直したコメントがあれば、1 回目は知らせて止まる(もう一度押すと、それらも一緒に戻す)
+async function revertComment(commentId, confirm) {
+  const result = await commentRequest(`/${commentId}/revert`, { confirm, ...whoFields() });
+  if (result?.comment) {
+    commentsUi.confirmRevert = null;
+    commentsUi.message = { kind: 'ok', text: `${versionSubject(result.restored)}に戻しました。直した記録に「戻した」を足しました。` };
+    lastSnapshot = '';
+    await refresh();
+  } else if (commentsUi.message?.code === 'later-fixes') {
+    commentsUi.confirmRevert = commentId;
+  }
+  renderComments();
+}
+
+async function resumeComments() {
+  const result = await commentRequest('/resume', {});
+  if (result) commentsUi.message = { kind: 'ok', text: '列を進めました。' };
+  renderComments();
+}
+
+function setPicking(on) {
+  commentsUi.picking = on;
+  renderComments();
+}
+
+function pickPlace(event) {
+  if (!commentsUi.picking) return;
+  const rect = commentLayer.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return;
+  const clamp = (v) => Math.min(100, Math.max(0, Math.round(v)));
+  commentsUi.place = { x: clamp(((event.clientX - rect.left) / rect.width) * 100), y: clamp(((event.clientY - rect.top) / rect.height) * 100) };
+  commentsUi.picking = false;
+  renderComments();
+  els.commentText.focus();
+}
+
+// 構成のコメントを審査に戻した後。見せる画面を閉じてから、AI 構成の審査を開く(残していない答えがあれば、見せる画面が知らせて止まる)
+async function openReviewFromShow() {
+  const projectId = commentsUi.projectId;
+  endShow();
+  if (showUi.open || !projectId) return;
+  await openReview(projectId);
 }
 
 // 版の保存や復元の間も押せないようにする。renderVersions からも呼ぶ
@@ -3983,7 +4304,7 @@ function showPlaceholder(text) {
   preview.frame = null;
   preview.url = null;
   preview.projectId = null;
-  els.frameHost.replaceChildren(element('p', text, 'placeholder'));
+  els.frameHost.replaceChildren(element('p', text, 'placeholder'), commentLayer);
 }
 
 // 試作品は sandbox の iframe(allow-same-origin なし)で、別ポートから開く(ADR-0001 の層 2)。
@@ -4000,7 +4321,7 @@ function showPreview(url, projectId) {
   preview.url = url;
   preview.projectId = projectId;
   preview.expectingLoad = true;
-  els.frameHost.replaceChildren(iframe);
+  els.frameHost.replaceChildren(iframe, commentLayer);
 }
 
 function onFrameLoad(iframe) {
@@ -4189,6 +4510,16 @@ els.showForm.addEventListener('submit', (event) => {
   saveShowAnswers();
 });
 els.showEnd.addEventListener('click', () => endShow());
+els.commentForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  addComment();
+});
+els.commentPlace.addEventListener('click', () => setPicking(!commentsUi.picking));
+els.commentResume.addEventListener('click', () => resumeComments());
+commentLayer.addEventListener('click', (event) => pickPlace(event));
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && commentsUi.picking) setPicking(false);
+});
 
 // 上の帯の「その他」で、右から引き出しを開く。閉じるボタン、もう一度「その他」、Esc で閉じる。
 // 開いている間も、左の試作品は使える(開発者向けの詳細の記録を見ながら試すため)
@@ -6215,6 +6546,7 @@ const reviewEls = {
   heading: $('review-heading'),
   count: $('review-count'),
   state: $('review-state'),
+  comments: $('review-comments'),
   stopped: $('review-stopped'),
   stoppedText: $('review-stopped-text'),
   pressed: $('review-pressed'),
@@ -6496,6 +6828,7 @@ function renderReview() {
     reviewEls.measure.hidden = true;
     reviewEls.left.textContent = '';
     reviewEls.stopped.hidden = true;
+    reviewEls.comments.hidden = true;
     return;
   }
   reviewEls.build.hidden = false;
@@ -6518,6 +6851,9 @@ function renderReview() {
       : record.stopped
         ? '次にすること: 「審査に戻る」か「承認した構成に戻す」を押してください。'
         : `次にすること: 4 つを上から読んで、欄ごとに承認してください。${record.evidence.status === 'unmeasured' ? '数はまだ測っていません。測らずに承認すると、その印が残ります。' : ''}`;
+  const returned = record.comments ?? [];
+  reviewEls.comments.hidden = returned.length === 0;
+  reviewEls.comments.replaceChildren(...returned.map((c) => element('li', `画面へのコメントから審査に戻しました(${formatTime(c.at)}。コメント ${c.number}): ${c.text}`)));
   reviewEls.items.replaceChildren(...record.items.map((item, index) => reviewItemSection(record, item, index)));
   reviewEls.build.disabled = reviewUi.busy || !record.ready;
   reviewEls.measure.disabled = reviewUi.busy || Boolean(record.stopped);

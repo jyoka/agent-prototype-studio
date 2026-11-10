@@ -8,11 +8,12 @@ import { materialChangedAt } from './materials.js';
 // 次の依頼、版の復元、手で変えたときのどれでも、app/ の中身が変われば古くなる。
 // つないだ素材は app/ の外なので指紋に入らない。素材を変えた時刻より前の確かめも古い
 
-// 画面に出せる画像の置き場(プロジェクトのフォルダーから)。作る run と、観察(CLI、人の「確かめる」)の結果だけ
-export const EVIDENCE_FOLDERS = ['.studio/runs', '.studio/observations'];
+// 画面に出せる画像の置き場(プロジェクトのフォルダーから)。作る run と、観察(CLI、人の「確かめる」)の結果と、
+// 直した記録の前と後の画面(comments.js。K3)だけ
+export const EVIDENCE_FOLDERS = ['.studio/runs', '.studio/observations', '.studio/fix-records'];
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const IMAGE_PATTERN = /^\.studio\/(?:runs|observations)\/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*\/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\.png$/;
+const IMAGE_PATTERN = /^\.studio\/(?:runs|observations|fix-records)\/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*\/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\.png$/;
 
 export class EvidenceError extends Error {
   constructor(status, code, message) {

@@ -15,6 +15,7 @@ import { ProjectReviews } from './review.js';
 import { ProjectSceneRuns } from './scene-runs.js';
 import { ProjectQuality } from './quality.js';
 import { ProjectShows } from './show.js';
+import { ProjectComments } from './comments.js';
 import { ProjectMaterials } from './materials.js';
 import { createDesignAi, DESIGN_SYSTEM_PROMPT } from './design-ai.js';
 import { ProjectMeetings, removeErasing } from './meeting.js';
@@ -116,7 +117,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     consent,
     sendsOutside,
     cost: () => describeCost({ env, auth: connection.auth, fixBudgetUsd: config.maxBudgetUsd, fixLaunches: MAX_FIX_ROUNDS + 1 }),
-    busy: (id) => intents.calling.has(id) || intents.locked.has(id) || organizes.calling.has(id) || designs.calling.has(id) || designs.locked.has(id) || aiSessions.busyFor(id) || sceneRuns.running.has(id),
+    busy: (id) => comments.pumping.has(id) || comments.fixing.has(id) || intents.calling.has(id) || intents.locked.has(id) || organizes.calling.has(id) || designs.calling.has(id) || designs.locked.has(id) || aiSessions.busyFor(id) || sceneRuns.running.has(id),
     forget: async (id) => {
       await organizes.forget(id);
       intents.forget(id);
@@ -125,6 +126,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       sceneRuns.forget(id);
       requests.forget(id);
       checks.forget(id);
+      comments.forget(id);
       aiSessions.forgetProject(id);
       firstSteps.forget(id);
     },
@@ -192,6 +194,8 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     meetingGate: (id, mode) => meetings.require(id, mode),
     // AI 構成の審査(review.js)。審査の要る試作品は、4 つの承認の後だけ作る AI を起動し、承認と違う構成は関門 GA で止める
     reviews: { check: (id) => reviews.check(id), markStopped: (id, detail) => reviews.markStopped(id, detail) },
+    // run が終わるたびに、承認したコメントの列を進める(comments.js)
+    onEnd: (id) => comments.afterRun(id),
     ...(scenarioLimits ? { scenarioLimits } : {}),
     ...(onAgentEvent ? { onAgentEvent } : {}),
   });
@@ -267,6 +271,25 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   // 人に見せた答え(user-journey.md の J7)は、版の一覧に載せる。答えは版の写しの外に置くので、版を戻しても消えない
   const versions = new ProjectVersions({ store, aiSessions, log, answersOf: (id) => shows.answersByVersion(id) });
   const shows = new ProjectShows({ home: config.home, store, versions, intents, log });
+  // 画面へのコメント、反応、承認、列、直した記録、元に戻す(user-journey.md の K3)。承認がそろったコメントだけを作る AI に渡す。
+  // 依頼には目的の文書と整理の板を包む。直す前の画面は観察器で撮る(広い画面 1 枚。基本の手順は回さない)
+  const comments = new ProjectComments({
+    home: config.home,
+    store,
+    requests,
+    versions,
+    reviews,
+    contextOf: (id) => {
+      const intent = intents.viewOf(id);
+      return { purpose: intent?.status === 'skipped' ? null : intent?.doc ?? null, board: organizes.boards.get(id)?.items ?? [] };
+    },
+    talkGate,
+    shoot: async (id, outDir) => {
+      const { report } = await observeShown(id, { scenarios: [], base: false, viewports: ['desktop'], outDir });
+      return report?.screenshots?.find((shot) => typeof shot?.file === 'string')?.file ?? null;
+    },
+    log,
+  });
   const handoffs = new ProjectHandoffs({ home: config.home, store, aiSessions, versions, requests, log });
   const studioServer = http.createServer(
     createStudioHandler({
@@ -284,6 +307,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       sceneRuns,
       quality,
       shows,
+      comments,
       materials,
       meetings,
       token,
@@ -355,6 +379,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     aiSessions,
     versions,
     shows,
+    comments,
     handoffs,
     intents,
     organizes,

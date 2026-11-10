@@ -276,6 +276,8 @@
     <p class="muted">作る前に、AI の作りを 4 つに分けて読み、承認します。4 つそろうまで、作る AI は作り始めません。出している案は今日の一番良い推測です。</p>
     <p id="review-count" class="review-count" role="status"></p>
     <p id="review-state" class="intent-doc-state" role="status"></p>
+    <!-- 画面へのコメント(種類が「構成」)を承認して、審査に戻したもの(K3) -->
+    <ul id="review-comments" class="review-comments" aria-label="審査に戻したコメント" hidden></ul>
     <div id="review-stopped" class="review-stopped" role="alert" hidden>
       <p id="review-stopped-text"></p>
       <div class="design-actions">
@@ -458,6 +460,43 @@
         </div>
       </form>
       <p id="show-status" class="show-status" role="status"></p>
+      <!-- 画面へのコメント、反応、承認、列、直した記録、元に戻す(user-journey.md の K3。サーバーは src/server/comments.js)。
+           1 台の PC の形。作る AI に送るのは、承認がそろったコメントだけ。開発の言葉は、閉じた「開発者向け」の中にだけ出す -->
+      <section id="comments" class="comments" aria-labelledby="comments-heading">
+        <h3 id="comments-heading">コメント</h3>
+        <p class="muted">コメントや反応だけでは、試作品は変わりません。進行役か決める人が承認したコメントだけを、直す AI に送ります。要件のコメントは、進行役と決める人の 2 人が承認してから送ります。構成のコメントは、承認すると AI 構成の審査に戻します。</p>
+        <form id="comment-form" class="comment-form">
+          <div class="comment-place-row">
+            <button type="button" id="comment-place" aria-pressed="false">画面の場所を選ぶ</button>
+            <span id="comment-place-text">場所: 画面の全体</span>
+          </div>
+          <label for="comment-text">コメント</label>
+          <textarea id="comment-text" rows="2" maxlength="1000"></textarea>
+          <fieldset class="comment-kind">
+            <legend>種類</legend>
+            <label><input type="radio" name="comment-kind" value="look" checked> 見た目と動き</label>
+            <label><input type="radio" name="comment-kind" value="requirement"> 要件</label>
+            <label><input type="radio" name="comment-kind" value="architecture"> 構成</label>
+          </fieldset>
+          <label for="comment-author">書いた人(なくてもよい)</label>
+          <input id="comment-author" type="text" maxlength="40" autocomplete="off">
+          <div class="show-actions">
+            <button type="submit" id="comment-add">コメントを書く</button>
+          </div>
+        </form>
+        <fieldset class="comment-who">
+          <legend>承認と確かめの記録(なくてもよい)</legend>
+          <p class="muted">1 台の画面では、決める人が声に出し、進行役が押します。名前は書かず、「店長」「担当」のように書いてください。</p>
+          <label for="comment-pressed">押した人</label>
+          <input id="comment-pressed" type="text" maxlength="40" autocomplete="off">
+          <label for="comment-spoken">声に出した人</label>
+          <input id="comment-spoken" type="text" maxlength="40" autocomplete="off">
+        </fieldset>
+        <p id="comment-queue" class="comment-queue" role="status"></p>
+        <button type="button" id="comment-resume" hidden>列を進める</button>
+        <ol id="comment-list" class="comment-list" aria-label="コメントの一覧"></ol>
+        <p id="comment-status" class="show-status" role="status"></p>
+      </section>
     </section>
     <section class="make" aria-labelledby="make-heading">
       <div class="make-head">

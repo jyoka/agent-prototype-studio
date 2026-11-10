@@ -194,7 +194,7 @@ AI 構成の審査([ai-architecture-review.md の 6 節](design/ai-architecture-
 | `items[]` | 4 つの項目(`composition`、`harness`、`data`、`stack`)。`label`、`needs`(要る役)、`approved`(今の指紋で承認がそろっているか)、`by[]`(`role`、`roleLabel`、`pressedBy`、`spokenBy`、`at`、`valid`) |
 | `approvedAt`、`approvedUnmeasured` | 4 つの承認がそろった日時と、場面の数がないまま承認したか |
 | `skipped` | 審査を飛ばしたときの `at`、`by`、`reason` |
-| `record` | AI 構成書(`.studio/reviews/<審査の ID>/architecture.json`)の写し。文は伏せる処理を通す。押した人と声に出した人の名前は承認の記録なので残る(申告の名前。伏せる処理はメールアドレスなどの形だけを伏せ、名前だけの文字列は見分けられない)。指紋(`basis`、`evidence`、`fingerprint`、承認の `digest`)は伏せない(伏せると照合できない) |
+| `record` | AI 構成書(`.studio/reviews/<審査の ID>/architecture.json`)の写し。文は伏せる処理を通す。押した人と声に出した人の名前は承認の記録なので残る(申告の名前。伏せる処理はメールアドレスなどの形だけを伏せ、名前だけの文字列は見分けられない)。指紋(`basis`、`evidence`、`fingerprint`、承認の `digest`)は伏せない(伏せると照合できない)。画面へのコメント(種類が「構成」)から審査に戻したときだけ、戻したコメント(`comments`。番号、文、時刻)が入る(K3) |
 
 ### materials
 

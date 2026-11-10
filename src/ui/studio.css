@@ -929,3 +929,54 @@ body[data-show] [data-studio-only] { display: none !important; }
 .show-record-list { margin: 0; }
 .show-record-list dt { font-weight: 600; }
 .show-record-list dd { margin: 0 0 0.3rem 1rem; overflow-wrap: anywhere; white-space: pre-wrap; }
+
+/* 画面へのコメント(user-journey.md の K3)。見せる画面の中に出す。試作品の枠の上に、場所を選ぶ層と番号の印を重ねる */
+.frame-host { position: relative; }
+.comment-layer { position: absolute; inset: 0; pointer-events: none; display: none; }
+.comment-layer[data-on="true"] { display: block; }
+.comment-layer.picking { pointer-events: auto; cursor: crosshair; background: transparent; outline: 2px dashed var(--accent); outline-offset: -2px; }
+.comment-pin {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  min-width: 1.6rem;
+  height: 1.6rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+}
+.comment-pin-new { background: var(--violet); }
+.comments { margin-top: 1rem; padding-top: 0.8rem; border-top: 1px solid var(--line); }
+.comments h3 { margin: 0 0 0.3rem; }
+.comment-form { display: flex; flex-direction: column; gap: 0.4rem; }
+.comment-form textarea, .comment-form input[type="text"], .comment-who input { width: 100%; font: inherit; }
+.comment-place-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.comment-kind, .comment-who { border: 1px solid var(--line); border-radius: 4px; padding: 0.3rem 0.6rem 0.5rem; margin: 0.4rem 0 0; }
+.comment-kind label { margin-right: 0.8rem; }
+.comment-who label { display: block; margin-top: 0.3rem; }
+.comment-queue:empty { display: none; }
+.comment-queue { margin: 0.6rem 0 0; padding: 0.4rem 0.6rem; border-radius: 4px; background: var(--warn-bg); color: var(--warn-text); }
+.comment-list { list-style: none; margin: 0.6rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+.comment-item { border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem 0.6rem; }
+.comment-item[data-status="closed"], .comment-item[data-status="reverted"] { opacity: 0.8; }
+.comment-item p { margin: 0.2rem 0; }
+.comment-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; }
+.comment-kind-mark { padding: 0 0.4rem; border-radius: 4px; background: var(--accent-bg); font-size: 0.85rem; }
+.comment-state { margin-left: auto; font-size: 0.85rem; color: var(--muted); }
+.comment-text { overflow-wrap: anywhere; white-space: pre-wrap; }
+.comment-near, .comment-note { padding: 0.3rem 0.5rem; border-radius: 4px; background: var(--warn-bg); color: var(--warn-text); }
+.fix-record { margin-top: 0.5rem; padding-top: 0.4rem; border-top: 1px dashed var(--line); }
+.fix-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.fix-compare figure { margin: 0; }
+.fix-compare img { width: 100%; border: 1px solid var(--line); border-radius: 4px; }
+.fix-compare figcaption { font-size: 0.85rem; color: var(--muted); text-align: center; }
+.fix-events { margin: 0.3rem 0; padding-left: 1.2rem; font-size: 0.9rem; }
+.fix-request { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.85rem; }
+.review-comments[hidden] { display: none; }
+.review-comments { margin: 0.4rem 0; padding: 0.4rem 0.6rem 0.4rem 1.6rem; border-radius: 4px; background: var(--warn-bg); color: var(--warn-text); }
