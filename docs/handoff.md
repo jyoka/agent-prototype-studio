@@ -253,8 +253,11 @@ AI 構成の審査([ai-architecture-review.md の 6 節](design/ai-architecture-
 | `figure` | 構成の図。`nodes[]`(`id`、`kind`(`person`、`ai`、`code`、`tool`)、`label`)と `edges[]`(`from`、`to`、`label`)。AI 構成の審査の画面の図と同じ作り |
 | `openItems[]` | 未決事項。`key`(持ち主を結ぶ印)、`from`(`conflict`、`unasked`、`guess`、`empty`、`purpose`、`design`、`review`、`comment`)、`fromLabel`、`text`、`owner`(持ち主。なければ空)、`due`(期日 `YYYY-MM-DD`。なければ空) |
 | `unowned` | 持ち主のない未決事項の数。1 以上なら、Studio が `openQuestions` にも書く |
+| `timeline` | 段ごとの時刻(K6)。`stages[]`(`key`(`start`、`listen`、`organize`、`review`、`prototype`、`show`、`fix`、`closing`)、`label`、`mark`(時刻を残す印)、`planMinutes`(60 分の型の目安。仮)、`at`、`elapsedMs`(同意からの時間))、`reached`(時刻のある段の数)、`toShowMs`(見せられるまでの時間)、`fixes[]`(`recordId`、`comment`、`approvedAt`、`fixedAt`、`checked`(直した版の自動の確かめが通ったか)、`ms`。承認から直った版まで。`checked` が false なら null)、`longestFixMs`、`targets`(`showMinutes`、`fixMinutes`。どちらも仮)。会ではない試作品は `reached` が 0 で、`fixes` は空 |
 
 持ち主と期日は `.studio/closing.json`(`formatVersion`、`owners`: `{ key: { owner, due, at } }`)に置く。未決事項の文が変わると `key` が変わり、持ち主なしに戻る。
+
+段ごとの時刻は `.studio/timeline.json`(`formatVersion`、`stages`: `{ key: 時刻 }`)に置く。Studio が、段の印が初めて付いたときに残し、上書きしない。会を始めた試作品では、書き出しそのものを会の終わりの印にする(まだ残っていなければ、書き出した時刻を入れる)。README には、時刻が 1 つ以上あるときだけ「段ごとの時刻」の節を書く。
 
 ### materials
 
@@ -312,6 +315,7 @@ AI 構成の審査([ai-architecture-review.md の 6 節](design/ai-architecture-
 - Studio が見つけたこと(`openQuestions` の `studio`)に、次を足した。目的の文書がない、または決めていない。設計の決定がない、または決めていない。確かめ直しの要る段がある。質の見直しに「直す」がある。画面の検査が古い。人に見せた答えがない。今の構成が AI 構成書の承認と違う。審査が承認の途中、審査なし、AI 構成書を読めない、測らずに承認した。
 - README に「目的の文書」「設計の段ごとの決定と理由」「AI 構成の審査(AI 構成書)」「質の見直し」「人に見せた答え」「素材の出典とライセンス」「確かめていないこと」の節を足した。
 - K5 で、`requirements`、`dataDesign`、`fixRecords`、`closing` を足した。`openQuestions` に「持ち主のない未決事項がある」を足した。README に「会の終わりの成果物」の節(7 つの成果物、要件の文書、データ設計、直した記録の一覧、未決事項の持ち主と期日)を足した。前の項目の形は変えていないので、`formatVersion` は 4 のまま。
+- K6 で、`closing.timeline`(段ごとの時刻、見せられるまでの時間、承認から直った版までの時間)と、README の「段ごとの時刻」の節を足した。`formatVersion` は 4 のまま。
 
 ## まだしないこと
 

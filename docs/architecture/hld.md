@@ -80,6 +80,7 @@ flowchart TB
         show["人に見せる画面の問いと答え<br/>show.js"]
         comments["画面へのコメント、承認、列、直した記録<br/>comments.js"]
         closing["会の終わりの成果物と未決事項の持ち主<br/>closing.js"]
+        timeline["会の段ごとの時刻<br/>timeline.js"]
         redact["伏せる、秘密を探す<br/>redact.js"]
     end
 
@@ -141,7 +142,11 @@ flowchart TB
     comments -- "構成のコメントは審査に戻す" --> review
     comments -- "読み書き(.studio/comments.json、.studio/fix-records/)" --> dotstudio
     api --> closing
-    closing -- "読む(整理の板、目的、設計、審査、コメント、直した記録)。書く(.studio/closing.json)" --> dotstudio
+    closing -- "読む(整理の板、目的、設計、審査、コメント、直した記録、段ごとの時刻)。書く(.studio/closing.json)" --> dotstudio
+    api -- "同意、整理、審査、コメント、書き出しの後" --> timeline
+    requests -- "run の終わり(onEnd)" --> timeline
+    comments -- "直した版ができた(onFixed)" --> timeline
+    timeline -- "書く(.studio/timeline.json。初めての時刻だけ)" --> dotstudio
     handoff -- "会の終わりの成果物を足す" --> closing
     requests --> agent
     agent -- "子プロセス(cwd は app/)" --> cli
@@ -209,6 +214,7 @@ flowchart TB
 | 質の見直しの表 | `src/server/quality.js`、`src/observer/audit.js` | `/api/projects/<id>/quality`(GET だけ)。試す欄の下の「質の見直し」が使う。測ったもの(アクセシビリティの違反、字と地の差、素材に合わない色と部品、場面の結果、道具の呼び方の正しさ、守りの効き、費用、待ち時間)と AI の判断(返事の自然さの採点、使いやすさの見直し)の行に、「なぜ大事か」「直す」と、言葉で直す欄に入れる依頼の文を付ける。何も動かさず、3 つを読むだけ。(1) 一番新しい、表示中の試作品を見た観察(画面の「確かめる」。report の `mode` が `shown`)の `audit`。観察器が最後の画面で `audit.js` の小さな検査(ラベル、ボタンの名前、画像の代わりの文、WCAG の式の字と地の差)を動かし、値を決まった形に写して入れる。関門の合否には入れない。(2) `app/` の文の形で探した、値のまま書いた色と、既定の素材を読む試作品でじかに書いた部品。(3) `scene-runs.js` の一番新しい場面の回しの結果の最初の組。見ていない項目は `unseen`(「まだ見ていない」)。外の検査の道具は使わない([user-journey.md の「J6 で決めたこと」](../design/user-journey.md#j6-で決めたことtask-3892026-11-11)) |
 | 人に見せる画面の問いと答え | `src/server/show.js` | `/api/projects/<id>/show`(GET は問いと答えの記録。`start` は見せ始める。`answer` は答えを残す)。その他の引き出しの「人に見せる」が使う。問いは目的の文書(`intent.js`)の成功の印から、決まった形で作る(AI は呼ばない)。見せ始めると、今の状態と同じ版を探し、なければ版を保存して、その版に結び付ける。答えは見せた版の ID と番号を付けて `.studio/show.json` に残す。版の写しの外に置くので、版を戻しても消えない。版の一覧(`versions.js` の `list`)は、版ごとの答えを `shows` に載せる。見せる画面は画面の側の形(`body[data-show]`)で、試作品と問いの欄だけを出す([user-journey.md の「J7 で決めたこと」](../design/user-journey.md#j7-で決めたことtask-3912026-11-11)) |
 | 画面へのコメントと承認 | `src/server/comments.js` | `/api/projects/<id>/comments`(GET は一覧と直した記録。POST はコメントを書く。コメントごとの `react`、`approve`、`unapprove`、`close`、`reopen`、`resolve`、`revert`。`resume` は止めた列を進める)。見せる画面の右の「コメント」が使う。役は進行役と決める人だけ(1 台の PC の形)。反応と書き込みでは何も動かさない。承認がそろったコメント(見た目と動きは 1 人、要件は 2 人)を列に並べ、作る run が動いていなければ先頭を 1 つ、決まった形の依頼に包んで `BuildRequests.start` に渡す。run が終わるたびに(`BuildRequests` の `onEnd`)列を進める。送る前に直す前の版(今と同じ自分の版、なければ保存)と画面(観察器で広い画面 1 枚)を取り、終わったら直した後の版を保存し、関門の起動の確認の画面を写す。直した記録は `.studio/fix-records/<ID>/record.json`(collaboration.md の 5 節の項目)。元に戻すは `versions.js` の `restore` で、記録に「戻した」を足す。構成のコメントは作る AI に送らず、`ProjectReviews.reopenFromComment` で新しい審査にする(承認は全部やり直し)。同意、会の同意、審査の承認の前とほかの作業中は、列で止めて理由を出す([user-journey.md の「K3 で決めたこと」](../design/user-journey.md#k3-で決めたことtask-3932026-11-11)) |
+| 会の段ごとの時刻 | `src/server/timeline.js` | 会の 8 つの段(始める、聞く、AI が整理する、AI 構成の審査、試作品、見せて、コメントをもらう、承認して AI が直す、要件の文書と引き継ぎ)の印が初めて付いた時刻を `.studio/timeline.json` に残す。上書きしない。同意の後の会だけ(お試しの AI だけの会も)。印を付けるのは `studio-server.js`(同意、整理の板、「この構成で作る」、最初のコメント、書き出し)、`BuildRequests` の `onEnd`(自動の確かめが通った run)、`ProjectComments` の `onFixed`(直した版)。会の終わりの画面と引き継ぎ(`closing.timeline`)が、見せられるまでの時間と、承認から直った版までの時間を出す([user-journey.md の「K6 で決めたこと」](../design/user-journey.md#k6-で決めたことtask-3962026-11-11)) |
 | 版 | `src/server/versions.js` | `app/` と会話と状態を `.studio/versions/` に写す。復元する。一覧には、版ごとの人に見せた答え(`show.js`)を載せる |
 | 引き継ぎ | `src/server/handoff.js`、`src/server/handoff-decisions.js` | 作業中の試作品と、目録、シナリオ、最新の証拠の要約、構成とツールと前提と場面、最新の場面の回しの要約を `handoffs/` に書き出す。形式 4 では、目的の文書(`.studio/intent.json`)、設計の段ごとの決定と理由(`design.json`)、質の見直しの表(`quality.js` の `readQuality`)、人に見せた答え(`show.json`)、AI 構成書と承認の記録(`reviews/`。書き出す `app/` の指紋と比べる)、既定の素材の出典とライセンス(`materials/default/`)も読んで入れる。読むだけで何も動かさない。形は [handoff.md](../handoff.md) |
 | 本物の AI の同意 | `src/server/real-ai.js` | 本物の AI を使う前の同意を、メモリーに 1 つ持つ。作る AI(`BuildRequests.start`、接続が Claude Code のとき)と、プロダクト内 AI の本物の接続への口(`AiSessions.useReal`。切り替えと観察)が、使う前に確かめ、同意の前は `consent-required` で断る。同意のカードの中身(送るもの、送り先、料金の文と上限、「詳しく」)を `/api/real-ai` で返す |

@@ -280,7 +280,7 @@ export class BuildRequests {
     this.meetingGate = meetingGate;
     // AI 構成の審査(review.js)。なければ審査を見ない
     this.reviews = reviews;
-    // run が終わるたびに呼ぶ(id)。承認したコメントの列(comments.js)が、次を進める
+    // run が終わるたびに呼ぶ(id, run の写し)。承認したコメントの列(comments.js)が次を進め、会の段ごとの時刻(timeline.js)が試作品の時刻を残す
     this.onEnd = onEnd;
     // 決まった節が使う、接続の名前と問題。決まった節は、ここだけを見る
     this.agentLabel = connection.label;
@@ -435,7 +435,7 @@ export class BuildRequests {
         this.touch(id, run);
         emitter.emit('end', structuredClone(run));
         try {
-          this.onEnd(id);
+          this.onEnd(id, structuredClone(run));
         } catch (error) {
           this.log(`run の後の処理で問題が起きました: ${id}(${error.message})`);
         }

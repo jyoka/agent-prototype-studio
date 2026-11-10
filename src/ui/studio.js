@@ -5661,7 +5661,7 @@ function renderMeetingFacts(record) {
   const { sending } = record;
   meetingEls.facts.replaceChildren(
     ...meetingFact('目的', record.purpose),
-    ...meetingFact('流れ', bulletList('ol', record.flow.map((step) => (step.ready ? step.label : `${step.label}(まだ作っていません)`)))),
+    ...meetingFact('流れ', bulletList('ol', record.flow.map((step) => step.label))),
     ...meetingFact('何を送るか', sending.outside ? bulletList('ul', sending.items) : '外の AI には送りません。今の起動は、外の AI につながっていません。'),
     ...(sending.outside ? [...meetingFact('送り先', sending.to ?? '不明'), ...meetingFact('料金', sending.cost ?? '不明')] : []),
     ...meetingFact('置き場', `この PC の中だけです。${record.place}`),
@@ -5972,6 +5972,52 @@ function closingDataView(data) {
   return box;
 }
 
+// 時間を「12 分 5 秒」の形にする(src/server/timeline.js の durationWords と同じ)
+function durationText(ms) {
+  if (ms === null || ms === undefined) return 'まだ測れていません';
+  const seconds = Math.round(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  if (hours > 0) return `${hours} 時間 ${minutes % 60} 分`;
+  return minutes > 0 ? `${minutes} 分 ${seconds % 60} 秒` : `${seconds} 秒`;
+}
+
+// 段ごとの時刻(K6。src/server/timeline.js)。見せられるまでの時間と、承認から直った版までの時間を先に出す
+function renderClosingTimeline(timeline) {
+  const { targets } = timeline;
+  const fixes = timeline.fixes.length === 0
+    ? '承認したコメントはまだありません'
+    : timeline.fixes.map((fix) => `コメント ${fix.comment ?? '-'} は ${fix.ms !== null ? durationText(fix.ms) : fix.fixedAt ? '直した版の自動の確かめが通っていません' : 'まだ直っていません'}`).join('、');
+  const show = element('li', `見せられるまでの時間: ${durationText(timeline.toShowMs)}(同意から、自動の確かめが通った最初の試作品まで。目安 ${targets.showMinutes} 分以内、仮)`);
+  show.dataset.over = String(timeline.toShowMs !== null && timeline.toShowMs > targets.showMinutes * 60_000);
+  const fix = element('li', `承認から直った版まで: ${fixes}(目安 ${targets.fixMinutes} 分以内、仮)`);
+  fix.dataset.over = String(timeline.longestFixMs !== null && timeline.longestFixMs > targets.fixMinutes * 60_000);
+  $('closing-measures').replaceChildren(show, fix);
+  const head = element('tr');
+  head.append(...['段', '時刻を残す印', '時刻', '始めから', '目安(60 分の型、仮)'].map((text) => {
+    const th = element('th', text);
+    th.scope = 'col';
+    return th;
+  }));
+  const rows = timeline.stages.map((stage) => {
+    const row = element('tr');
+    row.dataset.stage = stage.key;
+    row.dataset.reached = String(Boolean(stage.at));
+    const over = stage.elapsedMs !== null && stage.elapsedMs > stage.planMinutes * 60_000;
+    const th = element('th', stage.label);
+    th.scope = 'row';
+    row.append(
+      th,
+      element('td', stage.mark),
+      element('td', stage.at ? new Date(stage.at).toLocaleTimeString('ja-JP') : 'まだ'),
+      element('td', stage.at ? durationText(stage.elapsedMs) : '-'),
+      element('td', `${stage.planMinutes} 分まで${over ? '(目安を超えた)' : ''}`),
+    );
+    return row;
+  });
+  $('closing-timeline').replaceChildren(head, ...rows);
+}
+
 function renderClosing() {
   const data = closingUi.data;
   meetingEls.heading.textContent = '会の終わり';
@@ -6018,6 +6064,7 @@ function renderClosing() {
   $('closing-fixes').replaceChildren(...(data.fixRecords.length > 0
     ? data.fixRecords.map((record) => element('li', `コメント ${record.comment.number}「${record.comment.text}」(${record.comment.kindLabel}): ${record.events.at(-1)?.label ?? record.status}。承認: ${record.approval.approvers.map((a) => a.roleLabel).join('、') || 'なし'}`))
     : [element('li', '画面へのコメントから直した記録はありません。')]));
+  renderClosingTimeline(data.timeline);
   for (const button of [$('closing-export'), $('closing-reload'), $('closing-back')]) button.disabled = closingUi.busy;
   $('closing-export').textContent = closingUi.busy ? '書き出しています…' : '書き出す';
   const exported = $('closing-exported');
@@ -6090,6 +6137,13 @@ async function exportClosing() {
     const { handoff: made } = await api(`/api/projects/${encodeURIComponent(id)}/handoff`, { method: 'POST', json: notes ?? {} });
     if (seq !== meetingUi.seq) return;
     closingUi.exported = made;
+    // 書き出しは会の終わりの印なので、段ごとの時刻を読み直す。読み直せなくても書き出しは済んでいるので、誤りは出さない(「読み直す」で読める)
+    try {
+      const { closing } = await api(closingPath(id));
+      if (seq === meetingUi.seq) closingUi.data = closing;
+    } catch {
+      // 前の中身のまま
+    }
   } catch (error) {
     if (seq === meetingUi.seq) meetingFailed(error);
   } finally {

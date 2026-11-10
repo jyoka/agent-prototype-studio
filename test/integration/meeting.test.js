@@ -217,3 +217,57 @@ test('消す: AI の応答を待つ間は断る。止めた後は消える。メ
   assert.equal(studio.store.state.has(id), false);
   assert.equal((await call(`${base}/meeting/erase`, { confirm: id })).status, 404);
 });
+
+// 会の段ごとの時刻(src/server/timeline.js、K6)。残すのは同意の後の会だけ。会ではない試作品と、断った操作では残さない
+test('段ごとの時刻: 同意の前と、会ではない試作品には残さない。断った操作でも残さない。聞くは整理より後にならない', posixOnly, async (t) => {
+  const { studio, call, meeting } = await boot(t, { STUDIO_AGENT: 'fake' });
+  const id = await meeting();
+  const base = `/api/projects/${id}`;
+  const projects = path.join(studio.store.home, 'projects');
+  const stages = async (project = id) => JSON.parse(await fs.readFile(path.join(projects, project, '.studio', 'timeline.json'), 'utf8').catch(() => '{"stages":{}}')).stages;
+
+  // 同意の前: コメントも要点も断り、時刻は残らない
+  assert.equal((await call(`${base}/comments`, { text: '見出しを大きくして' })).status, 403);
+  assert.equal((await call(`${base}/organize/point`, { text: '架空の要点' })).status, 403);
+  assert.deepEqual(await stages(), {});
+
+  // 会ではない試作品: コメントを書いても、時刻は残らない
+  assert.equal((await call('/api/projects/sample-library/comments', { text: '見出しを大きくして' })).status, 200);
+  assert.deepEqual(await stages('sample-library'), {});
+
+  // お試しの AI だけで始めても測る。始めの時刻は、初めて決めた時刻
+  const decided = await call(`${base}/meeting/decide`, { decision: 'trial' });
+  assert.equal(decided.status, 200);
+  assert.deepEqual(await stages(), { start: decided.body.meeting.decidedAt });
+
+  // 断ったコメント(記録らしいもの)では残さない
+  assert.equal((await call(`${base}/comments`, { text: '090-0000-0000 に電話して' })).status, 422);
+  assert.equal((await stages()).show, undefined);
+
+  // 4 つの欄まででは「聞く」にならない。5 つ目を入れると残る。決める人が押すと「AI が整理する」
+  for (const column of ['requirement', 'user', 'scene', 'rule']) assert.equal((await call(`${base}/organize/item`, { column, text: `架空の${column}` })).status, 200);
+  assert.equal((await stages()).listen, undefined);
+  const placed = await call(`${base}/organize/item`, { column: 'data', text: '架空の荷物の番号' });
+  assert.equal(placed.status, 200);
+  assert.ok((await stages()).listen);
+  assert.equal((await call(`${base}/organize/confirm`, { rev: placed.body.organize.rev })).status, 200);
+  const after = await stages();
+  assert.ok(after.organize >= after.listen);
+  // 一度残した時刻は、板を変えて押し直しても変わらない
+  const again = await call(`${base}/organize/item`, { column: 'data', text: '架空の希望の日時' });
+  assert.equal((await call(`${base}/organize/confirm`, { rev: again.body.organize.rev })).status, 200);
+  assert.equal((await stages()).organize, after.organize);
+
+  // 最初のコメント
+  assert.equal((await call(`${base}/comments`, { text: '見出しを大きくして' })).status, 200);
+  assert.ok((await stages()).show);
+
+  // 書き出しが会の終わり。書き出しの中の時刻と、残した時刻が同じ
+  const exported = await call(`${base}/handoff`, {});
+  assert.equal(exported.status, 200, JSON.stringify(exported.body));
+  const final = await stages();
+  assert.equal(final.closing, exported.body.last.createdAt);
+  const manifest = JSON.parse(await fs.readFile(path.join(exported.body.last.dir, 'handoff.json'), 'utf8'));
+  assert.equal(manifest.closing.timeline.stages.find((stage) => stage.key === 'closing').at, final.closing);
+  assert.deepEqual(Object.keys(final).sort(), ['closing', 'listen', 'organize', 'show', 'start']);
+});

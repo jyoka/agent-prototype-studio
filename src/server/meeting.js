@@ -8,6 +8,7 @@ import { SHOW_FILE } from './show.js';
 import { COMMENTS_FILE } from './comments.js';
 import { CLOSING_FILE } from './closing.js';
 import { BusyError, NotFoundError } from './store.js';
+import { MEETING_STAGES } from './timeline.js';
 
 // 会の始めとお客さんのデータ(docs/design/field-session.md の段 0、docs/design/collaboration.md の 7 節、K4)。
 // 会は 1 つの試作品と同じ長さで、同意と消す日を .studio/meeting.json に持つ。会ではない試作品は今までどおり。
@@ -30,16 +31,8 @@ const HANDOFFS_DIR = 'handoffs';
 const DECISIONS = { agree: 'agreed', trial: 'trial' };
 const STATUSES = ['waiting', 'agreed', 'trial'];
 
-// 1 時間の流れ(field-session.md の 2 節)。ready は今の Studio で通るか
-export const MEETING_FLOW = [
-  { label: '聞く', ready: true },
-  { label: 'AI が整理する', ready: true },
-  { label: 'AI 構成の審査', ready: false },
-  { label: '試作品', ready: true },
-  { label: '見せて、コメントをもらう', ready: false },
-  { label: '承認して AI が直す', ready: false },
-  { label: '要件の文書と引き継ぎ', ready: true },
-];
+// 1 時間の流れ(field-session.md の 2 節)。段の名前は、段ごとの時刻(timeline.js)と同じ。始めるは、この画面そのものなので入れない
+export const MEETING_FLOW = MEETING_STAGES.filter((stage) => stage.key !== 'start').map((stage) => ({ label: stage.label }));
 
 const SENDS = ['お客さんの話(打った要点)', '整理の板の項目', '目的の文書', '試作品のソース'];
 

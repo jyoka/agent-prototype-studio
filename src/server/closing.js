@@ -12,6 +12,7 @@ import { ORGANIZE_FILE, asksOf, isGuess } from './organize.js';
 import { isValidProjectId } from './projects.js';
 import { findRecords, redact, redactDeep } from './redact.js';
 import { NotFoundError } from './store.js';
+import { describeTimeline, durationWords, readTimeline } from './timeline.js';
 
 // 会の終わりの成果物(docs/design/user-journey.md の K5、docs/design/field-session.md の段 7 と 3 節)。
 // 7 つの成果物(要件の文書、データ設計、構成の図、AI 構成書、試作品、場面の一覧、未決事項)を、Studio が持つ記録から読んでまとめる。
@@ -304,7 +305,8 @@ export function describeDeliverables({ requirements, dataDesign, simulation, ai 
 }
 
 // 会の終わりの全体。画面(ProjectClosings.view)と引き継ぎ(handoff.js)が同じ関数で作る
-export function describeClosing({ purpose, design, review, board, comments, records, dataDesign, simulation, ai, evidence, latestRun, owners }) {
+// stages は段ごとの時刻(timeline.js。.studio/timeline.json)。会ではない試作品は空
+export function describeClosing({ purpose, design, review, board, comments, records, dataDesign, simulation, ai, evidence, latestRun, owners, stages = {} }) {
   const requirements = describeRequirements({ purpose, board, comments, records });
   const openItems = describeOpenItems({ board, purpose, design, review, comments, owners });
   const collected = Boolean(board) || (purpose?.status && purpose.status !== 'none' && purpose.status !== 'skipped') || openItems.length > 0;
@@ -319,6 +321,7 @@ export function describeClosing({ purpose, design, review, board, comments, reco
     fixRecords: describeFixRecords(records, requirements),
     openItems,
     unowned: openItems.filter((item) => !item.owner).length,
+    timeline: describeTimeline(stages, records),
   };
 }
 
@@ -371,6 +374,23 @@ function itemSource(item) {
 // 項目の名前と種類。番号とつながりの番号は、名前に「番号」が入るので短く書く
 const fieldWords = (f) => (f.kind === 'key' ? `${f.name}(主キー)` : f.kind === 'link' ? `${f.name}(${f.to}への外部キー)` : `${f.name}(${f.kindLabel})`);
 
+// 段ごとの時刻(K6)。会で 1 つも時刻を残していなければ書かない
+function timelineReadmeLines(timeline) {
+  if (!timeline || timeline.reached === 0) return [];
+  const lines = [
+    '### 段ごとの時刻',
+    '',
+    `見せられるまでの時間(同意から、自動の確かめが通った最初の試作品まで): ${durationWords(timeline.toShowMs)}(目安 ${timeline.targets.showMinutes} 分以内、仮)。`,
+    `承認から直った版まで: ${timeline.fixes.length === 0 ? '承認したコメントはありません' : timeline.fixes.map((f) => `コメント ${f.comment ?? '-'} は ${f.ms !== null ? durationWords(f.ms) : f.fixedAt ? '直した版の自動の確かめが通っていない' : 'まだ直っていない'}`).join('、')}(目安 ${timeline.targets.fixMinutes} 分以内、仮)。`,
+    '',
+    '| 段 | Studio が時刻を残す印 | 時刻 | 始めから | 60 分の型の目安(仮) |',
+    '|---|---|---|---|---|',
+    ...timeline.stages.map((stage) => `| ${stage.label} | ${stage.mark} | ${stage.at ? localTime(stage.at) : '(まだ)'} | ${stage.at ? durationWords(stage.elapsedMs) : '-'} | ${stage.planMinutes} 分まで |`),
+    '',
+  ];
+  return lines;
+}
+
 export function closingReadmeLines(closing) {
   const { deliverables, requirements, dataDesign, fixRecords, openItems } = closing;
   const lines = [
@@ -416,6 +436,7 @@ export function closingReadmeLines(closing) {
     }
     lines.push('');
   }
+  lines.push(...timelineReadmeLines(closing.timeline));
   lines.push('### 未決事項の持ち主と期日', '');
   if (openItems.length === 0) lines.push('(会の記録から見つけた未決事項はありません)', '');
   else {
@@ -474,6 +495,7 @@ export class ProjectClosings {
       evidence,
       latestRun,
       owners: await readOwners(paths),
+      stages: await readTimeline(paths),
     });
     return closing;
   }
