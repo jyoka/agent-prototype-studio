@@ -45,7 +45,7 @@ test('ビルドに失敗した試作品は、場所と直し方を出し、直�
     const broken = await chooseProject(page, /壊れた試作品/);
     await expect(broken).toContainText('表示できません');
 
-    // ビルドの結果は、その他 → 開発者向けの詳細にある
+    // ビルドの結果は、仕組みの引き出しにある
     await openDevDetails(page);
     const status = page.locator('#build-status');
     await expect(status).toContainText('ビルドに失敗しました');

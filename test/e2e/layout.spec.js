@@ -1,7 +1,7 @@
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, launchStudio, openAiMenu, openDevDetails, openMore, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, expect, launchStudio, openAiMenu, openDevDetails, openMaterials, openMechanism, test } from './studio.js';
 
-// 画面の骨組み(ux-redesign.md 3 節、7-1、7-2、7-7)。上の帯と、左「試す」・右「言葉で直す」の 2 列と、「その他」の引き出し
+// 画面の骨組み(ux-redesign.md 3 節、7-1、7-2、7-7。ui-ux-v2.md の 2.2 で枠を足した)。上の帯と、左「試す」・右「言葉で直す」の 2 列と、仕組みの引き出し
 
 // 「分かるか」の確かめ(ux-redesign.md 9 節)のスクリーンショットの置き場。test-results/ は git が無視する
 const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
@@ -64,16 +64,18 @@ test('U9: 試す欄の上のボタンは、AI の切り替えを除くと「会�
     const toolbar = page.locator('#try-toolbar');
     await expect(toolbar.locator('#ai-switch')).toBeVisible();
     await expect(toolbar.getByRole('button').and(page.locator(':not(#ai-switch)'))).toHaveText(['会話を最初から']);
-    // 画面を読み込み直す(開き直す)、ファイルから作り直す(作り直す)は、試す欄の上にない。「その他」の引き出しにある
+    // 画面を読み込み直す(開き直す)、ファイルから作り直す(作り直す)は、試す欄の上にない。仕組みの引き出しにある
     for (const name of ['画面を読み込み直す', 'ファイルから作り直す', '開き直す', '作り直す', 'リセット']) {
       await expect(page.getByRole('region', { name: '試す' }).getByRole('button', { name })).toHaveCount(0);
     }
 
-    // 上の帯: 試作品の切り替え、保存、その他
+    // 上の帯: 試作品の切り替え、保存、素材、表示。「その他」はなくした(ui-ux-v2.md の 13 節)
     const topbar = page.getByRole('banner');
     await expect(topbar.getByRole('button', { name: `試作品: ${SAMPLES.jobConsult.name}` })).toBeVisible();
     await expect(topbar.getByRole('button', { name: '保存', exact: true })).toBeVisible();
-    await expect(topbar.getByRole('button', { name: 'その他' })).toBeVisible();
+    await expect(topbar.getByRole('button', { name: '素材', exact: true })).toBeVisible();
+    await expect(topbar.getByRole('button', { name: '表示' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'その他' })).toHaveCount(0);
 
     // 何もしていない最初の画面に、保存の印と「つながっています」が出ない
     await expect(page.locator('#save-mark')).toBeHidden();
@@ -173,7 +175,7 @@ test('1024 より狭いときは、試すと直すを上下に並べる', async 
   }
 });
 
-test('U5: 準備の結果、AI のやりとりの記録、AI が覚えていることは、最初は見えない。その他 → 開発者向けの詳細を開くと見える', async ({ page, home }) => {
+test('U5: 準備の結果、AI のやりとりの記録、AI が覚えていることは、最初は見えない。仕組みの引き出しを開くと見える', async ({ page, home }) => {
   const studio = await launchStudio(home);
   try {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -192,7 +194,8 @@ test('U5: 準備の結果、AI のやりとりの記録、AI が覚えている�
       [build, '準備の結果'],
       [trace, 'AI のやりとりの記録'],
       [state, 'AI が覚えていること'],
-      [page.locator('#more-panel'), 'その他の引き出し'],
+      [page.locator('#mechanism'), '仕組みの引き出し'],
+      [page.locator('#materials'), '素材'],
     ]) {
       await expect(locator, label).toBeHidden();
     }
@@ -206,58 +209,61 @@ test('U5: 準備の結果、AI のやりとりの記録、AI が覚えている�
     await expect(trace).toBeHidden();
     await expect(state).toBeHidden();
 
-    // その他: 人に見せる、保存した状態、試作品を自動で確かめる、自分のトークンをつなぐ、部品と指針をつなぐ、本番開発へ渡す、画面を読み込み直す。開発者向けの詳細は、まだ閉じている
-    const more = page.getByRole('banner').getByRole('button', { name: 'その他' });
-    await expect(more).toHaveAttribute('aria-expanded', 'false');
-    const panel = await openMore(page);
-    await expect(more).toHaveAttribute('aria-expanded', 'true');
-    await expect(panel.getByRole('heading', { level: 3 })).toHaveText(['人に見せる', '保存した状態', '試作品を自動で確かめる', '自分のトークンをつなぐ', '部品と指針をつなぐ', '本番開発へ渡す']);
-    await expect(panel.getByRole('button', { name: '画面を読み込み直す' })).toBeVisible();
-    await expect(panel.getByText('開発者向けの詳細')).toBeVisible();
+    // 素材: 自分のトークンをつなぐ、部品と指針をつなぐ。開いても、左の試作品は見えたまま。仕組みの中身はまだ見えない
+    const materials = await openMaterials(page);
+    await expect(materials.getByRole('heading', { level: 3 })).toHaveText(['自分のトークンをつなぐ', '部品と指針をつなぐ']);
     await expect(build).toBeHidden();
-    await expect(trace).toBeHidden();
-    await expect(state).toBeHidden();
-    // 引き出しを開いても、左の試作品は見えたまま
     await expect(app.getByRole('region', { name: '会話' })).toBeVisible();
-    await page.screenshot({ path: path.join(UX_SHOTS, 'P22-more.png') });
 
-    // 開発者向けの詳細を開くと、準備の結果、AI のやりとりの記録、AI が覚えていることが見える。
-    // 開いた見出しは、引き出しの上(「その他」の見出しのすぐ下)へ送られる
+    // 仕組みを見る: 準備の結果、AI のやりとりの記録、AI が覚えていることが見える。素材は閉じる(引き出しは 1 つずつ)
+    const button = page.locator('#mechanism-button');
+    await expect(button).toHaveAttribute('aria-expanded', 'false');
     await openDevDetails(page);
-    const summary = page.locator('#dev-details > summary');
-    await expect.poll(async () => (await summary.boundingBox()).y).toBeLessThan(150);
+    await expect(button).toHaveAttribute('aria-expanded', 'true');
+    await expect(materials).toBeHidden();
     await expect(build).toBeVisible();
     await expect(trace).toBeVisible();
     await expect(state).toBeVisible();
     await expect(state.getByRole('definition')).toHaveText(['カフェのホール', '未定', '未定', '未定']);
     // 試験用の依頼は、偽接続(STUDIO_AGENT=fake)のときだけ出る
     await expect(page.locator('#dev-details').getByRole('heading', { level: 3 })).toHaveText([
+      'プロンプト',
       '直す AI(作る AI)の接続',
       '試験用の依頼',
       'ビルド',
       'プロダクト内 AI',
       'AI の実行の記録',
       '試作品からの知らせ',
+      '画面を読み込み直す',
     ]);
+    // 引き出しは作業台を隠さず、横に並ぶ(試作品は見えたまま)
+    await expect(app.getByRole('region', { name: '会話' })).toBeVisible();
+    const drawerBox = await page.locator('#mechanism').boundingBox();
+    const tryBox = await page.getByRole('region', { name: '試す' }).boundingBox();
+    expect(tryBox.x + tryBox.width).toBeLessThanOrEqual(drawerBox.x + 1);
     await page.screenshot({ path: path.join(UX_SHOTS, 'P22-dev.png') });
 
-    // Esc で閉じ、焦点は「その他」に戻る。もう一度開くと、開発者向けの詳細は開いたまま
+    // Esc で閉じ、焦点は「仕組みを見る」に戻る。. のキーで開き、もう一度で閉じる
     await page.keyboard.press('Escape');
-    await expect(page.locator('#more-panel')).toBeHidden();
-    await expect(more).toBeFocused();
-    await expect(more).toHaveAttribute('aria-expanded', 'false');
-    await openMore(page);
+    await expect(page.locator('#mechanism')).toBeHidden();
+    await expect(button).toBeFocused();
+    await expect(button).toHaveAttribute('aria-expanded', 'false');
+    await page.keyboard.press('.');
+    await expect(page.locator('#mechanism')).toBeVisible();
     await expect(build).toBeVisible();
+    await page.keyboard.press('.');
+    await expect(page.locator('#mechanism')).toBeHidden();
     // 閉じるボタンでも閉じる
-    await panel.getByRole('button', { name: '閉じる' }).click();
-    await expect(page.locator('#more-panel')).toBeHidden();
-    await expect(more).toBeFocused();
+    const panel = await openMechanism(page);
+    await panel.getByRole('button', { name: '仕組みを閉じる' }).click();
+    await expect(page.locator('#mechanism')).toBeHidden();
+    await expect(button).toBeFocused();
   } finally {
     await studio.stop();
   }
 });
 
-test('「画面を読み込み直す」は引き出しに、「ファイルから作り直す」は開発者向けの詳細にあり、押すとそれぞれ動く', async ({ page, home }) => {
+test('「画面を読み込み直す」と「ファイルから作り直す」は仕組みの引き出しにあり、押すとそれぞれ動く', async ({ page, home }) => {
   const studio = await launchStudio(home);
   try {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -277,14 +283,12 @@ test('「画面を読み込み直す」は引き出しに、「ファイルか�
     await expect(rebuild).toHaveCount(1);
     await expect(tryRegion.getByRole('button', { name: '画面を読み込み直す', includeHidden: true })).toHaveCount(0);
     await expect(tryRegion.getByRole('button', { name: 'ファイルから作り直す', includeHidden: true })).toHaveCount(0);
-    // 画面を読み込み直すは引き出しの中で、開発者向けの詳細の外。ファイルから作り直すは開発者向けの詳細の中
-    await expect(page.locator('#more-panel #reopen')).toHaveCount(1);
-    await expect(page.locator('#dev-details #reopen')).toHaveCount(0);
-    await expect(page.locator('#dev-details #rebuild')).toHaveCount(1);
+    // どちらも仕組みの引き出しの中
+    await expect(page.locator('#mechanism #reopen')).toHaveCount(1);
+    await expect(page.locator('#mechanism #rebuild')).toHaveCount(1);
 
     // 画面を読み込み直すと、試作品を開き直す。会話はそのまま
-    const panel = await openMore(page);
-    await expect(rebuild).toBeHidden();
+    const panel = await openMechanism(page);
     const frame = page.locator('iframe[title="試作品"]');
     const before = await frame.elementHandle();
     await panel.getByRole('button', { name: '画面を読み込み直す' }).click();

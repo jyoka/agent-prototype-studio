@@ -14,7 +14,7 @@ test('モックの AI と話し、理解された希望条件を直すと、次�
     const studioState = page.getByRole('definition');
 
     // 架空のデータとモックであることを、Studio と試作品の両方で示す。
-    // Studio の側の接続と AI が理解した状態は、その他 → 開発者向けの詳細にある(引き出しは左の試作品に重ならない)
+    // Studio の側の接続と AI が理解した状態は、仕組みの引き出しにある(引き出しは左の試作品に重ならない)
     await openDevDetails(page);
     await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
     await expect(details).toContainText('接続: モック');

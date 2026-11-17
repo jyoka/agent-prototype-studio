@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, chooseProject, chooseTestRequest, closeMore, expect, launchStudio, openDevDetails, openMore, test, writeProject } from './studio.js';
+import { ROOT, chooseProject, chooseTestRequest, closeMore, expect, launchStudio, openDevDetails, openMaterials, test, writeProject } from './studio.js';
 
 // 自分のトークンをつなぐ(docs/design/user-journey.md の J4)。作る AI は偽接続(STUDIO_AGENT=fake)。トークンと見本は架空
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'design-tokens');
@@ -17,9 +17,9 @@ async function writeSample(home, id = 'minato') {
   return path.join(home, 'projects', id);
 }
 
-// その他の引き出しから、人と同じ操作でつなぐ
+// 上の帯の「素材」から、人と同じ操作でつなぐ
 async function connectTokens(page, { source = '架空のデザイン担当', reason = '' } = {}) {
-  const panel = await openMore(page);
+  const panel = await openMaterials(page);
   await panel.getByLabel('トークンのファイル').setInputFiles(TOKENS_FILE);
   await expect(panel.locator('#tokens-summary')).toContainText('形を確かめました');
   await panel.getByRole('region', { name: '自分のトークンをつなぐ' }).getByLabel('誰の素材か').fill(source);
@@ -59,7 +59,7 @@ test('架空のトークンをつなぐと、見本の色と字が変わる。�
     await expect(own).toHaveCSS('color', 'rgb(120, 120, 120)');
 
     // 形の誤りは、利用者の言葉で返し、つなげない
-    const panel = await openMore(page);
+    const panel = await openMaterials(page);
     const fileInput = panel.getByLabel('トークンのファイル');
     await fileInput.setInputFiles({
       name: 'broken.tokens.json',
@@ -149,7 +149,7 @@ test('架空のトークンをつなぐと、見本の色と字が変わる。�
     expect(readme).toContain('出典: 架空のデザイン担当');
 
     // 外すと、前の見た目に戻る
-    const panelAgain = await openMore(page);
+    const panelAgain = await openMaterials(page);
     await panelAgain.locator('#tokens-connected').getByRole('button', { name: '外す' }).click();
     await expect(panelAgain.locator('#tokens-message')).toContainText('外しました。既定の素材の部品の見た目に戻しました。');
     // 見本は自分で書いた所でトークンの変数を読んでいる。残っていることを隠さない
@@ -169,7 +169,7 @@ test('小数を丸めた色は電話番号と取り違えずにつなぐ。色�
     await writeSample(home);
     await page.goto(studio.url);
     await chooseProject(page, /トークンの見本/);
-    const panel = await openMore(page);
+    const panel = await openMaterials(page);
     const fileInput = panel.getByLabel('トークンのファイル');
     const problems = panel.locator('#tokens-problems');
     const choose = (name, json) => fileInput.setInputFiles({ name, mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(json)) });

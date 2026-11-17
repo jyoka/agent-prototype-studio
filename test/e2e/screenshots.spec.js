@@ -10,7 +10,6 @@ import { ROOT, SAMPLES, chooseSample, expect, expectNoDevWordsOnScreen, launchSt
 
 const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
 const CARD = '本物の AI を使う前に';
-const STEPS = ['1 試す', '2 言葉で直す', '3 直った結果を試す'];
 const EXAMPLE = 'カフェで働きたいです';
 const BEFORE = '働き方の希望はありますか?';
 const AFTER = '時給はいくら以上を希望しますか?';
@@ -48,8 +47,9 @@ function lastRun(page) {
   return page.getByRole('list', { name: '作る会話' }).locator('> li.run').last();
 }
 
-function stepsOf(page) {
-  return page.getByRole('region', { name: 'はじめの手順' }).getByRole('list', { name: '3 つの手順' }).getByRole('listitem');
+// 次の一手の帯の 1 文(前の「はじめの手順」の 1 文。ui-ux-v2.md の 13 節)
+function nextOf(page) {
+  return page.locator('#next-text');
 }
 
 test.beforeEach(async ({ page }) => {
@@ -67,23 +67,22 @@ test('U10(U7): 最初の画面から、試す → 言葉で直す → 直った�
     const log = app.getByRole('region', { name: '会話' }).getByRole('listitem');
     const make = page.getByRole('region', { name: '言葉で直す' });
     const bar = page.getByRole('region', { name: '試し直す' });
-    const steps = stepsOf(page);
+    const next = nextOf(page);
 
     // 最初の画面(人の確かめの 5 秒の確かめで見せる画像)
     await expect(app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
-    await expect(steps).toHaveText(STEPS);
-    await expect(steps.nth(0)).toHaveAttribute('aria-current', 'step');
+    await expect(next).toHaveText('まず左の試作品で、案内役に話しかけてみましょう。');
     await expect(make.getByRole('list', { name: '直し方の例' }).getByRole('button')).toHaveCount(3);
     // 上の帯に開発用の印(偽の直す AI)が出ない
     await expect(page.locator('#dev-agent-mark')).toBeHidden();
     await shoot(page, '01-first');
 
-    // 1. 試す: 例の文を送ると返事が来て、手順 2 が今の手順になる
+    // 1. 試す: 例の文を送ると返事が来て、次の一手の帯が言葉で直すを勧める
     await app.getByLabel('メッセージ').fill(EXAMPLE);
     await app.getByRole('button', { name: '送る' }).click();
     await expect(log).toHaveCount(3);
     await expect(log.last()).toContainText(BEFORE);
-    await expect(steps.nth(1)).toHaveAttribute('aria-current', 'step');
+    await expect(next).toContainText('「言葉で直す」に頼んでみましょう');
     await shoot(page, '02-talked');
 
     // 2. 言葉で直す: 直す欄の例を押して送ると、本物の AI を使う前のカードが出る
@@ -100,10 +99,10 @@ test('U10(U7): 最初の画面から、試す → 言葉で直す → 直った�
     await expect(run.locator('.run-status')).toHaveText('直す AI が作業しています…');
     await shoot(page, '04-fixing');
 
-    // 直す AI が終わると、結果の帯と試し直しの帯が出て、手順 3 が今の手順になる
+    // 直す AI が終わると、結果の帯と試し直しの帯が出て、次の一手の帯が試し直しを勧める
     await expect(run.getByRole('group', { name: '確かめた結果' })).toBeVisible({ timeout: 60_000 });
     await expect(run.locator('.run-updated')).toHaveText('AI の設定を変えました。試作品は新しくなっています。');
-    await expect(steps.nth(2)).toHaveAttribute('aria-current', 'step');
+    await expect(next).toContainText('同じ発言で試し直す');
     await expect(bar.getByRole('button', { name: '同じ発言で試し直す' })).toBeVisible();
     await shoot(page, '05-fixed');
 
@@ -112,7 +111,7 @@ test('U10(U7): 最初の画面から、試す → 言葉で直す → 直った�
     const reply = bar.getByRole('region', { name: '直す前と後の返事' }).getByRole('listitem');
     await expect(reply.locator('.retry-before')).toContainText(BEFORE);
     await expect(reply.locator('.retry-after')).toContainText(AFTER);
-    for (let i = 0; i < STEPS.length; i += 1) await expect(steps.nth(i)).toHaveAttribute('data-state', 'done');
+    await expect(next).toContainText('直った結果も試しました');
     await shoot(page, '06-retried');
   } finally {
     await studio.stop();

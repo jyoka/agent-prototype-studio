@@ -186,9 +186,16 @@ export async function expectNoDevWords(locator) {
   expect(devWordsIn(await locator.innerText())).toEqual([]);
 }
 
-// Studio の画面(iframe の外)の見える文字の全部に、開発の言葉がない(U3)。iframe の中の文字は innerText に入らない
+// Studio の画面(iframe の外)の見える文字の全部に、開発の言葉がない(U3)。iframe の中の文字は innerText に入らない。
+// 今の行(4 者の「⬢ 関門と守り」)は数えない。「関門」を開発の言葉から外すのは UI/UX の 5 枚目(ui-ux-v2.md の 6 節)。
+// それまでは、今の行だけを調べる対象から外す
 export async function expectNoDevWordsOnScreen(page) {
-  await expectNoDevWords(page.locator('body'));
+  const text = await page.locator('body').evaluate((body) => {
+    const line = document.getElementById('now-line');
+    const shown = line && line.checkVisibility() ? line.innerText : '';
+    return shown ? body.innerText.replace(shown, '') : body.innerText;
+  });
+  expect(devWordsIn(text)).toEqual([]);
 }
 
 // サンプルの ID と、試作品の一覧の名前(Studio が目録の title と、試作品の中の AI があるかから作る)。
@@ -238,38 +245,101 @@ export async function switchToRealAi(page) {
   await expect(badge).toHaveText('AI: 本物');
 }
 
-// 上の帯の「その他」を押して、右の引き出しを開く(開いていれば、そのまま)。
-// 保存した状態、本番開発へ渡す、画面を読み込み直す、開発者向けの詳細は、この中にある
-export async function openMore(page) {
-  const more = page.getByRole('banner').getByRole('button', { name: 'その他' });
-  if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click();
-  const panel = page.getByRole('complementary', { name: 'その他' });
+// 段の道筋(ui-ux-v2.md の 2.2、2.3)。9 つの段の名前と、画面の data-stage の名前
+export const STAGES = { 話す: 'talk', 目的: 'goal', 設計: 'design', 審査: 'review', 作る: 'build', 測る: 'measure', 質: 'quality', 見せる: 'show', 渡す: 'handoff' };
+
+// 段の道筋の段を押して、その段の作業台に移る。狭い画面では「n / 9 … ▾」を開いてから押す。
+// 目的、設計、審査の段は、開く画面(聞き出し、整理、設計の案内、審査)が別にあるので、作業台の見出しまでは待たない
+export async function goStage(page, name) {
+  const key = STAGES[name];
+  if (!key) throw new Error(`段の名前が違います: ${name}`);
+  const compact = page.locator('#stage-compact');
+  if ((await compact.isVisible()) && (await compact.getAttribute('aria-expanded')) !== 'true') await compact.click();
+  await page.locator(`#stage-list button.stage[data-stage="${key}"]`).click();
+  if (['build', 'measure', 'quality', 'show', 'handoff'].includes(key)) {
+    await expect(page.locator(`#stage-list button.stage[data-stage="${key}"]`)).toHaveAttribute('aria-current', 'step');
+  }
+}
+
+// 試作品の名前のメニューを開き、「保存した状態」(版と「この状態に戻す」)を返す。開いていれば、そのまま
+export async function openVersions(page) {
+  const menuButton = page.locator('#project-menu-button');
+  if ((await menuButton.getAttribute('aria-expanded')) !== 'true') await menuButton.click();
+  const region = page.getByRole('region', { name: '保存した状態' });
+  await expect(region).toBeVisible();
+  return region;
+}
+
+// 上の帯の「素材」を押して、右の引き出し(自分のトークン、部品と指針)を開く。開いていれば、そのまま
+export async function openMaterials(page) {
+  const button = page.getByRole('banner').getByRole('button', { name: '素材', exact: true });
+  if ((await button.getAttribute('aria-expanded')) !== 'true') await button.click();
+  const panel = page.getByRole('complementary', { name: '素材' });
   await expect(panel).toBeVisible();
   return panel;
 }
 
-// 引き出しを閉じる(閉じていれば、そのまま)。引き出しは右の「言葉で直す」の上に重なるので、直す欄を使う前に閉じる
+// 今の行の「仕組みを見る」を押して、仕組みの引き出しを開く。開いていれば、そのまま。
+// 接続、試験用の依頼、ビルド、プロダクト内 AI、構成と前提、AI の実行の記録、試作品からの知らせ、画面を読み込み直すがある
+export async function openMechanism(page) {
+  const button = page.locator('#mechanism-button');
+  if ((await button.getAttribute('aria-expanded')) !== 'true') await button.click();
+  const panel = page.getByRole('complementary', { name: '仕組み' });
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+// 開いている引き出し(仕組み、素材)と、試作品の名前のメニューを閉じる(閉じていれば、そのまま)。
+// 前の「その他」の引き出しを閉じる操作の代わり。閉じた後は、試作品と言葉で直す欄が見える
 export async function closeMore(page) {
-  const more = page.getByRole('banner').getByRole('button', { name: 'その他' });
-  if ((await more.getAttribute('aria-expanded')) === 'true') await page.locator('#more-close').click();
-  await expect(page.locator('#more-panel')).toBeHidden();
+  for (const [button, panel] of [['#mechanism-button', '#mechanism'], ['#materials-button', '#materials']]) {
+    if ((await page.locator(button).getAttribute('aria-expanded')) === 'true') await page.locator(button).click();
+    await expect(page.locator(panel)).toBeHidden();
+  }
+  const menuButton = page.locator('#project-menu-button');
+  if ((await menuButton.getAttribute('aria-expanded')) === 'true') await menuButton.click();
+  // 段 9 やまだの段の作業台にいるときは、試作品と言葉で直す欄のある段 5「作る」に戻る
+  const bench = await page.locator('body').getAttribute('data-bench');
+  if (bench === 'handoff' || bench === 'note') await goStage(page, '作る');
 }
 
-// その他 → 開発者向けの詳細を開く(開いていれば、そのまま)。ビルド、プロダクト内 AI、AI の実行の記録、試作品からの知らせがある
+// 仕組みの引き出しを開き、中の詳しいもの(ビルドなど)が見えるまで待つ。前の「仕組みの引き出し」の代わり
 export async function openDevDetails(page) {
-  await openMore(page);
-  const details = page.locator('#dev-details');
-  if (!(await details.evaluate((el) => el.open))) await details.locator(':scope > summary').click();
+  const panel = await openMechanism(page);
   await expect(page.locator('#build-status')).toBeVisible();
-  return details;
+  return panel;
 }
 
-// 偽接続(STUDIO_AGENT=fake)の試験用の依頼を、その他 → 開発者向けの詳細の「試験用の依頼」から選ぶ。
+// 段 9「渡す」の作業台に移り、「本番開発へ渡す」を返す
+export async function openHandoff(page) {
+  await goStage(page, '渡す');
+  const region = page.getByRole('region', { name: '本番開発へ渡す' });
+  await expect(region).toBeVisible();
+  return region;
+}
+
+// 段 7「質」の作業台に移り、「試作品を自動で確かめる」を返す
+export async function openCheck(page) {
+  await goStage(page, '質');
+  const region = page.getByRole('region', { name: '試作品を自動で確かめる' });
+  await expect(region).toBeVisible();
+  return region;
+}
+
+// 段 8「見せる」の作業台に移り、次の一手の帯の「人に見せる」を押して、見せる画面にする
+export async function startShowing(page) {
+  await goStage(page, '見せる');
+  const button = page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '人に見せる' });
+  await expect(button).toBeEnabled();
+  await button.click();
+}
+
+// 偽接続(STUDIO_AGENT=fake)の試験用の依頼を、仕組みの引き出しの「試験用の依頼」から選ぶ。
 // 押すと依頼の欄に入り、引き出しは閉じる(ux-redesign.md 5 節、U4)。送るのは呼んだ側
 export async function chooseTestRequest(page, text) {
   await openDevDetails(page);
   await page.getByRole('list', { name: '偽の直す AI で試せる例' }).getByRole('button', { name: text, exact: true }).click();
-  await expect(page.locator('#more-panel')).toBeHidden();
+  await expect(page.locator('#mechanism')).toBeHidden();
   await expect(page.getByLabel('依頼')).toHaveValue(text);
 }
 

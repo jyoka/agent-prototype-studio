@@ -1,7 +1,7 @@
 # 引き継ぎの形(handoff、形式 4)
 
 - 状態: **仮**(2026-10-28)。出典のタスク: jyoka/tasks#280(親 PRD: jyoka/tasks#269)。形式 2 は jyoka/tasks#313([harness.md](design/harness.md) の 5 節、基準 S7)。形式 3 は jyoka/tasks#344([agent-simulation.md](design/agent-simulation.md) の 4.5、基準 S6、S7)。形式 4 は jyoka/tasks#392([user-journey.md](design/user-journey.md) の J8。原則 5「理由を残す」、原則 7「信頼できる」)
-- 作るところ: `src/server/handoff.js`。形式 4 で足した中身を読むところは `src/server/handoff-decisions.js`。会の終わりの成果物(K5、jyoka/tasks#395)を読むところは `src/server/closing.js`。画面は上の帯の「その他」の「本番開発へ渡す」と、会の終わりの画面の「書き出す」(どちらも同じものを書き出す)
+- 作るところ: `src/server/handoff.js`。形式 4 で足した中身を読むところは `src/server/handoff-decisions.js`。会の終わりの成果物(K5、jyoka/tasks#395)を読むところは `src/server/closing.js`。画面は段の道筋の「9 渡す」の「本番開発へ渡す」と、会の終わりの画面の「書き出す」(どちらも同じものを書き出す)
 
 試作品を本番開発の担当者に渡すときに、Studio が書き出すフォルダーの形です。中身は決まった手順で作ります。AI の判断は入れません(ADR-0001、Stripe の Minions の考え方)。標準化する契約は、使われ方を見て直します(親 PRD)。
 

@@ -4,7 +4,7 @@ import { startStudio } from '../../src/server/index.js';
 import { ROOT, SAMPLES, chooseProject, chooseSample, expect, launchStudio, openDevDetails, switchToRealAi, test, writeProject } from './studio.js';
 
 // 実モデルは呼ばない。Claude Code は偽の CLI(test/fixtures/fake-claude.js)に差し替える
-// AI の実行の記録は、その他 → 開発者向けの詳細にある。引き出しは右に重なるが、左の試作品は開いたまま使える
+// AI の実行の記録は、仕組みの引き出しにある。引き出しは右に重なるが、左の試作品は開いたまま使える
 const FAKE = path.join(ROOT, 'test', 'fixtures', 'fake-claude.js');
 
 function fakeEnv(home) {

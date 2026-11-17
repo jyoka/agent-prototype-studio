@@ -1,6 +1,6 @@
-import { SAMPLES, chooseSample, closeMore, devWordsIn, expect, expectNoDevWordsOnScreen, launchStudio, openMore, test } from './studio.js';
+import { SAMPLES, chooseSample, closeMore, devWordsIn, expect, expectNoDevWordsOnScreen, launchStudio, openVersions, startShowing, test } from './studio.js';
 
-// 人に見せる(docs/design/user-journey.md の J7。段 7)。その他の引き出しの「人に見せる」で、見せる画面にする。
+// 人に見せる(docs/design/user-journey.md の J7。段 7)。段 8「見せる」の次の一手の帯の「人に見せる」で、見せる画面にする。
 // 見せる画面には、試作品と確かめたい問いだけが出て、開発の欄と開発の言葉は出ない。問いは目的の文書の成功の印から作る。
 // 答えは見せた版に残り、版を戻しても消えない。作る AI は偽接続、試作品の中の AI はお試しの AI で、実モデルは呼ばない。題材は架空
 
@@ -25,8 +25,7 @@ function parts(page) {
 }
 
 async function startShow(page) {
-  const panel = await openMore(page);
-  await panel.getByRole('button', { name: '人に見せる' }).click();
+  await startShowing(page);
 }
 
 // 目的の文書に成功の印を書いて決める(人が目的の画面でする操作を、API で先に済ませる)
@@ -48,7 +47,7 @@ test('見せる画面には試作品と問いだけが出て、開発の言葉�
 
     // 見せる。まだ版がないので、今の状態を保存してから見せる。引き出しは閉じる
     await startShow(page);
-    await expect(page.locator('#more-panel')).toBeHidden();
+    await expect(page.locator('#mechanism')).toBeHidden();
     await expect(ui.show).toBeVisible();
     await expect(page.getByRole('heading', { name: '確かめたい問い' })).toBeFocused();
     await expect(ui.show).toContainText('これは試作品です。出てくるデータは、すべて架空です。');
@@ -97,7 +96,7 @@ test('見せる画面には試作品と問いだけが出て、開発の言葉�
     await expect(page.getByRole('heading', { name: '言葉で直す' })).toBeVisible();
 
     // 答えは、見せた版の一覧に出る
-    await openMore(page);
+    await openVersions(page);
     const v1 = ui.versionList.getByRole('listitem').filter({ hasText: '保存 1' });
     await v1.getByText('人に見せた答え(1 回)').click();
     await expect(v1).toContainText(QUESTIONS[0]);
@@ -110,7 +109,7 @@ test('見せる画面には試作品と問いだけが出て、開発の言葉�
     await page.getByLabel('依頼').fill('見出しを「うみかぜ求人相談」にして');
     await page.getByRole('button', { name: '送る' }).click();
     await expect(ui.app.getByRole('heading', { name: 'うみかぜ求人相談' })).toBeVisible();
-    await openMore(page);
+    await openVersions(page);
     await page.getByLabel('名前(なくてもよい)').fill('見出しを直した版');
     await page.locator('#save-version').click();
     await expect(page.locator('#versions-message')).toHaveText('保存しました(保存 2「見出しを直した版」)。');
@@ -123,7 +122,7 @@ test('見せる画面には試作品と問いだけが出て、開発の言葉�
 
     // 画面を読み込み直しても残っている
     await page.reload();
-    await openMore(page);
+    await openVersions(page);
     await v1.getByText('人に見せた答え(1 回)').click();
     await expect(v1).toContainText(ANSWER);
     await page.screenshot({ path: test.info().outputPath('2-answers-kept.png'), fullPage: true });

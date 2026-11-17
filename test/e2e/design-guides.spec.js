@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, chooseProject, chooseTestRequest, closeMore, expect, expectNoDevWords, launchStudio, openMore, test, writeProject } from './studio.js';
+import { ROOT, chooseProject, chooseTestRequest, closeMore, expect, expectNoDevWords, launchStudio, openMaterials, test, writeProject } from './studio.js';
 
 // 部品と指針をつなぐ、取り込みの案内(docs/design/user-journey.md の J5)。作る AI は偽接続(STUDIO_AGENT=fake)。
 // 部品集と指針の文は架空(test/fixtures/design-guides)
@@ -51,7 +51,7 @@ test('架空の指針の文で、案内の 4 歩が通る。外への URL は警
     });
     await page.goto(studio.url);
     await chooseProject(page, /部品と指針の見本/);
-    const panel = await openMore(page);
+    const panel = await openMaterials(page);
     const section = panel.getByRole('region', { name: '部品と指針をつなぐ' });
     const steps = section.getByRole('list', { name: '取り込みの案内の歩' });
     await expect(steps.locator('[aria-current="step"]')).toHaveText('聞く');
@@ -144,7 +144,7 @@ test('架空の Storybook で、ライセンスが分からないと「有効に
     const root = await writeSample(home);
     await page.goto(studio.url);
     await chooseProject(page, /部品と指針の見本/);
-    const panel = await openMore(page);
+    const panel = await openMaterials(page);
     const section = panel.getByRole('region', { name: '部品と指針をつなぐ' });
 
     await ask(section, { have: 'Storybook を書き出したフォルダー(storybook build で作ったもの)', license: '分からない' });
@@ -206,7 +206,7 @@ test('架空の Storybook で、ライセンスが分からないと「有効に
     await expect(run.locator('[data-kind="gave-up"]')).toContainText('つないだ素材のファイルに問題があります', { timeout: 30_000 });
     const { runs } = await studio.api('/api/projects/minato/build-requests');
     expect(runs.at(-1).launches).toHaveLength(1);
-    await openMore(page);
+    await openMaterials(page);
     await expect(section.locator('#guides-enabled')).toContainText('有効にしたときから変わっています');
     await section.getByRole('button', { name: '写しを戻す' }).click();
     await expect(section.locator('#guides-message')).toHaveText('写しを戻しました。試す欄の試作品を作り直しました。');

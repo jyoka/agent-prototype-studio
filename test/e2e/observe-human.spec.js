@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { chooseSample, chooseTestRequest, closeMore, expect, expectNoDevWords, expectReadableText, launchStudio, openMore, ROOT, SAMPLES, test } from './studio.js';
+import { chooseSample, chooseTestRequest, closeMore, expect, expectNoDevWords, expectReadableText, launchStudio, openCheck, ROOT, SAMPLES, test } from './studio.js';
 
 // 人の「確かめる」(docs/design/harness.md の 3.1、8 節の P27)。利用者が画面から、表示中の試作品を自動で確かめる。
 // 作るループの関門と同じ観察の入口を使い、同じ形の report を書き、作る run と同じ形の結果の帯で出す(S5)。
@@ -131,8 +131,7 @@ test('引き出しの「試作品を自動で確かめる」: お試しの AI �
     // 試す欄の上には置かない(U9)
     await expect(page.locator('#try-toolbar').getByRole('button').and(page.locator(':not(#ai-switch)'))).toHaveText(['会話を最初から']);
 
-    const panel = await openMore(page);
-    const section = checkSection(panel);
+    const section = await openCheck(page);
     await section.scrollIntoViewIfNeeded();
     await expect(section.getByRole('radio', { name: /お試しの AI/ })).toBeChecked();
     await expect(section.getByRole('radio', { name: /本物の AI/ })).not.toBeChecked();
@@ -174,8 +173,8 @@ test('引き出しの「試作品を自動で確かめる」: お試しの AI �
     await page.getByRole('button', { name: '送る' }).click();
     await expect(page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '止める' })).toBeVisible();
     await expect(checkBand.getByRole('button', { name: AGAIN })).toBeDisabled();
-    await openMore(page);
-    await expect(checkSection(panel).getByRole('button', { name: CHECK })).toBeDisabled();
+    await openCheck(page);
+    await expect(section.getByRole('button', { name: CHECK })).toBeDisabled();
     const refused = await studio.post(`/api/projects/${id}/checks`, {});
     expect(refused.status).toBe(409);
     await closeMore(page);
@@ -225,8 +224,7 @@ test.describe('本物の AI で確かめる', () => {
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.goto(studio.url);
       await chooseProject(page);
-      const panel = await openMore(page);
-      const section = checkSection(panel);
+      const section = await openCheck(page);
       await section.getByRole('radio', { name: /本物の AI/ }).check();
       await section.getByRole('button', { name: CHECK }).click();
 

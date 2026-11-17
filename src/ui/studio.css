@@ -156,28 +156,25 @@ button { transition: background-color var(--motion-quick) var(--ease-out), borde
 :focus-visible { outline: var(--stroke-focus) solid var(--color-focus); outline-offset: 2px; }
 
 * { box-sizing: border-box; }
-/* 上の帯、知らせ、最初の一歩の案内、2 列を縦に並べ、2 列が残りの高さを使う */
+/* 画面の枠(ui-ux-v2.md の 2.2)。段の道筋、今の行、知らせ、作業台と引き出し、次の一手の帯を縦に並べ、作業台が残りの高さを使う */
 body { margin: 0; display: flex; flex-direction: column; height: 100vh; }
-body > .topbar, body > .banner, body > .meeting-due, body > .first-steps { flex: none; }
+body > .topbar, body > .now-line, body > .now-info, body > .banner, body > .meeting-due, body > .next-band { flex: none; }
 h1, h2, h3 { margin: 0; }
 h1 { font-size: var(--text-4); }
 h2 { font-size: var(--text-3); }
 h3 { font-size: var(--text-2); margin: 1rem 0 0.4rem; }
 h1, h2, h3, h4 { font-family: var(--font-display); font-weight: var(--weight-bold); line-height: var(--leading-tight); }
 
-/* 上の帯。高さを決めておき、下の 2 列を 1 画面に収める */
+/* 段の道筋(上の帯)。1 行目に名前、試作品のメニュー、保存、素材、表示。2 行目に 9 つの段 */
 .topbar {
   position: relative;
   z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  height: 3.2rem;
-  padding: 0 1rem;
+  padding: 0 var(--space-4);
   background: var(--color-surface);
   border-bottom: var(--stroke-hair) solid var(--color-line);
 }
-.topbar h1 { white-space: nowrap; }
+.topbar-row { display: flex; align-items: center; gap: var(--space-4); min-height: 2.6rem; }
+.topbar h1 { white-space: nowrap; font-size: var(--text-3); }
 .topbar-end { margin-left: auto; display: flex; flex: none; align-items: center; gap: 0.5rem; }
 .topbar-end button { white-space: nowrap; }
 .topbar button, .toolbar button, .detail-button {
@@ -256,32 +253,6 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: var(--weight-bol
 }
 .banner p { margin: 0; }
 
-/* 最初の一歩の案内(ux-redesign.md 7-1)。1 行の説明と 3 つの手順。2 列の高さを削りすぎないよう、2 行に収める */
-.first-steps {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.2rem 1.2rem;
-  margin: 0.6rem 1rem 0;
-  padding: 0.45rem 0.9rem;
-  border: var(--stroke-hair) solid var(--color-accent);
-  border-radius: var(--radius-2);
-  background: var(--color-accent-soft);
-  font-size: var(--text-2);
-}
-.first-steps[hidden] { display: none; }
-.first-steps-lead { margin: 0; grid-column: 1 / 3; font-weight: var(--weight-bold); }
-.first-steps-close { grid-column: 3; grid-row: 1; padding: 0.2rem 0.7rem; border: var(--stroke-hair) solid var(--color-line); border-radius: var(--radius-2); background: var(--color-surface); cursor: pointer; }
-.first-steps-list { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 0.4rem; margin: 0; padding: 0; list-style: none; }
-.first-steps-list li { color: var(--color-text-muted); }
-.first-steps-list li + li::before { content: "→"; margin-right: 0.4rem; color: var(--color-text-muted); }
-.first-steps-name { display: inline-block; padding: 0.1rem 0.6rem; border: var(--stroke-hair) solid transparent; border-radius: var(--radius-pill); }
-.first-steps-list li[data-state="done"] .first-steps-name { color: var(--color-ok); }
-.first-steps-list li[aria-current="step"] .first-steps-name { border-color: var(--color-accent); background: var(--color-surface); color: var(--color-text); font-weight: var(--weight-bold); }
-.first-steps-list { grid-column: 1; grid-row: 2; }
-.first-steps-hint { margin: 0; grid-column: 2 / 4; grid-row: 2; color: var(--color-text); }
-.first-steps-hint:empty { display: none; }
-.first-steps-hint[data-tone="warn"] { color: var(--color-warn); font-weight: var(--weight-bold); }
 /* 読み上げにだけ出す文字(手順の「済み」) */
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
@@ -293,7 +264,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: var(--weight-bol
 .new-project { width: 100%; margin-top: 0.3rem; padding: 0.4rem 0.6rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); text-align: left; cursor: pointer; }
 
 /* ヒアリングの整理。左に聞き取りの欄、右に整理の板。大きな画面に映して読む */
-body[data-meeting] .layout, body[data-meeting] .first-steps { display: none; }
+body[data-meeting] .layout, body[data-meeting] .stage-panel { display: none; }
 .meeting { flex: 1 1 0; width: 100%; max-width: 56rem; margin: 0 auto; padding: 1rem; box-sizing: border-box; overflow-y: auto; }
 .meeting[hidden], .meeting [hidden] { display: none; }
 .meeting h2 { margin: 0 0 0.5rem; font-size: var(--text-5); }
@@ -302,7 +273,6 @@ body[data-meeting] .layout, body[data-meeting] .first-steps { display: none; }
 .meeting p { margin: 0.3rem 0; }
 .meeting button, .meeting input { font: inherit; }
 .meeting button { flex: none; white-space: nowrap; padding: 0.3rem 0.7rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
-.meeting button.primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
 .meeting input { padding: 0.35rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); color: var(--color-text); box-sizing: border-box; }
 .meeting button:disabled { background: var(--color-surface); border-color: var(--color-line-strong); border-style: dashed; color: var(--color-text-muted); cursor: default; }
 .meeting-new { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.6rem; }
@@ -335,7 +305,7 @@ body[data-meeting] .layout, body[data-meeting] .first-steps { display: none; }
 #closing-timeline td:nth-child(3), #closing-timeline td:nth-child(4) { white-space: nowrap; }
 #closing-measures li[data-over="true"] { color: var(--color-warn); }
 @media (max-width: 480px) { .meeting-facts { grid-template-columns: minmax(0, 1fr); } .meeting button { white-space: normal; } }
-body[data-organize] .layout, body[data-organize] .first-steps { display: none; }
+body[data-organize] .layout, body[data-organize] .stage-panel { display: none; }
 .organize { flex: 1 1 0; width: 100%; padding: 1rem; box-sizing: border-box; overflow-y: auto; }
 .organize[hidden], .organize [hidden] { display: none; }
 .organize h2 { margin: 0 0 0.5rem; font-size: var(--text-5); }
@@ -345,7 +315,6 @@ body[data-organize] .layout, body[data-organize] .first-steps { display: none; }
 .organize p { margin: 0.3rem 0; }
 .organize button, .organize select, .organize input { font: inherit; }
 .organize button { flex: none; white-space: nowrap; padding: 0.3rem 0.7rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
-.organize button.primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
 .organize button:disabled { background: var(--color-surface); border-color: var(--color-line-strong); border-style: dashed; color: var(--color-text-muted); cursor: default; }
 .organize input, .organize select, .organize textarea { padding: 0.35rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); color: var(--color-text); box-sizing: border-box; }
 .organize-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
@@ -373,7 +342,7 @@ body[data-organize] .layout, body[data-organize] .first-steps { display: none; }
 .organize-asks { padding: 0.5rem; border: var(--stroke-hair) solid var(--color-line); border-radius: var(--radius-2); }
 
 /* 設計の案内。6 つの段の帯と、案の比べ。出している間は、2 列と最初の一歩の案内を隠す */
-body[data-design] .layout, body[data-design] .first-steps { display: none; }
+body[data-design] .layout, body[data-design] .stage-panel { display: none; }
 .design { flex: 1 1 0; width: min(64rem, 100%); margin: 0 auto; padding: 1rem; box-sizing: border-box; overflow-y: auto; }
 .design[hidden], .design [hidden] { display: none; }
 .design h2 { margin: 0 0 0.5rem; font-size: var(--text-5); }
@@ -383,7 +352,6 @@ body[data-design] .layout, body[data-design] .first-steps { display: none; }
 .design p { margin: 0.3rem 0; }
 .design button, .design select, .design input { font: inherit; }
 .design button { padding: 0.35rem 0.8rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
-.design button.primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
 .design button:disabled { background: var(--color-surface); border-color: var(--color-line-strong); border-style: dashed; color: var(--color-text-muted); cursor: default; }
 .design input, .design select { padding: 0.35rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); color: var(--color-text); box-sizing: border-box; }
 .design-band { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.4rem; margin: 0.6rem 0; padding: 0; list-style: none; }
@@ -466,7 +434,7 @@ body[data-design] .layout, body[data-design] .first-steps { display: none; }
 
 
 /* はじめの画面、目的の聞き出し、目的の文書。出している間は、2 列と最初の一歩の案内を隠す */
-body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
+body[data-intent] .layout, body[data-intent] .stage-panel { display: none; }
 .intent { flex: 1 1 0; width: min(46rem, 100%); margin: 0 auto; padding: 1.5rem 1rem; box-sizing: border-box; overflow-y: auto; }
 .intent[hidden], .intent-form[hidden], .intent-waiting[hidden], .intent-declined[hidden], .intent-note[hidden], .intent-error[hidden] { display: none; }
 .intent h2 { margin: 0 0 0.6rem; font-size: var(--text-5); }
@@ -479,7 +447,6 @@ body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
 .intent-form textarea { width: 100%; box-sizing: border-box; padding: 0.5rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); color: var(--color-text); font: inherit; }
 .intent-form textarea[readonly] { background: var(--color-bg); }
 .intent-form button { padding: 0.4rem 0.9rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); color: var(--color-text); font: inherit; cursor: pointer; }
-.intent-form button.primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
 .intent-form button:disabled { background: var(--color-surface); border-color: var(--color-line-strong); border-style: dashed; color: var(--color-text-muted); cursor: default; }
 .intent-form button[hidden] { display: none; }
 .intent-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
@@ -598,41 +565,37 @@ body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
 .toolbar .real-ai-mark { padding: 0.1rem 0.5rem; border-color: var(--color-danger); border-radius: var(--radius-pill); background: var(--color-danger-soft); }
 .make-head { display: flex; align-items: center; gap: 0.6rem; }
 
-/* その他の引き出し。上の帯の下から、右に重ねて出す。開いている間も、左の試作品は使える。
-   上の帯の試作品の一覧は、引き出しより手前に出す(上の帯の z-index より小さくする) */
-.more-panel {
-  position: fixed;
-  top: 3.2rem;
-  right: 0;
-  bottom: 0;
-  z-index: 5;
-  width: min(30rem, 100vw);
+/* 仕組みの引き出しと素材(2.2、10.4)。作業台の右に並べる。開いても作業台は縮むだけで隠れない */
+.drawer {
+  flex: none;
+  width: var(--drawer-width);
+  max-width: 50vw;
   overflow: auto;
-  padding: 0 1rem 1rem;
-  background: var(--color-surface);
+  padding: 0 var(--space-4) var(--space-4);
+  background: var(--color-surface-sunken);
   border-left: var(--stroke-hair) solid var(--color-line-strong);
   font-size: var(--text-2);
 }
-.more-panel[hidden] { display: none; }
-.more-panel:focus { outline: none; }
-.more-head {
+.drawer[hidden] { display: none; }
+.drawer:focus { outline: none; }
+.drawer-head {
   position: sticky;
   top: 0;
   z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.8rem 0 0.4rem;
-  background: var(--color-surface);
+  padding: var(--space-3) 0 var(--space-2);
+  background: var(--color-surface-sunken);
   border-bottom: var(--stroke-hair) solid var(--color-line);
 }
-.more-close { padding: 0.1rem 0.6rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); font-size: var(--text-4); line-height: 1.4; cursor: pointer; }
-.more-panel > section, .more-reopen { padding: 0.2rem 0 0.8rem; border-bottom: var(--stroke-hair) solid var(--color-line); }
-.more-reopen { padding-top: 0.8rem; }
-.more-reopen .detail-button { margin: 0 0 0.3rem; }
-.dev-details { padding: 0.8rem 0 0; scroll-margin-top: 3.2rem; }
-.dev-details > summary { font-weight: var(--weight-bold); cursor: pointer; }
+.drawer-head h2 { font-size: var(--text-5); }
+.drawer-close { padding: 0.1rem 0.6rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); font-size: var(--text-4); line-height: 1.4; cursor: pointer; }
+.drawer > section, .dev-details > section { padding: 0.2rem 0 0.8rem; border-bottom: var(--stroke-hair) solid var(--color-line); }
+.drawer > p.muted { margin: var(--space-2) 0; }
 .dev-details > section { min-width: 0; }
+.mechanism-prompt, .dev-details pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 16rem; overflow: auto; padding: var(--space-2); background: var(--color-surface); border: var(--stroke-hair) solid var(--color-line); border-radius: var(--radius-1); font-size: var(--text-1); }
+.dev-details h4 { margin: var(--space-3) 0 var(--space-1); font-size: var(--text-2); }
 .detail-button { margin-top: 0.5rem; }
 .muted { color: var(--color-text-muted); margin: 0; }
 .build-status .ok { color: var(--color-ok); margin: 0; }
@@ -786,7 +749,7 @@ body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
   background: var(--color-surface);
   cursor: pointer;
 }
-.request-actions button[type="submit"] { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
+.request-actions button[type="submit"] { font-weight: var(--weight-bold); }
 .request-actions button:disabled { background: var(--color-surface); border-color: var(--color-line-strong); border-style: dashed; color: var(--color-text-muted); cursor: default; }
 .request-actions .muted { font-size: var(--text-1); }
 .examples[hidden], #test-requests[hidden] { display: none; }
@@ -904,7 +867,7 @@ body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
   .make > .conversation { max-height: 50vh; }
   .topbar h1 { display: none; }
   /* 印が増えても横にはみ出さず、下の中身にも重ならないように、折り返して帯を伸ばす */
-  .topbar { flex-wrap: wrap; height: auto; min-height: 3.2rem; padding-block: 0.4rem; gap: 0.4rem 0.6rem; }
+  .topbar-row { flex-wrap: wrap; padding-block: 0.4rem; gap: 0.4rem 0.6rem; }
   /* 体の高さが決まらないので、中身の高さで広げて、ページごとスクロールする */
   .intent, .organize, .meeting { flex: none; }
   .organize-body { grid-template-columns: 1fr; }
@@ -968,7 +931,6 @@ body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
 .scene-runs-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
 .scene-runs-actions input { width: 5rem; }
 .scene-runs-actions button { padding: 0.3rem 0.7rem; border: var(--stroke-hair) solid var(--color-accent); border-radius: var(--radius-2); background: var(--color-surface); color: var(--color-link); cursor: pointer; }
-.scene-runs-actions button.primary { background: var(--color-accent); color: var(--color-on-accent); }
 .scene-runs-actions button:disabled { background: var(--color-surface); border-color: var(--color-line-strong); border-style: dashed; color: var(--color-text-muted); cursor: default; }
 .scene-runs-actions button[hidden] { display: none; }
 .scene-runs table { border-collapse: collapse; width: 100%; margin: 0.3rem 0; }
@@ -985,7 +947,7 @@ body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
 .quality-body { max-height: 40vh; overflow: auto; }
 .quality-body p { margin: 0.3rem 0; }
 .quality-body h4 { margin: 0.5rem 0 0.2rem; font-size: var(--text-2); }
-.quality-actions button { padding: 0.3rem 0.7rem; border: var(--stroke-hair) solid var(--color-accent); border-radius: var(--radius-2); background: var(--color-accent); color: var(--color-on-accent); cursor: pointer; }
+.quality-actions button { padding: 0.3rem 0.7rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); color: var(--color-text); font-weight: var(--weight-bold); cursor: pointer; }
 .quality-actions button:disabled { background: var(--color-surface); border-color: var(--color-line-strong); border-style: dashed; color: var(--color-text-muted); cursor: default; }
 .quality table { border-collapse: collapse; width: 100%; margin: 0.3rem 0; }
 .quality th, .quality td { border: var(--stroke-hair) solid var(--color-line); padding: 0.2rem 0.4rem; text-align: left; vertical-align: top; }
@@ -999,7 +961,9 @@ body[data-intent] .layout, body[data-intent] .first-steps { display: none; }
 
 /* 見せる画面(user-journey.md の J7)。試作品と確かめたい問いだけを出す。
    上の帯、知らせ、言葉で直す、その他の引き出し、試す欄の道具と記録(data-studio-only)は隠す */
-body[data-show] > :not(.layout) { display: none !important; }
+body[data-show] > :not(.frame-body):not(dialog),
+body[data-show] .bench > :not(.layout),
+body[data-show] .drawer { display: none !important; }
 /* 見せている間に、ほかの画面(目的、整理、設計、審査、会)が開いても、見せる画面を隠さない */
 body[data-show] .layout { display: grid !important; }
 body[data-show] .layout > .make,
@@ -1023,7 +987,6 @@ body[data-show] [data-studio-only] { display: none !important; }
 .show-questions { margin: 0 0 0.4rem; padding-left: 1.4rem; display: flex; flex-direction: column; gap: 0.8rem; }
 .show-question label { display: block; margin-bottom: 0.3rem; }
 .show-question textarea, .show-form input { width: 100%; font: inherit; }
-.show button.primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
 .show-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.4rem; }
 .show-status:empty { display: none; }
 .show-status { margin: 0.6rem 0 0; padding: 0.4rem 0.6rem; border-radius: var(--radius-1); background: var(--color-ok-soft); }
@@ -1088,8 +1051,12 @@ body[data-show] [data-studio-only] { display: none !important; }
 
 /* 部品(ui-ux-v2.md の 10.4)。今の画面にある部品を、トークンで描く。段の道筋、今の行などの新しい部品は 3 枚目から。
    どの画面でも同じ形にするため、ファイルの最後に置く */
-/* 次の一手のボタン。強い色は、この形だけに使う */
-button.primary { border-color: var(--color-accent); background: var(--color-accent); color: var(--color-on-accent); font-weight: var(--weight-bold); border-radius: var(--radius-2); }
+/* 次の一手のボタン。強い色は、次の一手の帯の 1 つ、同意のカード、見せる画面の「答えを残す」だけに使う(5.1、10.4)。
+   作業台の中の .primary は、ふつうのボタンの形にする(目立つのは次の一手だけ) */
+button.primary { border-color: var(--color-line-strong); background: var(--color-surface); color: var(--color-text); font-weight: var(--weight-bold); border-radius: var(--radius-2); }
+.next-slot > button:not(.quiet),
+.consent-buttons button.primary,
+.show .show-actions button.primary { border-color: var(--color-accent); background: var(--color-accent); color: var(--color-on-accent); font-weight: var(--weight-bold); border-radius: var(--radius-2); }
 button.primary:disabled { border-color: var(--color-line-strong); background: var(--color-surface); color: var(--color-text-muted); }
 /* 弱いボタン。地なし、縁だけ */
 .quiet { border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: transparent; color: var(--color-text); font-size: var(--text-2); }
@@ -1135,3 +1102,166 @@ button.primary:disabled { border-color: var(--color-line-strong); background: va
 .display-menu legend { padding: 0 0 var(--space-1); font-weight: var(--weight-bold); }
 .display-menu label { display: flex; align-items: center; gap: var(--space-2); cursor: pointer; }
 .display-menu input { margin: 0; accent-color: var(--color-accent); }
+
+/* ---- 画面の枠(ui-ux-v2.md の 2.2〜2.6、2.8、10.4、10.5) ---- */
+
+/* 段の道筋。9 つの段を 1 行に並べる。今の段は太字と 2px の下線。人が決める段に ●。済みは ✓、飛ばしたは ─ */
+.stage-rail { display: flex; align-items: flex-start; gap: var(--space-4); min-height: var(--rail-height); }
+.stage-list { display: flex; flex: 1 1 auto; flex-wrap: nowrap; gap: var(--space-1); margin: 0; padding: 0; list-style: none; min-width: 0; }
+.stage-list > li { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.stage-list button.stage {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2) 6px;
+  border: 0;
+  border-bottom: var(--stroke-mark) solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.stage-list button.stage:hover { color: var(--color-text); border-bottom-color: var(--color-line-strong); }
+.stage-list button.stage[data-state="done"] { color: var(--color-text); }
+.stage-list button.stage[aria-current="step"] { color: var(--color-text); font-weight: var(--weight-bold); border-bottom-color: var(--color-accent); }
+.stage-list button.stage:disabled { border-style: none; border-bottom: var(--stroke-mark) solid transparent; }
+.stage-num, .bench-num { font-family: var(--font-mono); font-size: var(--text-1); }
+.stage-human { color: var(--actor-you); }
+.stage-state { color: var(--color-ok); }
+.stage[data-state="skipped"] .stage-state, .stage[data-state="no-review"] .stage-state { color: var(--color-text-muted); }
+.stage-flag { padding: 0 var(--space-1); border: var(--stroke-hair) solid var(--color-warn); border-radius: var(--radius-1); color: var(--color-warn); font-size: var(--text-1); font-weight: var(--weight-regular); }
+.stage-marks { display: flex; flex-wrap: wrap; gap: 2px; padding-left: var(--space-2); }
+.stage-marks:not(:has(> :not([hidden]))) { display: none; }
+.stage-marks .intent-mark { padding: 0 var(--space-2); font-size: var(--text-1); line-height: var(--leading-tight); }
+.stage-count { flex: none; padding-top: var(--space-1); color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-1); white-space: nowrap; }
+.stage-compact { display: none; }
+
+/* 今の行。4 者を形と名前と今の文の組で、いつも同じ位置に出す。働いている者は名前を太くし、文に 2px の下線と流れる線 */
+.now-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-1) var(--space-4);
+  background: var(--color-surface-sunken);
+  border-bottom: var(--stroke-hair) solid var(--color-line);
+  font-size: var(--text-2);
+}
+.actors { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); margin: 0; padding: 0; list-style: none; min-width: 0; }
+.actor { display: inline-flex; align-items: baseline; gap: 2px; white-space: nowrap; }
+.actor-shape { display: inline-block; width: 1em; text-align: center; font-size: var(--text-1); }
+.actor[data-actor="you"] .actor-shape { color: var(--actor-you); }
+.actor[data-actor="maker"] .actor-shape { color: var(--actor-maker); }
+.actor[data-actor="product"] .actor-shape { color: var(--actor-product); }
+.actor[data-actor="gate"] .actor-shape { color: var(--actor-gate); }
+.actor-text { color: var(--color-text-muted); padding-bottom: 1px; border-bottom: var(--stroke-mark) solid transparent; }
+.actor[data-active] .actor-name { font-weight: var(--weight-bold); }
+.actor[data-active] .actor-text { color: var(--color-text); }
+.actor[data-active][data-actor="you"] .actor-text { border-bottom-color: var(--actor-you); }
+/* 流れる線(10.5)。AI と関門が働いている間だけ、下線の上を短い印が流れる。動きを止めると消え、下線だけが残る */
+.actor[data-active]:not([data-actor="you"]) .actor-text {
+  border-bottom-color: currentColor;
+  background-image: linear-gradient(90deg, transparent 0 40%, var(--color-text) 40% 60%, transparent 60% 100%);
+  background-size: 300% var(--stroke-mark);
+  background-repeat: no-repeat;
+  background-position: 100% 100%;
+  animation: actor-flow var(--motion-draw) var(--ease-linear) infinite;
+}
+.actor[data-active][data-actor="maker"] .actor-text { border-bottom-color: var(--actor-maker); }
+.actor[data-active][data-actor="product"] .actor-text { border-bottom-color: var(--actor-product); }
+.actor[data-active][data-actor="gate"] .actor-text { border-bottom-color: var(--actor-gate); }
+@keyframes actor-flow { from { background-position: 100% 100%; } to { background-position: 0% 100%; } }
+.actor-others { display: none; color: var(--color-text-muted); }
+.now-end { display: flex; flex: none; align-items: center; gap: var(--space-2); margin-left: auto; }
+.ai-mode { white-space: nowrap; color: var(--color-text); }
+.ai-mode[hidden] { display: none; }
+button.ai-mode { padding: 0.1rem var(--space-2); border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-pill); background: var(--color-surface); font-size: var(--text-2); cursor: pointer; }
+.mechanism-button { padding: 0.15rem var(--space-3); border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); font-size: var(--text-2); white-space: nowrap; cursor: pointer; }
+.mechanism-button[aria-expanded="true"] { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.mechanism-button kbd { margin-left: var(--space-1); padding: 0 var(--space-1); border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-1); font-size: var(--text-1); }
+.now-info { margin: var(--space-2) var(--space-4) 0; }
+
+/* 作業台と引き出し。作業台は残りの幅を使い、中身の横幅の上限は --bench-max */
+.frame-body { display: flex; flex: 1 1 0; min-height: 0; }
+.bench { display: flex; flex: 1 1 0; flex-direction: column; min-width: 0; overflow-y: auto; }
+.bench > * { width: 100%; max-width: var(--bench-max); margin-inline: auto; box-sizing: border-box; }
+.bench > .layout { max-width: var(--bench-max); }
+.bench-heading { display: flex; align-items: baseline; gap: var(--space-2); padding: var(--space-3) var(--space-4) 0; font-size: var(--text-4); }
+.bench-heading:focus { outline: none; }
+.bench-heading .bench-num { padding: 0 var(--space-1); border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-1); }
+.stage-note, .stage-panel { padding: var(--space-3) var(--space-4); }
+.stage-note[hidden], .stage-panel[hidden] { display: none; }
+.stage-note h3 { margin-top: 0; font-size: var(--text-4); }
+.stage-panel { margin-top: var(--space-2); }
+.stage-panel h3 { margin-top: 0; }
+.stage-panel form, .stage-panel .handoff-form { max-width: 40rem; }
+body[data-bench="handoff"] .layout, body[data-bench="note"] .layout { display: none; }
+
+/* 次の一手の帯。1 文と、強い色のボタンを多くて 1 つ */
+.next-band {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  min-height: 3.2rem;
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface);
+  border-top: var(--stroke-hair) solid var(--color-line-strong);
+}
+.next-label { flex: none; font-family: var(--font-mono); font-size: var(--text-1); color: var(--color-text-muted); text-transform: none; }
+.next-text { flex: 1 1 auto; margin: 0; min-width: 0; }
+.next-text[data-tone="warn"] { color: var(--color-warn); font-weight: var(--weight-bold); }
+.next-slot { display: flex; flex: none; gap: var(--space-2); }
+.next-slot > button { padding: 0.45rem 1rem; white-space: nowrap; cursor: pointer; }
+.next-slot:empty { display: none; }
+
+/* その場での 1 行(5.1、10.4)。→ + 1 文。覚えたら出さない */
+.hint[data-hint] { margin: var(--space-1) 0; color: var(--color-text-muted); font-size: var(--text-2); }
+.hint[data-hint]::before { content: "→ "; color: var(--actor-you); }
+.hint[data-hint][hidden] { display: none; }
+.hints-reset { padding: 0.3rem 0.6rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); text-align: left; cursor: pointer; }
+
+/* 試作品の名前のメニューの中の「保存した状態」 */
+.project-menu nav { padding-bottom: var(--space-2); border-bottom: var(--stroke-hair) solid var(--color-line); }
+.project-menu .versions { padding: var(--space-2) var(--space-1) 0; font-size: var(--text-2); }
+.project-menu .versions h2 { font-size: var(--text-2); }
+.project-menu .versions button { display: inline-block; width: auto; padding: 0.3rem 0.7rem; border: var(--stroke-hair) solid var(--color-line-strong); background: var(--color-surface); }
+
+/* 狭い画面(2.8)。段の道筋を「4 / 9 審査 ▾」の 1 つのボタンにまとめ、今の行は働いている者だけにする */
+@media (max-width: 1023px) {
+  .stage-rail { position: relative; align-items: center; min-height: auto; padding-bottom: var(--space-2); }
+  .stage-compact { display: inline-block; padding: 0.3rem 0.8rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); font-weight: var(--weight-bold); cursor: pointer; }
+  .stage-rail { flex-wrap: wrap; gap: var(--space-2); }
+  .stage-count { display: none; }
+  /* 段のボタンはまとめて隠す。段の印(目的、整理、設計、審査、会)は、ボタンの横に並べて出したままにする */
+  .stage-list { flex-wrap: wrap; gap: var(--space-1); }
+  .stage-list > li { flex-direction: row; }
+  body:not([data-compact-open="true"]) .stage-list > li:not(:has(.stage-marks > :not([hidden]))) { display: none; }
+  body:not([data-compact-open="true"]) .stage-list button.stage { display: none; }
+  .stage-marks { padding-left: 0; }
+  body[data-compact-open="true"] .stage-list {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    z-index: 12;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-2);
+    background: var(--color-surface);
+    border: var(--stroke-hair) solid var(--color-line-strong);
+    border-radius: var(--radius-2);
+  }
+  .actor:not([data-active]) { display: none; }
+  .now-end { flex: 1 1 auto; flex-wrap: wrap; justify-content: flex-end; margin-left: 0; }
+  .ai-mode { white-space: normal; }
+  .actor-others { display: inline; }
+  .now-line { flex-wrap: wrap; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 20; max-width: 100vw; }
+  .bench { overflow: visible; }
+  /* 中身が短くても、次の一手の帯を画面の下に置く */
+  body { min-height: 100vh; }
+  .frame-body { flex: 1 0 auto; }
+}
+@media (max-width: 1023px) {
+  .next-band { position: sticky; bottom: 0; z-index: 5; }
+}

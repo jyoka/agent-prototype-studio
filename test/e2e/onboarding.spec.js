@@ -2,14 +2,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { chooseSample, expect, expectNoDevWords, expectReadableText, launchStudio, ROOT, SAMPLES, switchToRealAi, test } from './studio.js';
 
-// 最初の一歩の案内と試し直しの帯(docs/design/ux-redesign.md の 2 節、7-1、7-2、7-4、9 節の U2、U7。P28)。
+// 最初の一歩の進み方と試し直しの帯(docs/design/ux-redesign.md の 2 節、7-1、7-2、7-4、9 節の U2、U7。P28)。
+// 見た目の「はじめの手順」はなくし、進み方は次の一手の帯の 1 文に出す(ui-ux-v2.md の 13 節)。
 // 実モデルは呼ばない。claude は偽物で、直す AI としては偽接続(src/agent/fake-claude.js)、
 // --version と auth status には偽の CLI(test/fixtures/fake-claude.js)が答える。試作品の中の AI は、お試しの AI のまま
 
 // 「分かるか」の確かめ(ux-redesign.md 9 節)のスクリーンショットの置き場。test-results/ は git が無視する
 const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
-const LEAD = '試作品を試して、気になるところを言葉で直す場所です。';
-const STEPS = ['1 試す', '2 言葉で直す', '3 直った結果を試す'];
 // 試作品の会話で送る例の文(ux-redesign.md 7-2)と、直す前と後の返事
 const EXAMPLE = 'カフェで働きたいです';
 const BEFORE = '働き方の希望はありますか?';
@@ -37,17 +36,15 @@ async function writeFakeClaude(home) {
   return bin;
 }
 
+// 次の一手の帯と、その 1 文
 function guideOf(page) {
-  const guide = page.getByRole('region', { name: 'はじめの手順' });
-  return { guide, steps: guide.getByRole('list', { name: '3 つの手順' }).getByRole('listitem'), hint: page.locator('#first-steps-hint') };
+  const guide = page.getByRole('region', { name: '次の一手' });
+  return { guide, hint: page.locator('#next-text') };
 }
 
-// 今の手順(aria-current="step")が index 番目だけ。index が -1 なら、今の手順はない(全部済み)
-async function expectCurrent(steps, index) {
-  for (let i = 0; i < STEPS.length; i += 1) {
-    if (i === index) await expect(steps.nth(i)).toHaveAttribute('aria-current', 'step');
-    else await expect(steps.nth(i)).not.toHaveAttribute('aria-current');
-  }
+// 段の道筋の段 6「測る」は、試すと済み(✓)になる
+function measureStage(page) {
+  return page.locator('#stage-list button.stage[data-stage="measure"]');
 }
 
 function lastRun(page) {
@@ -67,15 +64,13 @@ test('U2、U7: 最初の画面の案内から、試す → 言葉で直す → �
     const message = app.getByLabel('メッセージ');
     const make = page.getByRole('region', { name: '言葉で直す' });
     const bar = page.getByRole('region', { name: '試し直す' });
-    const { guide, steps, hint } = guideOf(page);
+    const { guide, hint } = guideOf(page);
     await expect(app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
 
-    // U2: 1 行の説明と 3 つの手順。1 番目が今の手順
+    // U2: 次の一手の帯の 1 文。最初は試作品に話しかける
     await expect(guide).toBeVisible();
-    await expect(guide).toContainText(LEAD);
-    await expect(steps).toHaveText(STEPS);
-    await expectCurrent(steps, 0);
     await expect(hint).toHaveText('まず左の試作品で、案内役に話しかけてみましょう。');
+    await expect(measureStage(page)).not.toHaveAttribute('data-state', 'done');
     await expect(bar).toBeHidden();
     await expectNoDevWords(guide);
     await page.screenshot({ path: path.join(UX_SHOTS, 'P28-first.png') });
@@ -85,8 +80,7 @@ test('U2、U7: 最初の画面の案内から、試す → 言葉で直す → �
     await app.getByRole('button', { name: '送る' }).click();
     await expect(log).toHaveCount(3);
     await expect(log.last()).toContainText(BEFORE);
-    await expectCurrent(steps, 1);
-    await expect(steps.nth(0)).toHaveAttribute('data-state', 'done');
+    await expect(measureStage(page)).toHaveAttribute('data-state', 'done');
     await expect(hint).toHaveText('気になったところを、右の「言葉で直す」に頼んでみましょう。押すと入る例もあります。');
     await expectNoDevWords(guide);
     await page.screenshot({ path: path.join(UX_SHOTS, 'P28-talked.png') });
@@ -96,13 +90,14 @@ test('U2、U7: 最初の画面の案内から、試す → 言葉で直す → �
     await make.getByRole('button', { name: '送る' }).click();
     const card = page.getByRole('group', { name: '本物の AI を使う前に' });
     await expect(card).toBeVisible();
-    await expectCurrent(steps, 1);
     await card.getByRole('button', { name: '同意して使う' }).click();
     const run = lastRun(page);
     await expect(run.getByText('AI の設定を読みました')).toBeVisible({ timeout: 15_000 });
     await expect(run.locator('.run-status')).toHaveText('直す AI が作業しています…');
-    await expect(hint).toHaveText('直す AI が直しています。終わると、試作品が新しくなります。');
-    await expectCurrent(steps, 1);
+    await expect(hint).toHaveText('作る AI が試作品を書いています。その間に、試作品を触ってみませんか。止めるときは、右の欄の「止める」を押します。');
+    // 今の行では、作る AI が働いている
+    await expect(page.locator('#now-line .actor[data-actor="maker"]')).toHaveAttribute('data-active', 'true');
+    await expect(page.locator('#now-line .actor[data-actor="you"]')).not.toHaveAttribute('data-active');
     await page.screenshot({ path: path.join(UX_SHOTS, 'P28-fixing.png') });
 
     // 直す AI が終わり、結果の帯が出る。手順 3 が今の手順になり、試し直しの帯が試す欄の上に出る
@@ -110,8 +105,6 @@ test('U2、U7: 最初の画面の案内から、試す → 言葉で直す → �
     await expect(band).toBeVisible({ timeout: 60_000 });
     await expect(band).toHaveAttribute('data-status', /^(passed|fixed|unverified)$/);
     await expect(run.locator('.run-updated')).toHaveText('AI の設定を変えました。試作品は新しくなっています。');
-    await expectCurrent(steps, 2);
-    await expect(steps.nth(1)).toHaveAttribute('data-state', 'done');
     await expect(hint).toHaveText('試作品の上の「同じ発言で試し直す」で、直す前と後の返事を比べられます。');
     await expect(bar.getByRole('heading', { name: 'AI の設定が変わりました' })).toBeVisible();
     await expect(bar).toContainText('会話は新しい設定で最初から始まっています。前の会話(発言 1 件)を、新しい設定で送り直せます。');
@@ -131,12 +124,10 @@ test('U2、U7: 最初の画面の案内から、試す → 言葉で直す → �
     await expect(reply.locator('.retry-after')).toContainText(AFTER);
     await expect(reply).toContainText('変わりました');
     await expect(log.last()).toContainText(AFTER);
-    await expectCurrent(steps, -1);
-    await expect(steps.nth(2)).toHaveAttribute('data-state', 'done');
-    await expect(hint).toHaveText('3 つの手順が終わりました。ほかにも気になるところがあれば、言葉で直せます。');
+    await expect(hint).toHaveText('試して、直して、直った結果も試しました。ほかにも気になるところがあれば、言葉で直せます。段 6 で場面を回して測れます。');
     await expectNoDevWords(guide);
     await expectNoDevWords(bar);
-    await expectReadableText(page, 'はじめの手順の最後');
+    await expectReadableText(page, '最初の一歩の最後');
     await page.screenshot({ path: path.join(UX_SHOTS, 'P28-fixed.png') });
 
     // 試し直しの結果は、開発者向けの詳細には残さない(帯へ移した)
@@ -151,33 +142,19 @@ test('U2、U7: 最初の画面の案内から、試す → 言葉で直す → �
   }
 });
 
-test('案内は「閉じる」で隠れ、読み込み直しても隠れたまま。Studio を起動し直すと、また出る', async ({ page, home }) => {
-  test.setTimeout(60_000);
-  let studio = await launchStudio(home);
+test('「はじめの手順」はなく、次の一手の帯がいつも出る。前の案内を閉じる API(/api/first-steps)は今のまま使える', async ({ page, home }) => {
+  const studio = await launchStudio(home);
   try {
     await page.goto(studio.url);
-    const { guide } = guideOf(page);
-    await expect(guide).toBeVisible();
-    await guide.getByRole('button', { name: '閉じる' }).click();
-    await expect(guide).toBeHidden();
-    await expect.poll(async () => (await studio.api('/api/projects')).firstSteps).toEqual({ dismissed: true });
-
-    // 読み込み直しても、隠れたまま(閉じたことは Studio が覚える)
-    await page.reload();
     await expect(page.frameLocator('iframe[title="試作品"]').getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
-    await page.waitForResponse((response) => response.url().endsWith('/api/projects'));
-    await expect(guide).toBeHidden();
-  } finally {
-    await studio.stop();
-  }
-
-  // 起動し直すと、閉じたことは消え、案内がまた出る
-  studio = await launchStudio(home);
-  try {
-    await page.goto(studio.url);
-    const { guide, steps } = guideOf(page);
-    await expect(guide).toBeVisible();
-    await expectCurrent(steps, 0);
+    await expect(page.getByRole('region', { name: 'はじめの手順' })).toHaveCount(0);
+    await expect(guideOf(page).guide).toBeVisible();
+    // API は変えない(13 節)。閉じたことを送っても、帯は消えない
+    const response = await studio.post('/api/first-steps', { dismiss: true });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.text).firstSteps).toEqual({ dismissed: true });
+    await page.reload();
+    await expect(guideOf(page).hint).toHaveText('まず左の試作品で、案内役に話しかけてみましょう。');
   } finally {
     await studio.stop();
   }
@@ -194,14 +171,13 @@ test('AI のない試作品(図書室)では、1 番が「試作品の画面を�
     const app = page.frameLocator('iframe[title="試作品"]');
     const heading = app.getByRole('heading', { name: 'こもれび図書室' });
     await expect(heading).toBeVisible();
-    const { steps, hint } = guideOf(page);
-    await expect(steps).toHaveText(['1 試作品の画面を触る', '2 言葉で直す', '3 直った結果を試す']);
-    await expectCurrent(steps, 0);
+    const { hint } = guideOf(page);
     await expect(hint).toHaveText('まず左の試作品の画面を、押したり書いたりしてみましょう。');
 
     // 試作品の画面を触ると、1 番が済む
     await heading.click();
-    await expectCurrent(steps, 1);
+    await expect(measureStage(page)).toHaveAttribute('data-state', 'done');
+    await expect(hint).toHaveText('気になったところを、右の「言葉で直す」に頼んでみましょう。押すと入る例もあります。');
 
     // 直しきれなかった(failed)ときは、2 番を済みにせず、結果の帯を見るように言う
     const make = page.getByRole('region', { name: '言葉で直す' });
@@ -211,19 +187,17 @@ test('AI のない試作品(図書室)では、1 番が「試作品の画面を�
     };
     await send('壊して、直せないふりをして');
     await expect(lastRun(page).getByRole('group', { name: '確かめた結果' })).toHaveAttribute('data-status', 'failed', { timeout: 60_000 });
-    await expectCurrent(steps, 1);
     await expect(hint).toHaveText('直す AI が直しきれませんでした。右の「言葉で直す」の結果を見て、頼み方を変えてもう一度送ってください。');
     await expect(hint).toHaveAttribute('data-tone', 'warn');
 
     // 直せた依頼で、2 番が済む(前の依頼が残した問題も直すので、fixed になることがある)。直った画面を触ると、3 番が済む
     await send('見出しを「ひだまり図書室」にして');
     await expect(lastRun(page).getByRole('group', { name: '確かめた結果' })).toHaveAttribute('data-status', /^(passed|fixed)$/, { timeout: 30_000 });
-    await expectCurrent(steps, 2);
     await expect(hint).toHaveText('直った試作品の画面を、もう一度触ってみましょう。');
     const fixed = app.getByRole('heading', { name: 'ひだまり図書室' });
     await expect(fixed).toBeVisible();
     await fixed.click();
-    await expectCurrent(steps, -1);
+    await expect(hint).toContainText('直った結果も試しました');
     await expect(page.getByRole('region', { name: '試し直す' })).toBeHidden();
   } finally {
     await studio.stop();

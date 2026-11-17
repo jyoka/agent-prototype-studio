@@ -1,5 +1,5 @@
 import { defaultPaths, describeLeaks, findLeaks } from '../../scripts/media/privacy.js';
-import { ROOT, SAMPLES, chooseSample, closeMore, expect, openDevDetails, openMore } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, closeMore, expect, openDevDetails, openMechanism } from './studio.js';
 
 // 画像と動く画像に撮る場面(npm run media、CONTRIBUTING.md の「画像と動く画像を撮り直す」)。
 // 撮る仕組みの scripts/media/media.spec.js と、場面が動くかを確かめる test/e2e/media.spec.js が使う。
@@ -16,7 +16,7 @@ export const SCENE_TEXT = {
 // 撮る画面の大きさ。README の幅で読める大きさにする
 export const SCENE_VIEWPORT = { width: 1280, height: 800 };
 
-// 利用者の画面に出ない印を隠す。偽接続(STUDIO_AGENT=fake)の「開発用: 偽の直す AI」は、Studio を開発する人にだけ出る
+// 利用者の画面に出ない印を隠す。偽接続(STUDIO_AGENT=fake)の「開発用: 偽の作る AI」は、Studio を開発する人にだけ出る
 export async function hideDevOnlyMarks(page) {
   // 画面の CSP は style の要素を通さないので、要素の style で隠す
   await page.locator('#dev-agent-mark').evaluate((el) => el.style.setProperty('display', 'none', 'important'));
@@ -57,13 +57,10 @@ async function say(page, text, pace) {
   await expect(message).toHaveValue('');
 }
 
-// 見本のバイト探しを開き、はじめの手順を閉じる
+// 見本のバイト探しを開く
 export async function openPartTime(page, studio) {
   await page.goto(studio.url);
   await chooseSample(page, SAMPLES.partTime);
-  const close = page.locator('#first-steps-close');
-  if (await close.isVisible()) await close.click();
-  await expect(page.locator('#first-steps')).toBeHidden();
   const { talk } = talkOf(page);
   await expect(talk).toBeVisible();
 }
@@ -95,7 +92,7 @@ export async function writeFixRequest(page) {
   await expect(request).toHaveValue(SCENE_TEXT.fixRequest);
 }
 
-// 要素を、その他の引き出しの中で見える所まで動かす。引き出しの上の見出しは動かないので、その下に来るようにする。
+// 要素を、仕組みの引き出しの中で見える所まで動かす。引き出しの上の見出しは動かないので、その下に来るようにする。
 // 実行の記録の一覧のように、引き出しの中で別に動く欄があれば、その欄を引き出しの上に寄せ、欄の中で要素を動かす。
 // block は 'start'(上に寄せる)か 'center'(真ん中)。pace が 0 より大きければ、滑らかに動かして待つ
 export async function scrollDrawerTo(locator, { pace = 0, block = 'start' } = {}) {
@@ -104,7 +101,7 @@ export async function scrollDrawerTo(locator, { pace = 0, block = 'start' } = {}
   let last = -1;
   await expect
     .poll(async () => {
-      const height = await page.locator('#more-panel').evaluate((panel) => panel.scrollHeight);
+      const height = await page.locator('#mechanism').evaluate((panel) => panel.scrollHeight);
       const stable = height === last;
       last = height;
       return stable;
@@ -120,8 +117,8 @@ export async function scrollDrawerTo(locator, { pace = 0, block = 'start' } = {}
 // scrollDrawerTo の中身。ブラウザの中で動く
 function scrollInDrawer(el, { block, smooth }) {
   const behavior = smooth ? 'smooth' : 'instant';
-  const panel = document.getElementById('more-panel');
-  const head = panel.querySelector('.more-head');
+  const panel = document.getElementById('mechanism');
+  const head = panel.querySelector('.drawer-head');
   const offset = (target, top, height) => {
     const rect = target.getBoundingClientRect();
     const start = rect.top - top - 8;
@@ -141,18 +138,16 @@ function scrollInDrawer(el, { block, smooth }) {
   panel.scrollBy({ top: offset(target, top, panel.clientHeight - head.offsetHeight), behavior });
 }
 
-// その他 → 開発者向けの詳細を開く。pace が 0 より大きければ、押すたびに間を置く
+// 仕組みの引き出しを開く。pace が 0 より大きければ、押した後に間を置く
 async function openDevDetailsPaced(page, pace) {
   if (pace === 0) return openDevDetails(page);
-  await openMore(page);
+  await openMechanism(page);
   await pause(page, 600, pace);
-  const details = page.locator('#dev-details');
-  if (!(await details.evaluate((el) => el.open))) await details.locator(':scope > summary').click();
   await expect(page.locator('#build-status')).toBeVisible();
   await pause(page, 400, pace);
 }
 
-// その他 → 開発者向けの詳細の「構成と前提」を出す
+// 仕組みの引き出しの「構成と前提」を出す
 export async function showSimChoice(page) {
   await openDevDetails(page);
   const choice = page.getByRole('region', { name: '構成と前提' });
@@ -162,7 +157,7 @@ export async function showSimChoice(page) {
   return choice;
 }
 
-// その他 → 開発者向けの詳細の「AI の実行の記録」で、保存を止めたターンの中身を開き、ツールの呼び出しを見せる。
+// 仕組みの引き出しの「AI の実行の記録」で、保存を止めたターンの中身を開き、ツールの呼び出しを見せる。
 // 返す部品は、分解の絵の層(docs/brand.md の 4 節)に使う
 export async function showSimTrace(page, { pace = 0 } = {}) {
   await openDevDetailsPaced(page, pace);

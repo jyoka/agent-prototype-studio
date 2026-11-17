@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { SAMPLES, chooseSample, expect, expectNoDevWordsOnScreen, launchStudio, openMore, test } from './studio.js';
+import { SAMPLES, chooseSample, expect, expectNoDevWordsOnScreen, launchStudio, startShowing, test } from './studio.js';
 
 // 画面へのコメント、反応、承認、列、直した記録、元に戻す(docs/design/user-journey.md の K3。collaboration.md の 3〜5 節)。
 // 見せる画面(J7)の上で、1 台の PC の形で使う。作る AI は偽接続(偽の claude。src/agent/fake-claude.js)で、実モデルは呼ばない。題材は架空
@@ -20,8 +20,7 @@ function parts(page) {
 }
 
 async function startShow(page) {
-  const panel = await openMore(page);
-  await panel.getByRole('button', { name: '人に見せる' }).click();
+  await startShowing(page);
   await expect(page.getByRole('region', { name: '確かめたい問い' })).toBeVisible();
 }
 

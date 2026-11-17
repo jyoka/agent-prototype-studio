@@ -130,7 +130,7 @@ npm run media    # 1 分ほど。assets/media/ を上書きする
 |---|---|---|
 | `talk-guard.avif`、`talk-guard.gif`、`talk-guard.webm` | 動く画像(15 秒前後、ライト)。トークで探し、保存を頼み、記録の画面でツールの呼び出しと守りが止めたところまで。README は AVIF を出し、AVIF を出せないブラウザは GIF を出す。WebM は LP 用 | AVIF 2 MB、GIF 5 MB、WebM 2 MB |
 | `try-and-fix-{light,dark}.png` | 試す画面と、言葉で直す欄(依頼を書いたところ) | 1 枚 1 MB |
-| `sim-choice-{light,dark}.png` | その他 → 開発者向けの詳細の、構成と前提の選び方 | 1 枚 1 MB |
+| `sim-choice-{light,dark}.png` | 仕組みの引き出しの、構成と前提の選び方 | 1 枚 1 MB |
 | `sim-trace-{light,dark}.png` | 模擬の会話の記録(ツール `save_wish` と、守り `requires` が止めたところ) | 1 枚 1 MB |
 | `review-{light,dark}.png` | AI 構成の審査(架空の図書館の題材。4 つのうち 2 つを承認したところ)。案の文には案を出した日付が入るので、上の帯からエージェントの構成の図までを切り出し、撮る範囲の文字だけを調べる | 1 枚 1 MB |
 | `quality-{light,dark}.png` | 試す欄の下の質の見直し(「画面を確かめて見直す」の後) | 1 枚 1 MB |
