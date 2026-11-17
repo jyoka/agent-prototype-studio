@@ -7,6 +7,7 @@ import { BuildRequests, MAX_FIX_ROUNDS } from './build-requests.js';
 import { ProjectChecks } from './checks.js';
 import { STUDIO_ROOT } from './config.js';
 import { FirstSteps } from './first-steps.js';
+import { Hints } from './hints.js';
 import { ProjectHandoffs, latestEvalRun, latestEvidence } from './handoff.js';
 import { ProjectClosings } from './closing.js';
 import { digestSnapshot, snapshotApp } from './app-snapshot.js';
@@ -211,6 +212,9 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   const checks = new ProjectChecks({ store, aiSessions, observe: observeShown, log });
   // 最初の一歩の案内の進み方と、閉じたこと。メモリーにだけ持ち、起動し直すと消える(first-steps.js)
   const firstSteps = new FirstSteps({ statusesOf: (id) => requests.statuses(id) });
+  // 「その場で」の 1 行を覚えた回数。Studio のデータの置き場の hints.json(利用者ごと。試作品には入れない。hints.js)
+  const hints = new Hints({ home: config.home });
+  await hints.load();
   // 目的の聞き出し。聞き出す AI は、作る AI と同じ接続の判定を使う別の役(intent-ai.js)。
   // 偽接続は同意なしで使う。本物は同意の後だけ。使えないとき、本物の AI を止めた設定のときは、決まった問いで進める
   // お客さんの話を書き換える前に呼ぶ。同意の前と、消している間は断る
@@ -354,6 +358,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
         }),
       consent,
       firstSteps,
+      hints,
     }),
   );
   servers.push(studioServer);

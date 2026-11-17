@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, closeMore, expect, launchStudio, openDevDetails, openMore, switchToRealAi, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, closeMore, expect, launchStudio, openDevDetails, openHandoff, openVersions, switchToRealAi, test } from './studio.js';
 
 // 求人でも LINE でもない題材(架空の学習相談)で、求人相談と同じ流れが通るかを確かめる(#281)。
 // 作成(サンプルを開く) → 試行(モックと偽の Claude Code) → 変更(画面と AI の振る舞い、試し直し) → 版 → 引き継ぎ。
@@ -60,7 +60,7 @@ function parts(page) {
       await expect(message).toHaveValue('');
     },
     async request(text) {
-      // 「その他」の引き出しは直す欄に重なるので、閉じてから頼む
+      // 引き出しを閉じてから頼む
       await closeMore(page);
       await page.getByLabel('依頼').fill(text);
       await page.getByRole('button', { name: '送る' }).click();
@@ -71,9 +71,9 @@ function parts(page) {
   };
 }
 
-// Studio の画面(試作品の一覧を除く)に、求人の題材の言葉が出ていない。「その他」の引き出しは、閉じていても中身を確かめる
+// Studio の画面(試作品の一覧を除く)に、求人の題材の言葉が出ていない。仕組みの引き出し、素材、段 9 の作業台は、閉じていても中身を確かめる
 async function expectNoJobWords(page) {
-  for (const area of ['section.make', '.preview .toolbar', '#retry-bar', '#more-panel']) {
+  for (const area of ['section.make', '.preview .toolbar', '#retry-bar', '#mechanism', '#materials', '#stage-handoff', '#next-band']) {
     expect(await page.locator(area).innerText(), `${area} に求人の言葉`).not.toMatch(JOB_WORDS);
   }
 }
@@ -120,13 +120,14 @@ async function runFlow(page, home, other, otherHome) {
     await expect(ui.values).toHaveText(['英会話', 'はじめて', '動画で学ぶ', '30分']);
     await expect(ui.courses).toHaveText([/そらいろ英会話 はじめの一歩/]);
     await expect(ui.week).toHaveText('1 週間で 210 分。「そらいろ英会話 はじめの一歩」を 1 日 2 回、週 14 回。');
-    // 実行の記録も、題材の項目の名前で出る(その他 → 開発者向けの詳細)
+    // 実行の記録も、題材の項目の名前で出る(仕組みの引き出し)
     await openDevDetails(page);
     const entries = page.getByRole('list', { name: 'AI の実行の記録' }).getByRole('listitem');
     await expect(entries.first().getByRole('list', { name: '状態の変化' }).getByRole('listitem')).toHaveText(['学び方: 未定 → 動画で学ぶ', '1日に使える時間: 未定 → 30分']);
     await page.screenshot({ path: test.info().outputPath('1-tried-with-mock.png'), fullPage: true });
 
-    // 3. 版: 良いところで保存する
+    // 3. 版: 良いところで保存する(試作品の名前のメニューの「保存した状態」)
+    await openVersions(page);
     await page.getByLabel('名前(なくてもよい)').fill('学習相談の最初の版');
     await page.locator('#save-version').click();
     await expect(page.locator('#working-status')).toHaveText('今の状態は保存 1「学習相談の最初の版」と同じです。');
@@ -184,11 +185,10 @@ async function runFlow(page, home, other, otherHome) {
     expect(calls[1].argv.join('\n')).toContain('あおぞら学習相談');
 
     // 7. 引き継ぎ: 書き出し、題材の項目と架空のデータの場所が出る。求人の言葉は入らない
-    await openMore(page);
-    const handoff = page.getByRole('region', { name: '本番開発へ渡す' });
+    const handoff = await openHandoff(page);
     await handoff.getByLabel('目的(この試作品で確かめたいこと)').fill('学ぶ人が、AI の理解した学習プランを直しながら相談を続けられるか確かめる');
     await handoff.getByLabel('未決事項').fill('講座の一覧を本物のデータにするか');
-    await handoff.getByRole('button', { name: '渡すフォルダーを作る' }).click();
+    await page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '渡すフォルダーを作る' }).click();
     const result = page.locator('#handoff-result');
     // 未決事項は、書いた 1 件と、保存版と違う作業中から書き出したことを Studio が足した 1 件と、形式 4 で足す 4 件
     // (目的の文書がない、設計の決定がない、質の見直しの「直す」、人に見せた答えがない)。未接続には、目録の未実装 3 つと制約が入る
@@ -197,6 +197,8 @@ async function runFlow(page, home, other, otherHome) {
     await fs.cp(exported, other, { recursive: true });
 
     // 8. 版: 保存した版に戻すと、変更前の画面と AI の設定、保存したときの会話に戻る
+    await closeMore(page);
+    await openVersions(page);
     await page.getByRole('button', { name: '保存 1 の状態に戻す' }).click();
     await expect(page.locator('#versions-message')).toHaveText('保存 1「学習相談の最初の版」に戻しました。戻す前の状態は、保存 2(自動)にしました。');
     await expect(ui.app.getByRole('heading', { name: 'あおぞら学習相談' })).toBeVisible();

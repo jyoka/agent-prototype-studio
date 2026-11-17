@@ -53,7 +53,7 @@ test('作る欄の依頼で試作品のファイルが変わり、試す画面�
     await chooseSample(page, SAMPLES.library);
     const make = page.getByRole('region', { name: '言葉で直す' });
     // 偽接続は、上の帯の印だけで分かる。直す欄の上に接続と認証の長文の枠はない
-    await expect(page.getByRole('banner').getByText('開発用: 偽の直す AI')).toBeVisible();
+    await expect(page.getByRole('region', { name: '今の行' }).getByText('開発用: 偽の作る AI')).toBeVisible();
     await expect(make.locator('#make-target')).toHaveText('図書室への依頼');
     await expect(make).not.toContainText('接続:');
     await expect(make.getByRole('list', { name: '作る会話' })).toContainText('まだ依頼はありません');
@@ -201,7 +201,7 @@ test('作業中は中断でき、その間はほかの依頼と作り直しを�
     await expect(run.locator('.run-status')).toContainText('直す AI が作業しています');
     await expect(page.getByRole('button', { name: '送る' })).toBeDisabled();
     await expect(page.getByLabel('依頼')).toBeDisabled();
-    // ファイルから作り直すは、その他 → 開発者向けの詳細にある
+    // ファイルから作り直すは、仕組みの引き出しにある
     await openDevDetails(page);
     await expect(page.getByRole('button', { name: 'ファイルから作り直す' })).toBeDisabled();
     await closeMore(page);
@@ -346,7 +346,7 @@ test('U4: STUDIO_AGENT=fake では、試験用の依頼は開発者向けの詳�
     await page.goto(studio.url);
     const app = page.frameLocator('iframe[title="試作品"]');
     await expect(app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
-    await expect(page.getByRole('banner').getByText('開発用: 偽の直す AI')).toBeVisible();
+    await expect(page.getByRole('region', { name: '今の行' }).getByText('開発用: 偽の作る AI')).toBeVisible();
     // 利用者向けの例は、偽接続でも同じ 3 つ
     await expect(page.getByRole('list', { name: '直し方の例' }).getByRole('button')).toHaveCount(3);
     for (const word of TEST_WORDS) expect(await visibleText(page)).not.toContain(word);

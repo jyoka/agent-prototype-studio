@@ -87,7 +87,7 @@ test('npm start で起動し、ブラウザでサンプルの試作品を操作�
     await expect(app.locator('.summary')).toHaveText('全 9 冊、貸出できる本 7 冊');
     await expect(detail.getByRole('heading', { name: '架空の星座あつめ' })).toBeVisible();
 
-    // 試作品からエラーは届いていない(その他 → 開発者向けの詳細の「試作品からの知らせ」)
+    // 試作品からエラーは届いていない(仕組みの引き出しの「試作品からの知らせ」)
     await openDevDetails(page);
     await expect(page.locator('#events-empty')).toBeVisible();
 

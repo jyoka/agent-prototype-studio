@@ -8,63 +8,133 @@
   <script type="module" src="/studio.js"></script>
 </head>
 <body>
-  <!-- 上の帯: 試作品の切り替え、保存、その他。保存の印と接続の印は、必要なときだけ出す(ux-redesign.md 3 節) -->
+  <!-- 画面の枠(ui-ux-v2.md の 2.2)。上から「段の道筋」「今の行」「作業台」「次の一手の帯」。右に「仕組みの引き出し」と「素材」。
+       どの段でも、この枠の中で作業台だけが入れ替わる -->
+  <!-- 段の道筋(2.2、2.3、10.4)。左に試作品の名前のメニュー、真ん中に 9 つの段、右に保存、素材、表示。
+       目的、整理、設計、審査、会の印(*-mark)は、その段の下に小さく出す(13 節)。保存の印と接続の印は、必要なときだけ出す -->
   <header class="topbar">
-    <h1>Prototype Studio</h1>
-    <div class="project-switch">
-      <button type="button" id="project-menu-button" class="menu-button" aria-haspopup="true" aria-expanded="false" aria-controls="project-menu">
-        試作品: <span id="project-title">読み込んでいます…</span><span aria-hidden="true"> ▾</span>
-      </button>
-      <nav id="project-menu" class="project-menu" aria-label="試作品の一覧" hidden>
-        <ul id="project-list"></ul>
-        <button type="button" id="new-project" class="new-project">新しく作る</button>
-        <button type="button" id="new-meeting" class="new-project">お客さんとの会を始める</button>
-      </nav>
-    </div>
-    <!-- 会の印(field-session.md の段 0)。押すと、会の始めの画面を開く。会の試作品のときだけ出す -->
-    <button type="button" id="meeting-mark" class="intent-mark" data-state="none" hidden></button>
-    <!-- 目的の文書の印(user-journey.md の段 2)。押すと、聞き出しか目的の文書を開く -->
-    <button type="button" id="intent-mark" class="intent-mark" data-state="none" hidden>目的なし</button>
-    <!-- 整理の板の印(field-session.md の段 2)。押すと、聞き取りの欄と整理の板を開く -->
-    <button type="button" id="organize-mark" class="intent-mark" data-state="none" hidden>ヒアリングの整理</button>
-    <!-- 設計の案内の印(user-journey.md の段 3、J2)。押すと、6 つの段の帯と案の比べを開く -->
-    <button type="button" id="design-mark" class="intent-mark" data-state="none" hidden>設計なし</button>
-    <!-- AI 構成の審査の印(ai-architecture-review.md)。審査のある試作品だけに出す。押すと、4 つの承認の画面を開く -->
-    <button type="button" id="review-mark" class="intent-mark" data-state="none" hidden></button>
-    <div class="topbar-end">
-      <!-- STUDIO_AGENT=fake で起動したときだけ出す(ux-redesign.md 4 節) -->
-      <span id="dev-agent-mark" class="dev-agent-mark" hidden>開発用: 偽の直す AI</span>
-      <span id="connection" class="connection" data-state="checking" hidden></span>
-      <span id="save-mark" class="save-mark" hidden>保存していない変更があります</span>
-      <button type="button" id="save-now" disabled>保存</button>
-      <button type="button" id="more" aria-controls="more-panel" aria-expanded="false">その他</button>
-      <!-- 表示のメニュー(ui-ux-v2.md の 2.2)。色、動きを止める、会議室の大きさ。選んだものは、このブラウザが覚える -->
-      <div class="display-switch">
-        <button type="button" id="display-button" aria-controls="display-menu" aria-expanded="false">表示<span aria-hidden="true"> ▾</span></button>
-        <div id="display-menu" class="display-menu" role="group" aria-label="表示" hidden>
-          <fieldset>
-            <legend>色</legend>
-            <label><input type="radio" name="display-theme" value="light"> ライト</label>
-            <label><input type="radio" name="display-theme" value="dark"> ダーク</label>
-            <label><input type="radio" name="display-theme" value="system" checked> OS に従う</label>
-          </fieldset>
-          <label><input type="checkbox" id="display-motion-off"> 動きを止める</label>
-          <label><input type="checkbox" id="display-room"> 会議室の大きさ</label>
+    <div class="topbar-row">
+      <h1>Prototype Studio</h1>
+      <div class="project-switch">
+        <button type="button" id="project-menu-button" class="menu-button" aria-haspopup="true" aria-expanded="false" aria-controls="project-menu">
+          試作品: <span id="project-title">読み込んでいます…</span><span aria-hidden="true"> ▾</span>
+        </button>
+        <!-- 試作品の名前のメニュー。切り替え、新しく作る、お客さんとの会を始める、版と「この状態に戻す」(13 節) -->
+        <div id="project-menu" class="project-menu" hidden>
+          <nav aria-label="試作品の一覧">
+            <ul id="project-list"></ul>
+            <button type="button" id="new-project" class="new-project">新しく作る</button>
+            <button type="button" id="new-meeting" class="new-project">お客さんとの会を始める</button>
+          </nav>
+          <section class="versions" aria-labelledby="versions-heading">
+            <h2 id="versions-heading">保存した状態</h2>
+            <p id="working-status" class="working-status"></p>
+            <form id="save-form" class="save-form">
+              <label for="version-name">名前(なくてもよい)</label>
+              <input id="version-name" type="text" maxlength="60" autocomplete="off" disabled>
+              <button type="submit" id="save-version" disabled>保存</button>
+            </form>
+            <p id="versions-message" class="versions-message" role="status" hidden></p>
+            <ol id="version-list" class="version-list" aria-label="保存した状態の一覧"></ol>
+            <p class="muted">保存すると、試作品のファイルと、試作品の中の AI との会話と状態を残します。今の会話は Studio を止めると消えますが、保存したものは残ります。</p>
+          </section>
+        </div>
+      </div>
+      <div class="topbar-end">
+        <span id="connection" class="connection" data-state="checking" hidden></span>
+        <span id="save-mark" class="save-mark" hidden>保存していない変更があります</span>
+        <button type="button" id="save-now" disabled>保存</button>
+        <button type="button" id="materials-button" aria-controls="materials" aria-expanded="false">素材</button>
+        <!-- 表示のメニュー(ui-ux-v2.md の 2.2)。色、動きを止める、会議室の大きさ、案内をもう一度出す。選んだものは、このブラウザが覚える -->
+        <div class="display-switch">
+          <button type="button" id="display-button" aria-controls="display-menu" aria-expanded="false">表示<span aria-hidden="true"> ▾</span></button>
+          <div id="display-menu" class="display-menu" role="group" aria-label="表示" hidden>
+            <fieldset>
+              <legend>色</legend>
+              <label><input type="radio" name="display-theme" value="light"> ライト</label>
+              <label><input type="radio" name="display-theme" value="dark"> ダーク</label>
+              <label><input type="radio" name="display-theme" value="system" checked> OS に従う</label>
+            </fieldset>
+            <label><input type="checkbox" id="display-motion-off"> 動きを止める</label>
+            <label><input type="checkbox" id="display-room"> 会議室の大きさ</label>
+            <!-- 覚えて出さなくなった「その場で」の 1 行を、全部もう一度出す(5.1) -->
+            <button type="button" id="hints-reset" class="hints-reset">案内をもう一度出す</button>
+            <p id="hints-reset-note" class="muted" role="status" hidden></p>
+          </div>
         </div>
       </div>
     </div>
+    <nav class="stage-rail" aria-label="段の道筋">
+      <!-- 1024px より狭いときは、9 段を「4 / 9 審査 ▾」の 1 つのボタンにまとめる(2.8) -->
+      <button type="button" id="stage-compact" class="stage-compact" aria-expanded="false" aria-controls="stage-list"></button>
+      <ol id="stage-list" class="stage-list">
+        <li data-stage="talk"><button type="button" class="stage" data-stage="talk"></button></li>
+        <li data-stage="goal">
+          <button type="button" class="stage" data-stage="goal"></button>
+          <span class="stage-marks">
+            <!-- 会の印(field-session.md の段 0)。押すと、会の始めの画面を開く。会の試作品のときだけ出す -->
+            <button type="button" id="meeting-mark" class="intent-mark" data-state="none" hidden></button>
+            <!-- 目的の文書の印(user-journey.md の段 2)。押すと、聞き出しか目的の文書を開く -->
+            <button type="button" id="intent-mark" class="intent-mark" data-state="none" hidden>目的なし</button>
+            <!-- 整理の板の印(field-session.md の段 2)。押すと、聞き取りの欄と整理の板を開く -->
+            <button type="button" id="organize-mark" class="intent-mark" data-state="none" hidden>ヒアリングの整理</button>
+          </span>
+        </li>
+        <li data-stage="design">
+          <button type="button" class="stage" data-stage="design"></button>
+          <span class="stage-marks">
+            <!-- 設計の案内の印(user-journey.md の段 3、J2)。押すと、6 つの段の帯と案の比べを開く -->
+            <button type="button" id="design-mark" class="intent-mark" data-state="none" hidden>設計なし</button>
+          </span>
+        </li>
+        <li data-stage="review">
+          <button type="button" class="stage" data-stage="review"></button>
+          <span class="stage-marks">
+            <!-- AI 構成の審査の印(ai-architecture-review.md)。審査のある試作品だけに出す。押すと、4 つの承認の画面を開く -->
+            <button type="button" id="review-mark" class="intent-mark" data-state="none" hidden></button>
+          </span>
+        </li>
+        <li data-stage="build"><button type="button" class="stage" data-stage="build"></button></li>
+        <li data-stage="measure"><button type="button" class="stage" data-stage="measure"></button></li>
+        <li data-stage="quality"><button type="button" class="stage" data-stage="quality"></button></li>
+        <li data-stage="show"><button type="button" class="stage" data-stage="show"></button></li>
+        <li data-stage="handoff"><button type="button" class="stage" data-stage="handoff"></button></li>
+      </ol>
+      <span id="stage-count" class="stage-count"></span>
+    </nav>
   </header>
+  <!-- 今の行(2.5、2.6)。4 者を、形と名前と今の文の組で、いつも同じ位置に出す。働いている者は data-active。
+       右に、お試しか本物か。開発で起動したときだけ「開発用: 偽の作る AI」の印 -->
+  <section id="now-line" class="now-line" aria-label="今の行">
+    <ul class="actors" aria-label="4 者">
+      <li class="actor" data-actor="you"><span class="actor-shape" aria-hidden="true">●</span> <span class="actor-name">あなた</span><span class="actor-sep">: </span><span class="actor-text"></span></li>
+      <li class="actor" data-actor="maker"><span class="actor-shape" aria-hidden="true">■</span> <span class="actor-name">作る AI</span><span class="actor-sep">: </span><span class="actor-text"></span></li>
+      <li class="actor" data-actor="product"><span class="actor-shape" aria-hidden="true">▲</span> <span class="actor-name">試作品の中の AI</span><span class="actor-sep">: </span><span class="actor-text"></span></li>
+      <li class="actor" data-actor="gate"><span class="actor-shape" aria-hidden="true">⬢</span> <span class="actor-name">関門と守り</span><span class="actor-sep">: </span><span class="actor-text"></span></li>
+    </ul>
+    <!-- 狭い画面で、働いていない者をまとめる(2.8) -->
+    <span id="actor-others" class="actor-others"></span>
+    <div class="now-end">
+      <!-- STUDIO_AGENT=fake で起動したときだけ出す(13 節) -->
+      <span id="dev-agent-mark" class="dev-agent-mark" hidden>開発用: 偽の作る AI</span>
+      <!-- お試しか本物か(2.6)。本物のときは、押すと同意の中身をもう一度見られる -->
+      <span id="ai-mode" class="ai-mode" data-mode="trial">○ お試しの AI・料金なし</span>
+      <button type="button" id="real-ai-now" class="ai-mode" data-mode="real" aria-expanded="false" aria-controls="real-ai-now-info" hidden>◉ 本物の AI・あなたの Claude Code</button>
+      <button type="button" id="mechanism-button" class="mechanism-button" aria-controls="mechanism" aria-expanded="false" aria-keyshortcuts=".">仕組みを見る <kbd aria-hidden="true">.</kbd></button>
+    </div>
+  </section>
+  <div id="real-ai-now-info" class="real-ai-info now-info" hidden></div>
   <div id="banner" class="banner" role="alert" hidden>
     <p id="banner-text"></p>
   </div>
-  <!-- 最初の一歩の案内(ux-redesign.md 2 節、7-1)。1 行の説明と 3 つの手順。手順は状態で進み、今の手順に aria-current="step" を付ける。
-       閉じたことは、Studio を止めるまでサーバーが覚える -->
   <div id="meeting-due" class="meeting-due" role="status" hidden></div>
-  <section id="first-steps" class="first-steps" aria-label="はじめの手順" hidden>
-    <p class="first-steps-lead">試作品を試して、気になるところを言葉で直す場所です。</p>
-    <button type="button" id="first-steps-close" class="first-steps-close">閉じる</button>
-    <ol id="first-steps-list" class="first-steps-list" aria-label="3 つの手順"></ol>
-    <p id="first-steps-hint" class="first-steps-hint" role="status"></p>
+  <div class="frame-body">
+  <!-- 作業台(2.2、2.4)。段ごとに中身が入れ替わる。横幅の上限は --bench-max -->
+  <main id="bench" class="bench" aria-labelledby="bench-heading">
+  <h2 id="bench-heading" class="bench-heading" tabindex="-1"></h2>
+  <!-- まだの段、または今の画面にない段を押したときの作業台。何が足りないかを出す -->
+  <section id="stage-note" class="stage-note" aria-label="この段で足りないもの" hidden>
+    <p id="stage-note-text"></p>
   </section>
   <!-- はじめの画面、目的の聞き出し、目的の文書(user-journey.md の段 1、段 2、J1)。出している間は、下の 2 列を隠す -->
   <!-- 会の始めの画面(field-session.md の段 0、collaboration.md の 7 節)。出している間は、下の 2 列を隠す -->
@@ -374,6 +444,8 @@
           <button type="submit">要点を足す</button>
         </form>
         <p class="muted">要点だけを短く打ちます。架空の題材で試してください。実在の人の記録は入れないでください。</p>
+        <!-- その場での 1 行(ui-ux-v2.md の 5.1)。要点を 2 回足したら出さない -->
+        <p class="hint" data-hint="organize-point">聞いた要点は 1 つずつ短く打ち、Enter で足します。板への整理は後でまとめてできます。</p>
         <ol id="organize-points" class="organize-list" aria-label="打った要点"></ol>
       </section>
       <section class="organize-board" aria-labelledby="organize-board-heading">
@@ -403,7 +475,43 @@
       </section>
     </div>
   </section>
-  <main class="layout">
+    <!-- 人に見せる(user-journey.md の J7)。段 8 の作業台。押すと見せる画面にする。試作品と確かめたい問いだけを出し、開発の欄を隠す -->
+    <section id="stage-show" class="stage-panel" aria-labelledby="show-start-heading" hidden>
+      <h3 id="show-start-heading">人に見せる</h3>
+      <p class="muted">試作品と確かめたい問いだけの画面にします。聞いた答えは、見せた保存に残ります。コメントと承認は、見せる画面の右に出ます。</p>
+      <button type="button" id="show-start" class="primary" disabled>人に見せる</button>
+    </section>
+    <!-- 人の「確かめる」(harness.md の 3.1、P27)。試す欄の上には置かない(ux-redesign.md の U9)。
+         結果は「言葉で直す」の会話に、作る run と同じ結果の帯で出す -->
+    <section id="stage-check" class="stage-panel" aria-labelledby="check-heading" hidden>
+      <h3 id="check-heading">試作品を自動で確かめる</h3>
+      <p class="muted">いま表示している試作品を、決めた手順で自動で動かして確かめます。結果は「言葉で直す」の欄に出ます。試す欄の会話は変わりません。</p>
+      <fieldset id="check-ai" class="check-ai" hidden>
+        <legend>確かめるときの試作品の中の AI</legend>
+        <label><input type="radio" name="check-ai" value="mock" checked> お試しの AI(決まった言葉だけ分かります。無料です)</label>
+        <label><input type="radio" name="check-ai" value="claude-code"> 本物の AI(あなたの Claude Code。1 回の確かめで使います)</label>
+        <p id="check-ai-note" class="muted" hidden></p>
+      </fieldset>
+      <!-- 本物の AI で確かめるときの、同意のカード(P25 と同じ中身) -->
+      <div id="check-consent" class="check-consent" hidden></div>
+      <button type="button" id="check-run" disabled>試作品を自動で確かめる</button>
+      <p id="check-message" class="check-message" role="status" hidden></p>
+    </section>
+    <section id="stage-handoff" class="stage-panel" aria-labelledby="handoff-heading" hidden>
+      <h3 id="handoff-heading">本番開発へ渡す</h3>
+      <p class="muted">今の試作品を、本番開発の担当者に渡すフォルダーにまとめます。試作品のファイル、AI の設定、会話と状態、本物につないだもの・お試しのもの・つないでいないものの区別、未決事項が入ります。秘密情報らしい文字列があると作りません。</p>
+      <form id="handoff-form" class="handoff-form">
+        <label for="handoff-purpose">目的(この試作品で確かめたいこと)</label>
+        <textarea id="handoff-purpose" rows="2" maxlength="4000" disabled></textarea>
+        <label for="handoff-decided">決まったこと</label>
+        <textarea id="handoff-decided" rows="2" maxlength="4000" disabled></textarea>
+        <label for="handoff-undecided">未決事項</label>
+        <textarea id="handoff-undecided" rows="2" maxlength="4000" disabled></textarea>
+        <button type="submit" id="handoff-export" disabled>渡すフォルダーを作る</button>
+      </form>
+      <div id="handoff-result" class="handoff-result" role="status" hidden></div>
+    </section>
+  <div class="layout">
     <section class="preview" aria-labelledby="try-heading">
       <div class="toolbar" id="try-toolbar">
         <h2 id="try-heading">試す</h2>
@@ -437,7 +545,7 @@
         <p id="frame-placeholder" class="placeholder">読み込んでいます…</p>
       </div>
       <!-- 1 ターンの記録(task 423。ai-architecture-review.md の 15 節)。試す欄で最後に送った発言で、働いた参加者、道具、守りの層、時間、費用。
-           技術の言葉と平たい言葉を並べる。全部の中身は、開発者向けの詳細の「AI の実行の記録」にある。
+           技術の言葉と平たい言葉を並べる。全部の中身は、仕組みの引き出しの「AI の実行の記録」にある。
            お客さんに見せる画面(#391)には出さない(data-studio-only。試作品の iframe の外にだけ置く) -->
       <section id="turn-record" class="turn-record" aria-labelledby="turn-record-heading" data-studio-only hidden>
         <h3 id="turn-record-heading">1 ターンの記録</h3>
@@ -556,7 +664,7 @@
         <p class="card-label">今できること</p>
         <ul>
           <li>試作品を試す(お試しの AI)</li>
-          <li>保存、本番開発へ渡す(上の帯の「保存」と「その他」)</li>
+          <li>保存、本番開発へ渡す(上の帯の「保存」と、段の道筋の「渡す」)</li>
         </ul>
         <p class="card-label">使えるようにするには</p>
         <ol id="agent-unavailable-steps"></ol>
@@ -579,51 +687,72 @@
           <button type="button" id="cancel" hidden>止める</button>
           <span class="muted">Ctrl+Enter(Mac は ⌘+Enter)でも送れます</span>
         </div>
+        <!-- その場での 1 行(ui-ux-v2.md の 5.1)。依頼を 2 回送ったら出さない -->
+        <p class="hint" data-hint="make-request">気になる所を 1 つずつ頼むと、何が変わったかを確かめやすくなります。</p>
       </form>
     </section>
+  </div>
   </main>
-  <!-- その他の引き出し(右から出る)。保存した状態、本番開発へ渡す、画面を読み込み直す、開発者向けの詳細(ux-redesign.md 3 節、7-7)。
-       開発者向けの詳細は、さらに開く操作の中に置き、既定で閉じる -->
-  <aside id="more-panel" class="more-panel" aria-labelledby="more-heading" tabindex="-1" hidden>
-    <div class="more-head">
-      <h2 id="more-heading">その他</h2>
-      <button type="button" id="more-close" class="more-close" aria-label="閉じる" title="閉じる(Esc)">×</button>
+  <!-- 仕組みの引き出し(2.2、10.4)。「仕組みを見る」か . のキーで開き、もう一度で閉じる。作業台を隠さず、横に並べる。
+       今の開発者向けの詳細(接続、試験用の依頼、ビルド、プロダクト内 AI、構成と前提、実行の記録、試作品からの知らせ)をここに置く -->
+  <aside id="mechanism" class="drawer mechanism" aria-labelledby="mechanism-heading" tabindex="-1" hidden>
+    <div class="drawer-head">
+      <h2 id="mechanism-heading">仕組み</h2>
+      <button type="button" id="mechanism-close" class="drawer-close" aria-label="仕組みを閉じる" title="閉じる(. か Esc)">×</button>
     </div>
-    <!-- 人に見せる(user-journey.md の J7)。押すと見せる画面にする。試作品と確かめたい問いだけを出し、開発の欄を隠す。
-         上の帯は幅が足りず、試す欄の上はボタンを増やさない決まり(ux-redesign.md の U9)なので、引き出しに置く -->
-    <section aria-labelledby="show-start-heading">
-      <h3 id="show-start-heading">人に見せる</h3>
-      <p class="muted">試作品と確かめたい問いだけの画面にします。聞いた答えは、見せた保存に残ります。</p>
-      <button type="button" id="show-start" disabled>人に見せる</button>
-    </section>
-    <section aria-labelledby="versions-heading">
-      <h3 id="versions-heading">保存した状態</h3>
-      <p id="working-status" class="working-status"></p>
-      <form id="save-form" class="save-form">
-        <label for="version-name">名前(なくてもよい)</label>
-        <input id="version-name" type="text" maxlength="60" autocomplete="off" disabled>
-        <button type="submit" id="save-version" disabled>保存</button>
-      </form>
-      <p id="versions-message" class="versions-message" role="status" hidden></p>
-      <ol id="version-list" class="version-list" aria-label="保存した状態の一覧"></ol>
-      <p class="muted">保存すると、試作品のファイルと、試作品の中の AI との会話と状態を残します。今の会話は Studio を止めると消えますが、保存したものは残ります。</p>
-    </section>
-    <!-- 人の「確かめる」(harness.md の 3.1、P27)。試す欄の上には置かない(ux-redesign.md の U9)。
-         結果は「言葉で直す」の会話に、作る run と同じ結果の帯で出す -->
-    <section aria-labelledby="check-heading">
-      <h3 id="check-heading">試作品を自動で確かめる</h3>
-      <p class="muted">いま表示している試作品を、決めた手順で自動で動かして確かめます。結果は「言葉で直す」の欄に出ます。試す欄の会話は変わりません。</p>
-      <fieldset id="check-ai" class="check-ai" hidden>
-        <legend>確かめるときの試作品の中の AI</legend>
-        <label><input type="radio" name="check-ai" value="mock" checked> お試しの AI(決まった言葉だけ分かります。無料です)</label>
-        <label><input type="radio" name="check-ai" value="claude-code"> 本物の AI(あなたの Claude Code。1 回の確かめで使います)</label>
-        <p id="check-ai-note" class="muted" hidden></p>
-      </fieldset>
-      <!-- 本物の AI で確かめるときの、同意のカード(P25 と同じ中身) -->
-      <div id="check-consent" class="check-consent" hidden></div>
-      <button type="button" id="check-run" disabled>試作品を自動で確かめる</button>
-      <p id="check-message" class="check-message" role="status" hidden></p>
-    </section>
+    <p class="muted">本当はどう動いているかです。プロンプト、記録、接続を、作業台の横で読めます。</p>
+    <div id="dev-details" class="dev-details">
+      <!-- 試作品の中の AI と作る前の審査のプロンプトの全文(AI 構成の審査の harness から読む) -->
+      <section id="mechanism-prompts" aria-labelledby="prompts-heading">
+        <h3 id="prompts-heading">プロンプト</h3>
+        <div id="mechanism-prompts-body"></div>
+      </section>
+      <section aria-labelledby="agent-heading">
+        <h3 id="agent-heading">直す AI(作る AI)の接続</h3>
+        <div id="agent-status" class="agent-status"></div>
+      </section>
+      <!-- 偽接続(STUDIO_AGENT=fake)で試せる依頼。利用者の画面には出さない(ux-redesign.md 5 節、U4) -->
+      <section id="test-requests" hidden>
+        <h3 id="test-requests-heading">試験用の依頼</h3>
+        <p class="muted">偽の直す AI が扱える依頼です。押すと「言葉で直す」の依頼の欄に入ります。</p>
+        <ul id="test-request-list" class="test-request-list" aria-label="偽の直す AI で試せる例"></ul>
+      </section>
+      <section aria-labelledby="build-heading">
+        <h3 id="build-heading">ビルド</h3>
+        <div id="build-status" class="build-status"></div>
+        <button type="button" id="rebuild" class="detail-button" disabled title="app/ のファイルから試作品を作り直します。直す AI の変更の後は自動で作り直されます">ファイルから作り直す</button>
+      </section>
+      <section aria-labelledby="ai-heading">
+        <h3 id="ai-heading">プロダクト内 AI</h3>
+        <div id="ai-status" class="ai-status"></div>
+      </section>
+      <!-- 構成(app/composition.json と app/compositions/)と前提の選び方。構成のない試作品では出さない(docs/design/agent-simulation.md の sim-10) -->
+      <section id="sim-choice" aria-labelledby="sim-choice-heading" hidden>
+        <h3 id="sim-choice-heading">構成と前提</h3>
+        <div id="sim-choice-body" class="sim-choice"></div>
+      </section>
+      <section aria-labelledby="trace-heading">
+        <h3 id="trace-heading">AI の実行の記録</h3>
+        <div id="ai-trace" class="ai-trace"></div>
+      </section>
+      <section aria-labelledby="events-heading">
+        <h3 id="events-heading">試作品からの知らせ</h3>
+        <p id="events-empty" class="muted">まだありません</p>
+        <ul id="events" class="events"></ul>
+      </section>
+      <section aria-labelledby="reopen-heading">
+        <h3 id="reopen-heading">画面を読み込み直す</h3>
+        <button type="button" id="reopen" class="detail-button" disabled title="画面だけを読み直します。会話と状態はそのまま">画面を読み込み直す</button>
+        <p class="muted">試作品が止まったように見えるときに使います。会話と状態はそのままです。</p>
+      </section>
+    </div>
+  </aside>
+  <!-- 素材(2.2)。上の帯の「素材」で開く。自分のトークンと、部品と指針をつなぐ画面。作業台の横に並べる -->
+  <aside id="materials" class="drawer" aria-labelledby="materials-heading" tabindex="-1" hidden>
+    <div class="drawer-head">
+      <h2 id="materials-heading">素材</h2>
+      <button type="button" id="materials-close" class="drawer-close" aria-label="素材を閉じる" title="閉じる(Esc)">×</button>
+    </div>
     <!-- 自分のトークンをつなぐ(user-journey.md の J4)。形を確かめてから、Studio の持つ場所に置く -->
     <section aria-labelledby="tokens-heading">
       <h3 id="tokens-heading">自分のトークンをつなぐ</h3>
@@ -742,61 +871,15 @@
         </div>
       </form>
     </section>
-    <section aria-labelledby="handoff-heading">
-      <h3 id="handoff-heading">本番開発へ渡す</h3>
-      <p class="muted">今の試作品を、本番開発の担当者に渡すフォルダーにまとめます。試作品のファイル、AI の設定、会話と状態、本物につないだもの・お試しのもの・つないでいないものの区別、未決事項が入ります。秘密情報らしい文字列があると作りません。</p>
-      <form id="handoff-form" class="handoff-form">
-        <label for="handoff-purpose">目的(この試作品で確かめたいこと)</label>
-        <textarea id="handoff-purpose" rows="2" maxlength="4000" disabled></textarea>
-        <label for="handoff-decided">決まったこと</label>
-        <textarea id="handoff-decided" rows="2" maxlength="4000" disabled></textarea>
-        <label for="handoff-undecided">未決事項</label>
-        <textarea id="handoff-undecided" rows="2" maxlength="4000" disabled></textarea>
-        <button type="submit" id="handoff-export" disabled>渡すフォルダーを作る</button>
-      </form>
-      <div id="handoff-result" class="handoff-result" role="status" hidden></div>
-    </section>
-    <div class="more-reopen">
-      <button type="button" id="reopen" class="detail-button" disabled title="画面だけを読み直します。会話と状態はそのまま">画面を読み込み直す</button>
-      <p class="muted">試作品が止まったように見えるときに使います。会話と状態はそのままです。</p>
-    </div>
-    <details id="dev-details" class="dev-details">
-      <summary>開発者向けの詳細</summary>
-      <section aria-labelledby="agent-heading">
-        <h3 id="agent-heading">直す AI(作る AI)の接続</h3>
-        <div id="agent-status" class="agent-status"></div>
-      </section>
-      <!-- 偽接続(STUDIO_AGENT=fake)で試せる依頼。利用者の画面には出さない(ux-redesign.md 5 節、U4) -->
-      <section id="test-requests" hidden>
-        <h3 id="test-requests-heading">試験用の依頼</h3>
-        <p class="muted">偽の直す AI が扱える依頼です。押すと「言葉で直す」の依頼の欄に入ります。</p>
-        <ul id="test-request-list" class="test-request-list" aria-label="偽の直す AI で試せる例"></ul>
-      </section>
-      <section aria-labelledby="build-heading">
-        <h3 id="build-heading">ビルド</h3>
-        <div id="build-status" class="build-status"></div>
-        <button type="button" id="rebuild" class="detail-button" disabled title="app/ のファイルから試作品を作り直します。直す AI の変更の後は自動で作り直されます">ファイルから作り直す</button>
-      </section>
-      <section aria-labelledby="ai-heading">
-        <h3 id="ai-heading">プロダクト内 AI</h3>
-        <div id="ai-status" class="ai-status"></div>
-      </section>
-      <!-- 構成(app/composition.json と app/compositions/)と前提の選び方。構成のない試作品では出さない(docs/design/agent-simulation.md の sim-10) -->
-      <section id="sim-choice" aria-labelledby="sim-choice-heading" hidden>
-        <h3 id="sim-choice-heading">構成と前提</h3>
-        <div id="sim-choice-body" class="sim-choice"></div>
-      </section>
-      <section aria-labelledby="trace-heading">
-        <h3 id="trace-heading">AI の実行の記録</h3>
-        <div id="ai-trace" class="ai-trace"></div>
-      </section>
-      <section aria-labelledby="events-heading">
-        <h3 id="events-heading">試作品からの知らせ</h3>
-        <p id="events-empty" class="muted">まだありません</p>
-        <ul id="events" class="events"></ul>
-      </section>
-    </details>
   </aside>
+  </div>
+  <!-- 次の一手の帯(2.2、10.4)。1 文と、強い色のボタン(.primary)を多くて 1 つ。押せないボタンは置かず、何が足りないかを文で言う。
+       ボタンは、今の段の作業台にあるものを、この帯に移して出す(同じボタンが 2 つにならないように) -->
+  <section id="next-band" class="next-band" aria-label="次の一手">
+    <span class="next-label">次の一手</span>
+    <p id="next-text" class="next-text"></p>
+    <div id="next-slot" class="next-slot"></div>
+  </section>
   <!-- 結果の帯のスクリーンショットを大きく見る -->
   <dialog id="shot-dialog" class="shot-dialog" aria-labelledby="shot-dialog-caption">
     <div class="shot-dialog-head">

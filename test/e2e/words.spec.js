@@ -12,7 +12,7 @@ import {
   launchStudio,
   openAiMenu,
   openDevDetails,
-  openMore,
+  openCheck,
   test,
   writeProject,
 } from './studio.js';
@@ -49,7 +49,8 @@ async function writeFakeClaude(home) {
   return bin;
 }
 
-// 利用者が書いた依頼の文(作る会話の「あなた」)。Studio の文ではないので、確かめから外す(試験用の依頼に「app/」がある)
+// 利用者が書いた依頼の文(作る会話の「あなた」)。Studio の文ではないので、確かめから外す(試験用の依頼に「app/」がある)。
+// 今の行(#now-line)の「⬢ 関門と守り」も外す。「関門」を開発の言葉から外すのは UI/UX の 5 枚目(ui-ux-v2.md の 6 節)
 const USER_TEXT = '.bubble.user > p';
 
 // 場面の見える文字を確かめて撮る。場面ごとに失敗を集めて、最後にまとめて知らせる(1 つの場面で止めない)。
@@ -62,7 +63,7 @@ async function scene(page, name, prefix = 'P29') {
     const text = document.body.innerText;
     for (const node of hidden) node.style.display = '';
     return text;
-  }, USER_TEXT);
+  }, `${USER_TEXT}, #now-line`);
   expect.soft(devWordsIn(text), `場面「${name}」の見える文字に、開発の言葉があります`).toEqual([]);
   await page.screenshot({ path: path.join(UX_SHOTS, `${prefix}-${name}.png`) });
 }
@@ -135,12 +136,12 @@ test.describe('U3: 見える文字に開発の言葉がない', () => {
       await expect(bar.getByRole('region', { name: '直す前と後の返事' })).toBeVisible();
       await scene(page, 'retried');
 
-      // その他の引き出し(開発者向けの詳細は閉じたまま)
-      const panel = await openMore(page);
+      // 段 7「質」の「試作品を自動で確かめる」(仕組みの引き出しは閉じたまま)
+      const panel = await openCheck(page);
       await expect(panel.getByRole('button', { name: '試作品を自動で確かめる' })).toBeEnabled();
       await scene(page, 'more');
 
-      // 確かめる: 引き出しの「試作品を自動で確かめる」。結果は直す欄に、同じ形の結果の帯で出る
+      // 確かめる: 段 7 の「試作品を自動で確かめる」。結果は直す欄に、同じ形の結果の帯で出る
       await panel.getByRole('button', { name: '試作品を自動で確かめる' }).click();
       await closeMore(page);
       const checked = page.getByRole('list', { name: '作る会話' }).locator('> li.check').last();
@@ -247,9 +248,9 @@ test.describe('U3: 見える文字に開発の言葉がない', () => {
       // 試す欄の「AI: … ▾」でも、本物の AI を選べない理由を出す
       await openAiMenu(page);
       await scene(page, 'unavailable-try');
-      // その他の引き出しの「試作品を自動で確かめる」でも、本物の AI を選べない理由を同じ 1 文で出す
+      // 段 7 の「試作品を自動で確かめる」でも、本物の AI を選べない理由を同じ 1 文で出す
       await page.keyboard.press('Escape');
-      const panel = await openMore(page);
+      const panel = await openCheck(page);
       await expect(panel.locator('#check-ai-note')).toHaveText('本物の AI は選べません: この PC で Claude Code が見つかりません。');
       await scene(page, 'unavailable-more');
     } finally {

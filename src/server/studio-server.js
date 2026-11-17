@@ -17,6 +17,7 @@ import { ShowError } from './show.js';
 import { CommentError } from './comments.js';
 import { VersionError } from './versions.js';
 import { COLUMNS } from './organize-ai.js';
+import { Hints } from './hints.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
 // トークンのファイルは大きいので、その API だけ広げる(上限は design-tokens.js の TOKEN_LIMITS。JSON の中に入れると伸びる分を見る)
@@ -152,7 +153,8 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
 // reviews は AI 構成の審査と AI 構成書(review.js)。sceneRuns は主の画面の場面の回しと比べる表(scene-runs.js)。
 // quality は質の見直しの表(quality.js)。shows は人に見せる画面の問いと答え(show.js)。
 // comments は画面へのコメント、反応、承認、列、直した記録、元に戻す(comments.js)
-export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, closings, intents, organizes, designs, reviews, sceneRuns, quality, shows, comments, materials, meetings, timeline = { mark: async () => false }, token, ports, realAi, consent, firstSteps }) {
+// hints は「その場で」の 1 行を覚えた回数(hints.js。ui-ux-v2.md の 5.1)
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, closings, intents, organizes, designs, reviews, sceneRuns, quality, shows, comments, materials, meetings, timeline = { mark: async () => false }, token, ports, realAi, consent, firstSteps, hints = new Hints() }) {
   const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes, designs, meetings, reviews, sceneRuns);
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
@@ -252,6 +254,8 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     }
     // 最初の一歩の案内。{ dismiss: true } で閉じる。{ touched: 試作品の ID } は、AI のない試作品の画面を触ったこと(画面が送る)
     if (url.pathname === '/api/first-steps' && req.method === 'POST') return handleFirstSteps(req, res);
+    // 「その場で」の 1 行を覚えた回数。GET は回数、POST は { seen: 操作の種類 } で 1 回足すか、{ reset: true } で全部を戻す
+    if (url.pathname === '/api/hints' && (req.method === 'GET' || req.method === 'POST')) return handleHints(req, res);
     // 本物の AI を使う前の同意。GET はカードの中身(?project= で、その試作品の中の AI の「詳しく」も入れる)、
     // POST の consent は同意する。ほかの API と同じく、トークンと Origin(Studio の画面から)を確かめた後にだけ届く
     if (url.pathname === '/api/real-ai' || url.pathname === '/api/real-ai/consent') {
@@ -574,6 +578,20 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       if (error instanceof AiError) return sendError(res, error.status, error.code, error.message, error.next);
       throw error;
     }
+  }
+
+  async function handleHints(req, res) {
+    if (req.method === 'GET') return sendJson(res, 200, { hints: hints.state() });
+    let body;
+    try {
+      body = await readJson(req);
+    } catch (error) {
+      if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
+      throw error;
+    }
+    if (body?.reset === true) return sendJson(res, 200, { hints: await hints.reset() });
+    if (Hints.validKind(body?.seen)) return sendJson(res, 200, { hints: await hints.seen(body.seen) });
+    return sendError(res, 400, 'invalid', '{ seen: 操作の種類 } か、{ reset: true } を送ってください');
   }
 
   async function handleFirstSteps(req, res) {

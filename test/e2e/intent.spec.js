@@ -47,7 +47,7 @@ test('あいまいな 1 文で問いが返り、「分からない」が決め�
     await expect(page.getByRole('list', { name: '例の 1 文' }).getByRole('button')).toHaveCount(3);
     await expect(page.getByRole('group', { name: '案内の深さ' }).getByRole('radio', { checked: true })).toHaveAccessibleName(/ふつう/);
     await expect(page.getByRole('region', { name: '言葉で直す' })).toBeHidden();
-    await expect(page.getByRole('region', { name: 'はじめの手順' })).toBeHidden();
+    await expect(page.locator('#stage-list button.stage[data-stage="talk"]')).toHaveAttribute('aria-current', 'step');
     await expectNoDevWords(s.section);
     await expectReadableText(page, 'はじめの画面');
     await page.screenshot({ path: path.join(UX_SHOTS, 'J1-start.png') });
@@ -182,6 +182,11 @@ async function expectWhole(section, button) {
   const { clientHeight, scrollHeight } = await section.evaluate((el) => ({ clientHeight: el.clientHeight, scrollHeight: el.scrollHeight }));
   expect(scrollHeight).toBeLessThanOrEqual(clientHeight + 1);
   await button.scrollIntoViewIfNeeded();
+  // 次の一手のボタンは、作業台の外の「次の一手の帯」にある(ui-ux-v2.md の 2.2)。帯は狭い窓でも画面の下に残る
+  if (await button.evaluate((el) => Boolean(el.closest('#next-band')))) {
+    await expect(button).toBeInViewport();
+    return;
+  }
   const box = await section.boundingBox();
   const target = await button.boundingBox();
   expect(target.y).toBeGreaterThanOrEqual(box.y);
@@ -228,14 +233,14 @@ test('文を書かずに飛ばすと、今までの最初の画面(サンプル�
     await page.goto(studio.url);
     const s = ui(page);
     await page.getByRole('button', { name: '飛ばす' }).click();
-    await expect(page.getByRole('region', { name: 'はじめの手順' })).toBeVisible();
+    await expect(page.getByRole('region', { name: '言葉で直す' })).toBeVisible();
     await expect(page.frameLocator('iframe[title="試作品"]').getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
     await expect(s.mark).toHaveText('目的なし');
     expect(await projectIdOf(studio)).toBeUndefined();
 
     // 読み込み直しても、はじめの画面はまた出ない
     await page.reload();
-    await expect(page.getByRole('region', { name: 'はじめの手順' })).toBeVisible();
+    await expect(page.getByRole('region', { name: '言葉で直す' })).toBeVisible();
     await expect(s.heading).toBeHidden();
 
     await page.locator('#project-menu-button').click();

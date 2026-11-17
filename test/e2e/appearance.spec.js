@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, closeMore, expect, launchStudio, measureTextContrast as measure, openAiMenu, openDevDetails, test } from './studio.js';
+import { ROOT, closeMore, expect, goStage, launchStudio, measureTextContrast as measure, openAiMenu, openDevDetails, openMaterials, test } from './studio.js';
 
 // 見た目の土台(docs/design/ui-ux-v2.md の 3.7、7、10、11 節)。偽接続(STUDIO_AGENT=fake)で起動し、実モデルは呼ばない。
 // 字と地の差、動きを止める、会議室の大きさ、表示のメニューの色の切り替えを、本物の画面で確かめる
@@ -45,7 +45,7 @@ async function measureScreens(page, testInfo, label) {
     for (const result of results) all.push({ ...result, screen });
     console.log(`[${label}] ${screen}: 字の要素 ${results.length}、一番低い差 ${results[0].ratio}(${results[0].where}「${results[0].text}」)`);
   };
-  // 1. 最初の画面(上の帯、はじめの手順、試す、言葉で直す)
+  // 1. 最初の画面(段の道筋、今の行、試す、言葉で直す、次の一手の帯)
   await record('最初の画面');
   // 2. 表示のメニューを開いた画面
   await openDisplay(page);
@@ -55,10 +55,20 @@ async function measureScreens(page, testInfo, label) {
   await openAiMenu(page);
   await record('AI の切り替え');
   await page.locator('#ai-switch').click();
-  // 4. その他の引き出しと、開発者向けの詳細を開いた画面
+  // 4. 仕組みの引き出しを開いた画面
   await openDevDetails(page);
-  await record('その他と開発者向けの詳細');
+  await record('仕組みの引き出し');
   await closeMore(page);
+  // 5. 素材を開いた画面
+  await openMaterials(page);
+  await record('素材');
+  await closeMore(page);
+  // 6. 段 9 の作業台(本番開発へ渡す)と、段 4 のまだの段の作業台
+  await goStage(page, '渡す');
+  await record('段 9 渡す');
+  await goStage(page, '審査');
+  await record('段 4 審査(まだ)');
+  await goStage(page, '作る');
   all.sort((a, b) => a.ratio - b.ratio);
   await testInfo.attach(`contrast-${label}.json`, { body: JSON.stringify(all, null, 2), contentType: 'application/json' });
   return all;
@@ -166,7 +176,7 @@ function movingElements() {
 
 // ボタンに焦点と指を当て、状態の変化(縁と色)の動きを起こす
 async function poke(page) {
-  const save = page.getByRole('banner').getByRole('button', { name: 'その他' });
+  const save = page.getByRole('banner').getByRole('button', { name: '素材', exact: true });
   await save.hover();
   await page.getByRole('banner').getByRole('button', { name: '表示' }).hover();
   return page.evaluate(movingElements);

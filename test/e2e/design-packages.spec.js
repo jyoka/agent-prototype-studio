@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, chooseProject, closeMore, expect, expectNoDevWords, launchStudio, openMore, test, writeProject } from './studio.js';
+import { ROOT, chooseProject, closeMore, expect, expectNoDevWords, launchStudio, openMaterials, test, writeProject } from './studio.js';
 import { packFixture } from '../fixtures/design-packages/pack.js';
 
 // 部品のパッケージをつなぐ(docs/design/user-journey.md の J5 の後半)。作る AI は偽接続(STUDIO_AGENT=fake)。
@@ -53,7 +53,7 @@ test('架空のパッケージで案内の 4 歩が通る。外への通信は�
     // 有効にする前は、どちらの試作品も import できない
     expect((await projectView(studio, 'minato')).lastBuild.errors[0].text).toContain('「@minato/ui」は使えません');
     await chooseProject(page, /部品のパッケージの見本/);
-    const panel = await openMore(page);
+    const panel = await openMaterials(page);
     const section = panel.getByRole('region', { name: '部品と指針をつなぐ' });
     const steps = section.getByRole('list', { name: '取り込みの案内の歩' });
     await ask(section, { license: '公開のライセンスがある', licenseName: 'MIT' });
@@ -138,7 +138,7 @@ test('ライセンスが分からないときは「有効にする」が押せ�
   try {
     await page.goto(studio.url);
     await chooseProject(page, /部品のパッケージの見本/);
-    const panel = await openMore(page);
+    const panel = await openMaterials(page);
     const section = panel.getByRole('region', { name: '部品と指針をつなぐ' });
     await ask(section, { license: '分からない' });
     await section.getByLabel('npm pack で作ったファイル(.tgz)').setInputFiles(await tgzFile());

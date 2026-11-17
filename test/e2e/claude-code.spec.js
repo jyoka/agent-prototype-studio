@@ -42,7 +42,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     await page.goto(studio.url);
     await chooseSample(page, SAMPLES.jobConsult);
     const app = page.frameLocator('iframe[title="試作品"]');
-    // プロダクト内 AI の状態は、その他 → 開発者向けの詳細にある。「応答を止める」は試す欄の上に出る
+    // プロダクト内 AI の状態は、仕組みの引き出しにある。「応答を止める」は試す欄の上に出る
     const details = page.locator('#ai-status');
     const waiting = page.locator('#ai-waiting');
     const log = app.getByRole('region', { name: '会話' }).getByRole('listitem');

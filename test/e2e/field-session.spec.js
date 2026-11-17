@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, expect, expectNoDevWords, launchStudio, openMore, test } from './studio.js';
+import { ROOT, expect, expectNoDevWords, launchStudio, startShowing, test } from './studio.js';
 
 // 現場の場面の通し(docs/design/user-journey.md の K6、docs/design/field-session.md の 2 節と 6 節)。
 // 架空の台本(しおかぜ便の会の要点を順に打つ)で、会の始めから会の終わりまでを 1 台の PC の形で通す。
@@ -130,8 +130,7 @@ test('台本を会の始めから会の終わりまで通すと、7 つの成果
     await expect(app.locator('h1')).toBeVisible({ timeout: 30_000 });
 
     // ---- 段 5. 見せて、コメントをもらう(見せる画面 J7、コメント K3) ----
-    const panel = await openMore(page);
-    await panel.getByRole('button', { name: '人に見せる' }).click();
+    await startShowing(page);
     const show = page.getByRole('region', { name: '確かめたい問い' });
     await expect(show).toBeVisible();
     await expect(show).toContainText('再配達の受付が電話なしで済む');

@@ -1,6 +1,6 @@
 import { SAMPLES, chooseSample, expect, launchStudio, openDevDetails, test } from './studio.js';
 
-// 構成と前提の選び方(docs/design/agent-simulation.md の sim-10)。その他 → 開発者向けの詳細の「構成と前提」で選ぶ。
+// 構成と前提の選び方(docs/design/agent-simulation.md の sim-10)。仕組みの引き出しの「構成と前提」で選ぶ。
 // 選ぶと会話を最初からにする。構成のない試作品では出ない(R2)。模擬のエージェントはモック(お試しの AI)で答える
 function talkOf(page) {
   const app = page.frameLocator('iframe[title="試作品"]');
