@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, chooseTestRequest, expect, expectNoDevWords, launchStudio, test } from './studio.js';
+import { chooseSample, chooseTestRequest, expect, expectNoDevWords, expectReadableText, launchStudio, ROOT, SAMPLES, test } from './studio.js';
 
 // 作るループを閉じる(docs/design/harness.md の 2.1〜2.4、S1、S12)。作る AI は決定的な偽接続
 // (src/agent/fake-claude.js)で、モデルも外部の API も呼ばない。関門 G5 と G6 は Studio の観察器(Playwright の Chromium)
@@ -109,6 +109,7 @@ test('作る run の結果の帯に、状態、確かめた画面、直した回
     await expect(band).not.toContainText('この後に変わりました');
     // 帯の見える文字に開発の言葉がない(U3)
     await expectNoDevWords(band);
+    await expectReadableText(page, '作るループで直した');
     await page.screenshot({ path: path.join(UX_SHOTS, 'P26-fixed.png') });
 
     // 押すと大きく見られる
@@ -182,6 +183,7 @@ test('次の依頼の後、前の証拠に「この後に変わりました」�
     await expectNoDevWords(second);
     await expectNoDevWords(firstBand);
     await expect(second.getByRole('list', { name: '確かめた画面' })).toHaveCount(0);
+    await expectReadableText(page, '作るループで直しきれない');
     await page.screenshot({ path: path.join(UX_SHOTS, 'P26-failed.png') });
 
     // 開くと、何がうまくいかないかが関門ごとに見える

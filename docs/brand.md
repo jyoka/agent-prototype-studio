@@ -16,7 +16,7 @@ Prototype Studio を外に伝えるときの土台です。README の絵、LP �
 - 機能は、名詞の見出しと 2 行の説明のカードで伝える。今できること 14 枚と、作っているもの 4 つ(3 節)。「部品のコードをつなぐ」は jyoka/tasks#427 で作ったので、作っているものから外した。素材をつなぐ機能(トークン、指針、部品のパッケージ)は、LP のカードにせず README の特長に書く
 - 分解の絵は、AI の作りを 1 回のトークで見せ、7 つ目で人が承認する。本物の画面だけを使う(4 節)
 - 「理想の構成」と言わない。出すのは、日付と根拠のある、今日の一番良い推測と書く
-- 見た目は `assets/brand/tokens.css` の CSS の変数で決める。ライトの色は今の画面(`src/ui/studio.css`)と同じ値にした
+- 見た目は `assets/brand/tokens.css` の CSS の変数で決める。Studio の画面(`src/ui/studio.css`)は 2026-11 に A 製図のトークン([ui-ux-v2.md の 10 節](design/ui-ux-v2.md#10-色字部品の決まり))に移った。`tokens.css`、LP、バナーは UI/UX の 8 枚目で A 製図の色に合わせる(ui-ux-v2.md の 14 節)
 - 公開の前に直すものの一覧は 7 節。見本のデータと画面の文は、このカードで直した。docs と ADR は一覧だけにした
 
 ## 1. 1 文
@@ -203,10 +203,12 @@ AI の作りを、1 回のトークで層に分けて見せ、7 つ目で人が�
 
 ## 5. 見た目
 
-決まりは [`assets/brand/tokens.css`](../assets/brand/tokens.css) の CSS の変数に書いた。
+決まりは [`assets/brand/tokens.css`](../assets/brand/tokens.css) の CSS の変数に書いた。LP(`site/`)、バナー、README の比べる表の画像(`scripts/media/compare-table.js`)が使う。
 
-- 色: ライトの値は、今の画面の `src/ui/studio.css` の `:root` と同じ。同じ名前の変数は同じ値にする(`test/unit/brand.test.js` が確かめる)。画面で値のまま書いている色(`#eef3fd` など)には名前を付けた
-- ダーク: `tokens.css` で値を決め、画面(`src/ui/studio.css`)も同じ値で切り替わる(`test/unit/brand.test.js` が確かめる)。どの意味の色も、地との差(コントラスト比)が 4.5 以上。試作品(iframe の中)の色は、試作品が決める
+- Studio の画面: 2026-11(task 432)に、A 製図のトークン([ui-ux-v2.md の 10 節](design/ui-ux-v2.md#10-色字部品の決まり))に移った。画面の色、字、余白、動きの正は ui-ux-v2.md の 10 節で、`test/unit/brand.test.js` が `src/ui/studio.css` と 10.6 の値が同じかを確かめる
+- これから: `tokens.css`、LP、バナーは、UI/UX の 8 枚目で A 製図の名前と値に移す(ui-ux-v2.md の 14 節)。下の表は、それまでの LP とバナーの値
+- 色: 前の画面(task 432 より前)の色の値。画面で値のまま書いていた色(`#eef3fd` など)には名前を付けた
+- ダーク: どの意味の色も、地との差(コントラスト比)が 4.5 以上。試作品(iframe の中)の色は、試作品が決める
 - 切り替え: OS の設定(`prefers-color-scheme`)に従う。`<html data-theme="dark">` か `data-theme="light"` を書くと、OS の設定より優先する
 - 字: OS に入っている字だけを使う(`--font-sans`、`--font-mono`)。リポジトリに入れられる字は入れない。Web フォントは読み込まない
 - 角丸: 4、6、8、12 px と丸(999 px)。画面と見本の会話の枠で使っている値

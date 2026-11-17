@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, expect, expectNoDevWords, launchStudio, test } from './studio.js';
+import { expect, expectNoDevWords, expectReadableText, launchStudio, ROOT, test } from './studio.js';
 
 // AI 構成の審査(docs/design/ai-architecture-review.md、task 422)。4 つの承認がそろうまで作る AI が起動しない。
 // 選び直すと承認が消える。承認後に構成を変えると関門 GA で止まり、審査に戻る。
@@ -127,6 +127,7 @@ test('4 つの承認がそろうまで作る AI が起動しない。そろう�
     await expectNoDevWords(v.section);
     await expect(v.section).not.toContainText('理想');
     await expect(v.section).not.toContainText('最適');
+    await expectReadableText(page, '審査(承認 0)');
     await page.screenshot({ path: path.join(UX_SHOTS, 'review-0.png'), fullPage: true });
 
     // 3 つ承認しても作れない。作る欄から送っても、作る AI は起動しない
@@ -148,6 +149,7 @@ test('4 つの承認がそろうまで作る AI が起動しない。そろう�
     await v.approve('技術の組').click();
     await expect(v.count).toHaveText('承認 4 / 4');
     await expect(v.build).toBeEnabled();
+    await expectReadableText(page, '審査(承認 4)');
     await page.screenshot({ path: path.join(UX_SHOTS, 'review-4.png'), fullPage: true });
     await v.build.click();
     await expect(v.section).toBeHidden();
@@ -275,6 +277,7 @@ test('承認した後に構成を変えると、関門 GA で止まり、試す�
     await expect(page.locator('#review-stopped')).toContainText('変わった所: エージェントの構成、harness');
     await expect(v.build).toBeDisabled();
     await expectNoDevWords(v.section);
+    await expectReadableText(page, '審査(止まった)');
     await page.screenshot({ path: path.join(UX_SHOTS, 'review-stopped.png'), fullPage: true });
 
     // 審査に戻る: 新しい審査になり、変わらなかったデータと RAG、技術の組の承認は残る

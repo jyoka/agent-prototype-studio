@@ -38,6 +38,20 @@
       <span id="save-mark" class="save-mark" hidden>保存していない変更があります</span>
       <button type="button" id="save-now" disabled>保存</button>
       <button type="button" id="more" aria-controls="more-panel" aria-expanded="false">その他</button>
+      <!-- 表示のメニュー(ui-ux-v2.md の 2.2)。色、動きを止める、会議室の大きさ。選んだものは、このブラウザが覚える -->
+      <div class="display-switch">
+        <button type="button" id="display-button" aria-controls="display-menu" aria-expanded="false">表示<span aria-hidden="true"> ▾</span></button>
+        <div id="display-menu" class="display-menu" role="group" aria-label="表示" hidden>
+          <fieldset>
+            <legend>色</legend>
+            <label><input type="radio" name="display-theme" value="light"> ライト</label>
+            <label><input type="radio" name="display-theme" value="dark"> ダーク</label>
+            <label><input type="radio" name="display-theme" value="system" checked> OS に従う</label>
+          </fieldset>
+          <label><input type="checkbox" id="display-motion-off"> 動きを止める</label>
+          <label><input type="checkbox" id="display-room"> 会議室の大きさ</label>
+        </div>
+      </div>
     </div>
   </header>
   <div id="banner" class="banner" role="alert" hidden>

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, expectNoDevWords, launchStudio, test } from './studio.js';
+import { chooseSample, expect, expectNoDevWords, expectReadableText, launchStudio, ROOT, SAMPLES, test } from './studio.js';
 
 // ヒアリングの整理(docs/design/user-journey.md の K1、docs/design/field-session.md の段 1、段 2)。
 // 実モデルは呼ばない。偽の claude(test/fixtures/fake-claude.js)か、偽接続(STUDIO_AGENT=fake)で動かす。
@@ -117,6 +117,7 @@ test('要点 10 個が 5 つの欄に振り分けられ、全項目に元の要�
     await expect(s.asks.getByRole('listitem').filter({ hasText: '偽の聞いていないこと' })).toBeVisible();
     await expect(s.asks.getByRole('listitem').filter({ hasText: '話に出ていません' })).toHaveCount(2);
     await expectNoDevWords(s.section);
+    await expectReadableText(page, 'ヒアリングの整理');
     await page.screenshot({ path: path.join(UX_SHOTS, 'K1-board.png'), fullPage: true });
 
     // 押すまで「確かめた」の印が付かない

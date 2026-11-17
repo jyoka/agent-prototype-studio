@@ -272,3 +272,95 @@ export async function chooseTestRequest(page, text) {
   await expect(page.locator('#more-panel')).toBeHidden();
   await expect(page.getByLabel('依頼')).toHaveValue(text);
 }
+
+// 3.7 の 2 つ目の測り方。見えている字の要素ごとに、字の色と、親をたどって最初に色のある地の色を比べる(WCAG 2 の式)。
+// 地が半ば透けているときは、その下の地と重ねた色にする。試作品(iframe の中)は試作品が決めるので測らない
+function contrastInPage() {
+  const parse = (value) => {
+    const m = /rgba?\(([^)]+)\)/.exec(value);
+    if (!m) return null;
+    const [r, g, b, a = 1] = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+    return { r, g, b, a };
+  };
+  const over = (top, bottom) => ({
+    r: top.r * top.a + bottom.r * (1 - top.a),
+    g: top.g * top.a + bottom.g * (1 - top.a),
+    b: top.b * top.a + bottom.b * (1 - top.a),
+    a: 1,
+  });
+  const luminance = ({ r, g, b }) => {
+    const [R, G, B] = [r, g, b].map((v) => {
+      const c = v / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * R + 0.7152 * G + 0.0722 * B;
+  };
+  const ratio = (a, b) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  const backdrop = (element) => {
+    const layers = [];
+    for (let node = element; node; node = node.parentElement) {
+      const color = parse(getComputedStyle(node).backgroundColor);
+      if (color && color.a > 0) {
+        layers.push(color);
+        if (color.a >= 1) break;
+      }
+    }
+    let result = { r: 255, g: 255, b: 255, a: 1 };
+    for (const layer of layers.reverse()) result = over(layer, result);
+    return result;
+  };
+  const where = (element) => {
+    const parts = [];
+    for (let node = element; node && node !== document.body && parts.length < 3; node = node.parentElement) {
+      parts.unshift(node.id ? `#${node.id}` : `${node.localName}${node.classList.length ? `.${[...node.classList].join('.')}` : ''}`);
+      if (node.id) break;
+    }
+    return parts.join(' > ');
+  };
+  const results = [];
+  for (const element of document.body.querySelectorAll('*')) {
+    if (element instanceof SVGElement || ['SCRIPT', 'STYLE', 'OPTION', 'IFRAME'].includes(element.tagName)) continue;
+    const text = [...element.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent).join('').trim();
+    if (!text) continue;
+    if (!element.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+    const rect = element.getBoundingClientRect();
+    // 読み上げにだけ出す文字(.visually-hidden、1px の箱)は見えないので除く
+    if (rect.width <= 1 || rect.height <= 1) continue;
+    const style = getComputedStyle(element);
+    const bg = backdrop(element);
+    const fg = over(parse(style.color), bg);
+    results.push({ text: text.slice(0, 40), where: where(element), ratio: Math.round(ratio(fg, bg) * 100) / 100, fontSize: parseFloat(style.fontSize) });
+  }
+  return results.sort((a, b) => a.ratio - b.ratio);
+}
+
+// 見えている字の全部の差を測り、低い順に返す。状態の変化の動き(120ms)が終わるのを待ってから測る(途中の色を測らないため)
+export async function measureTextContrast(page) {
+  // ずっと続く動き(読み込み中の印など)は待たない。待つのは状態の変化(transition)だけで、長くても 2 秒
+  await page.evaluate(() => Promise.race([
+    Promise.all(document.getAnimations().filter((animation) => animation instanceof CSSTransition).map((animation) => animation.finished.catch(() => {}))),
+    new Promise((resolve) => setTimeout(resolve, 2000)),
+  ]));
+  return page.evaluate(contrastInPage);
+}
+
+// 今の画面の見えている字の全部が、ライトとダークの両方で 4.5:1 以上(ui-ux-v2.md の 11 節)。
+// OS の設定(prefers-color-scheme)を切り替えて測り、終わったら元に戻す。一番低い値を出力に残す
+export async function expectReadableText(page, label) {
+  const before = await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches);
+  try {
+    for (const colorScheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme });
+      const results = await measureTextContrast(page);
+      const lowest = results[0];
+      if (lowest) console.log(`[字と地の差] ${label}(${colorScheme}): 字の要素 ${results.length}、一番低い差 ${lowest.ratio}(${lowest.where}「${lowest.text}」)`);
+      const failing = results.filter((result) => result.ratio < 4.5);
+      expect(failing, `${label}(${colorScheme}) で 4.5:1 より低い字: ${JSON.stringify(failing, null, 2)}`).toEqual([]);
+    }
+  } finally {
+    await page.emulateMedia({ colorScheme: before ? 'dark' : 'light' });
+  }
+}

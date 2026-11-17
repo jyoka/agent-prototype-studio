@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseProject, chooseSample, closeMore, expect, expectNoDevWords, expectNoDevWordsOnScreen, launchStudio, openDevDetails, test, writeProject } from './studio.js';
+import { chooseProject, chooseSample, closeMore, expect, expectNoDevWords, expectNoDevWordsOnScreen, expectReadableText, launchStudio, openDevDetails, ROOT, SAMPLES, test, writeProject } from './studio.js';
 
 // 「分かるか」の確かめ(ux-redesign.md 9 節)のスクリーンショットの置き場。test-results/ は git が無視する
 const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
@@ -105,6 +105,7 @@ test('試作品を表示できないときは、試す欄の上に理由と前�
     await expect(places).toBeHidden();
     await expectNoDevWords(notice);
     await expectNoDevWords(page.locator('#frame-label'));
+    await expectReadableText(page, '試作品を表示できないとき');
     await page.screenshot({ path: path.join(UX_SHOTS, 'P26-cannot-display.png') });
     await notice.getByText('開発者向け: 誤りの場所(ファイルと行)').click();
     await expect(places).toContainText('app/main.jsx(1 行');

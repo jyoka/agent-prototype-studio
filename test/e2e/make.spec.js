@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, chooseTestRequest, closeMore, expect, launchStudio, openDevDetails, test } from './studio.js';
+import { chooseSample, chooseTestRequest, closeMore, expect, expectReadableText, launchStudio, openDevDetails, ROOT, SAMPLES, test } from './studio.js';
 
 // 作る欄(言葉で直す)の縦切り。作る AI(直す AI)は決定的な偽接続(src/agent/fake-claude.js)か偽の claude で、
 // モデルも外部の API も呼ばない。
@@ -397,6 +397,7 @@ test('U8: Claude Code がないと、直す欄に何ができないかと手順�
     for (const word of ['ENOENT', 'spawn', 'claude が見つかりません', 'STUDIO_', missing]) {
       expect(await visibleText(page)).not.toContain(word);
     }
+    await expectReadableText(page, '直す AI が使えないとき');
     await page.screenshot({ path: path.join(UX_SHOTS, 'P23-unavailable.png') });
     await card.getByText('開発者向け: 確かめた結果').click();
     await expect(card.getByText('claude が見つかりません')).toBeVisible();
@@ -479,6 +480,7 @@ test('作業中は操作を短い文で出し、終わったら何を変えた�
     const run = lastRun(page);
     await expect(run.getByText('AI の設定を読みました')).toBeVisible({ timeout: 15_000 });
     await expect(run.locator('.run-status')).toHaveText('直す AI が作業しています…');
+    await expectReadableText(page, '直す AI が作業中');
     await page.screenshot({ path: path.join(UX_SHOTS, 'P23-working.png') });
     // ファイルの名前と道具の名前は見えない
     for (const word of ['ai.json', 'Read', '読む:', 'Claude Code']) expect(await run.innerText()).not.toContain(word);

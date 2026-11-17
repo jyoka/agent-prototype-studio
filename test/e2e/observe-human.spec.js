@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, chooseTestRequest, closeMore, expect, expectNoDevWords, launchStudio, openMore, test } from './studio.js';
+import { chooseSample, chooseTestRequest, closeMore, expect, expectNoDevWords, expectReadableText, launchStudio, openMore, ROOT, SAMPLES, test } from './studio.js';
 
 // 人の「確かめる」(docs/design/harness.md の 3.1、8 節の P27)。利用者が画面から、表示中の試作品を自動で確かめる。
 // 作るループの関門と同じ観察の入口を使い、同じ形の report を書き、作る run と同じ形の結果の帯で出す(S5)。
@@ -149,6 +149,7 @@ test('引き出しの「試作品を自動で確かめる」: お試しの AI �
     await expectShotsLoaded(checkBand, 3);
     await expect(checkBand.locator('.evidence-actions')).toContainText('試作品の中の AI: お試しの AI');
     await expectNoDevWords(checkBand);
+    await expectReadableText(page, '人の確かめの帯');
     await page.screenshot({ path: path.join(UX_SHOTS, 'P27-band.png') });
 
     // アプリのシナリオも回った。試作品の中の AI は観察用の会話(お試し)で、試す欄の会話には入らない
