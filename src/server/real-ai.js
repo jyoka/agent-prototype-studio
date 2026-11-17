@@ -6,7 +6,7 @@ import { INTENT_AI_LIMITS } from './intent-ai.js';
 import { ORGANIZE_AI_LIMITS } from './organize-ai.js';
 
 // 本物の AI(利用者の Claude Code)を使う前の同意(docs/design/ux-redesign.md の 6 節、ADR-0001 の T6)。
-// 同意は 1 つで、直す AI の送信、試作品の中の AI の本物への切り替え、人の「確かめる」、目的の聞き出し、ヒアリングの整理、設計の案、場面の回し(scene-runs.js)の全部に効く。
+// 同意は 1 つで、作る AI の送信、試作品の中の AI の本物への切り替え、人の「確かめる」、目的の聞き出し、ヒアリングの整理、設計の案、場面の回し(scene-runs.js)の全部に効く。
 // Studio のメモリーにだけ持ち、Studio を起動し直すと消える(ディスクには覚えない。ux-redesign.md の 11 節)。
 // 偽接続とお試しの AI(モック)は、同意なしで使える。
 
@@ -49,11 +49,11 @@ const TO_SETTINGS = 'あなたの PC の設定で決まった送り先';
 const perTurnTotal = () => Object.values(CALL_LIMITS.perTurn).reduce((sum, n) => sum + n, 0);
 
 // 上限の文。数は設定の値から作る(直すときは STUDIO_MAX_BUDGET_USD と、1 つの依頼の起動の回数。話すときは CLAUDE_CODE_LIMITS と CALL_LIMITS)。
-// 直す AI の費用の上限(--max-budget-usd)は起動ごとに効き、定額プランの枠で動く見込みのときは付けない(claude-args.js の needsBudget)
+// 作る AI の費用の上限(--max-budget-usd)は起動ごとに効き、定額プランの枠で動く見込みのときは付けない(claude-args.js の needsBudget)
 export function limitsText({ fixBudgetUsd, fixLaunches, fixHasBudget }) {
   const launches = `1 つの依頼で多くて ${fixLaunches} 回起動します`;
   const fix = fixHasBudget
-    ? `直すときは、直す AI の 1 回の起動で ${fixBudgetUsd} ドルまでです(${launches})。`
+    ? `直すときは、作る AI の 1 回の起動で ${fixBudgetUsd} ドルまでです(${launches})。`
     : `直すときの 1 回の起動で ${fixBudgetUsd} ドルの上限は、API キーなどの設定で動くときに付けます(${launches})。`;
   const hours = CALL_LIMITS.windowMs / (60 * 60 * 1000);
   const product = `試作品の中の AI と話すときは 1 回の呼び出しで ${CLAUDE_CODE_LIMITS.maxBudgetUsd} ドルまで、1 ターンで ${perTurnTotal()} 回まで、試作品ごとに ${hours} 時間に ${CALL_LIMITS.perProject} 回まで呼びます。`;
@@ -78,7 +78,7 @@ export function describeCost({ env = {}, auth = null, fixBudgetUsd, fixLaunches 
   return { kind: 'unknown', to: TO_ANTHROPIC, text: UNKNOWN_TEXT, limits };
 }
 
-// 同意の状態。startStudio が 1 つ作り、直す AI(BuildRequests)と試作品の中の AI(AiSessions)に渡す。
+// 同意の状態。startStudio が 1 つ作り、作る AI(BuildRequests)と試作品の中の AI(AiSessions)に渡す。
 // 本物の AI を使う口は、使う前に require() を呼ぶ
 export class RealAiConsent {
   constructor() {
@@ -105,12 +105,12 @@ export class RealAiConsent {
   }
 }
 
-// 直す AI の「詳しく」。送るものと、渡す道具と、作る AI に足す指示の全文
+// 作る AI の「詳しく」。送るものと、渡す道具と、作る AI に足す指示の全文
 function fixDetails({ agent, systemPrompt }) {
   if (agent.kind !== 'claude') return null;
   return {
-    items: ['頼んだ文', '試作品のファイル(直す AI が読み書きするもの)', '自動の確かめで見つかった問題(直し直すとき)', 'つないだトークンの名前(つないでいるとき)'],
-    notSent: 'PC のほかのファイル、ほかの試作品は送りません。直す AI は試作品のフォルダーの外を読み書きできません。',
+    items: ['頼んだ文', '試作品のファイル(作る AI が読み書きするもの)', '自動の確かめで見つかった問題(直し直すとき)', 'つないだトークンの名前(つないでいるとき)'],
+    notSent: 'PC のほかのファイル、ほかの試作品は送りません。作る AI は試作品のフォルダーの外を読み書きできません。',
     tools: '試作品のファイルの読み書きと検索、試作品の画面を見る道具だけを渡します。コマンドの実行と Web は渡しません。',
     systemPrompt,
   };
@@ -149,7 +149,7 @@ function designDetails({ designPrompt }) {
   };
 }
 
-// 「詳しく」の記録の扱い。直す AI の結果は build-requests.js の evidence、試作品の中の AI の記録は AiSessions の trace(ADR-0001 の #277)
+// 「詳しく」の記録の扱い。作る AI の結果は build-requests.js の evidence、試作品の中の AI の記録は AiSessions の trace(ADR-0001 の #277)
 const RECORDS = [
   '言葉で直したときの結果(変えたファイル、確かめた結果、かかった時間と費用)は、試作品のフォルダーの中の .studio/runs に残ります。',
   '試作品の中の AI とのやりとりの記録は、Studio のメモリーにだけ置き、Studio を止めると消えます。記録では、メールアドレスや API キーらしい文字列を伏せます。',
@@ -160,12 +160,12 @@ const RECORDS = [
 ];
 
 // 同意のカード(画面は P25)に出す中身。product は試作品の中の AI の「詳しく」(AiSessions.realDetails)で、試作品を選んだときだけ
-// fixLaunches は、1 つの依頼で直す AI を起動する回数の上限(build-requests.js の MAX_FIX_ROUNDS + 1)
+// fixLaunches は、1 つの依頼で作る AI を起動する回数の上限(build-requests.js の MAX_FIX_ROUNDS + 1)
 export function consentView({ consent, env, agent, fixBudgetUsd, fixLaunches, systemPrompt, intentPrompt, organizePrompt, designPrompt, productAllowed, product = null }) {
   const cost = describeCost({ env, auth: agent.auth, fixBudgetUsd, fixLaunches });
   return {
     consent: consent.state(),
-    // 本物の AI を使える口。直す AI は作る AI の接続が Claude Code で、使えるとき。試作品の中の AI は STUDIO_ALLOW_CLAUDE_CODE=0 でないとき
+    // 本物の AI を使える口。作る AI は作る AI の接続が Claude Code で、使えるとき。試作品の中の AI は STUDIO_ALLOW_CLAUDE_CODE=0 でないとき
     uses: {
       fix: { real: agent.kind === 'claude', ready: agent.kind === 'claude' && !agent.problem },
       product: { allowed: productAllowed },

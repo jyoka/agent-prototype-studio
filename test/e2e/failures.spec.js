@@ -71,7 +71,7 @@ test('ビルドに失敗した試作品は、場所と直し方を出し、直�
   }
 });
 
-test('試作品を表示できないときは、試す欄の上に理由と前の状態を出し、「直す AI に直してもらう」で依頼の欄に文を入れる(7-6)', async ({ page, home }) => {
+test('試作品を表示できないときは、試す欄の上に理由と前の状態を出し、「作る AI に直してもらう」で依頼の欄に文を入れる(7-6)', async ({ page, home }) => {
   const appDir = await writeProject(
     home,
     'shop-demo',
@@ -88,7 +88,7 @@ test('試作品を表示できないときは、試す欄の上に理由と前�
     const notice = page.getByRole('group', { name: '試作品を表示できません' });
     await expect(notice).toBeHidden();
 
-    // 手でファイルを壊して作り直す(直す AI の変更でも、同じく表示できなくなる)
+    // 手でファイルを壊して作り直す(作る AI の変更でも、同じく表示できなくなる)
     await fs.writeFile(path.join(appDir, 'main.jsx'), 'const items = [1, 2;\ndocument.getElementById("root").textContent = items.join(",");\n');
     await openDevDetails(page);
     await page.getByRole('button', { name: 'ファイルから作り直す' }).click();
@@ -111,7 +111,7 @@ test('試作品を表示できないときは、試す欄の上に理由と前�
     await expect(places).toContainText('app/main.jsx(1 行');
 
     // 押すと依頼の欄に文が入るだけで、送らない
-    await notice.getByRole('button', { name: '直す AI に直してもらう' }).click();
+    await notice.getByRole('button', { name: '作る AI に直してもらう' }).click();
     await expect(page.getByLabel('依頼')).toHaveValue('表示できるように直して');
     await expect(page.getByLabel('依頼')).toBeFocused();
     await expect(page.getByRole('list', { name: '作る会話' })).toContainText('まだ依頼はありません');

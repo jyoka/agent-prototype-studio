@@ -211,14 +211,14 @@ function isComment(c) {
   return c && typeof c === 'object' && typeof c.id === 'string' && Number.isSafeInteger(c.number) && typeof c.text === 'string' && Object.hasOwn(COMMENT_KINDS, c.kind) && Object.hasOwn(COMMENT_STATUS_WORDS, c.status) && Array.isArray(c.approvals);
 }
 
-// 列で止めた理由。見せる画面に出るので、開発の言葉を含みうる文(ほかの作業中、直す AI を使えない)は平たい文に置き換え、元の文は detail に残す
+// 列で止めた理由。見せる画面に出るので、開発の言葉を含みうる文(ほかの作業中、作る AI を使えない)は平たい文に置き換え、元の文は detail に残す
 const PLAIN_CODES = new Set(['consent-required', 'meeting-consent-required', 'meeting-trial', 'review-not-approved', 'review-changed', 'review-missing', 'review-stopped']);
 export function heldReason(error) {
   const code = error?.code ?? (error instanceof BusyError ? 'busy' : 'error');
   if (PLAIN_CODES.has(code)) return { code, message: error.message, ...(error.next ? { next: error.next } : {}) };
-  if (code === 'busy') return { code, message: 'ほかの作業(直す AI、保存、戻す、確かめ)の最中なので、送れませんでした。終わってから「列を進める」を押してください', detail: error?.message ?? null };
-  if (code === 'build') return { code, message: '今の状態は表示できないので、直す前の状態を保存できませんでした。「言葉で直す」で直してから「列を進める」を押してください', detail: error?.message ?? null };
-  return { code, message: '直す AI に送れませんでした。見せ終わってから「言葉で直す」の欄で理由を確かめ、「列を進める」を押してください', detail: error?.message ?? null };
+  if (code === 'busy') return { code, message: 'ほかの作業(作る AI、保存、戻す、確かめ)の最中なので、送れませんでした。終わってから「列を進める」を押してください', detail: error?.message ?? null };
+  if (code === 'build') return { code, message: '今の状態は表示できないので、直す前の状態を保存できませんでした。「作る AI」の欄で直してから「列を進める」を押してください', detail: error?.message ?? null };
+  return { code, message: '作る AI に送れませんでした。見せ終わってから「作る AI」の欄で理由を確かめ、「列を進める」を押してください', detail: error?.message ?? null };
 }
 
 // 直した記録の全部(.studio/fix-records/<記録の ID>/record.json)を、作った順に読む。会の終わりの成果物と引き継ぎも使う(K5)
@@ -548,7 +548,7 @@ export class ProjectComments {
     if (!['review', 'resolved', 'failed'].includes(comment.status) || !comment.recordId) {
       throw new CommentError(409, 'not-revertable', 'このコメントには、戻す版がありません');
     }
-    if (this.fixing.has(id) || this.pumping.has(id)) throw new BusyError('直す AI が動いているところです。終わってから戻してください');
+    if (this.fixing.has(id) || this.pumping.has(id)) throw new BusyError('作る AI が動いているところです。終わってから戻してください');
     const record = await this.readRecord(id, comment.recordId);
     if (!record?.versions?.before?.id) throw new CommentError(409, 'no-before', '直す前の版の記録がないので、戻せません');
     const records = await this.readRecords(id);
@@ -724,7 +724,7 @@ export class ProjectComments {
         }
       }
       comment.status = fixed ? 'review' : 'failed';
-      if (!fixed) comment.held = { code: 'failed', message: '直す AI が直せませんでした。「元に戻す」で前の版に戻すか、「開き直す」で書き直してください' };
+      if (!fixed) comment.held = { code: 'failed', message: '作る AI が直せませんでした。「元に戻す」で前の版に戻すか、「開き直す」で書き直してください' };
       await this.save(id);
       this.log(`承認したコメントの直しが終わりました: ${id}(${comment.number}。${run.status})`);
     } finally {

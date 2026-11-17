@@ -196,7 +196,7 @@ async function exportAndCheck(page, home, other, otherHome) {
       await page.locator('[data-project-id="handed-over"]').click();
       const app = page.frameLocator('iframe[title="試作品"]');
       await expect(app.getByRole('heading', { name: 'うみかぜ求人相談' })).toBeVisible();
-      await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
+      await expect(page.locator('#ai-badge')).toHaveText('お試し');
       const message = app.getByLabel('メッセージ');
       await message.fill('カフェで働きたいです');
       await app.getByRole('button', { name: '送る' }).click();

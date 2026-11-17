@@ -16,7 +16,7 @@ test('モックの AI と話し、理解された希望条件を直すと、次�
     // 架空のデータとモックであることを、Studio と試作品の両方で示す。
     // Studio の側の接続と AI が理解した状態は、仕組みの引き出しにある(引き出しは左の試作品に重ならない)
     await openDevDetails(page);
-    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
+    await expect(page.locator('#ai-badge')).toHaveText('お試し');
     await expect(details).toContainText('接続: モック');
     await expect(details).toContainText('実際の AI モデルは呼びません');
     await expect(details).toContainText('架空のデータで試してください');
@@ -95,7 +95,7 @@ test('モックの AI と話し、理解された希望条件を直すと、次�
 
     // 決まった言葉で読み取れないときは、本物の AI で試せることを伝える
     await say('なんとなく楽しい仕事');
-    await expect(log.last()).toContainText('すみません、希望の条件として読み取れませんでした。自由な言葉は、上の『AI: 本物』で試せます。');
+    await expect(log.last()).toContainText('すみません、希望の条件として読み取れませんでした。自由な言葉は、上の『▲ お試し ▾』で本物の AI に替えると試せます。');
 
     // サンプルの画面(iframe の中)に、開発の言葉「モック」が出ない
     await expect(app.locator('body')).not.toContainText('モック');
@@ -117,7 +117,7 @@ test('学習相談のサンプルも、返事の印と注意書きが「お試�
 
     await app.getByLabel('メッセージ').fill('なんとなく何か学びたい');
     await app.getByRole('button', { name: '送る' }).click();
-    await expect(log.last()).toContainText('すみません、学びたいことや進め方として読み取れませんでした。自由な言葉は、上の『AI: 本物』で試せます。');
+    await expect(log.last()).toContainText('すみません、学びたいことや進め方として読み取れませんでした。自由な言葉は、上の『▲ お試し ▾』で本物の AI に替えると試せます。');
     await expect(log.last().locator('.via')).toHaveText('お試しの AI');
     await expect(app.locator('body')).not.toContainText('モック');
   } finally {
@@ -181,7 +181,7 @@ test('別の題材でも同じ仕組みで動き、AI のない試作品と連�
 
     await chooseProject(page, /架空の旅の相談/);
     await openDevDetails(page);
-    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
+    await expect(page.locator('#ai-badge')).toHaveText('お試し');
     await expect(app.locator('output')).toHaveText('旅の相談です。');
     await app.getByLabel('発言').fill('湖に行きたい');
     await app.getByRole('button', { name: '送る' }).click();

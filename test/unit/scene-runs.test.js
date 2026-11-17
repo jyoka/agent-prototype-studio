@@ -135,3 +135,22 @@ test('回す構成は、既定の構成と compositions/ の構成の全部(既�
   assert.deepEqual(allCompositions(simulation), ['default', 'compositions/b.json', 'compositions/c.json']);
   assert.deepEqual(allCompositions({ composition: { participants: [] } }), ['default']);
 });
+
+test('場面ごとの結果は組をまたいでまとめる。1 つの組でも通らなければ通らない(ui-ux-v2.md の 4.2 の場面のタブ)', () => {
+  const result = resultOf();
+  // 構成 B では save が通ったとしても、構成 A で通らないので通らない
+  result.groups[1].evals.push(evalOf('save', 'passed'));
+  const { verdicts } = tableOf(result, null);
+  assert.deepEqual(verdicts, { hello: 'passed', save: 'failed', broken: 'error', other: 'n/a' });
+});
+
+test('AI の採点(judge)の確かめは、測った数とは別に数える(比べる表の「AI の判断」の列)', () => {
+  const group = resultOf().groups[0];
+  group.evals.push(
+    evalOf('tone', 'passed', { checks: [{ check: 'judge', verdict: 'passed' }, { check: 'replyMaxChars', verdict: 'passed' }] }),
+    evalOf('polite', 'unjudged', { checks: [{ check: 'judge', verdict: 'unjudged' }] }),
+    evalOf('warm', 'failed', { checks: [{ check: 'judge', verdict: 'failed' }] }),
+  );
+  assert.deepEqual(rowOf(group, 0).judge, { passed: 1, failed: 1, unjudged: 1 });
+  assert.deepEqual(rowOf(resultOf().groups[1], 1).judge, { passed: 0, failed: 0, unjudged: 0 });
+});

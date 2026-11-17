@@ -166,8 +166,10 @@ export { expect };
 
 // 開発の言葉(ux-redesign.md 9 節の U3)と、作るループの設計の言葉(harness.md の 7.2)。
 // 利用者の画面の見える文字には出さない(開発者向けの詳細は除く)
-export const U3_WORDS = ['偽接続', 'モック', 'ANTHROPIC_API_KEY', 'Console', 'app/ai.json', 'app/', 'ビルド', 'プロダクト内 AI', '認証の報告', 'STUDIO_', '--'];
-export const HARNESS_WORDS = ['関門', 'シナリオ', 'report', '観察器'];
+// 「関門」と「プロダクト内 AI」は外した(ui-ux-v2.md の 6 節)。「関門」は 4 者の「⬢ 関門と守り」の利用者の言葉。
+// 「プロダクト内 AI」は「試作品の中の AI」の横に出す専門の語
+export const U3_WORDS = ['偽接続', 'モック', 'ANTHROPIC_API_KEY', 'Console', 'app/ai.json', 'app/', 'ビルド', '認証の報告', 'STUDIO_', '--'];
+export const HARNESS_WORDS = ['シナリオ', 'report', '観察器'];
 export const DEV_WORDS = [...U3_WORDS, ...HARNESS_WORDS];
 
 // 文字の中の開発の言葉を、前後の文字つきで返す(どこに出ているかを、失敗の知らせで分かるように)
@@ -187,14 +189,9 @@ export async function expectNoDevWords(locator) {
 }
 
 // Studio の画面(iframe の外)の見える文字の全部に、開発の言葉がない(U3)。iframe の中の文字は innerText に入らない。
-// 今の行(4 者の「⬢ 関門と守り」)は数えない。「関門」を開発の言葉から外すのは UI/UX の 5 枚目(ui-ux-v2.md の 6 節)。
-// それまでは、今の行だけを調べる対象から外す
+// 今の行も調べる(「関門」を開発の言葉から外したので、3 枚目で外した今の行を戻した。ui-ux-v2.md の 6 節)
 export async function expectNoDevWordsOnScreen(page) {
-  const text = await page.locator('body').evaluate((body) => {
-    const line = document.getElementById('now-line');
-    const shown = line && line.checkVisibility() ? line.innerText : '';
-    return shown ? body.innerText.replace(shown, '') : body.innerText;
-  });
+  const text = await page.locator('body').evaluate((body) => body.innerText);
   expect(devWordsIn(text)).toEqual([]);
 }
 
@@ -234,15 +231,15 @@ export async function openAiMenu(page) {
 }
 
 // 試作品の中の AI を本物の AI(Claude Code)に切り替える。同意の前なら、試す欄の上に出る同意のカードで「同意して使う」を押す。
-// 同意は直す AI と共通なので、同意の後はカードを出さずに切り替わる(ux-redesign.md 6 節)
+// 同意は作る AI と共通なので、同意の後はカードを出さずに切り替わる(ux-redesign.md 6 節)
 export async function switchToRealAi(page) {
   await openAiMenu(page);
   await page.getByRole('radio', { name: '本物の AI', exact: true }).click();
   const card = page.getByRole('group', { name: '本物の AI を使う前に' });
   const badge = page.locator('#ai-badge');
-  await expect(card.or(badge.filter({ hasText: 'AI: 本物' }))).toBeVisible();
+  await expect(card.or(badge.filter({ hasText: '本物' }))).toBeVisible();
   if (await card.isVisible()) await card.getByRole('button', { name: '同意して使う' }).click();
-  await expect(badge).toHaveText('AI: 本物');
+  await expect(badge).toHaveText('本物');
 }
 
 // 段の道筋(ui-ux-v2.md の 2.2、2.3)。9 つの段の名前と、画面の data-stage の名前
@@ -290,7 +287,7 @@ export async function openMechanism(page) {
 }
 
 // 開いている引き出し(仕組み、素材)と、試作品の名前のメニューを閉じる(閉じていれば、そのまま)。
-// 前の「その他」の引き出しを閉じる操作の代わり。閉じた後は、試作品と言葉で直す欄が見える
+// 前の「その他」の引き出しを閉じる操作の代わり。閉じた後は、試作品と作る AI の欄が見える
 export async function closeMore(page) {
   for (const [button, panel] of [['#mechanism-button', '#mechanism'], ['#materials-button', '#materials']]) {
     if ((await page.locator(button).getAttribute('aria-expanded')) === 'true') await page.locator(button).click();
@@ -298,7 +295,7 @@ export async function closeMore(page) {
   }
   const menuButton = page.locator('#project-menu-button');
   if ((await menuButton.getAttribute('aria-expanded')) === 'true') await menuButton.click();
-  // 段 9 やまだの段の作業台にいるときは、試作品と言葉で直す欄のある段 5「作る」に戻る
+  // 段 9 やまだの段の作業台にいるときは、試作品と作る AI の欄のある段 5「作る」に戻る
   const bench = await page.locator('body').getAttribute('data-bench');
   if (bench === 'handoff' || bench === 'note') await goStage(page, '作る');
 }
@@ -316,6 +313,19 @@ export async function openHandoff(page) {
   const region = page.getByRole('region', { name: '本番開発へ渡す' });
   await expect(region).toBeVisible();
   return region;
+}
+
+// 段 6「測る」の右の列の 3 つのタブ(この 1 ターン、場面、比べる)の 1 つを押して開く。タブの名前には数が付く(「場面 4/6 通った」)
+export async function openMeasureTab(page, name) {
+  const stage = page.locator('#stage-list button.stage[data-stage="measure"]');
+  if ((await stage.getAttribute('aria-current')) !== 'step') await goStage(page, '測る');
+  // 右の列が作る AI の欄なら、段の欄に戻す
+  const back = page.locator('#side-back');
+  if (await back.isVisible()) await back.click();
+  const tab = page.getByRole('tablist', { name: '測る' }).getByRole('tab', { name: new RegExp(`^${name}`) });
+  await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  return page.getByRole('tabpanel', { name: new RegExp(`^${name}`) });
 }
 
 // 段 7「質」の作業台に移り、「試作品を自動で確かめる」を返す
@@ -338,7 +348,7 @@ export async function startShowing(page) {
 // 押すと依頼の欄に入り、引き出しは閉じる(ux-redesign.md 5 節、U4)。送るのは呼んだ側
 export async function chooseTestRequest(page, text) {
   await openDevDetails(page);
-  await page.getByRole('list', { name: '偽の直す AI で試せる例' }).getByRole('button', { name: text, exact: true }).click();
+  await page.getByRole('list', { name: '偽の作る AI で試せる例' }).getByRole('button', { name: text, exact: true }).click();
   await expect(page.locator('#mechanism')).toBeHidden();
   await expect(page.getByLabel('依頼')).toHaveValue(text);
 }

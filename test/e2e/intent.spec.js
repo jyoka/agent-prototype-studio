@@ -46,7 +46,7 @@ test('あいまいな 1 文で問いが返り、「分からない」が決め�
     await expect(s.heading).toBeVisible();
     await expect(page.getByRole('list', { name: '例の 1 文' }).getByRole('button')).toHaveCount(3);
     await expect(page.getByRole('group', { name: '案内の深さ' }).getByRole('radio', { checked: true })).toHaveAccessibleName(/ふつう/);
-    await expect(page.getByRole('region', { name: '言葉で直す' })).toBeHidden();
+    await expect(page.getByRole('region', { name: '作る AI', exact: true })).toBeHidden();
     await expect(page.locator('#stage-list button.stage[data-stage="talk"]')).toHaveAttribute('aria-current', 'step');
     await expectNoDevWords(s.section);
     await expectReadableText(page, 'はじめの画面');
@@ -106,9 +106,9 @@ test('あいまいな 1 文で問いが返り、「分からない」が決め�
     expect(decided.turns).toHaveLength(4);
     await page.screenshot({ path: path.join(UX_SHOTS, 'J1-decided.png'), fullPage: true });
 
-    // 次にすること: 決めた目的を、言葉で直す欄の依頼に入れる。送るのは人
+    // 次にすること: 決めた目的を、作る AI の欄の依頼に入れる。送るのは人
     await page.getByRole('button', { name: 'この目的で試作品を作り始める' }).click();
-    await expect(page.getByRole('region', { name: '言葉で直す' })).toBeVisible();
+    await expect(page.getByRole('region', { name: '作る AI', exact: true })).toBeVisible();
     await expect(page.getByLabel('依頼')).toHaveValue(/誰: お店の人/);
     await expect(page.locator('iframe[title="試作品"]')).toHaveAttribute('src', new RegExp(`/p/${id}/`));
     await expect(page.frameLocator('iframe[title="試作品"]').getByRole('heading', { name: '新しい試作品' })).toBeVisible();
@@ -149,7 +149,7 @@ test('飛ばすと「目的なし」の印が付き、飛ばしたことが残�
     // 文を書いて飛ばす: 新しい試作品ができ、「目的なし」の印。問いは返らない
     await s.sentence.fill(SENTENCE);
     await page.getByRole('button', { name: '飛ばす' }).click();
-    await expect(page.getByRole('region', { name: '言葉で直す' })).toBeVisible();
+    await expect(page.getByRole('region', { name: '作る AI', exact: true })).toBeVisible();
     await expect(s.mark).toHaveText('目的なし');
     const id = await projectIdOf(studio);
     await expect(page.locator('iframe[title="試作品"]')).toHaveAttribute('src', new RegExp(`/p/${id}/`));
@@ -233,14 +233,14 @@ test('文を書かずに飛ばすと、今までの最初の画面(サンプル�
     await page.goto(studio.url);
     const s = ui(page);
     await page.getByRole('button', { name: '飛ばす' }).click();
-    await expect(page.getByRole('region', { name: '言葉で直す' })).toBeVisible();
+    await expect(page.getByRole('region', { name: '作る AI', exact: true })).toBeVisible();
     await expect(page.frameLocator('iframe[title="試作品"]').getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
     await expect(s.mark).toHaveText('目的なし');
     expect(await projectIdOf(studio)).toBeUndefined();
 
     // 読み込み直しても、はじめの画面はまた出ない
     await page.reload();
-    await expect(page.getByRole('region', { name: '言葉で直す' })).toBeVisible();
+    await expect(page.getByRole('region', { name: '作る AI', exact: true })).toBeVisible();
     await expect(s.heading).toBeHidden();
 
     await page.locator('#project-menu-button').click();

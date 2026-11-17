@@ -30,7 +30,7 @@ export const PACKAGE_LIMITS = {
 const INSTALL_SCRIPTS = ['preinstall', 'install', 'postinstall', 'preprepare', 'prepare', 'postprepare'];
 // npm のパッケージの名前の形(https://docs.npmjs.com/cli/v11/configuring-npm/package-json#name)
 const NAME_PATTERN = /^(?:@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
-// 版の形(semver)。直す AI への決まりの文に入るので、ほかの文字を入れない
+// 版の形(semver)。作る AI への決まりの文に入るので、ほかの文字を入れない
 const VERSION_PATTERN = /^\d{1,9}\.\d{1,9}\.\d{1,9}(?:-[0-9A-Za-z.-]{1,30})?(?:\+[0-9A-Za-z.-]{1,30})?$/;
 // pax の見出しで受ける項目。大きさ(size)などを pax で変えるファイルは、展開する道具ごとに読み方が違うので断る
 const PAX_KEYS = new Set(['path', 'mtime', 'atime', 'ctime', 'uid', 'gid', 'uname', 'gname', 'comment', 'charset', 'hdrcharset', 'SCHILY.dev', 'SCHILY.ino', 'SCHILY.nlink', 'LIBARCHIVE.creationtime']);
@@ -380,7 +380,7 @@ export async function checkPackage({ tarball, answers, fileName = '' } = {}) {
     exports: trial.exports,
     license: licenseView(answers, detected),
     sha256: Buffer.isBuffer(tarball) ? sha256(tarball) : null,
-    // 見本で試す: 有効にしたときに直す AI への決まりに足す文
+    // 見本で試す: 有効にしたときに作る AI への決まりに足す文
     rule: ok ? packagesRule([{ name: facts.name, version: facts.version, exports: trial.exports, networkCount: network.length }]) : null,
     // 置くときに使う。画面には返さない(materials.js が外す)
     files: ok ? files : [],

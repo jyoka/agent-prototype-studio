@@ -56,7 +56,7 @@ test('見せる画面には試作品と問いだけが出て、開発の言葉�
 
     // 開発の欄は隠れる(上の帯、言葉で直す、試す欄の道具、記録と質の見直し)。試作品はそのまま触れる
     await expect(page.getByRole('banner')).toBeHidden();
-    await expect(page.getByRole('heading', { name: '言葉で直す' })).toBeHidden();
+    await expect(page.getByRole('heading', { name: '作る AI' })).toBeHidden();
     await expect(page.locator('#try-toolbar')).toBeHidden();
     await expect(page.locator('#quality')).toBeHidden();
     await expect(page.locator('#scene-runs')).toBeHidden();
@@ -93,7 +93,8 @@ test('見せる画面には試作品と問いだけが出て、開発の言葉�
     await ui.show.getByRole('button', { name: '見せ終わる' }).click();
     await expect(ui.show).toBeHidden();
     await expect(page.getByRole('banner')).toBeVisible();
-    await expect(page.getByRole('heading', { name: '言葉で直す' })).toBeVisible();
+    // 見せ終わると段 8 の作業台に戻る。右上の「■ 作る AI に頼む」で作る AI の欄に切り替えられる
+    await expect(page.getByRole('button', { name: '作る AI に頼む' })).toBeVisible();
 
     // 答えは、見せた版の一覧に出る
     await openVersions(page);
@@ -106,6 +107,7 @@ test('見せる画面には試作品と問いだけが出て、開発の言葉�
 
     // 試作品を直して保存し、見せた版に戻し、また直した版に戻す。答えは消えない
     await closeMore(page);
+    await page.getByRole('button', { name: '作る AI に頼む' }).click();
     await page.getByLabel('依頼').fill('見出しを「うみかぜ求人相談」にして');
     await page.getByRole('button', { name: '送る' }).click();
     await expect(ui.app.getByRole('heading', { name: 'うみかぜ求人相談' })).toBeVisible();

@@ -228,7 +228,7 @@ test('試作品のコードが決まりに合わない要求を送ったら、�
     await expect(entries.first()).toContainText('状態の修正(試作品から)');
     await expect(entries.first()).toContainText('直そうとした値: place「海の町」');
     await expect(entries.first()).toContainText('理由: 行き先に「海の町」は使えません');
-    await expect(entries.first()).toContainText('次にすること: 選べる値に直してください。試作品の画面が選べない値を送っているときは、「言葉で直す」欄で直す依頼をしてください。');
+    await expect(entries.first()).toContainText('次にすること: 選べる値に直してください。試作品の画面が選べない値を送っているときは、「作る AI」の欄で直す依頼をしてください。');
 
     await app.getByRole('button', { name: '空で送る' }).click();
     await expect(entries.first()).toContainText('発言: (空)');

@@ -22,13 +22,13 @@ import {
 // (関門、シナリオ、report、観察器。harness.md の 7.2)がないことを確かめる。作る会話の項目の本文(サーバーの文)も含める。
 // 開発者向けの詳細は開かない(開いたときに、認証の報告、ファイルの名前、関門の名前が見えることは別に確かめる)。
 // 各場面を 1440x900 で撮り、test-results/ux/ に置く(「分かるか」の確かめ。test-results/ は git が無視する)。
-// 実モデルは呼ばない。直す AI は偽接続か偽の claude、試作品の中の AI はお試しの AI
+// 実モデルは呼ばない。作る AI は偽接続か偽の claude、試作品の中の AI はお試しの AI
 
 const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
 const CARD = '本物の AI を使う前に';
 
 // 偽の claude をシェルスクリプトで作る。--version と auth status と試作品の中の AI(--json-schema)は偽の CLI に、
-// それ以外(直す AI)は偽接続に渡す。直す AI の出力は 1 行ずつ少し遅らせる。直している場面を撮るため
+// それ以外(作る AI)は偽接続に渡す。作る AI の出力は 1 行ずつ少し遅らせる。直している場面を撮るため
 async function writeFakeClaude(home) {
   const bin = path.join(home, 'bin', 'claude');
   await fs.mkdir(path.dirname(bin), { recursive: true });
@@ -49,12 +49,12 @@ async function writeFakeClaude(home) {
   return bin;
 }
 
-// 利用者が書いた依頼の文(作る会話の「あなた」)。Studio の文ではないので、確かめから外す(試験用の依頼に「app/」がある)。
-// 今の行(#now-line)の「⬢ 関門と守り」も外す。「関門」を開発の言葉から外すのは UI/UX の 5 枚目(ui-ux-v2.md の 6 節)
-const USER_TEXT = '.bubble.user > p';
+// 利用者が書いた依頼の文(作る会話の「あなた」と、作る AI の欄の「依頼:」)。Studio の文ではないので、確かめから外す(試験用の依頼に「app/」がある)。
+// 今の行(#now-line)も調べる。「関門」を開発の言葉から外した(ui-ux-v2.md の 6 節)
+const USER_TEXT = '.bubble.user > p, .make-now-request';
 
 // 場面の見える文字を確かめて撮る。場面ごとに失敗を集めて、最後にまとめて知らせる(1 つの場面で止めない)。
-// 作る会話の項目の本文(サーバーの文。P30)と、直す AI の返事も含める。直す AI の返事は偽接続の決まった文で、
+// 作る会話の項目の本文(サーバーの文。P30)と、作る AI の返事も含める。作る AI の返事は偽接続の決まった文で、
 // 本物のモデルの返事は Studio が決められないので、ここでは確かめない
 async function scene(page, name, prefix = 'P29') {
   const text = await page.evaluate((selector) => {
@@ -63,7 +63,7 @@ async function scene(page, name, prefix = 'P29') {
     const text = document.body.innerText;
     for (const node of hidden) node.style.display = '';
     return text;
-  }, `${USER_TEXT}, #now-line`);
+  }, USER_TEXT);
   expect.soft(devWordsIn(text), `場面「${name}」の見える文字に、開発の言葉があります`).toEqual([]);
   await page.screenshot({ path: path.join(UX_SHOTS, `${prefix}-${name}.png`) });
 }
@@ -83,13 +83,13 @@ test.describe('U3: 見える文字に開発の言葉がない', () => {
 
   test('最初、試す、話す、同意のカード、直す、直った後、確かめる', async ({ page, home }) => {
     test.skip(process.platform === 'win32', '偽の claude をシェルスクリプトで作るため');
-    // 直す AI の依頼を 1 回と、確かめを 1 回終えるまで待つ
+    // 作る AI の依頼を 1 回と、確かめを 1 回終えるまで待つ
     test.setTimeout(120_000);
     const studio = await launchStudio(home, { env: { STUDIO_AGENT: undefined, STUDIO_CLAUDE_BIN: await writeFakeClaude(home) } });
     try {
       await page.goto(studio.url);
       const app = page.frameLocator('iframe[title="試作品"]');
-      const make = page.getByRole('region', { name: '言葉で直す' });
+      const make = page.getByRole('region', { name: '作る AI', exact: true });
       const card = page.getByRole('group', { name: CARD });
 
       // 最初
@@ -120,7 +120,7 @@ test.describe('U3: 見える文字に開発の言葉がない', () => {
       await expect(card).toBeVisible();
       await scene(page, 'consent');
 
-      // 直す: 同意すると送られ、直す AI が作業する
+      // 直す: 同意すると送られ、作る AI が作業する
       await card.getByRole('button', { name: '同意して使う' }).click();
       const run = lastRun(page);
       await expect(run.getByText('AI の設定を読みました')).toBeVisible({ timeout: 15_000 });
@@ -192,7 +192,7 @@ test.describe('U3: 見える文字に開発の言葉がない', () => {
       await expect(bandOf(run)).toBeVisible({ timeout: 30_000 });
       await scene(page, 'denied', 'P30');
 
-      // 作る会話の失敗の場面(直す AI が 2 回直しても直らない)
+      // 作る会話の失敗の場面(作る AI が 2 回直しても直らない)
       await chooseTestRequest(page, '壊して、直せないふりをして');
       await page.getByRole('button', { name: '送る' }).click();
       run = lastRun(page);
@@ -238,7 +238,7 @@ test.describe('U3: 見える文字に開発の言葉がない', () => {
     }
   });
 
-  test('エラー: 直す AI が使えない(7-5)', async ({ page, home }) => {
+  test('エラー: 作る AI が使えない(7-5)', async ({ page, home }) => {
     const studio = await launchStudio(home, { env: { STUDIO_AGENT: undefined, STUDIO_CLAUDE_BIN: path.join(home, 'no-such-claude') } });
     try {
       await page.goto(studio.url);

@@ -17,7 +17,7 @@ const FORMAT = 1;
 // 画面の札に出る名前。「作業中」は利用者の画面では「今の状態」と言う(ux-redesign.md 4 節)
 const AUTO_NAME = '戻す前の状態(自動)';
 // 表示できない状態は保存しない。誤りの場所(ファイルの名前)はターミナルにだけ出す。画面では 7-6 の知らせの開発者向けで見られる
-const CANNOT_SAVE = '表示できない状態は保存できません。「言葉で直す」で直してもらってから保存してください';
+const CANNOT_SAVE = '表示できない状態は保存できません。「作る AI」の欄で直してもらってから保存してください';
 
 export class VersionError extends Error {
   constructor(status, code, message) {

@@ -263,7 +263,7 @@ export function checkGuideMaterial({ kind, files, answers } = {}) {
     copies: result.copies.map(({ name, title, text, from }) => ({ path: `${KINDS[kind].copyDir}/${name}`, name, title, from, text, bytes: bytes(text) })),
     components: result.components.map(({ name, title, stories, description }) => ({ name, title, stories, description })),
     license: licenseView(answers, result.detected),
-    // 見本で試す: 有効にしたときに直す AI への決まりに足す文
+    // 見本で試す: 有効にしたときに作る AI への決まりに足す文
     rule: result.errors.length === 0 ? guidesRule([{ kind, files: result.copies.map((copy) => ({ copy: `${KINDS[kind].copyDir}/${copy.name}` })) }]) : null,
   };
 }

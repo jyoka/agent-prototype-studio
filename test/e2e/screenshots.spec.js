@@ -1,12 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, expectNoDevWordsOnScreen, launchStudio, openDevDetails, test } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, expect, expectNoDevWordsOnScreen, goStage, launchStudio, openDevDetails, test } from './studio.js';
 
 // U10: 「分かるか」の確かめ(docs/design/ux-redesign.md の 9 節)のスクリーンショット。P31。
 // U7(最初の 1 分の流れ)と U8(Claude Code がないとき)の各場面、結果の帯(fixed、failed)、
 // 見本 A(バイト探し)のトークの枠と、開発者向けの詳細の記録を 1440x900 で撮り、test-results/ux/ に置く(git は無視する)。
 // 人の確かめに使う画像は、撮った後に docs/evidence/ux/final/ へ写す(docs/evidence/ux/final/check.md)。
-// 実モデルは呼ばない。直す AI は偽の claude(既定の起動と同じ形。上の帯に開発用の印が出ない)、試作品の中の AI はお試しの AI
+// 実モデルは呼ばない。作る AI は偽の claude(既定の起動と同じ形。上の帯に開発用の印が出ない)、試作品の中の AI はお試しの AI
 
 const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
 const CARD = '本物の AI を使う前に';
@@ -15,7 +15,7 @@ const BEFORE = '働き方の希望はありますか?';
 const AFTER = '時給はいくら以上を希望しますか?';
 
 // 偽の claude をシェルスクリプトで作る。--version と auth status と試作品の中の AI(--json-schema)は偽の CLI に、
-// それ以外(直す AI)は偽接続に渡す。slow なら直す AI の出力を 1 行ずつ少し遅らせる。直している場面を撮るため
+// それ以外(作る AI)は偽接続に渡す。slow なら作る AI の出力を 1 行ずつ少し遅らせる。直している場面を撮るため
 async function writeFakeClaude(home, { slow = false } = {}) {
   const bin = path.join(home, 'bin', 'claude');
   await fs.mkdir(path.dirname(bin), { recursive: true });
@@ -58,14 +58,14 @@ test.beforeEach(async ({ page }) => {
 
 test('U10(U7): 最初の画面から、試す → 言葉で直す → 直った結果を試す、までの各場面を撮る', async ({ page, home }) => {
   test.skip(process.platform === 'win32', '偽の claude をシェルスクリプトで作るため');
-  // 直す AI の依頼(作るループの関門を含む)を 1 回終えるまで待つ
+  // 作る AI の依頼(作るループの関門を含む)を 1 回終えるまで待つ
   test.setTimeout(120_000);
   const studio = await launchWithFakeClaude(home, { slow: true });
   try {
     await page.goto(studio.url);
     const app = page.frameLocator('iframe[title="試作品"]');
     const log = app.getByRole('region', { name: '会話' }).getByRole('listitem');
-    const make = page.getByRole('region', { name: '言葉で直す' });
+    const make = page.getByRole('region', { name: '作る AI', exact: true });
     const bar = page.getByRole('region', { name: '試し直す' });
     const next = nextOf(page);
 
@@ -73,7 +73,7 @@ test('U10(U7): 最初の画面から、試す → 言葉で直す → 直った�
     await expect(app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
     await expect(next).toHaveText('まず左の試作品で、案内役に話しかけてみましょう。');
     await expect(make.getByRole('list', { name: '直し方の例' }).getByRole('button')).toHaveCount(3);
-    // 上の帯に開発用の印(偽の直す AI)が出ない
+    // 上の帯に開発用の印(偽の作る AI)が出ない
     await expect(page.locator('#dev-agent-mark')).toBeHidden();
     await shoot(page, '01-first');
 
@@ -82,7 +82,7 @@ test('U10(U7): 最初の画面から、試す → 言葉で直す → 直った�
     await app.getByRole('button', { name: '送る' }).click();
     await expect(log).toHaveCount(3);
     await expect(log.last()).toContainText(BEFORE);
-    await expect(next).toContainText('「言葉で直す」に頼んでみましょう');
+    await expect(next).toContainText('「作る AI」の欄に頼んでみましょう');
     await shoot(page, '02-talked');
 
     // 2. 言葉で直す: 直す欄の例を押して送ると、本物の AI を使う前のカードが出る
@@ -92,16 +92,19 @@ test('U10(U7): 最初の画面から、試す → 言葉で直す → 直った�
     await expect(card).toBeVisible();
     await shoot(page, '03-consent');
 
-    // 同意すると、直す AI が直す
+    // 同意すると、作る AI が直す
     await card.getByRole('button', { name: '同意して使う' }).click();
     const run = lastRun(page);
     await expect(run.getByText('AI の設定を読みました')).toBeVisible({ timeout: 15_000 });
-    await expect(run.locator('.run-status')).toHaveText('直す AI が作業しています…');
+    await expect(run.locator('.run-status')).toHaveText('作る AI が作業しています…');
     await shoot(page, '04-fixing');
 
-    // 直す AI が終わると、結果の帯と試し直しの帯が出て、次の一手の帯が試し直しを勧める
+    // 作る AI が終わると、結果の帯と試し直しの帯が出て、次の一手の帯が試し直しを勧める
     await expect(run.getByRole('group', { name: '確かめた結果' })).toBeVisible({ timeout: 60_000 });
     await expect(run.locator('.run-updated')).toHaveText('AI の設定を変えました。試作品は新しくなっています。');
+    // 段 5 の帯は作った結果と「試す」。最初の一歩の進み方(試し直しを勧める)は段 6 の帯
+    await expect(next).toContainText('試作品を作りました。');
+    await goStage(page, '測る');
     await expect(next).toContainText('同じ発言で試し直す');
     await expect(bar.getByRole('button', { name: '同じ発言で試し直す' })).toBeVisible();
     await shoot(page, '05-fixed');
@@ -127,7 +130,7 @@ test('U10(U8): Claude Code がないときの直す欄と、そのまま試せ�
     const card = page.getByRole('group', { name: '言葉で直すには、Claude Code が要ります' });
     await expect(card).toBeVisible();
     await expect(card).toContainText('この PC で Claude Code が見つかりません。');
-    await expect(page.getByLabel('依頼')).toHaveAttribute('placeholder', '直す AI が使えないので、送れません');
+    await expect(page.getByLabel('依頼')).toHaveAttribute('placeholder', '作る AI が使えないので、送れません');
     await shoot(page, '07-unavailable');
 
     // 試すは使える(試作品の中の AI はお試しの AI)
@@ -150,18 +153,18 @@ test('U10: 結果の帯(fixed と failed)を撮る', async ({ page, home }) => {
     await page.goto(studio.url);
     await chooseSample(page, SAMPLES.library);
     await expect(page.frameLocator('iframe[title="試作品"]').getByRole('heading', { name: 'こもれび図書室' })).toBeVisible();
-    const make = page.getByRole('region', { name: '言葉で直す' });
+    const make = page.getByRole('region', { name: '作る AI', exact: true });
     const send = async (text) => {
       await page.getByLabel('依頼').fill(text);
       await make.getByRole('button', { name: '送る' }).click();
     };
 
-    // 壊れる依頼でも、Studio が見つけた問題を直す AI が直す(fixed)
+    // 壊れる依頼でも、Studio が見つけた問題を作る AI が直す(fixed)
     await send('壊して');
     await page.getByRole('group', { name: CARD }).getByRole('button', { name: '同意して使う' }).click();
     const fixed = lastRun(page).getByRole('group', { name: '確かめた結果' });
     await expect(fixed).toHaveAttribute('data-status', 'fixed', { timeout: 30_000 });
-    await expect(fixed).toContainText('直す AI が直した回数: 1 回(2 回まで)');
+    await expect(fixed).toContainText('作る AI が直した回数: 1 回(2 回まで)');
     await expect(fixed.getByRole('list', { name: '確かめた画面' }).locator('img')).toHaveCount(3);
     await shoot(page, '09-band-fixed');
 
@@ -169,7 +172,7 @@ test('U10: 結果の帯(fixed と failed)を撮る', async ({ page, home }) => {
     await send('壊して、直せないふりをして');
     const failed = lastRun(page).getByRole('group', { name: '確かめた結果' });
     await expect(failed).toHaveAttribute('data-status', 'failed', { timeout: 30_000 });
-    await expect(failed).toContainText('直す AI が直そうとした回数: 2 回(2 回まで)');
+    await expect(failed).toContainText('作る AI が直そうとした回数: 2 回(2 回まで)');
     await shoot(page, '10-band-failed');
   } finally {
     await studio.stop();

@@ -1,10 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { chooseSample, expect, expectNoDevWords, expectReadableText, launchStudio, ROOT, SAMPLES, switchToRealAi, test } from './studio.js';
+import { chooseSample, expect, expectNoDevWords, expectReadableText, goStage, launchStudio, ROOT, SAMPLES, switchToRealAi, test } from './studio.js';
 
 // 最初の一歩の進み方と試し直しの帯(docs/design/ux-redesign.md の 2 節、7-1、7-2、7-4、9 節の U2、U7。P28)。
 // 見た目の「はじめの手順」はなくし、進み方は次の一手の帯の 1 文に出す(ui-ux-v2.md の 13 節)。
-// 実モデルは呼ばない。claude は偽物で、直す AI としては偽接続(src/agent/fake-claude.js)、
+// 実モデルは呼ばない。claude は偽物で、作る AI としては偽接続(src/agent/fake-claude.js)、
 // --version と auth status には偽の CLI(test/fixtures/fake-claude.js)が答える。試作品の中の AI は、お試しの AI のまま
 
 // 「分かるか」の確かめ(ux-redesign.md 9 節)のスクリーンショットの置き場。test-results/ は git が無視する
@@ -14,8 +14,8 @@ const EXAMPLE = 'カフェで働きたいです';
 const BEFORE = '働き方の希望はありますか?';
 const AFTER = '時給はいくら以上を希望しますか?';
 
-// 偽の claude をシェルスクリプトで作る。--version と auth status は偽の CLI に、それ以外(直す AI)は偽接続に渡す。
-// 直す AI の出力は 1 行ずつ少し遅らせる。直している場面を撮るため
+// 偽の claude をシェルスクリプトで作る。--version と auth status は偽の CLI に、それ以外(作る AI)は偽接続に渡す。
+// 作る AI の出力は 1 行ずつ少し遅らせる。直している場面を撮るため
 async function writeFakeClaude(home) {
   const bin = path.join(home, 'bin', 'claude');
   await fs.mkdir(path.dirname(bin), { recursive: true });
@@ -53,7 +53,7 @@ function lastRun(page) {
 
 test('U2、U7: 最初の画面の案内から、試す → 言葉で直す → 直った結果を試す、までが通り、手順が状態で進む', async ({ page, home }) => {
   test.skip(process.platform === 'win32', '偽の claude をシェルスクリプトで作るため');
-  // 直す AI の依頼(作るループの関門を含む)を 1 回終えるまで待つ
+  // 作る AI の依頼(作るループの関門を含む)を 1 回終えるまで待つ
   test.setTimeout(120_000);
   const studio = await launchStudio(home, { env: { STUDIO_AGENT: undefined, STUDIO_CLAUDE_BIN: await writeFakeClaude(home) } });
   try {
@@ -62,7 +62,7 @@ test('U2、U7: 最初の画面の案内から、試す → 言葉で直す → �
     const app = page.frameLocator('iframe[title="試作品"]');
     const log = app.getByRole('region', { name: '会話' }).getByRole('listitem');
     const message = app.getByLabel('メッセージ');
-    const make = page.getByRole('region', { name: '言葉で直す' });
+    const make = page.getByRole('region', { name: '作る AI', exact: true });
     const bar = page.getByRole('region', { name: '試し直す' });
     const { guide, hint } = guideOf(page);
     await expect(app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
@@ -81,11 +81,11 @@ test('U2、U7: 最初の画面の案内から、試す → 言葉で直す → �
     await expect(log).toHaveCount(3);
     await expect(log.last()).toContainText(BEFORE);
     await expect(measureStage(page)).toHaveAttribute('data-state', 'done');
-    await expect(hint).toHaveText('気になったところを、右の「言葉で直す」に頼んでみましょう。押すと入る例もあります。');
+    await expect(hint).toHaveText('気になったところを、右の「作る AI」の欄に頼んでみましょう。押すと入る例もあります。');
     await expectNoDevWords(guide);
     await page.screenshot({ path: path.join(UX_SHOTS, 'P28-talked.png') });
 
-    // 2. 言葉で直す: 直す欄の例を押して送る → 同意のカード → 同意 → 直す AI が直す
+    // 2. 言葉で直す: 直す欄の例を押して送る → 同意のカード → 同意 → 作る AI が直す
     await make.getByRole('list', { name: '直し方の例' }).getByRole('button', { name: '時給の下限を先に聞くようにして' }).click();
     await make.getByRole('button', { name: '送る' }).click();
     const card = page.getByRole('group', { name: '本物の AI を使う前に' });
@@ -93,18 +93,22 @@ test('U2、U7: 最初の画面の案内から、試す → 言葉で直す → �
     await card.getByRole('button', { name: '同意して使う' }).click();
     const run = lastRun(page);
     await expect(run.getByText('AI の設定を読みました')).toBeVisible({ timeout: 15_000 });
-    await expect(run.locator('.run-status')).toHaveText('直す AI が作業しています…');
-    await expect(hint).toHaveText('作る AI が試作品を書いています。その間に、試作品を触ってみませんか。止めるときは、右の欄の「止める」を押します。');
-    // 今の行では、作る AI が働いている
-    await expect(page.locator('#now-line .actor[data-actor="maker"]')).toHaveAttribute('data-active', 'true');
+    await expect(run.locator('.run-status')).toHaveText('作る AI が作業しています…');
+    await expect(hint).toHaveText('作る AI が試作品を書いています。止めても、前の版は残ります。');
+    // 今の行では、作る AI か関門が働いている(あなたの番ではない)
+    await expect(page.locator('#now-line .actor[data-active]')).toHaveAttribute('data-actor', /^(maker|gate)$/);
     await expect(page.locator('#now-line .actor[data-actor="you"]')).not.toHaveAttribute('data-active');
     await page.screenshot({ path: path.join(UX_SHOTS, 'P28-fixing.png') });
 
-    // 直す AI が終わり、結果の帯が出る。手順 3 が今の手順になり、試し直しの帯が試す欄の上に出る
+    // 作る AI が終わり、結果の帯が出る。手順 3 が今の手順になり、試し直しの帯が試す欄の上に出る
     const band = run.getByRole('group', { name: '確かめた結果' });
     await expect(band).toBeVisible({ timeout: 60_000 });
     await expect(band).toHaveAttribute('data-status', /^(passed|fixed|unverified)$/);
     await expect(run.locator('.run-updated')).toHaveText('AI の設定を変えました。試作品は新しくなっています。');
+    // 段 5 の帯は、作った結果の 1 文と「試す」(ui-ux-v2.md の 4.3)。最初の一歩の進み方は段 6 の帯に出る(13 節)
+    await expect(hint).toHaveText(/^試作品を作りました。|^1 度落ちましたが、/);
+    await guide.getByRole('button', { name: '試す' }).click();
+    await expect(measureStage(page)).toHaveAttribute('aria-current', 'step');
     await expect(hint).toHaveText('試作品の上の「同じ発言で試し直す」で、直す前と後の返事を比べられます。');
     await expect(bar.getByRole('heading', { name: 'AI の設定が変わりました' })).toBeVisible();
     await expect(bar).toContainText('会話は新しい設定で最初から始まっています。前の会話(発言 1 件)を、新しい設定で送り直せます。');
@@ -177,22 +181,29 @@ test('AI のない試作品(図書室)では、1 番が「試作品の画面を�
     // 試作品の画面を触ると、1 番が済む
     await heading.click();
     await expect(measureStage(page)).toHaveAttribute('data-state', 'done');
-    await expect(hint).toHaveText('気になったところを、右の「言葉で直す」に頼んでみましょう。押すと入る例もあります。');
+    await expect(hint).toHaveText('気になったところを、右の「作る AI」の欄に頼んでみましょう。押すと入る例もあります。');
 
     // 直しきれなかった(failed)ときは、2 番を済みにせず、結果の帯を見るように言う
-    const make = page.getByRole('region', { name: '言葉で直す' });
+    const make = page.getByRole('region', { name: '作る AI', exact: true });
     const send = async (text) => {
       await page.getByLabel('依頼').fill(text);
       await make.getByRole('button', { name: '送る' }).click();
     };
     await send('壊して、直せないふりをして');
     await expect(lastRun(page).getByRole('group', { name: '確かめた結果' })).toHaveAttribute('data-status', 'failed', { timeout: 60_000 });
-    await expect(hint).toHaveText('直す AI が直しきれませんでした。右の「言葉で直す」の結果を見て、頼み方を変えてもう一度送ってください。');
+    // 段 5 の帯は、直しきれなかったことと「頼み方を変える」(4.3 の表)
+    await expect(hint).toHaveText('「表示の準備」で落ち、作る AI が直しきれませんでした。前に動いた版を出しています。頼み方を変えて、もう一度試しますか。');
     await expect(hint).toHaveAttribute('data-tone', 'warn');
+    // 段 6 の帯は、最初の一歩の進み方。2 番は済まず、結果を見るように言う
+    await goStage(page, '測る');
+    await expect(hint).toHaveText('作る AI が直しきれませんでした。右の「作る AI」の欄の結果を見て、頼み方を変えてもう一度送ってください。');
+    await expect(hint).toHaveAttribute('data-tone', 'warn');
+    await goStage(page, '作る');
 
     // 直せた依頼で、2 番が済む(前の依頼が残した問題も直すので、fixed になることがある)。直った画面を触ると、3 番が済む
     await send('見出しを「ひだまり図書室」にして');
     await expect(lastRun(page).getByRole('group', { name: '確かめた結果' })).toHaveAttribute('data-status', /^(passed|fixed)$/, { timeout: 30_000 });
+    await goStage(page, '測る');
     await expect(hint).toHaveText('直った試作品の画面を、もう一度触ってみましょう。');
     const fixed = app.getByRole('heading', { name: 'ひだまり図書室' });
     await expect(fixed).toBeVisible();

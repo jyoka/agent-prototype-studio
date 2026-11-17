@@ -5,7 +5,7 @@ import { SAMPLES, chooseSample, chooseTestRequest, closeMore, expect, expectNoDe
 // 自然言語でプロダクト内 AI の振る舞いを変え、前の発言を新しい設定で試し直す(#279)。
 // 作る AI は偽接続(src/agent/fake-claude.js)、プロダクト内 AI はモック。モデルも外部の API も呼ばない。
 
-const NOT_UNDERSTOOD_FIRST = 'すみません、希望の条件として読み取れませんでした。自由な言葉は、上の『AI: 本物』で試せます。';
+const NOT_UNDERSTOOD_FIRST = 'すみません、希望の条件として読み取れませんでした。自由な言葉は、上の『▲ お試し ▾』で本物の AI に替えると試せます。';
 const NOT_UNDERSTOOD = `${NOT_UNDERSTOOD_FIRST}どんなお仕事に興味がありますか?`;
 const ASK_BY_EXAMPLE = 'すみません、うまく読み取れませんでした。たとえば「カフェのホール」「アルバイト・パート」「しおかぜ町」のように、短く教えてください。';
 const AFTER_JOB = '職種「カフェのホール」と理解しました。働き方の希望はありますか?';
@@ -96,7 +96,7 @@ test('作る欄の依頼でプロダクト内 AI の設定が変わり、前の�
     await expect(makeRuns(page)).toHaveCount(1);
     await expect(page.getByRole('list', { name: '作る会話' })).not.toContainText('よろしくお願いします');
     await expect(page.locator('#agent-status')).toContainText('接続: 偽接続');
-    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
+    await expect(page.locator('#ai-badge')).toHaveText('お試し');
     expect(studio.output().match(/作る AI に依頼しました/g)).toHaveLength(1);
 
     // 5. もう一度変える。前の設定(1 回目の変更の後)の応答と比べる。引き出しは直す欄に重なるので閉じる

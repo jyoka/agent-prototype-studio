@@ -160,7 +160,7 @@ test('ビルドできない状態は保存せず、理由を出す。作る AI �
     await expect(page.locator('#build-status')).toContainText('ビルドに失敗しました');
     await openVersions(page);
     await page.locator('#save-version').click();
-    await expect(ui.notice).toContainText('保存できませんでした: 表示できない状態は保存できません。「言葉で直す」で直してもらってから保存してください');
+    await expect(ui.notice).toContainText('保存できませんでした: 表示できない状態は保存できません。「作る AI」の欄で直してもらってから保存してください');
     await expect(ui.notice).not.toContainText('app/');
     await expect(ui.versionList.getByRole('listitem')).toHaveCount(1);
 
@@ -173,12 +173,12 @@ test('ビルドできない状態は保存せず、理由を出す。作る AI �
     await closeMore(page);
     await page.getByLabel('依頼').fill('ゆっくり進めて');
     await page.getByRole('button', { name: '送る' }).click();
-    await expect(page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '止める' })).toBeVisible();
+    await expect(page.getByRole('region', { name: '作る AI', exact: true }).getByRole('button', { name: '止める' })).toBeVisible();
     await openVersions(page);
     await expect(page.locator('#save-version')).toBeDisabled();
     await expect(page.getByRole('button', { name: '保存 1 の状態に戻す' })).toBeDisabled();
     await closeMore(page);
-    await page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '止める' }).click();
+    await page.getByRole('region', { name: '作る AI', exact: true }).getByRole('button', { name: '止める' }).click();
     await openVersions(page);
     await expect(page.locator('#save-version')).toBeEnabled();
   } finally {

@@ -35,12 +35,12 @@ for (const size of [
       await expectInViewport(page, chat, '試作品の会話の欄');
       await expectInViewport(page, chat.getByLabel('メッセージ'), '試作品の会話の入力');
       await expectInViewport(page, chat.getByRole('button', { name: '送る' }), '試作品の会話の「送る」');
-      const make = page.getByRole('region', { name: '言葉で直す' });
+      const make = page.getByRole('region', { name: '作る AI', exact: true });
       await expectInViewport(page, make.getByLabel('依頼'), '直す欄の依頼の欄');
       await expectInViewport(page, make.getByRole('button', { name: '送る' }), '直す欄の「送る」');
 
       // 左の「試す」が約 6 割、右の「言葉で直す」が約 4 割
-      const tryBox = await page.getByRole('region', { name: '試す' }).boundingBox();
+      const tryBox = await page.getByRole('region', { name: '試作品', exact: true }).boundingBox();
       const makeBox = await make.boundingBox();
       expect(tryBox.x).toBeLessThan(makeBox.x);
       const share = tryBox.width / (tryBox.width + makeBox.width);
@@ -66,7 +66,7 @@ test('U9: 試す欄の上のボタンは、AI の切り替えを除くと「会�
     await expect(toolbar.getByRole('button').and(page.locator(':not(#ai-switch)'))).toHaveText(['会話を最初から']);
     // 画面を読み込み直す(開き直す)、ファイルから作り直す(作り直す)は、試す欄の上にない。仕組みの引き出しにある
     for (const name of ['画面を読み込み直す', 'ファイルから作り直す', '開き直す', '作り直す', 'リセット']) {
-      await expect(page.getByRole('region', { name: '試す' }).getByRole('button', { name })).toHaveCount(0);
+      await expect(page.getByRole('region', { name: '試作品', exact: true }).getByRole('button', { name })).toHaveCount(0);
     }
 
     // 上の帯: 試作品の切り替え、保存、素材、表示。「その他」はなくした(ui-ux-v2.md の 13 節)
@@ -149,7 +149,7 @@ test('試作品の切り替えは上の帯のメニューで、各行に短い�
 
     // AI の切り替えは、今の接続の選び方を試す欄の上に開く
     await chooseSample(page, SAMPLES.jobConsult);
-    await expect(page.locator('#ai-switch')).toHaveText('AI: お試し ▾');
+    await expect(page.locator('#ai-switch')).toHaveText('▲ お試し ▾');
     await expect(page.locator('#ai-menu')).toBeHidden();
     await openAiMenu(page);
     await expect(page.locator('#ai-menu').getByRole('radio', { name: 'お試しの AI', exact: true })).toBeChecked();
@@ -166,8 +166,8 @@ test('1024 より狭いときは、試すと直すを上下に並べる', async 
     await page.setViewportSize({ width: 900, height: 900 });
     await page.goto(studio.url);
     await expect(page.frameLocator('iframe[title="試作品"]').getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
-    const tryBox = await page.getByRole('region', { name: '試す' }).boundingBox();
-    const makeBox = await page.getByRole('region', { name: '言葉で直す' }).boundingBox();
+    const tryBox = await page.getByRole('region', { name: '試作品', exact: true }).boundingBox();
+    const makeBox = await page.getByRole('region', { name: '作る AI', exact: true }).boundingBox();
     expect(makeBox.y).toBeGreaterThanOrEqual(tryBox.y + tryBox.height);
     expect(Math.abs(makeBox.x - tryBox.x)).toBeLessThan(2);
   } finally {
@@ -228,7 +228,7 @@ test('U5: 準備の結果、AI のやりとりの記録、AI が覚えている�
     // 試験用の依頼は、偽接続(STUDIO_AGENT=fake)のときだけ出る
     await expect(page.locator('#dev-details').getByRole('heading', { level: 3 })).toHaveText([
       'プロンプト',
-      '直す AI(作る AI)の接続',
+      '作る AIの接続',
       '試験用の依頼',
       'ビルド',
       'プロダクト内 AI',
@@ -239,7 +239,7 @@ test('U5: 準備の結果、AI のやりとりの記録、AI が覚えている�
     // 引き出しは作業台を隠さず、横に並ぶ(試作品は見えたまま)
     await expect(app.getByRole('region', { name: '会話' })).toBeVisible();
     const drawerBox = await page.locator('#mechanism').boundingBox();
-    const tryBox = await page.getByRole('region', { name: '試す' }).boundingBox();
+    const tryBox = await page.getByRole('region', { name: '試作品', exact: true }).boundingBox();
     expect(tryBox.x + tryBox.width).toBeLessThanOrEqual(drawerBox.x + 1);
     await page.screenshot({ path: path.join(UX_SHOTS, 'P22-dev.png') });
 
@@ -276,7 +276,7 @@ test('「画面を読み込み直す」と「ファイルから作り直す」�
     await expect(log.last()).toContainText('職種「カフェのホール」と理解しました');
     const count = await log.count();
 
-    const tryRegion = page.getByRole('region', { name: '試す' });
+    const tryRegion = page.getByRole('region', { name: '試作品', exact: true });
     const reopen = page.getByRole('button', { name: '画面を読み込み直す', includeHidden: true });
     const rebuild = page.getByRole('button', { name: 'ファイルから作り直す', includeHidden: true });
     await expect(reopen).toHaveCount(1);

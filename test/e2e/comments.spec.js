@@ -36,7 +36,7 @@ async function writeComment(page, text, kind = '見た目と動き', { place = n
   await ui.comments.getByLabel('コメント', { exact: true }).fill(text);
   await ui.comments.getByRole('radio', { name: kind }).check();
   await ui.comments.getByRole('button', { name: 'コメントを書く' }).click();
-  await expect(ui.status).toContainText('を書きました。承認するまで、直す AI には送りません。');
+  await expect(ui.status).toContainText('を書きました。承認するまで、作る AI には送りません。');
 }
 
 // 作る AI の起動の数(偽の claude を起動した回数。run ごとの起動の合計)と、run の数
@@ -87,7 +87,7 @@ test('反応を 10 個付けても起動しない。承認で 1 回だけ起動�
     await ui.comments.getByLabel('押した人').fill('担当');
     await ui.comments.getByLabel('声に出した人').fill('店長');
     await first.getByRole('button', { name: '決める人として承認' }).click();
-    await expect(ui.status).toContainText('コメント 1 を承認しました。列に並べ、順に直す AI に送ります。');
+    await expect(ui.status).toContainText('コメント 1 を承認しました。列に並べ、順に作る AI に送ります。');
     await expect(first).toContainText('確かめる', { timeout: 60_000 });
     await expect(ui.app.getByRole('heading', { name: 'うみかぜ求人相談' })).toBeVisible();
     const once = await launches(studio);
@@ -154,7 +154,7 @@ test('要件のコメントは 2 人の承認がそろうまで起動しない�
     await expect(req).toContainText('承認(2 人が要ります): 進行役 済み、決める人 まだ');
     await expectNoLaunch(studio, page);
     await req.getByRole('button', { name: '承認を取り消す' }).click();
-    await expect(ui.status).toContainText('コメント 1 の承認を取り消しました。直す AI には送りません。');
+    await expect(ui.status).toContainText('コメント 1 の承認を取り消しました。作る AI には送りません。');
     await req.getByRole('button', { name: '決める人として承認' }).click();
     await expect(req).toContainText('承認(2 人が要ります): 進行役 まだ、決める人 済み');
     await expectNoLaunch(studio, page);
@@ -201,7 +201,7 @@ test('構成のコメントは承認しても起動せず、AI 構成の審査�
     await writeComment(page, '答えに迷ったら、担当の人に渡すようにして', '構成');
     const arch = ui.item(1);
     await arch.getByRole('button', { name: '進行役として承認' }).click();
-    await expect(ui.status).toContainText('構成のコメントなので、直す AI には送らず、AI 構成の審査に戻しました。');
+    await expect(ui.status).toContainText('構成のコメントなので、作る AI には送らず、AI 構成の審査に戻しました。');
     await expect(arch).toContainText('審査に戻した');
     await expectNoLaunch(studio, page);
     const project = (await studio.api('/api/projects')).projects.find((p) => p.id === ID);

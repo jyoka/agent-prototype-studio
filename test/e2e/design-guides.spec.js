@@ -77,7 +77,7 @@ test('架空の指針の文で、案内の 4 歩が通る。外への URL は警
     await expect(section.locator('#guides-checked')).toContainText('外への URL が 1 個あります');
     await section.getByRole('button', { name: '次へ(見本で試す)' }).click();
 
-    // 3. 見本で試す: 外への URL の場所と、直す AI が読む写しと決まりの文が、有効にする前に見える
+    // 3. 見本で試す: 外への URL の場所と、作る AI が読む写しと決まりの文が、有効にする前に見える
     const tryStep = section.getByRole('group', { name: '3. 見本で試す' });
     await expect(tryStep.getByRole('alert')).toContainText('外への URL が 1 個あります。試作品は外へ通信できないので');
     await expect(tryStep.getByRole('alert')).toContainText(`look.md 4 行目: ${FONT_URL}`);
@@ -96,7 +96,7 @@ test('架空の指針の文で、案内の 4 歩が通る。外への URL は警
     await expectNoDevWords(section);
     await enableStep.getByLabel('有効にする理由(書かなくても進めます)').fill('架空の会社の決まりで作るため');
     await enableStep.getByRole('button', { name: '有効にする' }).click();
-    await expect(section.locator('#guides-message')).toHaveText('有効にしました。直す AI は次の依頼から、指針の文を読みます。');
+    await expect(section.locator('#guides-message')).toHaveText('有効にしました。作る AI は次の依頼から、指針の文を読みます。');
     await expect(section.locator('#guides-enabled')).toContainText('有効にしています: 指針の文(ファイル 2 個)');
     await expect(section.locator('#guides-enabled')).toContainText('使ってよいか: 公開のライセンス(MIT)');
     await expect(section.locator('#guides-enabled')).toContainText('外への URL が 1 個あります。試作品からは読めません。');
@@ -190,7 +190,7 @@ test('架空の Storybook で、ライセンスが分からないと「有効に
     await enableStep.getByRole('radio', { name: 'これからの試作品全部(この試作品にも入れます)' }).check();
     await expect(enable).toBeEnabled();
     await enable.click();
-    await expect(section.locator('#guides-message')).toHaveText('有効にしました。これからの試作品にも入れます。直す AI は次の依頼から、Storybook の部品の一覧を読みます。');
+    await expect(section.locator('#guides-message')).toHaveText('有効にしました。これからの試作品にも入れます。作る AI は次の依頼から、Storybook の部品の一覧を読みます。');
     await expect(section.locator('#guides-enabled')).toContainText('これからの試作品全部に入れます: Storybook の部品の一覧');
     expect(await fs.readFile(path.join(root, 'app', 'design', 'components.md'), 'utf8')).toContain('## Banner');
 

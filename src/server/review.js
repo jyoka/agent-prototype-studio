@@ -481,7 +481,7 @@ export class ProjectReviews {
   }
 
   // 「この構成で作る」。4 つの承認がそろっていれば、承認の時刻を入れ、構成のファイルの写しを files/ に置き、作る AI への依頼の文を返す。
-  // 依頼を送るのは画面(言葉で直す欄と同じ道。本物の AI の同意もその道で取る)
+  // 依頼を送るのは画面(作る AI の欄と同じ道。本物の AI の同意もその道で取る)
   async build(id) {
     return this.exclusive(id, async () => {
       const record = await this.current(id);

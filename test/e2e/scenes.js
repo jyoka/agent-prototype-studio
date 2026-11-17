@@ -1,5 +1,5 @@
 import { defaultPaths, describeLeaks, findLeaks } from '../../scripts/media/privacy.js';
-import { ROOT, SAMPLES, chooseSample, closeMore, expect, openDevDetails, openMechanism } from './studio.js';
+import { ROOT, SAMPLES, chooseSample, closeMore, expect, goStage, openDevDetails, openMechanism } from './studio.js';
 
 // 画像と動く画像に撮る場面(npm run media、CONTRIBUTING.md の「画像と動く画像を撮り直す」)。
 // 撮る仕組みの scripts/media/media.spec.js と、場面が動くかを確かめる test/e2e/media.spec.js が使う。
@@ -83,7 +83,7 @@ export async function askToSave(page, { pace = 0 } = {}) {
   await pause(page, 2000, pace);
 }
 
-// 言葉で直す欄に依頼を書く(送らない)
+// 作る AI の欄に依頼を書く(送らない)
 export async function writeFixRequest(page) {
   await closeMore(page);
   const request = page.getByLabel('依頼');
@@ -260,9 +260,10 @@ export async function reviewClip(page) {
   return { x: 0, y: 0, width: viewport.width, height: Math.min(viewport.height, Math.ceil(box.y + box.height + 8)) };
 }
 
-// 試す欄の下の「質の見直し」を開いて、見える所まで動かす
+// 段 7「質」の右の列の「質の見直し」を開いて、見える所まで動かす
 export async function showQuality(page) {
   await closeMore(page);
+  await goStage(page, '質');
   const box = page.locator('#quality');
   await expect(page.locator('#quality-summary')).toContainText('質の見直し(直す ');
   if (!(await box.evaluate((el) => el.open))) await page.locator('#quality-summary').click();

@@ -280,6 +280,6 @@ test('列で止めた理由は、見せる画面に出せる平たい文にす�
   assert.equal(busy.code, 'error');
   assert.doesNotMatch(busy.message, /ビルド/);
   assert.equal(busy.detail, 'このプロジェクトは今ビルド中です');
-  const consent = heldReason(Object.assign(new Error('直す AI を使うには、同意が要ります'), { code: 'consent-required', next: '同意してから' }));
-  assert.deepEqual(consent, { code: 'consent-required', message: '直す AI を使うには、同意が要ります', next: '同意してから' });
+  const consent = heldReason(Object.assign(new Error('作る AI を使うには、同意が要ります'), { code: 'consent-required', next: '同意してから' }));
+  assert.deepEqual(consent, { code: 'consent-required', message: '作る AI を使うには、同意が要ります', next: '同意してから' });
 });

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, expect, expectNoDevWords, launchStudio, startShowing, test } from './studio.js';
+import { ROOT, expect, expectNoDevWords, launchStudio, openMeasureTab, startShowing, test } from './studio.js';
 
 // 現場の場面の通し(docs/design/user-journey.md の K6、docs/design/field-session.md の 2 節と 6 節)。
 // 架空の台本(しおかぜ便の会の要点を順に打つ)で、会の始めから会の終わりまでを 1 台の PC の形で通す。
@@ -141,7 +141,7 @@ test('台本を会の始めから会の終わりまで通すと、7 つの成果
     await comments.getByLabel('コメント', { exact: true }).fill(`見出しを「${HEADING}」にして`);
     await comments.getByRole('radio', { name: '見た目と動き' }).check();
     await comments.getByRole('button', { name: 'コメントを書く' }).click();
-    await expect(page.locator('#comment-status')).toContainText('を書きました。承認するまで、直す AI には送りません。');
+    await expect(page.locator('#comment-status')).toContainText('を書きました。承認するまで、作る AI には送りません。');
     const first = comments.getByRole('list', { name: 'コメントの一覧' }).locator(':scope > li').first();
     await first.getByRole('button', { name: /に反応を付ける/ }).click();
     await expect.poll(async () => Object.keys(await stagesOf(home, id))).toContain('show');
@@ -159,10 +159,11 @@ test('台本を会の始めから会の終わりまで通すと、7 つの成果
     await expect(show).toBeHidden();
 
     // 場面の一覧を、直った版でお試しの AI で回す
-    const scenes = page.locator('#scene-runs');
-    if (!(await scenes.evaluate((el) => el.open))) await page.locator('#scene-runs-summary').click();
+    const scenes = await openMeasureTab(page, '場面');
     await scenes.getByRole('button', { name: '場面を回す(お試しの AI)' }).click();
-    await expect(scenes.getByRole('table', { name: '構成ごとの比べる表' })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole('tab', { name: /^比べる \d+ 組$/ })).toBeVisible({ timeout: 60_000 });
+    const compare = await openMeasureTab(page, '比べる');
+    await expect(compare.getByRole('table', { name: '構成ごとの比べる表' })).toBeVisible();
 
     // ---- 段 7. 要件の文書と引き継ぎ(会の終わり。K5) ----
     await meetingMark.click();

@@ -1283,7 +1283,7 @@ export class ProjectHandoffs {
       if (!build.ok) {
         const first = build.errors[0];
         this.log(`書き出しませんでした(ビルドできない状態): ${id}(${first ? `${first.file}: ${first.text}` : '理由はわかりません'})`);
-        throw new HandoffError(422, 'build', '表示できない状態は、本番開発へ渡せません。「言葉で直す」で直してもらってから、渡すフォルダーを作ってください');
+        throw new HandoffError(422, 'build', '表示できない状態は、本番開発へ渡せません。「作る AI」の欄で直してもらってから、渡すフォルダーを作ってください');
       }
       const scan = await scanFiles(appCopy);
       if (scan.secrets.length > 0) {

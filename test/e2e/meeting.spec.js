@@ -101,7 +101,7 @@ test('同意の前に偽の claude が起動しない。画面に目的、流れ
 
     // 試作品の画面からの「言葉で直す」は断る。別の試作品で本物の AI に同意した後でも、この会は断る
     await page.getByRole('button', { name: '試作品の画面に戻る' }).click();
-    const make = page.getByRole('region', { name: '言葉で直す' });
+    const make = page.getByRole('region', { name: '作る AI', exact: true });
     await page.getByLabel('依頼').fill('見出しを大きくして');
     await make.getByRole('button', { name: '送る' }).click();
     await expect(make).toContainText('まだ同意の前です');
