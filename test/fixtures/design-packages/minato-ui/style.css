@@ -1,0 +1,4 @@
+/* 架空の会社の部品集の見た目(テストの fixtures) */
+.minato-card { border: 2px solid rgb(0, 102, 85); border-radius: 6px; padding: 12px; }
+.minato-card-title { color: rgb(0, 102, 85); margin: 0 0 4px; }
+.minato-button { background: rgb(0, 102, 85); color: white; border: 0; border-radius: 6px; padding: 6px 12px; }

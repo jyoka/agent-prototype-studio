@@ -21,7 +21,8 @@ import { COLUMNS } from './organize-ai.js';
 const MAX_BODY_BYTES = 64 * 1024;
 // トークンのファイルは大きいので、その API だけ広げる(上限は design-tokens.js の TOKEN_LIMITS。JSON の中に入れると伸びる分を見る)
 const MAX_TOKENS_BODY_BYTES = 2 * 1024 * 1024;
-// 部品と指針の取り込み。Storybook の index.json(上限 4 MB)と、JSON に入れたときに増える分
+// 部品と指針の取り込み。Storybook の index.json(上限 4 MB)と、JSON に入れたときに増える分。
+// 部品のパッケージ(.tgz、上限 5 MB)も、base64 にして同じ上限で受ける
 const MAX_GUIDES_BODY_BYTES = 8 * 1024 * 1024;
 
 const UI_DIR = path.join(STUDIO_ROOT, 'src', 'ui');
@@ -243,8 +244,8 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     const reviewMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/review(?:\/(start|choose|approve|build|skip|measure|back|restore))?$/.exec(url.pathname);
     if (reviewMatch && (reviewMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleReview(req, res, reviewMatch[1], reviewMatch[2]);
     // 自分のトークンをつなぐ(J4)、部品と指針をつなぐ(J5)。GET は今の状態。check は検査だけで何も書かない
-    const materialsMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/materials(?:\/(tokens|guides)(?:\/(check|remove|restore))?)?$/.exec(url.pathname);
-    if (materialsMatch && !(materialsMatch[2] === 'tokens' && materialsMatch[3] === 'restore')) {
+    const materialsMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/materials(?:\/(tokens|guides|packages)(?:\/(check|remove|restore))?)?$/.exec(url.pathname);
+    if (materialsMatch && !(materialsMatch[2] !== 'guides' && materialsMatch[3] === 'restore')) {
       const isRoot = url.pathname.endsWith('/materials');
       const action = isRoot ? 'view' : `${materialsMatch[2]}:${materialsMatch[3] ?? 'connect'}`;
       if (isRoot ? req.method === 'GET' : req.method === 'POST') return handleMaterials(req, res, materialsMatch[1], action);
@@ -401,16 +402,19 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
   async function handleMaterials(req, res, id, action) {
     try {
       if (action === 'view') return sendJson(res, 200, { materials: await materials.view(id) });
-      const guides = action.startsWith('guides:');
-      const body = await readJson(req, guides ? MAX_GUIDES_BODY_BYTES : MAX_TOKENS_BODY_BYTES);
+      const large = action.startsWith('guides:') || action.startsWith('packages:');
+      const body = await readJson(req, large ? MAX_GUIDES_BODY_BYTES : MAX_TOKENS_BODY_BYTES);
       if (action === 'tokens:check') return sendJson(res, 200, await materials.check(id, body ?? {}));
       if (action === 'guides:check') return sendJson(res, 200, await materials.checkGuides(id, body ?? {}));
+      if (action === 'packages:check') return sendJson(res, 200, await materials.checkPackage(id, body ?? {}));
       const run = {
         'tokens:connect': () => materials.connect(id, body ?? {}),
         'tokens:remove': () => materials.disconnect(id, body ?? {}),
         'guides:connect': () => materials.enableGuides(id, body ?? {}),
         'guides:remove': () => materials.disableGuides(id, body ?? {}),
         'guides:restore': () => materials.restoreGuides(id),
+        'packages:connect': () => materials.enablePackage(id, body ?? {}),
+        'packages:remove': () => materials.disablePackage(id, body ?? {}),
       }[action];
       const result = await run();
       const project = (await store.list()).find((p) => p.id === id);

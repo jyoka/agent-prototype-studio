@@ -11,7 +11,7 @@ import { VersionError, copyTree } from './versions.js';
 import { extractPrompt, extractSchema, phrasePrompt, phraseSchema } from './product-ai/claude-code.js';
 import { formatValue } from './product-ai/definition.js';
 import { licenseLabel } from './guides.js';
-import { materialChangedAt, readGuideMaterial, readTokenMaterial } from './materials.js';
+import { materialChangedAt, packageTarballPath, readGuideMaterial, readPackageMaterial, readTokenMaterial } from './materials.js';
 import { findPersonalData, findSecrets, redact, redactDeep } from './redact.js';
 import { BusyError } from './store.js';
 import { EVAL_RUN_FORMAT, failuresOf, outcomeOf, riskyText } from './sim/eval-run.js';
@@ -772,11 +772,45 @@ function describeGuides(records) {
 
 const GUIDE_TITLES = { guides: '指針の文', storybook: 'Storybook の部品の一覧' };
 
+// 有効にした部品のパッケージ(J5 の後半)。受け取ったファイル(.tgz)を materials/packages/ に写す。ソースはこの名前で import している
+// 名前の形のまま置く(@scope/ はフォルダーになる)。名前は 1 つの試作品で重ならないので、ファイルも重ならない
+const packageFileName = (record) => `materials/packages/${record.name}-${String(record.version).replace(/[^0-9A-Za-z.+-]/g, '-')}.tgz`;
+function describePackages(records) {
+  return records.map((record) => ({
+    name: record.name,
+    version: record.version,
+    file: packageFileName(record),
+    sha256: record.sha256,
+    source: redact(record.source),
+    license: redact(licenseLabel(record)),
+    detectedLicense: record.detectedLicense ? redact(record.detectedLicense) : null,
+    reason: redact(record.reason ?? ''),
+    enabledAt: record.enabledAt,
+    exports: record.exports ?? [],
+    externalCalls: record.networkCount ?? 0,
+  }));
+}
+
+function packageLines(packages) {
+  if (!Array.isArray(packages) || packages.length === 0) return [];
+  const lines = ['## 素材(部品のパッケージ)', ''];
+  for (const item of packages) {
+    lines.push(
+      `- ${code(item.name)} ${oneLine(item.version)}: 出典 ${oneLine(item.source)}、${oneLine(item.license)}${item.reason ? `、理由 ${oneLine(item.reason)}` : ''}`,
+      `  - 受け取ったファイル: ${code(item.file)}。ソースはこの名前で import している。本番では、このファイルか同じ版を入れる`,
+    );
+    if (item.externalCalls > 0) lines.push(`  - 外への通信(URL、fetch など)が ${item.externalCalls} か所あった。試作品からは届かなかったので、本番で使うなら送り先を確かめる`);
+  }
+  lines.push('');
+  return lines;
+}
+
 // source.json の写し。人が書いた文だけを伏せる
 function materialSourceCopy(source) {
   const clean = (entry) => ({ ...entry, ...Object.fromEntries(['fileName', 'source', 'reason', 'licenseName', 'license', 'from'].filter((key) => typeof entry?.[key] === 'string').map((key) => [key, redact(entry[key])])) });
   const guides = Object.fromEntries(Object.keys(GUIDE_TITLES).map((kind) => [kind, source[kind] ? { ...clean(source[kind]), files: (source[kind].files ?? []).map(clean) } : null]));
-  return { ...source, tokens: source.tokens ? clean(source.tokens) : null, ...guides, history: (source.history ?? []).map(clean) };
+  const packages = Array.isArray(source.packages) ? { packages: source.packages.map(clean) } : {};
+  return { ...source, tokens: source.tokens ? clean(source.tokens) : null, ...guides, ...packages, history: (source.history ?? []).map(clean) };
 }
 
 function guideLines(guides) {
@@ -794,7 +828,7 @@ function guideLines(guides) {
 }
 
 function materialLines(materials) {
-  const guideText = guideLines(materials?.guides);
+  const guideText = [...guideLines(materials?.guides), ...packageLines(materials?.packages)];
   const tokens = materials?.tokens;
   if (!tokens) return guideText;
   return [
@@ -1276,6 +1310,7 @@ export class ProjectHandoffs {
       const selected = this.aiSessions.connectionOf(id);
       const material = await readTokenMaterial(paths.root);
       const guides = await readGuideMaterial(paths.root);
+      const packages = await readPackageMaterial(paths.root);
       const { versions: versionList, working } = await this.versions.list(id);
       // 形式 4(J8)。決めたことと理由、質の見直し、人に見せた答え、AI 構成書(書き出す app/ の写しの指紋と比べる)、既定の素材
       const purpose = await describePurpose(paths);
@@ -1370,6 +1405,7 @@ export class ProjectHandoffs {
           default: defaultMaterial,
           ...(material ? { tokens: describeTokens(material) } : {}),
           ...(guides ? { guides: describeGuides(guides.records) } : {}),
+          ...(packages ? { packages: describePackages(packages.items) } : {}),
         },
       };
 
@@ -1387,7 +1423,7 @@ export class ProjectHandoffs {
               [MATERIAL_FILES.css, material.css],
             ]
           : []),
-        ...(material || guides ? [[MATERIAL_FILES.source, `${JSON.stringify(materialSourceCopy(material?.source ?? guides?.source ?? {}), null, 2)}\n`]] : []),
+        ...(material || guides || packages ? [[MATERIAL_FILES.source, `${JSON.stringify(materialSourceCopy(material?.source ?? guides?.source ?? packages?.source ?? {}), null, 2)}\n`]] : []),
         // 既定の素材の出典の記録とライセンスの文(Studio の materials/default/ の写し)
         ...(defaultMaterial ? await defaultMaterialFiles() : []),
         ...(definition
@@ -1419,6 +1455,11 @@ export class ProjectHandoffs {
       for (const [file, text] of outputs) {
         await fs.mkdir(path.dirname(path.join(tmp, file)), { recursive: true });
         await fs.writeFile(path.join(tmp, file), text);
+      }
+      // 部品のパッケージの受け取ったファイル。中の秘密は、有効にしたときに確かめた
+      for (const record of packages?.items ?? []) {
+        await fs.mkdir(path.dirname(path.join(tmp, ...packageFileName(record).split('/'))), { recursive: true });
+        await fs.copyFile(packageTarballPath(paths.root, record.sha256), path.join(tmp, ...packageFileName(record).split('/')));
       }
       await fs.rename(tmp, path.join(this.dir, name));
       this.log(`引き継ぎを書き出しました: ${id}(${name})`);

@@ -338,5 +338,6 @@ export default function App() {
 - 設計の案内は `projects/<試作品の ID>/.studio/design.json` に置く。6 つの段の案(データの段はデータ設計の案)、選んだ案、捨てた案、理由、場面の一覧、Studio が `app/` に書いたファイルの指紋、決めた時刻か飛ばした時刻が入る。
 - つないだ自分のトークンは `projects/<試作品の ID>/.studio/materials/` に置く。元のファイル(`tokens.json`)と、出典、理由、役割、履歴(`source.json`)が入る。
 - 有効にした部品と指針は、元を `projects/<試作品の ID>/.studio/materials/guides/` と `storybook/` に、写しを `app/design/` に置く。記録は同じ `source.json`。「これからの試作品全部」に有効にしたものは、データの置き場の `materials/` に置く。
+- 有効にした部品のパッケージは、中身を `projects/<試作品の ID>/.studio/materials/packages/node_modules/<名前>/` に、受け取ったファイルを `packages/tarballs/` に置く。記録は同じ `source.json` の `packages`。
 - 引き継ぎの書き出しは `~/PrototypeStudio/handoffs/` に置く。書き出すたびに新しいフォルダーを作る。要らなくなったら消してよい。書いたメモは `projects/<試作品の ID>/.studio/handoff-notes.json`。
 - 自分で試作品を足すときは、`~/PrototypeStudio/projects/<英小文字・数字・ハイフンの名前>/app/main.jsx` を置き、画面で選んで、「その他」の「開発者向けの詳細」の「ファイルから作り直す」を押す。

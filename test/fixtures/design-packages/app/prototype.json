@@ -1,0 +1,11 @@
+{
+  "formatVersion": 1,
+  "title": "部品のパッケージの見本(架空)",
+  "entry": "main.jsx",
+  "intent": {
+    "purpose": "有効にした部品のパッケージを、試作品が import して使えるかを確かめる",
+    "tryThis": ["架空のお店のカードが、部品集の見た目で出るかを見る"]
+  },
+  "constraints": ["データはすべて架空"],
+  "unimplemented": ["本番の案内の処理"]
+}

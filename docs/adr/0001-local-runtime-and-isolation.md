@@ -74,7 +74,7 @@ Studio サーバー(Node.js、1 プロセス、利用者の権限で動く)
    - ただし、`--bare` なしの `-p` は、`~/.claude/CLAUDE.md` などの CLAUDE.md、skills、auto memory を自動で読み込む(headless)。`--restricted` が外すのは設定ファイルだけなので、これらは送られ得る。`--safe-mode` で止める(下の「作る AI の起動」)。
 7. AI の実行が終わったら、サーバーが決まった手順を行う。
    - `app/` の検査: シンボリックリンク、許可しない名前(`.claude/`、`.mcp.json`、`.git`、`CLAUDE.md` など)、大きさとファイル数の上限。`CLAUDE.md` は保護されたパスではないので、AI が書けてしまう。書かれると、次の実行の指示に混ざる。
-   - ビルド: esbuild で `app/` を 1 つの classic script(IIFE)に束ね、`.studio/builds/<build-id>/` に置く。`<build-id>` は推測できない乱数にする。import の解決先は、`app/` の中と、Studio が同梱するライブラリだけに限る。プロジェクトの `tsconfig.json` やビルドの設定は読まない。ES modules にしないのは、opaque origin からの module の読み込みが CORS の要求(`Origin: null`)になり、`Access-Control-Allow-Origin` を付ける必要が出るため。
+   - ビルド: esbuild で `app/` を 1 つの classic script(IIFE)に束ね、`.studio/builds/<build-id>/` に置く。`<build-id>` は推測できない乱数にする。import の解決先は、`app/` の中と、Studio が同梱するライブラリだけに限る(J5 の後半で、その試作品で人が有効にした部品のパッケージを足した。下の「J5 の後半で決めたこと」)。プロジェクトの `tsconfig.json` やビルドの設定は読まない。ES modules にしないのは、opaque origin からの module の読み込みが CORS の要求(`Origin: null`)になり、`Access-Control-Allow-Origin` を付ける必要が出るため。
    - 診断: コンパイルのエラーを集める。
 8. 画面がプレビューの iframe を新しいビルドに切り替える。
 9. 試作品の実行時エラーと console は、iframe から親画面へメッセージで送る。親画面がサーバーに渡し、詳細の欄に出す。次の依頼で、AI に診断として渡せる。
@@ -146,7 +146,7 @@ cwd: ~/PrototypeStudio/projects/<id>/app/
 
 | 守り | 中身 | 防ぐもの |
 |---|---|---|
-| サーバーで実行しない | `npm install`、package.json の scripts、プロジェクトのビルド設定は使わない。使えるライブラリは Studio が同梱するもの(React と既定の素材。下の「J3 で決めたこと」)だけ | 依存パッケージやスクリプト経由で PC 上でコードが動くこと |
+| サーバーで実行しない | `npm install`、package.json の scripts、プロジェクトのビルド設定は使わない。使えるライブラリは Studio が同梱するもの(React と既定の素材。下の「J3 で決めたこと」)と、その試作品で人が有効にした部品のパッケージ(下の「J5 の後半で決めたこと」)だけ。部品のパッケージは Studio のコードが展開し、npm もパッケージのスクリプトも動かさない | 依存パッケージやスクリプト経由で PC 上でコードが動くこと |
 | 別ポートから配信 | プレビューは `<preview-port>` から、静的ファイルだけを配信する。Studio の API はこのポートに置かない | 試作品が Studio の API を同一 origin として呼ぶこと |
 | iframe の `sandbox` | `allow-scripts allow-forms`。`allow-same-origin`、`allow-top-navigation`、`allow-popups` は付けない | 親画面の DOM とストレージへのアクセス、ページの乗っ取り、新しいウィンドウ |
 | 試作品の CSP ヘッダー | `sandbox allow-scripts allow-forms; default-src 'none'; script-src <そのビルドの URL>; style-src <そのビルドの URL> 'unsafe-inline'; img-src <そのビルドの URL> data: blob:; connect-src 'none'; form-action 'none'; frame-ancestors http://127.0.0.1:<studio-port>`。CSP の `sandbox` は、プレビューの URL を直接開いても効く。`'self'` ではなくパスつきの URL にするのは、他のプロジェクトのビルドを読ませないため | 外部への通信(fetch、XHR、WebSocket、sendBeacon)、外部の画像やスクリプト、他のプロジェクトのファイル、Studio 以外の画面への埋め込み |
@@ -231,7 +231,8 @@ cwd: ~/PrototypeStudio/projects/<id>/app/
 | 結合 | 偽の CLI | 偽の CLI が stream-json を出し、ファイルを書き、受け取った argv、cwd、環境変数の名前を記録する。成功、失敗、時間切れ、拒否(`permission_denied`)、中断を再現する |
 | ブラウザ E2E(Playwright) | 作る、試す | 依頼、偽の CLI による変更、プレビューへの反映、エラーの表示 |
 | ブラウザ E2E | 悪意のある試作品 | 見本の試作品が、Studio の API への `fetch`、外部の画像、`localStorage`、`window.top` の書き換え、親画面の DOM の読み出し、自分自身の外部への移動、他のプロジェクトのビルドの読み込みを試みる。すべて失敗する。移動したときは iframe が作り直され、警告が出る |
-| ビルド | import の制限 | `app/` の外のファイルや、同梱していないパッケージを import すると、ビルドが失敗する |
+| ビルド | import の制限 | `app/` の外のファイルや、同梱していないパッケージを import すると、ビルドが失敗する。部品のパッケージは、有効にした試作品だけが import でき、パッケージの中から外のファイルや Studio にないパッケージを読むと失敗する(`test/integration/packages.test.js`) |
+| ブラウザ E2E | 部品のパッケージ | 架空のパッケージの外への通信(fetch、外の画像)が CSP で止まり、網に出ない。許していない試作品は import できない(`test/e2e/design-packages.spec.js`) |
 | 実機(許可と予算があるときだけ。#274) | Claude Code | 本人ログインで `--restricted` と `--safe-mode` が一緒に動く。`app/` の外への読み書きが拒否される。`app/.claude/settings.json` の hooks と `CLAUDE.md` が読まれない。中断の挙動 |
 
 ## Stripe の設計思想と範囲
@@ -463,6 +464,34 @@ AiSessions  会話を新しい設定で最初からにし、前の会話を 1 �
 - 外への通信は足していない。設計の案内は `.studio/design.json` に置く。`app/` の外なので、作る AI は書けない。
 - 理由と採らなかった案は [user-journey.md の 7 節](../design/user-journey.md#j2-で決めたことtask-3852026-11-02)。
 
+## J5 の後半で決めたこと(2026-11-17)
+
+部品のパッケージ(npm)を、試作品ごとに import できるようにした(jyoka/tasks#427)。上の「J3 で決めたこと」の「import を許す名前は `ALLOWED_PACKAGES` だけ」を広げる。運営者が 2026-11-17 に、直し方をエージェントが案として設計の文書に書き、そのとおりに作ってよいと決めた。比べた案と理由は [design-materials.md の「J5 の後半で決めたこと」](../design/design-materials.md#j5-の後半で決めたこと)。運営者が PR で確かめる。
+
+弱めたのは 1 点だけ。
+
+- ビルドの import の許す範囲に、その試作品で人が有効にした部品のパッケージを足した。名前はパッケージの名前(`@minato/ui` など)のまま。ほかの試作品からは import できない。
+  - 置き場所は試作品の `.studio/materials/packages/node_modules/<名前>/`。`app/` の外なので、作る AI は読めず、書けない。
+  - パッケージの中の import は、同梱のライブラリと、有効にしたパッケージと、そのパッケージの中のファイルだけ。同梱のライブラリは、試作品と同じ名前(`ALLOWED_PACKAGES` と `@radix-ui/colors/<色>.css`)だけで、中のファイルや `..` を含む名前は許さない。解いた先が Studio の `node_modules` やパッケージの置き場所の外なら、ビルドが止める。
+  - 置いた中身の指紋を、ビルドのたびに関門 G3 で確かめる。変わっていれば止め、作る AI には直せない印(`locked`)を付ける。
+
+変えないもの:
+
+- サーバーで実行しない。受け取るのは `npm pack` で作ったファイル(.tgz)だけ。展開は Studio のコード(gzip と tar を読むだけ)で行い、npm を呼ばない。リンク、パッケージの外を指す名前、中に入れた別のパッケージ(`node_modules/`、`bundleDependencies`)、大きさを変える pax の見出しは断る。大きさと数に上限がある。
+- インストールの時のスクリプト(`preinstall`、`install`、`postinstall`、`prepare` の仲間、`binding.gyp`)を持つパッケージは断る。Studio は動かさないが、本番の `npm install` では動くため。
+- 中で使うパッケージ(`dependencies`、`peerDependencies`)は、同梱のライブラリだけ。Studio は `npm install` しないので、ほかは入れない。
+- 部品のコードは、試作品の束に入り、`sandbox` の iframe と CSP の中でだけ動く。CSP は変えない(`connect-src 'none'`)。esbuild はコードを読むだけで動かさない。確かめるときの試しの組み立ても同じ。
+- 外への通信(URL、`fetch` などの通信の道具)は、検査で探して警告にする。消さない。試作品の CSP が止める。
+- 作る AI の道具と読める範囲は変えない。作る AI には、パッケージの名前、版、使える名前(export)と、守ることだけを決まりの文で渡す。
+- ライセンスは人の答えで決める。分からないと有効にできない。サーバーも 409 で断る。
+- 外への通信は足していない。npm のレジストリからは取らない。
+
+残る危険:
+
+- パッケージのコードは、生成コードと同じく信頼しない。試作品の中で動くので、層 2 の表の残る危険(WebRTC、DNS の先読み)は同じように残る。漏れ得るのは、今までどおり試作品の中のもの(架空データと試作の設計)だけ。
+- 引き継ぎに受け取ったファイル(.tgz)を入れる。本番でそれを入れるときの検査(版の照合、中身の見直し)は、本番の側の仕事になる。README に出典とライセンスと外への通信の数を書く。
+- 展開(tar を読む所)は Studio が書いたコード。壊れたファイルで止まることは単体のテストで確かめたが、わざと作った悪いファイルをすべて試したわけではない。
+
 ## 未決事項
 
 | 未決事項 | 決める人・場所 |
@@ -485,4 +514,5 @@ AiSessions  会話を新しい設定で最初からにし、前の会話を 1 �
 | AI が試作品の画面を見て操作する閉ループ(ヘッドレスのブラウザ) | [ADR-0002](0002-observer-and-harness.md) で決めた。観察器(Playwright の Chromium)を関門と作る AI が使う |
 | 配布の形(段階 2) | 利用者 |
 | 外から試作品を取り込むときの検査 | 共有を扱うカード |
+| 部品のパッケージを、これからの試作品全部に有効にするか。フォルダーや npm のレジストリから受けるか。中で使うパッケージを同梱のもの以外に広げるか | 運営者。後のカード([design-materials.md の「J5 の後半で決めたこと」](../design/design-materials.md#j5-の後半で決めたこと)) |
 | 複数の人が同時に作る形と、お客さんのデータの扱い | [ADR-0004](0004-shared-session-and-customer-data.md)(段 1 は採用、段 2 は未決。2026-10-29)。段 1 は、この ADR の決まりを変えない。段 2 を採るまで、この ADR の決まりが正 |

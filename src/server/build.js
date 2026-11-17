@@ -7,47 +7,22 @@ import { readScenarios } from '../observer/scenario.js';
 import { inspectApp } from './inspect.js';
 import { checkTokenUse } from './design-tokens.js';
 import { ENTRY_NAMES, readManifest } from './manifest.js';
-import { readGuideMaterial, readTokenMaterial } from './materials.js';
+import { ALLOWED_PACKAGES, NPM_LIBRARIES, RADIX_COLOR_CSS_LABEL, STUDIO_PACKAGES, isAllowedPackage } from './build-libraries.js';
+import { readGuideMaterial, readPackageMaterial, readTokenMaterial } from './materials.js';
+import { packageNameOf } from './packages.js';
 import { readAiDefinition } from './product-ai/definition.js';
 import { numbersIn } from './product-ai/guards.js';
 import { createBuildId } from './security.js';
 import { readSimulation } from './sim/composition.js';
 
-// 試作品が import できる、Studio が同梱するライブラリ。
-// studio-talk は Studio のコードの中の会話の枠(docs/design/agent-simulation.md の 3.8。src/runtime/studio-talk/)
-// @radix-ui と lucide-react は既定の素材(docs/design/design-materials.md の 3 節)。出典とライセンスは materials/default/source.json
-export const ALLOWED_PACKAGES = [
-  'react',
-  'react/jsx-runtime',
-  'react/jsx-dev-runtime',
-  'react-dom',
-  'react-dom/client',
-  'studio-talk',
-  '@radix-ui/themes',
-  '@radix-ui/themes/styles.css',
-  '@radix-ui/colors',
-  'lucide-react',
-];
-// Radix Colors の色ごとの CSS。ファイルは 100 を超えるので、形で許す。色の名前の外には出られない
-const RADIX_COLOR_CSS = /^@radix-ui\/colors\/[a-z]+(-dark)?(-alpha)?\.css$/;
-const RADIX_COLOR_CSS_LABEL = '@radix-ui/colors/<色>.css';
-
-function isAllowedPackage(spec) {
-  return ALLOWED_PACKAGES.includes(spec) || RADIX_COLOR_CSS.test(spec);
-}
+// 試作品が import できる、Studio が同梱するライブラリ(名前の一覧は build-libraries.js)
+export { ALLOWED_PACKAGES, NPM_LIBRARIES, STUDIO_PACKAGES };
 
 const RUNTIME_FILE = path.join(STUDIO_ROOT, 'src', 'runtime', 'runtime.js');
 const NODE_MODULES = path.join(STUDIO_ROOT, 'node_modules');
 // node_modules の外にある同梱のライブラリ。名前と、入口のファイル
 const STUDIO_TALK_DIR = path.join(STUDIO_ROOT, 'src', 'runtime', 'studio-talk');
 const STUDIO_MODULES = { 'studio-talk': path.join(STUDIO_TALK_DIR, 'index.js') };
-// 同梱のライブラリのうち、npm のパッケージでなく Studio のコードの中にあるものの名前
-export const STUDIO_PACKAGES = Object.keys(STUDIO_MODULES);
-// 同梱の npm のパッケージの名前(react/jsx-runtime のような中のファイルを除く)
-export const NPM_LIBRARIES = ALLOWED_PACKAGES.filter(
-  (p) => p.split('/').length === (p.startsWith('@') ? 2 : 1) && !STUDIO_PACKAGES.includes(p),
-);
-
 function isInside(parent, child) {
   const relative = path.relative(parent, child);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
@@ -57,37 +32,69 @@ function isBareSpecifier(spec) {
   return !spec.startsWith('.') && !spec.startsWith('/') && !path.isAbsolute(spec);
 }
 
-// import の解決先を、app/ の中と同梱のライブラリだけに限る(ADR-0001 の「ビルド」)。
-function restrictImports(appReal, nodeModulesReal, studioTalkReal) {
+// import の解決先を、app/ の中と同梱のライブラリと、この試作品で有効にした部品のパッケージだけに限る(ADR-0001 の「ビルド」)。
+// packages は有効にした部品のパッケージ(J5 の後半)。{ root: 置き場所, modulesReal: その node_modules の本当の場所, names: 名前の集まり }。なければ null
+function restrictImports(appReal, nodeModulesReal, studioTalkReal, packages = null) {
   return {
     name: 'studio-restrict-imports',
     setup(build) {
+      // 有効にした部品のパッケージを、その置き場所から解く。置き場所の外に出たら止める
+      async function resolvePackage(args) {
+        const result = await build.resolve(args.path, { kind: args.kind, resolveDir: packages.root, pluginData: { studioInner: true } });
+        if (result.errors.length > 0) return result;
+        if (!isInside(packages.modulesReal, result.path)) return { errors: [{ text: `部品のパッケージの外は読み込めません: ${args.path}` }] };
+        return result;
+      }
+      // 同梱のライブラリを Studio の node_modules から解く。外に出たら止める(名前の形で絞っているが、念のため)
+      const resolveBundled = async (args) => {
+        if (Object.hasOwn(STUDIO_MODULES, args.path)) return { path: await fs.realpath(STUDIO_MODULES[args.path]) };
+        const result = await build.resolve(args.path, { kind: args.kind, resolveDir: STUDIO_ROOT, pluginData: { studioInner: true } });
+        if (result.errors.length > 0) return result;
+        if (!isInside(nodeModulesReal, result.path)) return { errors: [{ text: `同梱のライブラリの外は読み込めません: ${args.path}` }] };
+        return result;
+      };
+      const isUrl = (spec) => /^([a-z][a-z0-9+.-]*:)?\/\//i.test(spec);
+      const isCssRef = (args) => args.kind === 'url-token' || args.kind === 'import-rule';
+
       build.onResolve({ filter: /.*/ }, async (args) => {
         if (args.pluginData?.studioInner || args.kind === 'entry-point') return undefined;
         // 同梱ライブラリの中の import は、そのまま解決させる
         if (isInside(nodeModulesReal, args.importer) || isInside(studioTalkReal, args.importer)) return undefined;
+        // 部品のパッケージの中の import。同梱のライブラリと、有効にした部品のパッケージと、パッケージの中のファイルだけ
+        if (packages && isInside(packages.modulesReal, args.importer)) {
+          if (/^data:/i.test(args.path)) return undefined;
+          if (isUrl(args.path)) {
+            if (isCssRef(args)) return { path: args.path, external: true };
+            return { errors: [{ text: `外部の URL は読み込めません: ${args.path}` }] };
+          }
+          if (isBareSpecifier(args.path)) {
+            const name = packageNameOf(args.path);
+            if (packages.names.has(name)) return resolvePackage(args);
+            // 同梱のライブラリは、試作品と同じ名前だけ(パッケージの中のファイルや .. を含む形は許さない)
+            if (isAllowedPackage(args.path)) return resolveBundled(args);
+            return { errors: [{ text: `部品のパッケージの中の「${args.path}」は使えません。中で使えるのは、Studio が同梱するライブラリと、有効にした部品のパッケージだけです` }] };
+          }
+          const result = await build.resolve(args.path, { kind: args.kind, importer: args.importer, resolveDir: args.resolveDir, pluginData: { studioInner: true } });
+          if (result.errors.length > 0) return result;
+          if (!isInside(packages.modulesReal, result.path)) return { errors: [{ text: `部品のパッケージの外は読み込めません: ${args.path}` }] };
+          return result;
+        }
         if (!isInside(appReal, args.importer)) {
           return { errors: [{ text: `app/ の外からの読み込みは扱えません: ${args.path}` }] };
         }
-        const isCss = args.kind === 'url-token' || args.kind === 'import-rule';
         if (/^data:/i.test(args.path)) return undefined;
-        if (/^([a-z][a-z0-9+.-]*:)?\/\//i.test(args.path)) {
+        if (isUrl(args.path)) {
           // CSS の外部 URL は残す。試作品の CSP が読み込みを止める
-          if (isCss) return { path: args.path, external: true };
+          if (isCssRef(args)) return { path: args.path, external: true };
           return { errors: [{ text: `外部の URL は読み込めません: ${args.path}` }] };
         }
         if (isBareSpecifier(args.path)) {
-          if (!isAllowedPackage(args.path)) {
-            return {
-              errors: [{ text: `「${args.path}」は使えません。使えるライブラリ: ${[...ALLOWED_PACKAGES, RADIX_COLOR_CSS_LABEL].join(', ')}` }],
-            };
-          }
-          if (Object.hasOwn(STUDIO_MODULES, args.path)) return { path: await fs.realpath(STUDIO_MODULES[args.path]) };
-          return build.resolve(args.path, {
-            kind: args.kind,
-            resolveDir: STUDIO_ROOT,
-            pluginData: { studioInner: true },
-          });
+          if (isAllowedPackage(args.path)) return resolveBundled(args);
+          if (packages?.names.has(packageNameOf(args.path))) return resolvePackage(args);
+          const enabled = packages ? [...packages.names] : [];
+          return {
+            errors: [{ text: `「${args.path}」は使えません。使えるライブラリ: ${[...ALLOWED_PACKAGES, RADIX_COLOR_CSS_LABEL, ...enabled].join(', ')}。部品のパッケージは、人が「部品と指針をつなぐ」で有効にした試作品だけで使えます` }],
+          };
         }
         const result = await build.resolve(args.path, {
           kind: args.kind,
@@ -177,8 +184,9 @@ export const BUILD_STAGES = ['inspect', 'contract', 'compile'];
 // 失敗したら、止まった段の名前を stage に、各誤りにも stage を付けて返す。
 // projectRoot を渡すと、そのプロジェクトのつないだトークンを関門 G3 で確かめ、CSS を app.css の最後に足す(materials.js)。
 // 有効にした部品と指針の写しも、関門 G3 で確かめる。
-// import の名前にしないので、作る AI が読み込みを消せず、書き出したソースも Studio の外の名前を持たない
-export async function buildApp({ appDir, buildsDir, projectRoot = null }) {
+// import の名前にしないので、作る AI が読み込みを消せず、書き出したソースも Studio の外の名前を持たない。
+// 有効にした部品のパッケージ(J5 の後半)は、packagesRoot(既定は projectRoot)の置き場所から import を解く。指紋は関門 G3 で確かめる
+export async function buildApp({ appDir, buildsDir, projectRoot = null, packagesRoot = projectRoot }) {
   const started = Date.now();
   const appDigest = digestSnapshot(await snapshotApp(appDir));
   const finish = (fields) => ({ ...fields, appDigest, durationMs: Date.now() - started, finishedAt: new Date().toISOString() });
@@ -209,6 +217,12 @@ export async function buildApp({ appDir, buildsDir, projectRoot = null }) {
   // 有効にした部品と指針の写し(app/design/)が変わっていないか(J5)
   const guides = projectRoot ? await readGuideMaterial(projectRoot) : null;
   if (guides?.problems.length > 0) return fail('contract', guides.problems.map((problem) => ({ ...problem, material: true })));
+  // 有効にした部品のパッケージの中身が、有効にしたときから変わっていないか(J5 の後半)
+  const packageMaterial = packagesRoot ? await readPackageMaterial(packagesRoot) : null;
+  if (packageMaterial?.problems.length > 0) return fail('contract', packageMaterial.problems.map((problem) => ({ ...problem, material: true })));
+  const packages = packageMaterial?.items.length > 0
+    ? { root: packageMaterial.root, modulesReal: await fs.realpath(packageMaterial.modulesDir), names: new Set(packageMaterial.items.map((item) => item.name)) }
+    : null;
   if (!manifest.entry) {
     return fail('contract', [{
       file: 'app/',
@@ -241,7 +255,7 @@ export async function buildApp({ appDir, buildsDir, projectRoot = null }) {
       // 元の名前は日本語や空白を含み得るので、配信できる名前にする
       assetNames: 'asset-[hash]',
       logLevel: 'silent',
-      plugins: [restrictImports(appReal, await fs.realpath(NODE_MODULES), await fs.realpath(STUDIO_TALK_DIR))],
+      plugins: [restrictImports(appReal, await fs.realpath(NODE_MODULES), await fs.realpath(STUDIO_TALK_DIR), packages)],
     });
   } catch (error) {
     if (Array.isArray(error.errors)) {
