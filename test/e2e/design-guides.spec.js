@@ -56,9 +56,9 @@ test('架空の指針の文で、案内の 4 歩が通る。外への URL は警
     const steps = section.getByRole('list', { name: '取り込みの案内の歩' });
     await expect(steps.locator('[aria-current="step"]')).toHaveText('聞く');
 
-    // 1. 聞く: 持っていないもの、まだつなげないものは、次にすることを出して進まない
+    // 1. 聞く: 選んだ形ごとに、次にすることを出す。誰の素材かと、使ってよいかを答えるまで進まない
     await section.getByRole('radio', { name: 'npm のパッケージ(部品のコード)' }).check();
-    await expect(section.locator('#guides-have-note')).toContainText('npm のパッケージ(部品のコード)は、まだつなげません');
+    await expect(section.locator('#guides-have-note')).toContainText('npm pack を動かして作ったファイル(.tgz)');
     await expect(section.getByRole('button', { name: '次へ(確かめる)' })).toBeDisabled();
     await section.getByRole('radio', { name: '分からない' }).check();
     await expect(section.locator('#guides-have-note')).toContainText('デザイナーに、次のように聞いてください');

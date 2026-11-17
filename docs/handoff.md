@@ -71,7 +71,7 @@
 | `scenarios` | シナリオ。下の「scenarios」 |
 | `evidence` | 最新の証拠の要約。下の「evidence」 |
 | `simulation` | 構成、ツール、前提、プロンプトの枠、場面と、最新の場面の回しの要約。下の「simulation」 |
-| `materials` | 素材の出典とライセンス。既定の素材(`default`)はいつも入る。つないだトークン(`tokens`、J4)と有効にした部品と指針(`guides`、J5)は、あるときだけ。下の「materials」 |
+| `materials` | 素材の出典とライセンス。既定の素材(`default`)はいつも入る。つないだトークン(`tokens`、J4)と有効にした部品と指針(`guides`、J5)と部品のパッケージ(`packages`、J5 の後半)は、あるときだけ。下の「materials」 |
 | `purpose` | 目的の文書(J1)。下の「purpose」 |
 | `design` | 設計の段ごとの決定と理由(J2)。下の「design」 |
 | `quality` | 質の見直しの結果(J6)。下の「quality」 |
@@ -278,8 +278,12 @@ AI 構成の審査([ai-architecture-review.md の 6 節](design/ai-architecture-
 | `guides[].source`、`license`、`reason`、`scope`、`enabledAt` | 誰の素材か、使ってよいか(ライセンスの答え)、有効にした理由、範囲(`project` か `all`)、有効にした日時 |
 | `guides[].files[]` | 写しの場所(`copy`)と中身の指紋(`sha256`) |
 | `guides[].componentCount`、`externalUrls` | 部品の数、外への URL の数 |
+| `packages[]` | 有効にした部品のパッケージ(J5 の後半)。ソースはこの名前で import している |
+| `packages[].name`、`version`、`file`、`sha256` | パッケージの名前と版、書き出しの中の受け取ったファイル(`materials/packages/<名前>-<版>.tgz`。`@scope/` の名前はフォルダーになる)、その指紋 |
+| `packages[].source`、`license`、`detectedLicense`、`reason`、`enabledAt` | 誰の素材か、使ってよいか(ライセンスの答え)、パッケージに書いてあったライセンス、有効にした理由、有効にした日時 |
+| `packages[].exports`、`externalCalls` | 使える名前(export)、外への通信(URL と通信の道具)の数 |
 
-`materials/source.json` には、トークンと部品と指針の、つないだ・外したの履歴が入る。人が書いた文(誰の素材か、理由、ライセンスの名前)は伏せる。
+`materials/source.json` には、トークンと部品と指針と部品のパッケージの、つないだ・外したの履歴が入る。人が書いた文(誰の素材か、理由、ライセンスの名前)は伏せる。
 
 ## 決まり
 

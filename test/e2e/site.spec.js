@@ -293,7 +293,7 @@ test.describe('LP', () => {
     await expect(page.locator('#features .section-head')).toContainText('人の確かめ(初めての人や現場の会で使えるか)は、まだです', SHOWN);
 
     const building = page.locator('#building .building-item');
-    const names = ['人の確かめと現場の通し', '本物の AI で案ごとに測る', 'AI の使いやすさの見直し', '何台もの PC で同時に作る', '部品のコードをつなぐ'];
+    const names = ['人の確かめと現場の通し', '本物の AI で案ごとに測る', 'AI の使いやすさの見直し', '何台もの PC で同時に作る'];
     await expect(building.locator('h3')).toHaveText(names, SHOWN);
     // どの項目にも「作っている」の印があり、絵と押す先はない(想像図を本物の画面として載せない)
     await expect(page.locator('#building .building-tag')).toHaveText(Array(names.length).fill('作っている'), SHOWN);
@@ -301,7 +301,7 @@ test.describe('LP', () => {
     await expect(page.locator('#building a')).toHaveCount(0);
     // 今できることの方に、作っているものの名前を混ぜない。作っているものに、畳んだ機能の名前を残さない
     for (const name of names) await expect(page.locator('#features')).not.toContainText(name);
-    for (const name of ['AI 構成の審査', '3 つの形の比べ', '記録と比べる表を主の画面に', '人に見せる', 'みんなで作る']) {
+    for (const name of ['AI 構成の審査', '3 つの形の比べ', '記録と比べる表を主の画面に', '人に見せる', 'みんなで作る', '部品のコードをつなぐ']) {
       await expect(building.locator('h3', { hasText: name })).toHaveCount(0);
     }
 

@@ -13,7 +13,7 @@ Prototype Studio を外に伝えるときの土台です。README の絵、LP �
 - 1 文は「**思いつきを AI プロダクトにすると、どんな作りになるか。動かして測り、人が承認してから作る。**」。英語は「**See how your idea works as an AI product, test it, and approve the architecture before you build.**」
 - この 1 文を、README の冒頭、LP の見出し、フッター、GitHub の説明、バナーで、同じ文のまま使う。変えるときは全部を一度に変える
 - 1 文は目的を言う。承認の段(AI 構成の審査)は動くが、どの機能も人の確かめがまだなので、1 文のそばにそう書く。伝えるものには「今できること」と「作っているもの」を分けて書く。jyoka/tasks#394 で、作っていたものの多くを今できることに畳んだ
-- 機能は、名詞の見出しと 2 行の説明のカードで伝える。今できること 14 枚と、作っているもの 5 つ(3 節)
+- 機能は、名詞の見出しと 2 行の説明のカードで伝える。今できること 14 枚と、作っているもの 4 つ(3 節)。「部品のコードをつなぐ」は jyoka/tasks#427 で作ったので、作っているものから外した。素材をつなぐ機能(トークン、指針、部品のパッケージ)は、LP のカードにせず README の特長に書く
 - 分解の絵は、AI の作りを 1 回のトークで見せ、7 つ目で人が承認する。本物の画面だけを使う(4 節)
 - 「理想の構成」と言わない。出すのは、日付と根拠のある、今日の一番良い推測と書く
 - 見た目は `assets/brand/tokens.css` の CSS の変数で決める。ライトの色は今の画面(`src/ui/studio.css`)と同じ値にした
@@ -151,7 +151,6 @@ Studio が何で、何が違うかを 1 文で言い切る。運営者が 2026-1
 | 本物の AI で案ごとに測る | 審査の画面から、構成の案ごとに本物の AI で場面を回して比べる。今の審査の画面から回せるのはお試しの AI だけで、本物の AI の数は試す欄の下の表かターミナルで回したときに出る。 | Measuring each proposal with the real model | Run evals for each setup proposal with the real model, right from the review screen. Today the review screen runs only the mock AI. Real-model numbers appear after you run them from the table under the try pane or in the terminal. | まだない(後のカード) |
 | AI の使いやすさの見直し | AI が試作品の画面を見て、使いやすさを判断する。質の見直しの表に行はあるが、今は「まだ見ていない」と出る。 | AI usability review | The AI looks at the prototype screens and judges usability. The quality review has a row for it, but today it says the item has not been checked. | まだない(後のカード) |
 | 何台もの PC で同時に作る | 何人もが自分の PC から同じ試作品にコメントし、同時に直す。今は 1 台の PC でみんなで使う形だけ。 | Building together on several devices | Several people comment on and edit the same prototype from their own devices at the same time. Today it works only with a group sharing one PC. | K7(まだない) |
-| 部品のコードをつなぐ | 自分の部品集の npm のパッケージを、検査して試作品から使えるようにする。今つなげるのは、トークン、指針の文、Storybook の部品の一覧だけ。 | Connecting component code | Check your own component library's npm package and let prototypes use it. Today you can connect tokens, written guidelines, and the Storybook component list only. | jyoka/tasks#427 |
 
 ### 3 つの問い
 

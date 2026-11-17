@@ -131,8 +131,8 @@ test('README は「今できること」と「作っているもの」を分け�
   const start = readme.indexOf('## はじめる');
   assert.ok(readme.indexOf('## 特長') < today && today < building && building < start);
   assert.doesNotMatch(readme.slice(building, start), /<img|<picture|!\[/);
-  // まだできないものだけが残る(jyoka/tasks#394 で畳んだ)
-  for (const word of ['人の確かめと現場の通し', '本物の AI で案ごとに測る', 'AI の使いやすさの見直し', '何台もの PC で同時に作る', '部品のコードをつなぐ']) {
+  // まだできないものだけが残る(jyoka/tasks#394 で畳んだ。部品のコードをつなぐは jyoka/tasks#427 で作った)
+  for (const word of ['人の確かめと現場の通し', '本物の AI で案ごとに測る', 'AI の使いやすさの見直し', '何台もの PC で同時に作る']) {
     assert.ok(readme.slice(building, start).includes(word), word);
   }
   // 動くもの(設計の案内、審査、質の見直し、人に見せる、みんなで作る)は、今できることに置き、作っているものの見出しに残さない
@@ -140,7 +140,7 @@ test('README は「今できること」と「作っているもの」を分け�
     assert.ok(readme.slice(today, building).includes(word), word);
   }
   const rows = [...readme.slice(building, start).matchAll(/^\| ([^|]+) \|/gm)].map((m) => m[1].trim());
-  for (const word of ['AI 構成の審査', '3 つの形の比べ', 'データの棚と RAG の判定', '記録と比べる表を主の画面に', '質の見直し', '人に見せる', 'みんなで作る']) {
+  for (const word of ['AI 構成の審査', '3 つの形の比べ', 'データの棚と RAG の判定', '記録と比べる表を主の画面に', '質の見直し', '人に見せる', 'みんなで作る', '部品のコードをつなぐ']) {
     assert.ok(!rows.includes(word), word);
   }
   // 1 文の後の 2〜3 行で、人の確かめはまだだと言う(1 文だけを読んで、確かめ済みと思わせない)

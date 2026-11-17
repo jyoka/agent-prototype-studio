@@ -150,7 +150,8 @@ const appDir = path.join(project.dir, 'app');
 const buildsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-evals-build-'));
 let build;
 try {
-  build = await buildApp({ appDir, buildsDir });
+  // 素材の見た目は使わない。有効にした部品のパッケージは import を解くのに要るので、置き場所だけ渡す
+  build = await buildApp({ appDir, buildsDir, packagesRoot: project.dir });
 } finally {
   await fs.rm(buildsDir, { recursive: true, force: true });
 }

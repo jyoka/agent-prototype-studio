@@ -639,7 +639,7 @@
          検査とライセンスの確かめは、AI ではなく決まった手順で行う。写しは試作品のフォルダーの design/ に置く -->
     <section aria-labelledby="guides-heading">
       <h3 id="guides-heading">部品と指針をつなぐ</h3>
-      <p class="muted">会社の指針の文や、Storybook の部品の一覧を、直す AI が読めるようにします。4 歩で進みます。Studio が決まった手順で確かめ、写しを試作品のフォルダーに置きます。写しは Studio だけが書きます。</p>
+      <p class="muted">会社の指針の文や、Storybook の部品の一覧を、直す AI が読めるようにします。部品のパッケージ(npm)は、この試作品で使えるようにします。4 歩で進みます。Studio が決まった手順で確かめます。指針の写しは試作品のフォルダーに、パッケージは Studio の中に置きます。どちらも Studio だけが書きます。</p>
       <div id="guides-enabled" class="guides-enabled" hidden></div>
       <p id="guides-message" class="versions-message" role="status" hidden></p>
       <ol id="guides-steps" class="guides-steps" aria-label="取り込みの案内の歩">
@@ -683,6 +683,11 @@
           <label for="guides-files">指針の文のファイル(.md。いくつでも選べます)</label>
           <input id="guides-files" type="file" multiple accept=".md,.markdown,text/markdown">
         </div>
+        <div id="guides-package-box">
+          <label for="guides-package">npm pack で作ったファイル(.tgz)</label>
+          <input id="guides-package" type="file" accept=".tgz,.gz,application/gzip">
+          <p class="muted">Studio は展開して確かめるだけです。パッケージのスクリプトもコードも、Studio では動かしません。部品のコードは、試作品の中だけで動きます。</p>
+        </div>
         <div id="guides-folder-box">
           <label for="guides-folder">Storybook を書き出したフォルダー</label>
           <input id="guides-folder" type="file" webkitdirectory>
@@ -711,6 +716,7 @@
           <legend>どこで使うか</legend>
           <label><input type="radio" name="guides-scope" value="project" checked> この試作品だけ</label>
           <label><input type="radio" name="guides-scope" value="all"> これからの試作品全部(この試作品にも入れます)</label>
+          <p id="guides-scope-note" class="muted" hidden>部品のパッケージは、今はこの試作品だけに有効にできます。</p>
         </fieldset>
         <label for="guides-reason">有効にする理由(書かなくても進めます)</label>
         <input id="guides-reason" type="text" maxlength="300" autocomplete="off">

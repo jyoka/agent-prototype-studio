@@ -4,6 +4,7 @@ import path from 'node:path';
 import { checkTokenUse, countTokenReferences, parseDesignTokens, ROLES, tokensCss, tokensGuide, TOKEN_LIMITS } from './design-tokens.js';
 import { checkGuideMaterial, GUIDE_LIMITS, guidesRule, KINDS, LICENSE_ANSWERS, licenseLabel, sha256 } from './guides.js';
 import { LIMITS as APP_LIMITS } from './inspect.js';
+import { checkPackage, digestFiles, isPackageName, PACKAGE_LIMITS, packagesRule, writeFiles } from './packages.js';
 
 // 自分の素材の置き場所(docs/design/user-journey.md の J4、J5)。トークン(J4)と、部品と指針(J5)。
 // 置き場所は .studio/materials/。.studio/ は Studio だけが書く場所で、作る AI は読み書きできない。
@@ -216,6 +217,58 @@ export async function readGuideMaterial(root) {
   return { records, problems, source, rule: guidesRule(records) };
 }
 
+// 部品のパッケージ(J5 の後半)の置き場所。.studio/materials/packages/node_modules/<名前>/ に展開した中身、
+// tarballs/<指紋>.tgz に受け取ったファイルを置く。作る AI は読めない(app/ の外)。ビルドが import をここから解く
+const packagesDir = (root) => path.join(materialsDir(root), 'packages');
+const packageDir = (root, name) => path.join(packagesDir(root), 'node_modules', ...name.split('/'));
+const tarballPath = (root, sha256Hex) => path.join(packagesDir(root), 'tarballs', `${sha256Hex}.tgz`);
+// 引き継ぎが受け取ったファイルを写すときに使う
+export const packageTarballPath = tarballPath;
+
+function packageRecords(source) {
+  return Array.isArray(source?.packages) ? source.packages.filter((record) => record && isPackageName(record.name) && typeof record.digest === 'string') : [];
+}
+
+// フォルダーの中のファイルを読む。リンクやふつうでないファイルがあれば null(Studio はリンクを置かない)
+async function readPackageTree(dir) {
+  const files = [];
+  async function walk(current, prefix) {
+    for (const entry of await fs.readdir(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) await walk(full, rel);
+      else if (entry.isFile()) files.push({ path: rel, data: await fs.readFile(full) });
+      else throw new Error('ふつうのファイルではありません');
+    }
+  }
+  const stat = await fs.lstat(dir).catch(() => null);
+  if (!stat?.isDirectory()) return null;
+  try {
+    await walk(dir, '');
+  } catch {
+    return null;
+  }
+  return files;
+}
+
+// 有効にした部品のパッケージを読む。有効にしていなければ null。
+// 関門 G3 で確かめるので、中身が記録の指紋と違う、なくなった、というときは problems に入れて返す(作る AI には直せない。locked)
+export async function readPackageMaterial(root) {
+  const source = await readSource(root);
+  const records = packageRecords(source);
+  if (records.length === 0) return null;
+  const problems = [];
+  for (const record of records) {
+    const files = await readPackageTree(packageDir(root, record.name));
+    // 受け取ったファイルは引き継ぎに写すので、なくなっていないかも確かめる
+    const tarball = typeof record.sha256 === 'string' && /^[0-9a-f]{64}$/.test(record.sha256) ? await fs.readFile(tarballPath(root, record.sha256)).catch(() => null) : null;
+    if (!files || digestFiles(files) !== record.digest || !tarball || sha(tarball) !== record.sha256) {
+      problems.push(guideProblem(`.studio/${DIR}/packages/node_modules/${record.name}`, `有効にした部品のパッケージ「${record.name}」の中身が、有効にしたときから変わっているか、なくなっています。素材は Studio の外から変えられません。その他の「部品と指針をつなぐ」で外して、有効にし直してください`));
+    }
+  }
+  return { items: records, problems, source, root: packagesDir(root), modulesDir: path.join(packagesDir(root), 'node_modules'), rule: packagesRule(records) };
+}
+
 // 外した写し、置き換えた写しの場所と指紋。版で戻すと、版の中から戻ってくることがある
 const MAX_RETIRED = 200;
 function retiredWith(source, files) {
@@ -263,11 +316,12 @@ export async function restoreGuideCopies(root, { pruneRetired = false } = {}) {
   return { restored, problems };
 }
 
-// 作る AI に足す決まりの文。トークン(J4)と、部品と指針(J5)。どちらもなければ null
+// 作る AI に足す決まりの文。トークン(J4)と、部品と指針と、部品のパッケージ(J5)。どれもなければ null
 export async function materialRule(root) {
   const tokens = await readTokenMaterial(root);
   const guides = await readGuideMaterial(root);
-  const parts = [tokens?.guide, guides?.rule].filter(Boolean);
+  const packages = await readPackageMaterial(root);
+  const parts = [tokens?.guide, guides?.rule, packages?.rule].filter(Boolean);
   return parts.length > 0 ? parts.join('\n') : null;
 }
 
@@ -328,6 +382,33 @@ function guideRecordView(record) {
   };
 }
 
+function packageRecordView(record) {
+  return {
+    name: record.name,
+    version: record.version,
+    source: record.source,
+    license: record.license,
+    licenseLabel: licenseLabel(record),
+    reason: record.reason,
+    enabledAt: record.enabledAt,
+    fileCount: record.fileCount ?? 0,
+    exports: (record.exports ?? []).slice(0, 60),
+    networkCount: record.networkCount ?? 0,
+  };
+}
+
+// 検査の結果のうち、画面に返すもの(展開した中身は返さない)
+function packageCheckView(check) {
+  const { files: _files, ...view } = check;
+  return view;
+}
+
+function decodeTarball(value) {
+  if (typeof value !== 'string' || value.length === 0) throw new MaterialError(400, 'invalid', 'npm pack で作ったファイル(.tgz)を選んでください');
+  if (value.length > Math.ceil((PACKAGE_LIMITS.maxTarballBytes * 4) / 3) + 4) throw new MaterialError(413, 'too-large', `ファイルが大きすぎます(上限 ${PACKAGE_LIMITS.maxTarballBytes / 1024 / 1024} MB)`);
+  return Buffer.from(value, 'base64');
+}
+
 function cleanText(value, max) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
@@ -366,7 +447,7 @@ export class ProjectMaterials {
     const material = await readTokenMaterial(paths.root);
     const source = await readSource(paths.root);
     const history = Array.isArray(source?.history) ? source.history.slice(-5) : [];
-    const base = { roles: this.roleList(), limitBytes: TOKEN_LIMITS.maxBytes, history, guides: await this.guidesView(paths.root, source) };
+    const base = { roles: this.roleList(), limitBytes: TOKEN_LIMITS.maxBytes, history, guides: await this.guidesView(paths.root, source), packages: await this.packagesView(paths.root) };
     if (!material) return { ...base, connected: null, problems: [] };
     if (material.problems.length > 0) return { ...base, connected: null, problems: material.problems.map((p) => p.text) };
     const { record } = material;
@@ -399,7 +480,100 @@ export class ProjectMaterials {
     };
   }
 
-  // 作る AI に足す決まりの文。トークンと、部品と指針。どれもなければ null
+  // 部品のパッケージの画面の中身(J5 の後半)。この試作品で有効にしたものだけ
+  async packagesView(root) {
+    const material = await readPackageMaterial(root);
+    return {
+      items: (material?.items ?? []).map(packageRecordView),
+      problems: material?.problems.map((p) => p.text) ?? [],
+      limits: { maxTarballBytes: PACKAGE_LIMITS.maxTarballBytes, maxPackages: PACKAGE_LIMITS.maxPackages },
+    };
+  }
+
+  // 部品のパッケージの検査だけ。何も残さない(案内の「2. 確かめる」と「3. 見本で試す」)
+  async checkPackage(id, { tarball, fileName, answers } = {}) {
+    await this.store.requireProject(id);
+    return { check: packageCheckView(await checkPackage({ tarball: decodeTarball(tarball), fileName: cleanText(fileName, MAX_NAME), answers })) };
+  }
+
+  // 部品のパッケージを、この試作品だけに有効にする(案内の「4. 有効にする」)。検査をもう一度行い、ライセンスが分からなければ断る。
+  // パッケージのスクリプトもコードも動かさない。中身は .studio/ に置くので、作る AI は読めない
+  async enablePackage(id, { tarball, fileName, answers, source, reason, scope = 'project' } = {}) {
+    const paths = await this.store.requireProject(id);
+    if (scope !== 'project') throw new MaterialError(400, 'invalid', '部品のパッケージは、今はこの試作品だけに有効にできます');
+    const buffer = decodeTarball(tarball);
+    const check = await checkPackage({ tarball: buffer, fileName: cleanText(fileName, MAX_NAME), answers });
+    if (!check.ok) return { enabled: false, check: packageCheckView(check), materials: await this.view(id) };
+    if (!check.license.ok) throw new MaterialError(409, 'license-unknown', check.license.reason);
+    const owner = cleanText(source, MAX_SOURCE);
+    if (!owner) throw new MaterialError(400, 'invalid', '誰の素材かを書いてください。引き継ぎの出典になります');
+    this.store.claimVersions(id);
+    try {
+      const previous = await readSource(paths.root);
+      const others = packageRecords(previous).filter((record) => record.name !== check.name);
+      if (others.length >= PACKAGE_LIMITS.maxPackages) throw new MaterialError(409, 'too-many', `部品のパッケージは、1 つの試作品に ${PACKAGE_LIMITS.maxPackages} 個までです。使わないものを外してください`);
+      const before = packageRecords(previous).find((record) => record.name === check.name);
+      const now = new Date().toISOString();
+      const record = {
+        kind: 'package',
+        name: check.name,
+        version: check.version,
+        source: owner,
+        license: check.license.license,
+        licenseName: check.license.licenseName,
+        detectedLicense: check.license.detected,
+        reason: cleanText(reason, MAX_REASON),
+        scope: 'project',
+        enabledAt: now,
+        fileName: cleanText(fileName, MAX_NAME),
+        sha256: check.sha256,
+        digest: digestFiles(check.files),
+        fileCount: check.fileCount,
+        bytes: check.bytes,
+        exports: check.exports,
+        networkCount: check.networkCount,
+      };
+      // 中身と元のファイルを置いてから、記録を書く(途中で止まっても、関門が気づいて止める)
+      await fs.rm(packageDir(paths.root, check.name), { recursive: true, force: true });
+      await writeFiles(packageDir(paths.root, check.name), check.files);
+      await fs.mkdir(path.dirname(tarballPath(paths.root, check.sha256)), { recursive: true });
+      await writeAtomic(tarballPath(paths.root, check.sha256), buffer);
+      if (before?.sha256 && before.sha256 !== check.sha256) await fs.rm(tarballPath(paths.root, before.sha256), { force: true });
+      const entry = { action: 'enable', kind: 'package', name: record.name, version: record.version, at: now, source: record.source, reason: record.reason, scope: 'project', license: licenseLabel(record), sha256: record.sha256 };
+      await writeSourceIn(materialsDir(paths.root), previous, { packages: [...others, record], changedAt: now }, [entry]);
+      this.log(`部品のパッケージを有効にしました: ${id}(${record.name} ${record.version})`);
+      const build = await this.store.build(id, { byVersions: true });
+      return { enabled: true, check: packageCheckView(check), build: buildView(build), materials: await this.view(id) };
+    } finally {
+      this.store.releaseVersions(id);
+    }
+  }
+
+  // 部品のパッケージを外す。試作品がまだ import していれば、ビルドが止まる(画面で知らせる)
+  async disablePackage(id, { name, reason } = {}) {
+    const paths = await this.store.requireProject(id);
+    if (!isPackageName(name)) throw new MaterialError(400, 'invalid', '外す部品のパッケージを選んでください');
+    this.store.claimVersions(id);
+    try {
+      const previous = await readSource(paths.root);
+      const record = packageRecords(previous).find((item) => item.name === name);
+      if (!record) throw new MaterialError(404, 'not-found', `部品のパッケージ「${name}」は有効になっていません`);
+      const now = new Date().toISOString();
+      await fs.rm(packageDir(paths.root, name), { recursive: true, force: true });
+      // @scope/ のフォルダーが空になったら消す
+      if (name.startsWith('@')) await fs.rmdir(path.dirname(packageDir(paths.root, name))).catch(() => {});
+      if (record.sha256) await fs.rm(tarballPath(paths.root, record.sha256), { force: true });
+      const rest = packageRecords(previous).filter((item) => item.name !== name);
+      await writeSourceIn(materialsDir(paths.root), previous, { packages: rest.length > 0 ? rest : null, changedAt: now }, [{ action: 'disable', kind: 'package', name, version: record.version, at: now, source: record.source, reason: cleanText(reason, MAX_REASON), scope: 'project' }]);
+      this.log(`部品のパッケージを外しました: ${id}(${name})`);
+      const build = await this.store.build(id, { byVersions: true });
+      return { build: buildView(build), materials: await this.view(id) };
+    } finally {
+      this.store.releaseVersions(id);
+    }
+  }
+
+  // 作る AI に足す決まりの文。トークンと、部品と指針と、部品のパッケージ。どれもなければ null
   async guide(id) {
     const paths = await this.store.requireProject(id);
     return materialRule(paths.root);
