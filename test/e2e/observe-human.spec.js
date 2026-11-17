@@ -1,10 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { chooseSample, chooseTestRequest, closeMore, expect, expectNoDevWords, expectReadableText, launchStudio, openCheck, ROOT, SAMPLES, test } from './studio.js';
+import { chooseSample, chooseTestRequest, closeMore, expect, expectNoDevWords, expectReadableText, launchStudio, openCheck, ROOT, SAMPLES, test, goStage } from './studio.js';
 
 // 人の「確かめる」(docs/design/harness.md の 3.1、8 節の P27)。利用者が画面から、表示中の試作品を自動で確かめる。
 // 作るループの関門と同じ観察の入口を使い、同じ形の report を書き、作る run と同じ形の結果の帯で出す(S5)。
-// 実モデルは呼ばない。直す AI は偽接続(STUDIO_AGENT=fake)、本物の AI で確かめるときの試作品の中の AI は偽の CLI
+// 実モデルは呼ばない。作る AI は偽接続(STUDIO_AGENT=fake)、本物の AI で確かめるときの試作品の中の AI は偽の CLI
 // (test/fixtures/fake-claude.js)。観察器は Playwright の Chromium
 
 // 「分かるか」の確かめ(ux-redesign.md 9 節)のスクリーンショットの置き場。test-results/ は git が無視する
@@ -171,14 +171,15 @@ test('引き出しの「試作品を自動で確かめる」: お試しの AI �
     // 作る run の間は、引き出しのボタンも帯の「もう一度確かめる」も押せない(サーバーも 409 で断る)
     await chooseTestRequest(page, 'ゆっくり進めて');
     await page.getByRole('button', { name: '送る' }).click();
-    await expect(page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '止める' })).toBeVisible();
+    await expect(page.getByRole('region', { name: '作る AI', exact: true }).getByRole('button', { name: '止める' })).toBeVisible();
     await expect(checkBand.getByRole('button', { name: AGAIN })).toBeDisabled();
     await openCheck(page);
     await expect(section.getByRole('button', { name: CHECK })).toBeDisabled();
     const refused = await studio.post(`/api/projects/${id}/checks`, {});
     expect(refused.status).toBe(409);
-    await closeMore(page);
-    await page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '止める' }).click();
+    // 段 7 では、次の一手の帯の弱いボタン「止める」で止める(作る AI の欄の「止める」と同じ操作。ui-ux-v2.md の 4.3)
+    await page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '止める' }).click();
+    await goStage(page, '作る');
     await expect(items(page).last().locator('.run-status')).toHaveText('止めました', { timeout: 15_000 });
     await expect(checkBand.getByRole('button', { name: AGAIN })).toBeEnabled();
   } finally {

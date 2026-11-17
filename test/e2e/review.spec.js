@@ -13,7 +13,7 @@ const STEPS = ['problem', 'users', 'scenes', 'data', 'composition', 'screens'];
 const readJson = async (file) => JSON.parse(await fs.readFile(file, 'utf8'));
 const projectRoot = (home, id) => path.join(home, 'projects', id);
 
-// 案を出す AI は偽の claude(test/fixtures/fake-claude.js)、作る AI は偽の直す AI(src/agent/fake-claude.js)。
+// 案を出す AI は偽の claude(test/fixtures/fake-claude.js)、作る AI は偽の作る AI(src/agent/fake-claude.js)。
 // STUDIO_AGENT を書かない起動(手元の Claude Code を使う既定)と同じ道を通り、同意も本物と同じく要る
 async function writeFakeClaude(home) {
   const bin = path.join(home, 'bin', 'claude');

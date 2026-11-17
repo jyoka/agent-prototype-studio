@@ -158,7 +158,7 @@ export class ProjectShows {
     const list = await this.versions.list(id);
     let version = list.working.files === 'saved' ? list.versions.find((v) => v.id === list.working.versionId) : null;
     // 今の状態が表示できない版と同じなら、画面には前に表示できた状態が出ている。見せているものと答えが食い違うので、見せない
-    if (version && !version.builds) throw new ShowError(422, 'build', '今の状態は表示できないので、見せられません。「言葉で直す」で直してもらってから見せてください');
+    if (version && !version.builds) throw new ShowError(422, 'build', '今の状態は表示できないので、見せられません。「作る AI」の欄で直してもらってから見せてください');
     if (version?.kind === 'auto') version = null;
     let savedNow = false;
     if (!version) {

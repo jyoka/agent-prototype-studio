@@ -7,8 +7,8 @@ import { chooseSample, chooseTestRequest, expect, expectNoDevWords, expectReadab
 
 // 「分かるか」の確かめ(ux-redesign.md 9 節)のスクリーンショットの置き場。test-results/ は git が無視する
 const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
-const FIXED_TEXT = '終わりました。確かめて見つけた問題を、直す AI が直しました';
-const FAILED_TEXT = '終わりました。直す AI が直しきれませんでした。試作品のファイルに誤りがあり、新しい状態を表示できません';
+const FIXED_TEXT = '終わりました。確かめて見つけた問題を、作る AI が直しました';
+const FAILED_TEXT = '終わりました。作る AI が直しきれませんでした。試作品のファイルに誤りがあり、新しい状態を表示できません';
 
 // 結果の帯(harness.md の 7.2、P26)
 function evidenceBand(run) {
@@ -51,7 +51,7 @@ test('壊れる依頼でも、Studio が失敗を直す依頼にして返し、�
     // 本文は利用者の言葉。関門の名前とファイルの名前は、実行ごとの「開発者向け」にだけ出す(ux-redesign.md 4 節)
     const dev = run.locator('.run-dev');
     await expect(run.locator('[data-kind="build-failed"]')).toContainText('試作品を表示できません');
-    await expect(run.locator('[data-kind="round"]')).toHaveText(/確かめると「表示の準備」で問題が見つかったので、直す AI にもう一度直してもらいます\(1 回目。2 回まで\)。/);
+    await expect(run.locator('[data-kind="round"]')).toHaveText(/確かめると「表示の準備」で問題が見つかったので、作る AI にもう一度直してもらいます\(1 回目。2 回まで\)。/);
     await expect(dev.locator('[data-dev-kind="round"]')).toContainText('直すラウンド 1/2: 作る AI を起動し直す(起動 2/3 回目)。');
     await expect(run.locator('[data-kind="round"] .who')).toHaveText('もう一度直す');
     await expect(run.locator('[data-kind="fix-request"]')).toContainText('伝えたのは、あなたの依頼、問題の中身、変わったファイルの名前だけです');
@@ -60,7 +60,7 @@ test('壊れる依頼でも、Studio が失敗を直す依頼にして返し、�
     await expect(run.locator('.bubble.agent').filter({ hasText: 'Studio の直す依頼を読みました' })).toBeVisible();
     await expect(run.locator('[data-kind="launch-ok"]')).toBeVisible();
     await expect(run.locator('[data-kind="gates"]')).toHaveText(
-      /Studio が確かめた結果\(直す AI が 1 回直した後\): .*表示の準備: 問題なし、AI の場面で動くか: 問題なし\(確かめる場面なし\)、開いて表示できるか: 問題なし/,
+      /Studio が確かめた結果\(作る AI が 1 回直した後\): .*表示の準備: 問題なし、AI の場面で動くか: 問題なし\(確かめる場面なし\)、開いて表示できるか: 問題なし/,
     );
     await expect(dev.locator('[data-dev-kind="gates"]')).toContainText('G4 ビルド: 通った、GE 場面: 通った(場面なし)、G5 起動の確認: 通った');
     await expect(run.locator('[data-kind="gave-up"]')).toHaveCount(0);
@@ -99,7 +99,7 @@ test('作る run の結果の帯に、状態、確かめた画面、直した回
     const run = lastRun(page);
     const band = evidenceBand(run);
     await expect(band.locator('.run-status')).toHaveText(FIXED_TEXT, { timeout: 20_000 });
-    await expect(band).toContainText('直す AI が直した回数: 1 回(2 回まで)');
+    await expect(band).toContainText('作る AI が直した回数: 1 回(2 回まで)');
     // 確かめた 3 つの画面幅の小さな画像。中身は開く操作の中で、最初は閉じている
     await expectShotsLoaded(band, 3);
     await expect(band.getByRole('list', { name: '確かめた画面' })).toContainText('パソコン(幅 1280)');
@@ -133,7 +133,7 @@ test('作る run の結果の帯に、状態、確かめた画面、直した回
       '決めた手順で動くか: 問題なし',
     ]);
     await expect(band.getByRole('list', { name: '「起動して描画が空でなく、エラーがない」の手順' })).toContainText('描画が空でない: 通った');
-    await expect(band).toContainText('1 回目: 「表示の準備」で問題が見つかったので、直す AI に直してもらいました');
+    await expect(band).toContainText('1 回目: 「表示の準備」で問題が見つかったので、作る AI に直してもらいました');
     const fixText = band.locator('details.evidence-raw');
     await fixText.locator('summary').click();
     await expect(fixText.locator('pre')).toContainText('前の依頼: 壊して');
@@ -178,7 +178,7 @@ test('次の依頼の後、前の証拠に「この後に変わりました」�
     await expect(firstBand.locator('.evidence-stale')).toHaveText('この後に変わりました。この結果は、今の試作品より前のものです。');
     await expect(firstBand).toHaveAttribute('data-stale', 'true');
     await expect(second).toHaveAttribute('data-stale', 'false');
-    await expect(second).toContainText('直す AI が直そうとした回数: 2 回(2 回まで)');
+    await expect(second).toContainText('作る AI が直そうとした回数: 2 回(2 回まで)');
     // 帯の見える文字に開発の言葉がない(U3)。直しきれないときは画面を撮れていないので、画像はない
     await expectNoDevWords(second);
     await expectNoDevWords(firstBand);
@@ -191,7 +191,7 @@ test('次の依頼の後、前の証拠に「この後に変わりました」�
     const gates = second.getByRole('list', { name: '確かめたこと' });
     await expect(gates.locator('> li[data-status="failed"]')).toContainText('表示の準備: 問題あり');
     await expect(gates.locator('> li[data-status="failed"]')).toContainText('誤り:');
-    await expect(second).toContainText('2 回目: 「表示の準備」で問題が見つかったので、直す AI に直してもらいました');
+    await expect(second).toContainText('2 回目: 「表示の準備」で問題が見つかったので、作る AI に直してもらいました');
   } finally {
     await studio.stop();
   }
@@ -207,7 +207,7 @@ test('直せない作る AI は、起動 3 回で止まり、失敗と証拠を�
 
     await sendRequest(page, '壊して、直せないふりをして');
     const run = lastRun(page);
-    await expect(run.locator('[data-kind="gave-up"]')).toHaveText(/直す AI が 2 回直そうとしましたが、「表示の準備」の問題が残っています。ここで止めました。/, { timeout: 20_000 });
+    await expect(run.locator('[data-kind="gave-up"]')).toHaveText(/作る AI が 2 回直そうとしましたが、「表示の準備」の問題が残っています。ここで止めました。/, { timeout: 20_000 });
     await expect(run.locator('.run-dev [data-dev-kind="gave-up"]')).toContainText('直すラウンドを 2 回行ったが、G4 ビルドで失敗したまま。');
     await expect(run.locator('.run-status')).toHaveText(FAILED_TEXT);
     await expect(run.locator('[data-kind="round"]')).toHaveCount(2);
@@ -246,7 +246,7 @@ test('シナリオの関門 G6 の失敗を直す依頼にして返し、作る 
     await expect(dev.locator('[data-dev-kind="fix-request"]')).toContainText('G6 シナリオの失敗(シナリオ「見出しが出る」(app/scenarios/heading.json)の 1 番目の手順で失敗しました)');
     await expect(run.locator('.bubble.agent').filter({ hasText: '問題のあったところ: 決めた手順で動くか' })).toBeVisible();
     await expect(run.locator('[data-kind="scenarios-ok"]')).toContainText('Studio がいつも確かめる手順 1 本と、この試作品の手順 1 本が、すべて思ったとおりに動きました');
-    await expect(run.locator('[data-kind="gates"]')).toHaveText(/Studio が確かめた結果\(直す AI が 1 回直した後\): .*開いて表示できるか: 問題なし、決めた手順で動くか: 問題なし$/);
+    await expect(run.locator('[data-kind="gates"]')).toHaveText(/Studio が確かめた結果\(作る AI が 1 回直した後\): .*開いて表示できるか: 問題なし、決めた手順で動くか: 問題なし$/);
     // 直すラウンドで変わったのは見出しだけ。シナリオは変わっていない
     await expect(run.locator('[data-kind="scenarios-changed"]')).toHaveCount(0);
 
@@ -270,7 +270,7 @@ test('直すラウンドでシナリオを弱めて通すと、「確かめ方�
     await sendRequest(page, 'シナリオを足して、見出しを崩して、シナリオを弱めて直して');
     const run = lastRun(page);
     await expect(run.locator('[data-kind="scenarios-changed"]')).toHaveText(
-      /直す AI が直すときに、決めた手順を変えました\(1 回目\)。手順を弱めたり消したりして通していないか、確かめてください。/,
+      /作る AI が直すときに、決めた手順を変えました\(1 回目\)。手順を弱めたり消したりして通していないか、確かめてください。/,
       { timeout: 60_000 },
     );
     await expect(run.locator('.run-dev [data-dev-kind="scenarios-changed"]')).toContainText(

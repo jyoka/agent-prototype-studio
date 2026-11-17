@@ -5,8 +5,8 @@ import { ROOT, chooseProject, chooseTestRequest, closeMore, expect, launchStudio
 // 自分のトークンをつなぐ(docs/design/user-journey.md の J4)。作る AI は偽接続(STUDIO_AGENT=fake)。トークンと見本は架空
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'design-tokens');
 const TOKENS_FILE = path.join(FIXTURE, 'tokens.json');
-const FAILED_TEXT = '終わりました。直す AI が直しきれませんでした。つないだ素材と合わないところがあります';
-const FIXED_TEXT = '終わりました。確かめて見つけた問題を、直す AI が直しました';
+const FAILED_TEXT = '終わりました。作る AI が直しきれませんでした。つないだ素材と合わないところがあります';
+const FIXED_TEXT = '終わりました。確かめて見つけた問題を、作る AI が直しました';
 const GREEN = 'rgb(0, 128, 64)';
 
 async function writeSample(home, id = 'minato') {

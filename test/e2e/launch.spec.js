@@ -101,7 +101,7 @@ test('npm start で起動し、ブラウザでサンプルの試作品を操作�
   }
 });
 
-test('STUDIO_AGENT を書かずに起動すると自動で、Claude Code がなければ直す AI は使えないと出す', async ({ page, home }) => {
+test('STUDIO_AGENT を書かずに起動すると自動で、Claude Code がなければ作る AI は使えないと出す', async ({ page, home }) => {
   const studio = await launchStudio(home, { env: { STUDIO_AGENT: undefined, STUDIO_CLAUDE_BIN: path.join(home, 'no-such-claude') } });
   try {
     // URL の行の後の表示は、別の書き込みで少し遅れて届くことがある(macOS のパイプは非同期)
@@ -141,7 +141,7 @@ test('自動で偽の claude を指すと、ログインしていれば Claude C
   }
 });
 
-test('自動で Claude Code にログインしていなければ、直す AI は使えないと出す', async ({ page, home }) => {
+test('自動で Claude Code にログインしていなければ、作る AI は使えないと出す', async ({ page, home }) => {
   test.skip(process.platform === 'win32', '偽の claude(Node のスクリプト)を直接起動できないため');
   const studio = await launchStudio(home, { env: { STUDIO_AGENT: undefined, STUDIO_CLAUDE_BIN: FAKE, FAKE_CLAUDE_AUTH: 'logged-out' } });
   try {

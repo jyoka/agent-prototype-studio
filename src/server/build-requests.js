@@ -82,7 +82,7 @@ const GATE_WORDS = {
   scenarios: '決めた手順で動くか',
 };
 const GATE_RESULT_WORDS = { passed: '問題なし', failed: '問題あり', unverified: '確かめられませんでした', unchanged: '変わっていません', skipped: '行っていません' };
-const FIX_AI = '直す AI';
+const FIX_AI = '作る AI';
 const gateWords = (gate) => `「${GATE_WORDS[gate.name] ?? gate.label}」`;
 const gateName = (gate) => `${gate.id} ${gate.label}`;
 // 試作品を開くと出た誤りの種類(利用者の言葉)。ERROR_KIND_TEXT(直す依頼の文)とは別に持つ
@@ -339,6 +339,9 @@ export class BuildRequests {
     // 節 fix は終わるときに次のラウンドへ進めるので、ラウンドの番号は入るときにとる
     const round = run.round;
     this.onNode({ projectId: id, runId: run.id, node: node.name, kind: node.kind });
+    // 今の節。画面の「今していること」の列が、どの関門を確かめているかを出すのに使う(ui-ux-v2.md の 4.3)。run.json には入れない
+    run.current = { node: node.name, round };
+    this.touch(id, run);
     return (outcome) => {
       run.nodes.push({ name: node.name, kind: node.kind, ...(node.gate ? { gate: node.gate } : {}), round, startedAt: new Date(started).toISOString(), durationMs: Date.now() - started, outcome });
     };
@@ -379,6 +382,8 @@ export class BuildRequests {
       agent: this.agentLabel,
       status: 'running',
       startedAt: new Date(acceptedAt).toISOString(),
+      // 今の節({ node, round })。終わると null
+      current: { node: 'accept', round: 1 },
       finishedAt: null,
       auth: null,
       items: [],
@@ -430,6 +435,7 @@ export class BuildRequests {
       })
       .finally(() => {
         run.finishedAt ??= new Date().toISOString();
+        run.current = null;
         this.active.delete(id);
         this.store.releaseRun(id);
         this.touch(id, run);
@@ -1025,7 +1031,7 @@ export class BuildRequests {
     // つないだ素材のファイル自体の誤りは app/ の外にあり、作る AI には直せない。起動しても料金がかかるだけなので止める
     if (failed.errors?.some((error) => error.locked)) {
       run.status = 'failed';
-      this.addItem(id, run, 'gave-up', `つないだ素材のファイルに問題があります。${FIX_AI} には直せないので、ここで止めました。その他の「自分のトークン」か「部品と指針をつなぐ」で、書いてある直し方に従ってください。`, {
+      this.addItem(id, run, 'gave-up', `つないだ素材のファイルに問題があります。${FIX_AI} には直せないので、ここで止めました。上の帯の「素材」の「自分のトークンをつなぐ」か「部品と指針をつなぐ」で、書いてある直し方に従ってください。`, {
         detail: `${gateName(failed)}: つないだ素材のファイルは app/ の外にあるので、直すラウンドは行わない。`,
       });
       return { next: 'evidence', outcome: 'gave-up' };
@@ -1253,7 +1259,7 @@ export class BuildRequests {
     this.addItem(id, run, 'ai-settings', text.filter(Boolean).join('\n'), detail.length > 0 ? { detail: detail.join('\n') } : {});
   }
 
-  // 直す AI が失敗したときの、利用者の文(text)と、開発者向けの文(detail。接続の名前、Claude Code の返した文、終了コード)
+  // 作る AI が失敗したときの、利用者の文(text)と、開発者向けの文(detail。接続の名前、Claude Code の返した文、終了コード)
   failureText(result, exit) {
     const label = this.agentLabel;
     const again = 'もう一度送ってください。続くときは、依頼を小さく分けて送ってください。';

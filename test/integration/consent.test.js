@@ -89,7 +89,7 @@ async function waitRun(call, id) {
   throw new Error('作る run が終わりません');
 }
 
-test('同意の前は、直す AI の送信と本物の AI への切り替えを理由のコードつきで断り、同意の後は通す。起動し直すと同意は消える', posixOnly, async (t) => {
+test('同意の前は、作る AI の送信と本物の AI への切り替えを理由のコードつきで断り、同意の後は通す。起動し直すと同意は消える', posixOnly, async (t) => {
   const { home, env } = await setup(t);
   const first = await boot(t, { home, env });
   const { call } = first;
@@ -106,7 +106,7 @@ test('同意の前は、直す AI の送信と本物の AI への切り替えを
   assert.match(before.body.details.records.join(''), /\.studio\/runs/);
   assert.deepEqual((await call('/api/projects')).body.consent, { agreed: false, agreedAt: null });
 
-  // 直す AI の送信は断る。run は始めない
+  // 作る AI の送信は断る。run は始めない
   const fix = await call(`/api/projects/${JOB}/build-requests`, { request: '失敗して' });
   assert.equal(fix.status, 403);
   assert.equal(fix.body.error.code, 'consent-required');
@@ -136,7 +136,7 @@ test('同意の前は、直す AI の送信と本物の AI への切り替えを
   assert.match(agreed.body.consent.agreedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.deepEqual((await call('/api/projects')).body.consent, agreed.body.consent);
 
-  // 同意の後は通る。1 回の同意が、直す AI と試作品の中の AI の両方に効く
+  // 同意の後は通る。1 回の同意が、作る AI と試作品の中の AI の両方に効く
   const sent = await call(`/api/projects/${JOB}/build-requests`, { request: '失敗して' });
   assert.equal(sent.status, 200);
   const run = await waitRun(call, JOB);
@@ -157,7 +157,7 @@ test('同意の前は、直す AI の送信と本物の AI への切り替えを
   assert.equal((await again(`/api/projects/${JOB}/ai/connection`, { kind: 'claude-code' })).body.error.code, 'consent-required');
 });
 
-test('偽接続の直す AI とお試しの AI は、同意なしで使える', async (t) => {
+test('偽接続の作る AI とお試しの AI は、同意なしで使える', async (t) => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-consent-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const { call } = await boot(t, { home, env: { PATH: process.env.PATH, STUDIO_AGENT: 'fake' } });
@@ -213,8 +213,8 @@ test('料金の文は、API キーの設定、Bedrock などの設定、ログ�
   assert.equal(apiKey.cost.kind, 'api-key');
   assert.equal(apiKey.cost.text, 'API キーの設定があるので、使った分だけ料金がかかります。');
   assert.equal(apiKey.to, 'Anthropic(Claude を作っている会社)');
-  // API キーのときは、直す AI の起動ごとに 1 ドルの上限を付ける。1 つの依頼では 3 回まで起動する
-  assert.match(apiKey.cost.limits, /直すときは、直す AI の 1 回の起動で 1 ドルまでです\(1 つの依頼で多くて 3 回起動します\)/);
+  // API キーのときは、作る AI の起動ごとに 1 ドルの上限を付ける。1 つの依頼では 3 回まで起動する
+  assert.match(apiKey.cost.limits, /直すときは、作る AI の 1 回の起動で 1 ドルまでです\(1 つの依頼で多くて 3 回起動します\)/);
   limits(apiKey.cost.limits);
 
   const settings = views.settings.summary;

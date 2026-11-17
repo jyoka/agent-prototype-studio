@@ -5,8 +5,9 @@ const MESSAGE_WINDOW_MS = 5000;
 const MAX_MESSAGES_PER_WINDOW = 20;
 const MAX_UNEXPECTED_LOADS = 3;
 const MAX_EVENTS = 50;
-// 作る会話の項目の「誰が」の名前。接続(偽接続、Claude Code)の名前は、開発者向けの詳細にだけ出す(ux-redesign.md 4 節)
-const FIX_AI = '直す AI';
+// 作る会話の項目の「誰が」の名前。接続(偽接続、Claude Code)の名前は、開発者向けの詳細にだけ出す(ux-redesign.md 4 節)。
+// 画面の名前は「作る AI」にそろえた(ui-ux-v2.md の 6 節。前は「直す AI」)
+const FIX_AI = '作る AI';
 const RUN_STATUS = {
   running: () => `${FIX_AI} が作業しています…`,
   done: () => '終わりました',
@@ -80,6 +81,7 @@ const ITEM_LABELS = {
   'gate:launch': '開いて表示できるか',
   'gate:evals': 'AI の場面で動くか',
   'gate:scenarios': '決めた手順で動くか',
+  'gate:architecture': '承認した構成と同じか',
 };
 // 試作品からプロダクト内 AI への要求。連打で実モデルを呼び続けないよう、数を絞る
 const AI_WINDOW_MS = 5000;
@@ -191,6 +193,26 @@ const els = {
   checkMessage: $('check-message'),
   frameHost: $('frame-host'),
   frameLabel: $('frame-label'),
+  frameVersion: $('frame-version'),
+  // 段 5〜8 の右の列(ui-ux-v2.md の 2.2、4.2、4.3)
+  sideSwitch: $('side-switch'),
+  sideMaker: $('side-maker'),
+  sideBack: $('side-back'),
+  measure: $('measure'),
+  tabs: { turn: $('tab-turn'), scenes: $('tab-scenes'), compare: $('tab-compare') },
+  panels: { turn: $('panel-turn'), scenes: $('panel-scenes'), compare: $('panel-compare') },
+  turnEmpty: $('turn-empty'),
+  turnTimeline: $('turn-timeline'),
+  scenesEmpty: $('scenes-empty'),
+  compareBasis: $('compare-basis'),
+  rechoose: $('rechoose'),
+  rechooseButton: $('rechoose-button'),
+  rechooseNote: $('rechoose-note'),
+  makeNow: $('make-now'),
+  makeNowRequest: $('make-now-request'),
+  makeNowList: $('make-now-list'),
+  makeNowRounds: $('make-now-rounds'),
+  makeNowTime: $('make-now-time'),
   previewBroken: $('preview-broken'),
   previewBrokenLead: $('preview-broken-lead'),
   previewBrokenFix: $('preview-broken-fix'),
@@ -293,7 +315,8 @@ let selectedId = null;
 let pollTimer = null;
 let refreshSeq = 0;
 let appliedSeq = 0;
-const preview = { frame: null, url: null, projectId: null, expectingLoad: false, unexpectedLoads: [], port: null };
+// versionAt は表示している版を作った時刻、newAt は同じ試作品で新しい版に替わった時刻(試作品の欄の 1 行。ui-ux-v2.md の 4.3)
+const preview = { frame: null, url: null, projectId: null, expectingLoad: false, unexpectedLoads: [], port: null, versionAt: null, newAt: null };
 // 作る会話。プロジェクトごとに、サーバーの版の番号と実行の一覧を持つ
 let agent = null;
 const conversations = new Map();
@@ -320,7 +343,7 @@ const firstSteps = { touching: false };
 // 画面の枠(ui-ux-v2.md の 2.2)。stage は、目的、設計、審査、会の画面を開いていないときの段。
 // drawer は開いている引き出し(mechanism か materials)。band は次の一手の帯に移したボタンと、その元の場所。
 // ready は、下の部品の状態がそろって、枠を描けるようになったか
-const frame = { stage: 'build', drawer: null, compactOpen: false, pending: false, ready: false, moved: null, home: null, prompts: { projectId: null, key: '', seq: 0, data: null } };
+const frame = { stage: 'build', side: 'stage', tab: 'turn', drawer: null, compactOpen: false, pending: false, ready: false, moved: null, home: null, prompts: { projectId: null, key: '', seq: 0, data: null } };
 // 「その場で」の 1 行(5.1)。counts は操作の種類ごとの回数、limit はこの回数で出さなくなる(hints.js)
 const hintState = { counts: {}, limit: 2, loaded: false };
 // はじめの画面、目的の聞き出し、目的の文書(user-journey.md の段 1、段 2、J1)。view は出している画面(start、talk、doc)で、null なら試作品の画面。
@@ -511,6 +534,9 @@ function render() {
     showPlaceholder('表示できる状態がありません。');
   } else if (project.previewUrl !== preview.url) {
     clearEvents();
+    // 同じ試作品で版が替わったら、新しい版の時刻を覚える(試作品の欄の「新しい版です」の 1 行)
+    preview.newAt = preview.projectId === project.id && preview.url ? new Date().toISOString() : null;
+    preview.versionAt = project.lastBuild?.finishedAt ?? new Date().toISOString();
     showPreview(project.previewUrl, project.id);
     // 版が変わると AI の設定も変わり得るので、読み直す
     loadAi(project.id);
@@ -626,8 +652,8 @@ function renderBuild(project) {
 }
 
 // 試作品を表示できないとき(ux-redesign.md 7-6)。試す欄の上に、表示できないことと、前に表示できた状態を出していることを出す。
-// 「直す AI に直してもらう」は依頼の欄に文を入れるだけで、送るのは利用者。誤りの場所(ファイルと行)は「開発者向け」の中だけ。
-// 直す AI が直している間(直すラウンドでビルドし直す)と、ビルドの間は出さない
+// 「作る AI に直してもらう」は依頼の欄に文を入れるだけで、送るのは利用者。誤りの場所(ファイルと行)は「開発者向け」の中だけ。
+// 作る AI が直している間(直すラウンドでビルドし直す)と、ビルドの間は出さない
 const FIX_DISPLAY_REQUEST = '表示できるように直して';
 
 function renderPreviewBroken(project) {
@@ -647,7 +673,7 @@ els.previewBrokenFix.addEventListener('click', () => {
   fillRequest(FIX_DISPLAY_REQUEST);
 });
 
-// 開発者向けの詳細の「直す AI(作る AI)の接続」。接続の種類、版、認証の見込み、実行ファイル、使えない理由を出す
+// 開発者向けの詳細の「作る AIの接続」。接続の種類、版、認証の見込み、実行ファイル、使えない理由を出す
 function renderAgentStatus() {
   const nodes = [];
   els.devAgentMark.hidden = agent?.kind !== 'fake';
@@ -685,7 +711,7 @@ function renderAgentStatus() {
   els.agentStatus.replaceChildren(...nodes);
 }
 
-// 直す AI が使えないときのカード(ux-redesign.md 7-5)。見出しの 1 文は判定で変える。
+// 作る AI が使えないときのカード(ux-redesign.md 7-5)。見出しの 1 文は判定で変える。
 // サーバーの理由の文(実行ファイルの場所、spawn … ENOENT など)は、カードの中の「開発者向け」にだけ出す
 const RESTART_STEP = 'Studio を止めて、もう一度起動する';
 const UNAVAILABLE = {
@@ -728,7 +754,7 @@ function renderUnavailable() {
   els.unavailableDetail.replaceChildren(...detail);
 }
 
-// 利用者に見せる依頼の例。本物の直す AI で意味のある依頼にする(ux-redesign.md 5 節)。
+// 利用者に見せる依頼の例。本物の作る AI で意味のある依頼にする(ux-redesign.md 5 節)。
 // AI のある試作品では、最後の項目(最初の項目は、もう最初に聞く)を先に聞く例を入れる。AI のない試作品は Studio の共通の例だけ。
 // {role} は試作品の AI の役の名前(「案内役」など)。題材の言葉は Studio に持たず、AI の設定の名前から取る
 const COMMON_EXAMPLES = ['見出しの色を落ち着いた青にして', 'ボタンを大きくして', '説明の文を短くして'];
@@ -753,15 +779,24 @@ function userExamples(project) {
 }
 
 function fillRequest(text) {
-  // 依頼の欄は段 5〜8 の右の列にある。ほかの段からなら、段 5「作る」に移る
-  if (!LAYOUT_STAGES.has(viewedStage())) goStage('build');
+  openMaker();
   els.requestText.value = text;
   els.requestText.focus();
 }
 
+// 作る AI の欄を開く。依頼の欄は段 5〜8 の右の列にある。ほかの段からなら段 5「作る」に移り、段 6〜8 なら右の列を作る AI の欄に替える(ui-ux-v2.md の 2.3)
+function openMaker() {
+  const stage = viewedStage();
+  if (!LAYOUT_STAGES.has(stage) || screenOpen()) goStage('build');
+  else if (stage !== 'build' && frame.side !== 'maker') {
+    frame.side = 'maker';
+    renderFrame();
+  }
+}
+
 function renderExamples() {
   const project = selectedProject();
-  // 直す AI が使えないときは、送れないので例も出さない(使えないときのカードを出す)
+  // 作る AI が使えないときは、送れないので例も出さない(使えないときのカードを出す)
   const examples = agent?.ready ? userExamples(project) : [];
   els.examples.hidden = examples.length === 0;
   els.exampleList.replaceChildren(
@@ -822,9 +857,11 @@ function renderMake(project) {
   const running = Boolean(project?.running || sending?.projectId === project?.id || (project && runningRun(project.id)));
   const ready = Boolean(project && agent?.ready && !running && !project.building && !project.versioning && !project.checking && !sending);
   els.requestText.disabled = !ready;
-  els.requestText.placeholder = agent && !agent.ready ? '直す AI が使えないので、送れません' : '例: 見出しの色を落ち着いた青にして';
+  els.requestText.placeholder = agent && !agent.ready ? '作る AI が使えないので、送れません' : '例: 見出しの色を落ち着いた青にして';
   els.send.disabled = !ready;
   els.cancel.hidden = !(project && runningRun(project.id));
+  renderMakeNow(project);
+  renderFrameVersion(project, running);
   renderConversation(project);
   renderRealAiMarks();
   renderSaveMark(project);
@@ -833,9 +870,164 @@ function renderMake(project) {
   renderQuality(project);
 }
 
+// ---- 作る AI の欄の「今していること」(ui-ux-v2.md の 4.3) ----
+// いちばん新しい依頼の文と、作る AI と関門の列。関門は 1 つずつ利用者の言葉で、✓ 済み、● 確かめています、○ まだ、× 落ちた。
+// 今の節は run.current(サーバーの build-requests.js)。直すラウンドの前のラウンドで落ちた関門も × で残す
+const NOW_STATE_WORDS = { done: '済み', active: '確かめています', writing: '書いています', todo: 'まだ', failed: '落ちた', warn: '確かめられませんでした', same: '変わっていません', skipped: '行っていません', stopped: '止めました' };
+const NOW_STATE_MARKS = { done: '✓', active: '●', writing: '●', todo: '○', failed: '×', warn: '!', same: '─', skipped: '─', stopped: '─' };
+// 関門と守りの側の節(今の行で ⬢ が働いている)。関門のほかに、直す依頼をまとめる節と、結果をまとめる節
+const GATE_SIDE_NODES = new Set(['changes', 'architecture', 'inspect', 'contract', 'compile', 'evals', 'launch', 'scenarios', 'fix', 'evidence']);
+// 作る AI の 1 回の依頼にかかる時間の目安。測った値ではないので、推測と書く
+const MAKER_ESTIMATE = '多くは 3 分以内。推測';
+let makeNowTimer = null;
+
+function latestRun(projectId) {
+  return conversations.get(projectId)?.runs.at(-1) ?? null;
+}
+
+function durationWords(ms) {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(seconds / 60);
+  return minutes > 0 ? `${minutes} 分 ${seconds % 60} 秒` : `${seconds} 秒`;
+}
+
+// 時と分だけ(試作品の欄の版の 1 行)
+function clockText(iso) {
+  return new Date(iso).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+}
+
+function gateNowState(run, gate) {
+  if (gate.status === 'passed') return 'done';
+  if (gate.status === 'failed') return 'failed';
+  if (gate.status === 'unverified') return 'warn';
+  if (gate.status === 'unchanged') return 'same';
+  if (run.status === 'running') return run.current?.node === gate.name ? 'active' : 'todo';
+  return 'skipped';
+}
+
+// 今していることの 1 行。形(者)と平たい名前と状態の印と言葉。色だけで状態を示さない
+function nowRow(actor, name, state, detail = '') {
+  const li = element('li', undefined, 'now-row');
+  li.dataset.actor = actor;
+  li.dataset.state = state;
+  const mark = element('span', NOW_STATE_MARKS[state] ?? '', 'now-mark');
+  mark.setAttribute('aria-hidden', 'true');
+  const shape = element('span', actor === 'maker' ? '■' : '⬢', 'actor-shape');
+  shape.setAttribute('aria-hidden', 'true');
+  li.append(mark, shape, element('span', name, 'now-name'), element('span', NOW_STATE_WORDS[state] ?? '', 'now-state'));
+  if (detail) li.append(element('span', detail, 'now-detail'));
+  return li;
+}
+
+// 作る AI の行の状態。ラウンドごとの節 agent の結果から読む
+function makerNowState(run, round) {
+  if (run.status === 'running' && run.current?.node === 'agent' && run.current.round === round) return 'writing';
+  const node = (run.nodes ?? []).find((n) => n.name === 'agent' && n.round === round);
+  if (node) return node.outcome === 'passed' ? 'done' : node.outcome === 'cancelled' ? 'stopped' : 'failed';
+  return run.status === 'running' ? 'todo' : 'skipped';
+}
+
+function lastToolSummary(run) {
+  return run.items.findLast((item) => item.kind === 'tool' && item.summary)?.summary ?? '';
+}
+
+function renderMakeNow(project) {
+  const run = project ? latestRun(project.id) : null;
+  els.makeNow.hidden = !run;
+  if (!run) {
+    stopMakeNowTimer();
+    return;
+  }
+  els.makeNow.dataset.status = run.status;
+  els.makeNowRequest.textContent = run.request;
+  const rows = [];
+  const round = run.round ?? 1;
+  const first = makerNowState(run, 1);
+  rows.push(nowRow('maker', '試作品を書く', first, first === 'writing' ? lastToolSummary(run) : ''));
+  // 前のラウンドで落ちた関門と、それを直した作る AI の行
+  for (let r = 2; r <= round; r += 1) {
+    const failed = (run.rounds?.[r - 2]?.gates ?? []).find((gate) => gate.status === 'failed');
+    if (failed) rows.push(nowRow('gate', `${gateLabel(failed)}(${r - 1} 回目)`, 'failed'));
+    const state = makerNowState(run, r);
+    rows.push(nowRow('maker', `落ちたところを直す(${r - 1} 回目)`, state, state === 'writing' ? lastToolSummary(run) : ''));
+  }
+  // 今のラウンドの関門。審査のない試作品の「承認した構成と同じか」は出さない(行っていない)
+  const gates = (run.gates ?? []).filter((gate) => !(gate.name === 'architecture' && gate.status === 'skipped'));
+  if (gates.length > 0) {
+    const head = element('li', undefined, 'now-gates');
+    head.dataset.actor = 'gate';
+    const shape = element('span', '⬢', 'actor-shape');
+    shape.setAttribute('aria-hidden', 'true');
+    const list = element('ol', undefined, 'now-gate-list');
+    list.setAttribute('aria-label', '関門');
+    for (const gate of gates) {
+      const li = nowRow('gate', gateLabel(gate), gateNowState(run, gate));
+      li.dataset.gate = gate.name;
+      list.append(li);
+    }
+    head.append(shape, element('span', round > 1 ? `関門(直した後の ${round} 回目)` : '関門', 'now-name'), list);
+    rows.push(head);
+  }
+  els.makeNowList.replaceChildren(...rows);
+  const fixes = round - 1;
+  els.makeNowRounds.hidden = fixes === 0;
+  if (fixes > 0) {
+    const what = run.status === 'failed' ? '直そうとした回数' : run.status === 'running' ? '直している回数' : '直した回数';
+    els.makeNowRounds.textContent = `${FIX_AI} が${what}: ${fixes} 回(${run.maxFixRounds ?? fixes} 回まで)`;
+  }
+  renderMakeNowTime(run);
+  if (run.status === 'running') startMakeNowTimer();
+  else stopMakeNowTimer();
+}
+
+function renderMakeNowTime(run) {
+  const started = Date.parse(run.startedAt);
+  if (!Number.isFinite(started)) {
+    els.makeNowTime.textContent = '';
+    return;
+  }
+  if (run.status === 'running') {
+    els.makeNowTime.textContent = `経過 ${durationWords(Date.now() - started)}(${MAKER_ESTIMATE})`;
+  } else {
+    const finished = Date.parse(run.finishedAt);
+    els.makeNowTime.textContent = Number.isFinite(finished) ? `かかった時間 ${durationWords(finished - started)}` : '';
+  }
+}
+
+// 作っている間だけ、経過の時間を 1 秒ごとに書き直す
+function startMakeNowTimer() {
+  if (makeNowTimer) return;
+  makeNowTimer = setInterval(() => {
+    const project = selectedProject();
+    const run = project ? latestRun(project.id) : null;
+    if (!run || run.status !== 'running') return stopMakeNowTimer();
+    renderMakeNowTime(run);
+  }, 1000);
+}
+
+function stopMakeNowTimer() {
+  clearInterval(makeNowTimer);
+  makeNowTimer = null;
+}
+
+// 試作品の欄の版の 1 行(4.3)。作っている間は前の版を出し続けると言い、新しい版が出たら時刻を言う。白紙にしない
+function renderFrameVersion(project, making) {
+  const ours = Boolean(project && preview.url && preview.projectId === project.id);
+  // 新しい版は、いちばん新しい依頼より後に出たものだけ(次の依頼を始めたら、前の「新しい版です」は出さない)
+  const run = ours ? latestRun(project.id) : null;
+  const fresh = Boolean(ours && preview.newAt && (!run || Date.parse(preview.newAt) >= Date.parse(run.startedAt)));
+  let text = '';
+  if (fresh && making) text = `新しい版です。${clockText(preview.newAt)}。残りの確かめをしています。`;
+  else if (ours && making && preview.versionAt) text = `前の版を出しています。この版は ${clockText(preview.versionAt)} のものです。新しい版は、表示の準備を通ったら出ます。`;
+  else if (fresh) text = `新しい版です。${clockText(preview.newAt)}`;
+  els.frameVersion.hidden = !text;
+  els.frameVersion.textContent = text;
+  els.frameVersion.dataset.kind = fresh ? 'new' : 'previous';
+}
+
 // 最初の一歩の進み方(ux-redesign.md 2 節、7-1、7-2、7-4)。見た目の「はじめの手順」はなくし(ui-ux-v2.md の 13 節)、
 // 段 5 と段 6 の次の一手の帯の 1 文に使う。済みはサーバーが返す(first-steps.js)。
-// 直す AI が直しきれなかったとき(failed)は、2 番を済みにせず、結果の帯を見るように言う
+// 作る AI が直しきれなかったとき(failed)は、2 番を済みにせず、結果の帯を見るように言う
 const FIRST_STEPS = [
   { key: 'tried', label: '試す', noAi: '試作品の画面を触る' },
   { key: 'fixed', label: '言葉で直す' },
@@ -856,9 +1048,9 @@ function firstStepsHint(project, current) {
   }
   if (current === 1 && fixing) return `${FIX_AI} が直しています。終わると、試作品が新しくなります。`;
   if (current === 1 && project.firstSteps?.lastRun === 'failed') {
-    return { text: `${FIX_AI} が直しきれませんでした。右の「言葉で直す」の結果を見て、頼み方を変えてもう一度送ってください。`, tone: 'warn' };
+    return { text: `${FIX_AI} が直しきれませんでした。右の「作る AI」の欄の結果を見て、頼み方を変えてもう一度送ってください。`, tone: 'warn' };
   }
-  if (current === 1) return '気になったところを、右の「言葉で直す」に頼んでみましょう。押すと入る例もあります。';
+  if (current === 1) return '気になったところを、右の「作る AI」の欄に頼んでみましょう。押すと入る例もあります。';
   if (current === 2 && ai.projectId === project.id && ai.retry?.available) {
     return '試作品の上の「同じ発言で試し直す」で、直す前と後の返事を比べられます。';
   }
@@ -890,7 +1082,7 @@ window.addEventListener('blur', () => {
   }, 0);
 });
 
-// 終わって試作品が新しくなった実行。何を変えたかは、Studio が確かめた変わったファイルから言う(直す AI の報告に頼らない)
+// 終わって試作品が新しくなった実行。何を変えたかは、Studio が確かめた変わったファイルから言う(作る AI の報告に頼らない)
 const UPDATED_STATUSES = new Set(['done', 'passed', 'fixed', 'unverified']);
 const AI_SETTINGS_FILE = 'app/ai.json';
 
@@ -907,7 +1099,7 @@ function updatedText(run) {
 const openRunDetails = new Set();
 
 // 実行ごとの「開発者向け」。操作の詳細(ファイルの名前、道具の名前)、項目の開発者向けの文(サーバーの detail。
-// 変わったファイル、関門の名前、直す AI の返した誤り)、接続の名前、認証の報告を出す
+// 変わったファイル、関門の名前、作る AI の返した誤り)、接続の名前、認証の報告を出す
 function runDevDetails(run) {
   const box = element('details', undefined, 'run-dev');
   box.open = openRunDetails.has(run.id);
@@ -1105,7 +1297,7 @@ function scenarioSteps(projectId, gates) {
   return nodes;
 }
 
-// 直すラウンドごとの、見つけた問題と、直す AI に返した依頼の文
+// 直すラウンドごとの、見つけた問題と、作る AI に返した依頼の文
 function fixHistory(run) {
   const nodes = [];
   for (const request of run.fixRequests ?? []) {
@@ -1209,7 +1401,7 @@ function evidenceBand(projectId, run, { check = false, again = false } = {}) {
 // サーバー(src/server/checks.js)が、作るループと同じ観察の入口を、表示中の試作品を見るモードで呼ぶ。
 // 結果は直す欄の会話に、作る run と時刻の順に並べ、同じ形の結果の帯で出す。試す欄の会話は変わらない
 // 試作品の中の AI の接続の、利用者の言葉(ux-redesign.md 4 節)。接続の名前(モック、Claude Code)は開発者向けの詳細にだけ出す。
-// AI_WORDS は文の中の名前、AI_SHORT は試す欄の上の「AI: … ▾」、AI_DESCRIPTIONS は選ぶときの説明
+// AI_WORDS は文の中の名前、AI_SHORT は試作品の上の「▲ … ▾」、AI_DESCRIPTIONS は選ぶときの説明
 const AI_WORDS = { mock: 'お試しの AI', 'claude-code': '本物の AI' };
 const AI_SHORT = { mock: 'お試し', 'claude-code': '本物' };
 const AI_DESCRIPTIONS = {
@@ -1351,6 +1543,8 @@ async function startCheck() {
     const data = await api(`/api/projects/${encodeURIComponent(project.id)}/checks`, { method: 'POST', json: { connection } });
     const cached = checks.byProject.get(project.id) ?? { version: -1, list: [] };
     checks.byProject.set(project.id, { version: -1, list: [...cached.list.filter((c) => c.id !== data.check.id), data.check] });
+    // 結果は作る AI の欄の会話に出る。段 7 の右の列から、作る AI の欄に切り替えて見せる
+    openMaker();
   } catch (error) {
     if (error instanceof ApiError && error.code === 'consent-required') {
       // 同意のカードは、段 7 の「試作品を自動で確かめる」の中に出す
@@ -1587,7 +1781,7 @@ function consentDetails(view, key) {
       ...labeledList('言葉で直すときに送るもの', details.fix.items),
       element('p', details.fix.notSent),
       element('p', details.fix.tools),
-      element('p', '直す AI に足す指示の全文:'),
+      element('p', '作る AI に足す指示の全文:'),
       element('pre', details.fix.systemPrompt),
     );
   }
@@ -1705,7 +1899,7 @@ function closeConsent() {
   consent.info = null;
 }
 
-// 同意する。同意は Studio を止めるまで、直す AI と試作品の中の AI の両方に効く。
+// 同意する。同意は Studio を止めるまで、作る AI と試作品の中の AI の両方に効く。
 // 直す欄の送信で出したカードなら欄の依頼を送り、試す欄で出したカードなら本物の AI に切り替える
 async function agreeConsent() {
   const card = consent.card;
@@ -1774,7 +1968,7 @@ function declineConsent() {
 }
 
 // 本物の AI を使っている間の小さな印(試す欄の上と直す欄の上)。押すと、カードの中身をもう一度見られる。
-// 試す欄は試作品の中の AI が本物のとき、直す欄は同意の後で直す AI が Claude Code のとき
+// 試す欄は試作品の中の AI が本物のとき、直す欄は同意の後で作る AI が Claude Code のとき
 // 試作品の中の AI が、本物の AI(料金のかかる接続)か
 function tryRealAi() {
   return Boolean(ai.session && ai.projectId === selectedId && ai.choices?.options.find((o) => o.kind === ai.session.connection.kind)?.billing);
@@ -1949,7 +2143,7 @@ function retryResultBlock(result) {
 }
 
 // 試し直しの帯(ux-redesign.md 7-4)。試す欄の上に置く。試作品の中の AI の設定が変わった後に、
-// 前の会話の発言と修正を、新しい設定で送り直す。応答するのは試作品の中の AI で、直す AI は動かない。
+// 前の会話の発言と修正を、新しい設定で送り直す。応答するのは試作品の中の AI で、作る AI は動かない。
 // 直す前と後の返事は、帯の中の開く操作で見る。本物の AI を選んでいるときは、使う回数をボタンの横に出す
 function renderRetry() {
   const info = ai.session && ai.projectId === selectedId ? ai.retry : null;
@@ -1994,6 +2188,8 @@ function renderTryConsent() {
 
 // 応答を待つ間だけ、試す欄の上に「止める」を出す。開発者向けの詳細を閉じていても止められるように
 function renderAiWaiting() {
+  // 今の行の ▲(答えている)も描き直す
+  scheduleFrame();
   const { session } = ai;
   const waiting = Boolean(session) && waitingFor(ai.projectId) > 0;
   els.aiWaiting.hidden = !waiting;
@@ -2031,7 +2227,9 @@ function renderAi() {
     return;
   }
   els.aiSwitch.dataset.kind = session.connection.kind;
-  els.aiBadge.textContent = `AI: ${AI_SHORT[session.connection.kind] ?? session.connection.label}`;
+  // 試作品の上の「▲ お試し ▾」(ui-ux-v2.md の 4.2)。読み上げでは、何の切り替えかを言う
+  els.aiBadge.textContent = AI_SHORT[session.connection.kind] ?? session.connection.label;
+  els.aiSwitch.setAttribute('aria-label', `試作品の中の AI: ${els.aiBadge.textContent}。押すと、お試しか本物かを選べます`);
   els.aiSwitch.title = AI_DESCRIPTIONS[session.connection.kind] ?? session.connection.description;
   const connection = element('p', undefined, 'ai-connection');
   connection.dataset.kind = session.connection.kind;
@@ -2587,7 +2785,7 @@ function renderComments() {
   const fixing = comments.find((c) => c.status === 'fixing');
   const held = queued.find((c) => c.held);
   els.commentQueue.textContent = [
-    fixing ? `直す AI が、コメント ${fixing.number} を直しています。` : '',
+    fixing ? `作る AI が、コメント ${fixing.number} を直しています。` : '',
     queued.length > 0 ? `列に ${queued.length} 件が待っています(${queued.map((c) => `コメント ${c.number}`).join('、')})。前の直しが終わってから、1 件ずつ送ります。` : '',
     held ? `列を止めています: ${held.held.message}${held.held.next ? ` ${held.held.next}` : ''}` : '',
   ]
@@ -2738,7 +2936,7 @@ async function addComment() {
   els.commentText.value = '';
   commentsUi.place = null;
   setPicking(false);
-  commentsUi.message = { kind: 'ok', text: `コメント ${result.comment.number} を書きました。承認するまで、直す AI には送りません。` };
+  commentsUi.message = { kind: 'ok', text: `コメント ${result.comment.number} を書きました。承認するまで、作る AI には送りません。` };
   renderComments();
 }
 
@@ -2749,8 +2947,8 @@ async function commentAct(commentId, action, json = {}) {
   const c = result.comment;
   const done = {
     react: null,
-    approve: c.status === 'queued' ? `コメント ${c.number} を承認しました。列に並べ、順に直す AI に送ります。` : c.status === 'returned' ? `コメント ${c.number} を承認しました。構成のコメントなので、直す AI には送らず、AI 構成の審査に戻しました。` : `コメント ${c.number} に承認を 1 つ付けました。もう 1 人の承認がそろうまで送りません。`,
-    unapprove: `コメント ${c.number} の承認を取り消しました。直す AI には送りません。`,
+    approve: c.status === 'queued' ? `コメント ${c.number} を承認しました。列に並べ、順に作る AI に送ります。` : c.status === 'returned' ? `コメント ${c.number} を承認しました。構成のコメントなので、作る AI には送らず、AI 構成の審査に戻しました。` : `コメント ${c.number} に承認を 1 つ付けました。もう 1 人の承認がそろうまで送りません。`,
+    unapprove: `コメント ${c.number} の承認を取り消しました。作る AI には送りません。`,
     close: `コメント ${c.number} を閉じました。`,
     reopen: `コメント ${c.number} を開き直しました。`,
     resolve: `コメント ${c.number} を「直った」にしました。`,
@@ -2982,7 +3180,7 @@ function renderTokens(project) {
     names.className = 'tokens-names';
     // 開いたものは、次の描画でも開いたまま
     names.open = Boolean(els.tokensConnected.querySelector('.tokens-names')?.open);
-    names.append(element('summary', '直す AI が使う名前'));
+    names.append(element('summary', '作る AI が使う名前'));
     const list = element('ul', null, 'tokens-list');
     for (const token of connected.tokens) {
       for (const variable of token.variables) {
@@ -3126,7 +3324,7 @@ async function disconnectTokens(project) {
     const data = await api(`/api/projects/${encodeURIComponent(project.id)}/materials/tokens/remove`, { method: 'POST' });
     if (tokens.projectId !== project.id) return;
     tokens.data = data.materials;
-    const left = data.references > 0 ? `トークンの変数を読む所が ${data.references} か所残っていて、その所には色や字の値がありません。「言葉で直す」で直せます。` : '';
+    const left = data.references > 0 ? `トークンの変数を読む所が ${data.references} か所残っていて、その所には色や字の値がありません。「作る AI」の欄で直せます。` : '';
     tokens.message = data.build.ok
       ? { kind: left ? 'failed' : 'ok', text: `外しました。既定の素材の部品の見た目に戻しました。${left}` }
       : { kind: 'failed', text: `外しましたが、試作品を表示できません。試す欄は前の状態のままです。${data.build.firstError ?? ''}` };
@@ -3375,18 +3573,18 @@ function renderGuidesPreview() {
     }
     box.push(element('p', 'Storybook から読んだ部品の一覧', 'card-label'), table);
   }
-  box.push(element('p', '直す AI が読む写し(試作品のフォルダーに置きます)', 'card-label'));
+  box.push(element('p', '作る AI が読む写し(試作品のフォルダーに置きます)', 'card-label'));
   check.copies.forEach((copy, index) => {
     const details = document.createElement('details');
     details.open = index === 0;
     details.append(element('summary', `${copy.path}(${copy.title})`), element('pre', copy.text.length > 20000 ? `${copy.text.slice(0, 20000)}\n…(ここまで)` : copy.text, 'guides-copy'));
     box.push(details);
   });
-  if (check.rule) box.push(element('p', '直す AI への決まりに足す文', 'card-label'), element('pre', check.rule, 'guides-copy'));
+  if (check.rule) box.push(element('p', '作る AI への決まりに足す文', 'card-label'), element('pre', check.rule, 'guides-copy'));
   els.guidesPreview.replaceChildren(...box);
 }
 
-// 部品のパッケージの見本で試す。外への通信の場所、使える名前、直す AI への決まりを、文字だけで出す。
+// 部品のパッケージの見本で試す。外への通信の場所、使える名前、作る AI への決まりを、文字だけで出す。
 // 試しの組み立ては Studio が確かめるときに済ませた(パッケージのコードは Studio では動かさない)
 function renderPackagePreview(check) {
   els.guidesUrls.hidden = check.networkCount === 0;
@@ -3407,7 +3605,7 @@ function renderPackagePreview(check) {
   if (check.exports.length > 0) box.push(element('p', `使える名前(${check.exports.length} 個): ${check.exports.join('、')}`));
   else box.push(element('p', '使える名前を読めませんでした。CommonJS の形のパッケージは、名前が出ないことがあります。', 'muted'));
   box.push(element('p', `中で使うパッケージ: ${check.dependencies.length > 0 ? check.dependencies.join('、') : 'ありません'}(Studio が同梱するもの)`, 'muted'));
-  if (check.rule) box.push(element('p', '直す AI への決まりに足す文', 'card-label'), element('pre', check.rule, 'guides-copy'));
+  if (check.rule) box.push(element('p', '作る AI への決まりに足す文', 'card-label'), element('pre', check.rule, 'guides-copy'));
   els.guidesPreview.replaceChildren(...box);
 }
 
@@ -3421,7 +3619,7 @@ function renderGuidesSummary() {
     add('素材', `部品のパッケージ「${check.name}」(${check.version}、ファイル ${check.fileCount} 個)`);
     add('誰の素材か', els.guidesSource.value.trim());
     add('使ってよいか', guideLicenseText(guideAnswers()));
-    add('置く場所', 'Studio の中(試作品のフォルダーの外)。直す AI は中身を読めず、名前で import します');
+    add('置く場所', 'Studio の中(試作品のフォルダーの外)。作る AI は中身を読めず、名前で import します');
     add('外への通信', check.networkCount > 0 ? `${check.networkCount} か所(試作品からは届きません)` : 'ありません');
     add('使える試作品', 'この試作品だけ');
     els.guidesSummary.replaceChildren(element('p', '出典とライセンスの一覧', 'card-label'), list, element('p', '外せば、いつでも前の素材に戻せます。', 'muted'));
@@ -3571,8 +3769,8 @@ async function enableGuides() {
     resetGuidesFlow();
     const where = scope === 'all' ? '。これからの試作品にも入れます' : '';
     const done = kind === 'package'
-      ? `有効にしました。この試作品は「${check.name}」を import できます。直す AI は次の依頼から使えます。`
-      : `有効にしました${where}。直す AI は次の依頼から、${GUIDE_KIND_LABELS[kind]}を読みます。`;
+      ? `有効にしました。この試作品は「${check.name}」を import できます。作る AI は次の依頼から使えます。`
+      : `有効にしました${where}。作る AI は次の依頼から、${GUIDE_KIND_LABELS[kind]}を読みます。`;
     guidesFlow.message = data.build.ok
       ? { kind: 'ok', text: done }
       : { kind: 'failed', text: `有効にしましたが、試作品を表示できません。試す欄は前の状態のままです。${data.build.firstError ?? ''}` };
@@ -3598,7 +3796,7 @@ async function disableGuides(project, kind, from) {
     tokens.data = data.materials;
     if (from === 'studio') guidesFlow.message = { kind: 'ok', text: `これからの試作品には、${GUIDE_KIND_LABELS[kind]}を入れません。今ある試作品はそのままです。` };
     else guidesFlow.message = data.build.ok
-      ? { kind: 'ok', text: `${GUIDE_KIND_LABELS[kind]}を外しました。写しを消し、直す AI への決まりからも外しました。` }
+      ? { kind: 'ok', text: `${GUIDE_KIND_LABELS[kind]}を外しました。写しを消し、作る AI への決まりからも外しました。` }
       : { kind: 'failed', text: `外しましたが、試作品を表示できません。試す欄は前の状態のままです。${data.build.firstError ?? ''}` };
   } catch (error) {
     if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
@@ -3622,8 +3820,8 @@ async function disablePackage(project, name) {
     if (tokens.projectId !== project.id) return;
     tokens.data = data.materials;
     guidesFlow.message = data.build.ok
-      ? { kind: 'ok', text: `部品のパッケージ「${name}」を外しました。直す AI への決まりからも外しました。` }
-      : { kind: 'failed', text: `部品のパッケージ「${name}」を外しました。試作品がまだ使っているので、表示できません。試す欄は前の状態のままです。「言葉で直す」で、使わない形に直してもらってください。` };
+      ? { kind: 'ok', text: `部品のパッケージ「${name}」を外しました。作る AI への決まりからも外しました。` }
+      : { kind: 'failed', text: `部品のパッケージ「${name}」を外しました。試作品がまだ使っているので、表示できません。試す欄は前の状態のままです。「作る AI」の欄で、使わない形に直してもらってください。` };
   } catch (error) {
     if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
     if (tokens.projectId === project.id) guidesFlow.message = { kind: 'failed', text: `外せませんでした: ${error.message}` };
@@ -4234,12 +4432,111 @@ function turnGuardText(guard) {
   return `${TURN_LAYERS[guard.layer] ?? guard.layer}「${guard.guard}」${guard.tool ? `(${guard.tool})` : ''}: ${effect}`;
 }
 
+// この 1 ターンの流れ(ui-ux-v2.md の 4.2)。1 行ごとに、時刻(等幅。発言を受けてからの秒)、者の形、部品の種類、平たい 1 文。
+// 者の形はモデルの行(▲)と守りの行(⬢)にだけ付け、コードと道具の行には付けない。守りが止めた行は「止めました」と、
+// 続く行で「失敗ではなく、守りが働いた印」と止めた層の名前を出す。プロンプトの全文と道具の入出力は仕組みの引き出しへ
+const TIMELINE_KINDS = { code: 'コード', model: 'モデル', tool: '道具', guard: '守り', person: '人' };
+const GUARD_DONE = { blocked: '止めました', retried: 'やり直させました', replaced: '決まった文に代えました', violated: '合わないところを記録しました' };
+
+// 時刻は、発言を受けてからの秒。段は始まった順に並ぶ。参加者の段(エージェント、harness、人)は順に進み、
+// ツールの段は、それを呼んだ参加者の段の中で起きる(参加者の段の ms はツールの時間を含む)
+function timelineRows(entry, nameOf) {
+  const rows = [];
+  let at = 0;
+  let top = 0;
+  let inner = 0;
+  const push = (kind, text, extra = {}) => rows.push({ at, kind, text, ...extra });
+  const guardRows = (guards) => {
+    for (const guard of guards ?? []) {
+      if (!GUARD_DONE[guard.effect]) continue;
+      const layer = LAYER_WORDS[guard.layer] ?? TURN_LAYERS[guard.layer] ?? guard.layer;
+      push('guard', `${GUARD_DONE[guard.effect]}: ${guard.tool ?? guard.guard}`, { effect: guard.effect });
+      if (guard.effect === 'blocked') push('note', `止めたのは${layer}。失敗ではなく、守りが働いた印です。`, { layer: guard.layer });
+    }
+  };
+  push('code', '発言を受け取る');
+  if (entry.kind === 'sim-turn') {
+    for (const step of entry.steps ?? []) {
+      const ms = Number.isFinite(step.ms) ? step.ms : 0;
+      if (typeof step.tool === 'string') {
+        at = inner;
+        inner += ms;
+      } else if (['agent', 'harness', 'human'].includes(step.kind)) {
+        at = top;
+        inner = top;
+        top += ms;
+      } else at = top;
+      if (typeof step.tool === 'string') {
+        const blocked = (step.guards ?? []).some((guard) => guard.effect === 'blocked');
+        push('tool', `${step.tool} を呼ぶ${blocked ? '' : step.result?.ok ? '' : '(失敗した)'}`);
+        guardRows((step.guards ?? []).map((guard) => ({ ...guard, tool: step.tool })));
+      } else if (step.kind === 'agent') {
+        push('model', `${nameOf(step.participant)}が、次にすることを考える`);
+        guardRows(step.guards);
+      } else if (step.kind === 'harness') {
+        push('code', `${nameOf(step.participant)}の決まった手順で進める`);
+        guardRows(step.guards);
+      } else if (step.kind === 'human') {
+        push('person', `${nameOf(step.participant)}(人の役)の決まった返事`);
+      } else if (step.fallback) {
+        push('guard', `${nameOf(step.participant)}の返事を決まった文に代えました`, { effect: 'replaced' });
+      } else if (step.output) {
+        push('code', `返事の部品をそろえる(${partsText(step.output.parts)})`);
+        guardRows(step.guards);
+      } else {
+        guardRows(step.guards);
+      }
+    }
+    at = top;
+    for (const d of entry.delegations ?? []) if (d.effect === 'blocked') guardRows([{ layer: 'delegation', guard: '委任', effect: 'blocked' }]);
+    if (entry.handoff?.effect === 'blocked') guardRows([{ layer: 'handoff', guard: '引き継ぎ', effect: 'blocked' }]);
+  } else {
+    // 構成のない試作品(AI の設定 1 つ)。抽出と言い方はモデル、決定と確かめはコード
+    const harness = entry.harness ?? {};
+    if (harness.extract) push('model', '発言から、決まった項目を読み取る');
+    if (entry.rejected?.length) guardRows([{ layer: 'tool', guard: `${entry.rejected.length} つの値`, effect: 'blocked' }]);
+    if (harness.decision) push('code', `次に${harness.decision.ask?.label ? `「${harness.decision.ask.label}」を聞く` : '言うこと'}と決める`);
+    if (harness.phrase) push('model', '返事の言い方を作る');
+    const checked = harness.guards;
+    if (checked) {
+      if (checked.result === 'passed') push('guard', '出口の確かめ: 通しました', { effect: 'passed' });
+      else guardRows([{ layer: 'output', guard: checked.failed?.join('、') || '守ること', effect: HARNESS_GUARD_EFFECTS[checked.result] ?? checked.result }]);
+    }
+  }
+  if (Number.isFinite(entry.elapsedMs) && entry.status !== 'running') at = Math.max(at, entry.elapsedMs);
+  push('code', entry.status === 'running' ? '返事を待っています' : '返事を返す');
+  return rows;
+}
+
+function renderTimeline(entry, nameOf) {
+  const items = timelineRows(entry, nameOf).map((row) => {
+    const li = element('li', undefined, 'timeline-row');
+    li.dataset.kind = row.kind;
+    if (row.effect) li.dataset.effect = row.effect;
+    if (row.kind === 'note') {
+      li.append(element('span', '', 'tl-time'), element('span', '→', 'tl-shape'), element('span', '', 'tl-kind'), element('span', row.text, 'tl-text'));
+      return li;
+    }
+    const time = element('time', (row.at / 1000).toFixed(2), 'tl-time');
+    const shape = element('span', row.kind === 'model' ? '▲' : row.kind === 'guard' ? '⬢' : '', 'tl-shape');
+    shape.setAttribute('aria-hidden', 'true');
+    li.append(time, shape, element('span', TIMELINE_KINDS[row.kind] ?? row.kind, 'tag tl-kind'), element('span', row.text, 'tl-text'));
+    return li;
+  });
+  els.turnTimeline.replaceChildren(...items);
+}
+
 function renderTurnRecord() {
   const section = $('turn-record');
   const body = $('turn-record-body');
   const entry = ai.session && ai.projectId === selectedId ? lastTurnEntry() : null;
   section.hidden = !entry;
+  els.turnEmpty.hidden = Boolean(entry);
+  els.turnEmpty.textContent = ai.projectId === selectedId && ai.loaded && !ai.session
+    ? 'この試作品には、試作品の中の AI がいません。1 ターンの記録はありません。'
+    : 'まだ話していません。左の試作品で話しかけると、1 回の返事で働いた部品が、時刻の順に出ます。';
   if (!entry) {
+    els.turnTimeline.replaceChildren();
     body.replaceChildren();
     return;
   }
@@ -4304,7 +4601,15 @@ function renderTurnRecord() {
   const cost = entry.output?.costUsd;
   const time = Number.isFinite(entry.elapsedMs) && entry.status !== 'running' ? formatSeconds(entry.elapsedMs) : '待っています';
   row('時間と費用', `${time}、${entry.connection?.real ? (Number.isFinite(cost) ? `${cost.toFixed(4)} USD(Claude Code の報告)` : '費用は不明') : '費用はかかりません(お試しの AI)'}`);
-  body.replaceChildren(head, facts, element('p', '全部の中身(引数、プロンプトの部品、理由)は、「仕組みを見る」の「AI の実行の記録」にあります。', 'muted'));
+  renderTimeline(entry, nameOf);
+  // プロンプトの全文と道具の入出力は、仕組みの引き出しへ(頼んだら)
+  const more = element('button', 'プロンプトと道具の中身を見る(仕組みを見る)', 'quiet turn-more');
+  more.type = 'button';
+  more.addEventListener('click', () => {
+    setDrawer('mechanism');
+    $('trace-heading')?.scrollIntoView({ block: 'start' });
+  });
+  body.replaceChildren(head, facts, element('p', '全部の中身(引数、プロンプトの部品、理由)は、「仕組みを見る」の「AI の実行の記録」にあります。', 'muted'), more);
 }
 
 function renderTrace() {
@@ -4865,7 +5170,7 @@ const INTENT_MARKS = { none: '目的なし', skipped: '目的なし', interviewi
 const INTENT_EXAMPLES = ['商店街のお店への問い合わせに、AI が答えられるようにしたい', '小さな図書室で、読みたい本を探す手伝いをしたい', '習い事の教室の予約の問い合わせを減らしたい'];
 const INTENT_LIST_FIELDS = ['notDoing', 'undecided'];
 const INTENT_TEXT_FIELDS = ['who', 'problem', 'scene', 'success'];
-// 言葉で直す欄の上限(index.html の request-text の maxlength)
+// 作る AI の欄の上限(index.html の request-text の maxlength)
 const MAX_REQUEST_TEXT = 4000;
 const intentEls = {
   section: $('intent'),
@@ -5236,7 +5541,7 @@ async function openIntentFromMark() {
   }
 }
 
-// 決めた目的を、言葉で直す欄の依頼に入れる。送るのは人(同意もここでは取らない)
+// 決めた目的を、作る AI の欄の依頼に入れる。送るのは人(同意もここでは取らない)
 function intentRequestText(doc) {
   const lines = ['次の目的で試作品を作ってください。'];
   const labels = { who: '誰', problem: '何の問題', scene: '場面', success: '成功の印' };
@@ -7616,7 +7921,7 @@ async function reviewAct(action, body = {}) {
   }
 }
 
-// 「この構成で作る」と「審査なしで作る」。依頼の文は、言葉で直す欄と同じ道で送る(本物の AI の同意もその道で取る)
+// 「この構成で作る」と「審査なしで作る」。依頼の文は、作る AI の欄と同じ道で送る(本物の AI の同意もその道で取る)
 async function buildFromReview(action, body = {}) {
   const id = reviewUi.projectId;
   const result = await reviewAct(action, body);
@@ -7675,7 +7980,7 @@ $('review-skip').addEventListener('click', () => {
 
 // 場面の一覧と比べる表(task 423。ai-architecture-review.md の 15 節。サーバーは src/server/scene-runs.js)。
 // 試す欄の下に置く。場面の一覧を構成ごとに回し、通った数、道具の呼び方の正しさ、費用、待ち時間を並べる。
-// 通らない場面の「直す」は、言葉で直す欄に依頼を入れる(送るのは人)。本物の AI は、今の同意(consent の use が evals)と費用の上限を通す。
+// 通らない場面の「直す」は、作る AI の欄に依頼を入れる(送るのは人)。本物の AI は、今の同意(consent の use が evals)と費用の上限を通す。
 // data はサーバーの中身、version は読んだときの一覧の版(projects の scenes.version が変わったら読み直す)
 const sceneUi = { projectId: null, data: null, version: null, seq: 0, starting: false, message: null };
 const sceneEls = {
@@ -7689,7 +7994,6 @@ const sceneEls = {
   consent: $('scene-consent'),
   status: $('scene-status'),
   table: $('scene-table'),
-  failures: $('scene-failures'),
   list: $('scene-list'),
   listSummary: $('scene-list-summary'),
 };
@@ -7725,7 +8029,13 @@ function sceneTable(last) {
   const table = element('table');
   table.setAttribute('aria-label', '構成ごとの比べる表');
   const head = element('tr');
-  for (const name of ['構成', '回した AI', '通った場面', '道具の呼び方の正しさ(ツールの再現率)', '費用', '待ち時間(返事の中央値)']) head.append(element('th', name));
+  // 測った数(コードで確かめた結果)と、AI の判断(自然さの採点)は別の列。AI の判断の列は頭に「AI の判断」と書く(ui-ux-v2.md の 4.2)
+  for (const name of ['構成', '回した AI', '通った場面(測った数)', '道具の呼び方の正しさ(ツールの再現率)', 'AI の判断: 自然さの採点', '費用', '待ち時間(返事の中央値)']) {
+    const th = element('th', name);
+    th.setAttribute('scope', 'col');
+    if (name.startsWith('AI の判断')) th.dataset.judge = 'true';
+    head.append(th);
+  }
   const thead = element('thead');
   thead.append(head);
   const tbody = element('tbody');
@@ -7743,7 +8053,11 @@ function sceneTable(last) {
       : 'かかりません';
     const wait = row.real ? (row.medianReplySeconds !== null ? `${row.medianReplySeconds} 秒` : '-') : '測れません(お試しの AI)';
     tr.append(name);
-    for (const text of [who, passed, tools, cost, wait]) tr.append(element('td', text));
+    for (const text of [who, passed, tools]) tr.append(element('td', text));
+    const judgeCell = element('td', judgeText(row));
+    judgeCell.dataset.judge = 'true';
+    tr.append(judgeCell);
+    for (const text of [cost, wait]) tr.append(element('td', text));
     tbody.append(tr);
   }
   table.append(thead, tbody);
@@ -7757,41 +8071,166 @@ function sceneDevNote(summary, text) {
   return box;
 }
 
-function sceneFailures(last) {
-  if (last.failures.length === 0) return [element('p', last.rows.length > 0 ? '通らない場面はありません。' : '', 'muted')];
-  const list = element('ul', undefined, 'scene-failures');
-  list.setAttribute('aria-label', '通らない場面');
-  for (const item of last.failures) {
-    const row = last.rows.find((r) => r.key === item.row);
-    const li = element('li');
-    li.dataset.scene = item.id;
-    const checks = item.checks.map((check) => `確かめ「${check.check}」: 期待 ${check.expected ?? '-'}、実際 ${check.actual ?? '-'}`).join('。');
-    li.append(element('strong', `場面「${item.id}」`), document.createTextNode(`${item.about ? `(${item.about})` : ''}、構成「${row?.composition.name ?? ''}」: ${item.verdictLabel}。${item.reason ? '' : checks}`));
-    const fix = element('button', '直す');
+// AI の判断(自然さの採点)の列の文。採点は本物の AI で回したときだけ(お試しの AI では採点しない)
+function judgeText(row) {
+  const judge = row.judge ?? { passed: 0, failed: 0, unjudged: 0 };
+  const judged = judge.passed + judge.failed;
+  if (judged + judge.unjudged === 0) return '採点する場面なし';
+  if (judged === 0) return `採点していません(${judge.unjudged} つ)`;
+  return `基準以上 ${judge.passed} / ${judged}${judge.unjudged > 0 ? `(採点していない ${judge.unjudged})` : ''}`;
+}
+
+// 場面の 3 つの状態(4.2)。✓ 通った、× 通らない、○ まだ回していない。「まだ」は「通った」と同じ見た目にしない
+const SCENE_STATES = {
+  passed: { mark: '✓', word: '通った', state: 'ok' },
+  failed: { mark: '×', word: '通らない', state: 'failed' },
+  error: { mark: '×', word: '通らない(回せなかった)', state: 'failed' },
+  stopped: { mark: '○', word: '途中で止めた', state: 'todo' },
+  unjudged: { mark: '○', word: '採点していない', state: 'todo' },
+  'n/a': { mark: '─', word: '当てはまらない', state: 'skipped' },
+  none: { mark: '○', word: 'まだ回していない', state: 'todo' },
+};
+
+// 場面ごとの結果。前の回しの後に場面が変わった(stale)ものと、回していないものは「まだ回していない」
+function sceneVerdict(last, id) {
+  return (last && last.verdicts?.[id]) || 'none';
+}
+
+// 通らない場面の数と、場面のタブの名前の数(「場面 4/6 通った」)
+function sceneCounts(data) {
+  const scenes = data?.scenes ?? [];
+  const last = data?.last ?? null;
+  const verdicts = scenes.map((scene) => sceneVerdict(last, scene.id));
+  return {
+    total: scenes.length,
+    passed: verdicts.filter((v) => v === 'passed').length,
+    failed: verdicts.filter((v) => v === 'failed' || v === 'error').length,
+    ran: verdicts.filter((v) => v !== 'none').length,
+  };
+}
+
+// 場面を直す依頼の文。前の回しの「直す」の文(確かめと構成の名前が入る)があれば、それを使う
+function sceneRequest(last, scene) {
+  const failure = (last?.failures ?? []).find((item) => item.id === scene.id);
+  return failure?.request ?? `場面「${scene.id}」${scene.about ? `(${scene.about})` : ''}が通るように直して。場面の一覧と守りは弱めないで。`;
+}
+
+// 「ここから直す」「1 つ目から直す」。作る AI の欄を開き、場面の名前を入れた頼む文で始める(送るのは人。ui-ux-v2.md の 2.3)
+function fixScene(request) {
+  fillRequest(request);
+}
+
+function sceneItem(last, scene) {
+  const verdict = sceneVerdict(last, scene.id);
+  const look = SCENE_STATES[verdict] ?? SCENE_STATES.none;
+  const li = element('li', undefined, 'scene-state');
+  li.dataset.scene = scene.id;
+  li.dataset.state = look.state;
+  li.dataset.verdict = verdict;
+  const mark = element('span', look.mark, 'scene-mark');
+  mark.setAttribute('aria-hidden', 'true');
+  li.append(mark, element('span', look.word, 'scene-word'), element('span', scene.id, 'scene-name'));
+  if (scene.about) li.append(element('span', scene.about, 'scene-about'));
+  if (look.state === 'failed') {
+    // どの構成で、どの確かめが通らなかったか。理由の元の文(開発向け)は閉じた中に置く
+    for (const item of (last?.failures ?? []).filter((f) => f.id === scene.id)) {
+      const row = last.rows.find((r) => r.key === item.row);
+      const checks = item.checks.map((check) => `確かめ「${check.check}」: 期待 ${check.expected ?? '-'}、実際 ${check.actual ?? '-'}`).join('。');
+      li.append(element('p', `構成「${row?.composition.name ?? ''}」: ${item.verdictLabel}。${item.reason ? '' : checks}`, 'scene-detail'));
+      if (item.reason) li.append(sceneDevNote('開発者向け: 回せなかった理由', item.reason));
+    }
+    const fix = element('button', 'ここから直す', 'quiet');
     fix.type = 'button';
-    fix.title = '言葉で直す欄に、この場面を直す依頼を入れます。送るのはあなたです';
-    fix.addEventListener('click', () => {
-      fillRequest(item.request);
-      sceneUi.message = `場面「${item.id}」を直す依頼を、言葉で直す欄に入れました。読んで、送ってください。`;
-      renderScenes(selectedProject());
-    });
+    fix.title = '作る AI の欄を開き、この場面を直す依頼を入れます。送るのはあなたです';
+    fix.addEventListener('click', () => fixScene(sceneRequest(last, scene)));
     li.append(fix);
-    if (item.reason) li.append(sceneDevNote('開発者向け: 回せなかった理由', item.reason));
-    list.append(li);
   }
-  const more = last.failureCount > last.failures.length ? `ほか ${last.failureCount - last.failures.length} つは、ここに出していません。` : '';
-  return [element('p', `通らない場面(「直す」で、言葉で直す欄に依頼が入ります)。${more}`), list];
+  return li;
+}
+
+// 比べる表の上の 1 文。数が同じ場面で測ったものかを書く(4.2)
+function compareBasisText(last) {
+  if (!last) return '';
+  if (last.stale) return '回した後に場面の一覧が変わりました。この表は、今の場面の一覧と同じ場面で測ったものではありません。';
+  const counts = new Set(last.rows.map((row) => row.scenes));
+  if (last.status !== 'done') return '回しを途中で止めたので、組ごとに測った場面が違うことがあります。数をそのまま比べないでください。';
+  if (counts.size === 1) return `どの組も、同じ ${[...counts][0]} 本の場面で測りました。`;
+  return '組ごとに測った場面の数が違います。数をそのまま比べないでください。';
+}
+
+// 構成を選び直す(比べるタブの弱いボタン)。審査のある試作品では、選び直すと段 4 の承認が消えることを、押す前に言う(4.2)
+function renderRechoose(project) {
+  const review = project?.review?.status ?? 'none';
+  const hasChoice = !els.simChoice.hidden;
+  els.rechoose.hidden = !project || (review === 'none' && !hasChoice);
+  if (els.rechoose.hidden) return;
+  if (review !== 'none') {
+    els.rechooseButton.textContent = '構成を選び直す';
+    els.rechooseNote.textContent = review === 'skipped'
+      ? '審査を飛ばした試作品です。選び直すと、段 4「審査」で構成を読み直します。'
+      : '選び直すと、段 4「審査」の承認が消えます。読み直して承認するまで、作る AI は作りません。';
+  } else {
+    els.rechooseButton.textContent = '構成と前提を選ぶ';
+    els.rechooseNote.textContent = '審査のない試作品なので、消える承認はありません。選ぶと、試作品の会話が最初からになります。';
+  }
+}
+
+async function rechoose() {
+  const project = selectedProject();
+  if (!project) return;
+  if ((project.review?.status ?? 'none') !== 'none') {
+    await openReview(project.id);
+    // 構成の欄の「中身を見る」を開く(選び直すのは、その中)
+    const box = document.querySelector('.review-item[data-item="composition"] details');
+    if (box) {
+      box.open = true;
+      box.scrollIntoView({ block: 'nearest' });
+    }
+    return;
+  }
+  setDrawer('mechanism');
+  els.simChoice.scrollIntoView({ block: 'start' });
+}
+
+// 段 6 の右の 3 つのタブの名前。数を添える(「場面 4/6 通った」)
+function renderTabNames(project) {
+  const data = sceneUi.projectId === project?.id ? sceneUi.data : null;
+  const counts = sceneCounts(data);
+  els.tabs.scenes.textContent = counts.total === 0 ? '場面(まだない)' : counts.ran === 0 ? `場面 ${counts.total} つ・まだ` : `場面 ${counts.passed}/${counts.total} 通った`;
+  const rows = data?.last?.rows.length ?? 0;
+  els.tabs.compare.textContent = rows > 0 ? `比べる ${rows} 組` : '比べる';
+}
+
+function selectTab(name, { focus = false } = {}) {
+  frame.tab = name;
+  document.body.dataset.tab = name;
+  for (const [key, tab] of Object.entries(els.tabs)) {
+    const selected = key === name;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    els.panels[key].hidden = !selected;
+  }
+  if (focus) els.tabs[name].focus();
+  if (name !== 'turn') syncScenes(selectedProject(), { force: true });
 }
 
 function renderScenes(project) {
   scheduleFrame();
+  renderTabNames(project);
+  renderRechoose(project);
   const data = sceneUi.projectId === project?.id ? sceneUi.data : null;
   const count = project?.scenes?.count ?? 0;
   sceneEls.box.hidden = !project || (count === 0 && !data?.last);
-  if (sceneEls.box.hidden) return;
+  els.scenesEmpty.hidden = !project || !sceneEls.box.hidden;
+  if (sceneEls.box.hidden) {
+    els.compareBasis.textContent = '';
+    sceneEls.table.replaceChildren(element('p', 'まだ回していません。場面の一覧ができたら、場面のタブで回します。', 'muted'));
+    return;
+  }
   const running = data?.running ?? (project.scenes?.running ? {} : null);
   const last = data?.last ?? null;
-  sceneEls.summary.textContent = `場面の一覧と比べる表(${count} 本${last ? `。前の回し: ${last.rows.length} 組、通らない場面 ${last.failureCount ?? last.failures.length}` : ''}${running ? '。回しています…' : ''})`;
+  const counts = sceneCounts(data);
+  sceneEls.summary.textContent = `場面の一覧(${count} 本${last ? `。前の回しで通らない場面 ${counts.failed}` : ''}${running ? '。回しています…' : ''})`;
   const busy = Boolean(running) || sceneUi.starting || consent.agreeing;
   sceneEls.runMock.disabled = busy || count === 0;
   const real = data?.real;
@@ -7814,22 +8253,21 @@ function renderScenes(project) {
   if (sceneUi.message) lines.push(sceneUi.message);
   if (data?.problem) lines.push(data.problem.text);
   sceneEls.status.replaceChildren(document.createTextNode(lines.join(' ')), ...(data?.problem?.detail ? [sceneDevNote('開発者向け: 回せなかった理由', data.problem.detail)] : []));
+  els.compareBasis.textContent = compareBasisText(last);
   if (!last) {
-    sceneEls.table.replaceChildren(element('p', 'まだ回していません。', 'muted'));
-    sceneEls.failures.replaceChildren();
+    sceneEls.table.replaceChildren(element('p', 'まだ回していません。場面のタブで回すと、構成ごとの表がここに出ます。', 'muted'));
   } else {
     const how = last.real
       ? `本物の AI で回した(${formatTime(last.startedAt)}。上限 ${sceneUsd(last.limitUsd ?? 0)}。自然さは${last.judged ? '採点した' : '採点していません'})`
       : `お試しの AI で回した(${formatTime(last.startedAt)})。形が動くかの確かめだけで、構成の良し悪しの根拠にしません`;
     const notes = [element('p', `${how}。状態: ${SCENE_STATUS[last.status] ?? last.status}${last.stopText ? `(${last.stopText})` : ''}`, last.status === 'done' || last.status === 'running' ? 'muted' : 'scene-warn')];
     if (last.stopReason) notes.push(sceneDevNote('開発者向け: 止めた理由の元の文', last.stopReason));
-    if (last.stale) notes.push(element('p', '回した後に場面の一覧が変わったので、この表は古いです。', 'scene-warn'));
     sceneEls.table.replaceChildren(...notes, sceneTable(last));
-    sceneEls.failures.replaceChildren(...sceneFailures(last));
   }
   const scenes = data?.scenes ?? [];
-  sceneEls.listSummary.textContent = `回す場面(${scenes.length} 本、構成 ${data?.compositions ?? 0} つ)`;
-  sceneEls.list.replaceChildren(...scenes.map((scene) => element('li', `${scene.id}${scene.about ? `: ${scene.about}` : ''}`)));
+  const more = last && last.failureCount > last.failures.length ? `通らない場面のうち ${last.failureCount - last.failures.length} つは、中身をここに出していません。` : '';
+  sceneEls.listSummary.textContent = `回す場面(${scenes.length} 本、構成 ${data?.compositions ?? 0} つ)。${last ? '前の回しの結果です。' : 'まだ回していません。'}${more}`;
+  sceneEls.list.replaceChildren(...scenes.map((scene) => sceneItem(last, scene)));
 }
 
 // 回し始める。本物の AI で同意の前なら、同意のカードを欄に出し、同意したら回す
@@ -7875,9 +8313,19 @@ async function cancelScenes() {
   renderScenes(selectedProject());
 }
 
-sceneEls.box.addEventListener('toggle', () => {
-  if (sceneEls.box.open) syncScenes(selectedProject(), { force: true });
-});
+// 段 6 の 3 つのタブ。押すか、左右の矢印で選ぶ(WAI-ARIA のタブの形)
+for (const [name, tab] of Object.entries(els.tabs)) {
+  tab.addEventListener('click', () => selectTab(name));
+  tab.addEventListener('keydown', (event) => {
+    const keys = Object.keys(els.tabs);
+    const at = keys.indexOf(name);
+    const to = event.key === 'ArrowRight' ? keys[(at + 1) % keys.length] : event.key === 'ArrowLeft' ? keys[(at + keys.length - 1) % keys.length] : event.key === 'Home' ? keys[0] : event.key === 'End' ? keys.at(-1) : null;
+    if (!to) return;
+    event.preventDefault();
+    selectTab(to, { focus: true });
+  });
+}
+els.rechooseButton.addEventListener('click', rechoose);
 sceneEls.runMock.addEventListener('click', () => startScenes('mock'));
 sceneEls.runReal.addEventListener('click', () => startScenes('claude-code'));
 sceneEls.cancel.addEventListener('click', cancelScenes);
@@ -7885,7 +8333,7 @@ sceneEls.cancel.addEventListener('click', cancelScenes);
 // 質の見直しの表(user-journey.md の J6。サーバーは src/server/quality.js)。試す欄の下、場面の一覧と比べる表の次に置く。
 // 測ったもの(アクセシビリティの違反、字と地の差、素材に合わない色と部品、場面の結果、道具の呼び方、守りの効き、費用、待ち時間)と、
 // AI の判断(返事の自然さの採点、使いやすさの見直し)を分けた 2 つの表にする。AI の判断の行には「判断」の印を付ける。
-// 「直す」は、言葉で直す欄に依頼を入れる(送るのは人)。「画面を確かめて見直す」は、お試しの AI で試作品を自動で確かめる(費用なし)
+// 「直す」は、作る AI の欄に依頼を入れる(送るのは人)。「画面を確かめて見直す」は、お試しの AI で試作品を自動で確かめる(費用なし)
 const qualityUi = { projectId: null, data: null, version: null, seq: 0, starting: false, message: null };
 const qualityEls = {
   box: $('quality'),
@@ -7960,10 +8408,10 @@ function qualityTableOf(rows, group, label) {
     if (row.request) {
       const button = element('button', '直す');
       button.type = 'button';
-      button.title = '言葉で直す欄に、この行を直す依頼を入れます。送るのはあなたです';
+      button.title = '作る AI の欄に、この行を直す依頼を入れます。送るのはあなたです';
       button.addEventListener('click', () => {
         fillRequest(row.request);
-        qualityUi.message = `「${row.label}」を直す依頼を、言葉で直す欄に入れました。読んで、送ってください。`;
+        qualityUi.message = `「${row.label}」を直す依頼を、作る AI の欄に入れました。読んで、送ってください。`;
         renderQuality(selectedProject());
       });
       fix.append(' ', button);
@@ -8048,7 +8496,7 @@ const STAGES = [
   { key: 'handoff', num: 9, name: '渡す' },
 ];
 const stageOf = (key) => STAGES.find((stage) => stage.key === key) ?? STAGES[4];
-// 試作品と言葉で直す欄の 2 列を出す段(2.4)
+// 試作品と作る AI の欄の 2 列を出す段(2.4)
 const LAYOUT_STAGES = new Set(['build', 'measure', 'quality', 'show']);
 const STAGE_STATE_WORDS = { done: '済み', skipped: '飛ばした', 'no-review': '審査なし' };
 const STAGE_STATE_MARKS = { done: '✓', skipped: '─', 'no-review': '─' };
@@ -8164,7 +8612,11 @@ function actorStates(project, stage) {
   const states = {};
   const making = Boolean(project && (project.running || sending?.projectId === project.id || runningRun(project.id)));
   const thinking = intentUi.waiting ? '問いを考えています' : designUi.waiting ? '案を作っています' : organizeUi.waiting ? '板を整理しています' : null;
-  if (making) states.maker = { text: '試作品を書いています', active: true };
+  // 作る依頼の今の節が関門の側なら、働いているのは ⬢(作る AI は結果を待つ)
+  const run = project ? runningRun(project.id) : null;
+  const gateNode = run?.current && GATE_SIDE_NODES.has(run.current.node) ? run.current.node : null;
+  if (gateNode) states.maker = { text: '関門の結果を待っています' };
+  else if (making) states.maker = { text: '試作品を書いています', active: true };
   else if (thinking) states.maker = { text: thinking, active: true };
   else if (agent && !agent.ready) states.maker = { text: '今は使えません' };
   else states.maker = { text: '待っています' };
@@ -8176,7 +8628,10 @@ function actorStates(project, stage) {
   else if (hasAi) states.product = { text: tryRealAi() ? '本物' : 'お試し' };
   else states.product = { text: 'まだ読み込んでいません' };
   const review = project?.review?.status ?? 'none';
-  if (project?.building) states.gate = { text: '表示の準備を確かめています', active: true };
+  if (gateNode === 'fix') states.gate = { text: '直す依頼をまとめています', active: true };
+  else if (gateNode === 'evidence') states.gate = { text: '確かめた結果をまとめています', active: true };
+  else if (gateNode) states.gate = { text: `${ITEM_LABELS[`gate:${gateNode}`] ?? gateNode}を確かめています`, active: true };
+  else if (project?.building) states.gate = { text: '表示の準備を確かめています', active: true };
   else if (project?.checking) states.gate = { text: '試作品を確かめています', active: true };
   else if (review === 'drafting' || review === 'stopped') states.gate = { text: '承認まで作らせません' };
   else states.gate = { text: '見張っています' };
@@ -8237,6 +8692,11 @@ nextGo.type = 'button';
 nextGo.id = 'next-go';
 let nextGoAction = null;
 nextGo.addEventListener('click', () => nextGoAction?.());
+// 帯の弱いボタン「止める」(作っている間だけ。4.3)
+const nextStop = element('button', '止める', 'quiet');
+nextStop.type = 'button';
+nextStop.id = 'next-stop';
+nextStop.addEventListener('click', () => els.cancel.click());
 
 // 帯にあるボタンは、元の場所で見えるかで決める(帯の中では、元の親の hidden が効かないため)
 function shownAtHome(button) {
@@ -8301,17 +8761,84 @@ function nextStep(project, stage) {
   }
   if (stage === 'talk' || stage === 'goal' || stage === 'design' || stage === 'review') return noteStep(project, stage);
   const making = Boolean(project.running || sending?.projectId === project.id || runningRun(project.id));
+  // 作っている間は、あなたの番ではないので強い色のボタンを出さない。弱いボタン「止める」と待つ間の 1 文だけ(4.3)
   if (making && LAYOUT_STAGES.has(stage)) {
-    return { text: '作る AI が試作品を書いています。その間に、試作品を触ってみませんか。止めるときは、右の欄の「止める」を押します。' };
+    return { text: '作る AI が試作品を書いています。止めても、前の版は残ります。', stop: Boolean(runningRun(project.id)) };
   }
-  // 段 5 と段 6 は、最初の一歩の進み方(試す → 言葉で直す → 直った結果を試す)で 1 文を選ぶ(13 節。前の「はじめの手順」の 1 文)
-  if (stage === 'build' || stage === 'measure') {
-    const progress = project.firstSteps ?? {};
-    const hint = firstStepsHint(project, FIRST_STEPS.findIndex((step) => !progress[step.key]));
-    const go = stage === 'build' ? { label: '試す', run: () => goStage('measure') } : { label: '質へ進む', run: () => goStage('quality') };
-    return { text: typeof hint === 'string' ? hint : hint.text, tone: typeof hint === 'string' ? '' : hint.tone, go };
-  }
+  if (stage === 'build') return buildStep(project);
+  if (stage === 'measure') return measureStep(project);
   if (stage === 'quality') return { text: '見直しの表の「直す」を上から片付けます。終わったら、人に見せます。', go: { label: '見せる段へ進む', run: () => goStage('show') } };
+  return nextStepTail(project, stage);
+}
+
+// 最初の一歩の進み方(試す → 言葉で直す → 直った結果を試す)の 1 文(13 節。前の「はじめの手順」の 1 文)
+function firstStepsStep(project) {
+  const progress = project.firstSteps ?? {};
+  const hint = firstStepsHint(project, FIRST_STEPS.findIndex((step) => !progress[step.key]));
+  return { text: typeof hint === 'string' ? hint : hint.text, tone: typeof hint === 'string' ? '' : hint.tone };
+}
+
+// 頼み方を変える、言い換える。作る AI の欄を開き、前の依頼の文を入れて選ぶ(送るのは人)
+function rephrase(run) {
+  openMaker();
+  els.requestText.value = run.request;
+  els.requestText.focus();
+  els.requestText.select();
+}
+
+// 段 5 の次の一手。いちばん新しい依頼の結果の 4 つ(4.3 の表)と、ほかの終わり方。依頼がまだなければ最初の一歩の 1 文
+function buildStep(project) {
+  const tryIt = { label: '試す', run: () => goStage('measure') };
+  const run = latestRun(project.id);
+  if (!run) return { ...firstStepsStep(project), go: tryIt };
+  const change = { label: '頼み方を変える', run: () => rephrase(run) };
+  // 守りが止めた: 作る AI が試作品のフォルダーの外を触ろうとして、断られた
+  if (run.items.some((item) => item.kind === 'denied') && !UPDATED_STATUSES.has(run.status)) {
+    return { text: '試作品のフォルダーの外は触れないので、やめました。試作品の中で済む依頼に言い換えてください。', tone: 'warn', go: { label: '言い換える', run: () => rephrase(run) }, outcome: 'guarded' };
+  }
+  const fixes = (run.round ?? 1) - 1;
+  const checked = (run.gates ?? []).filter((gate) => gate.status === 'passed').length;
+  switch (run.status) {
+    case 'passed':
+    case 'done':
+      return { text: `試作品を作りました。${checked > 0 ? `確かめた ${checked} つは、全部通りました。` : ''}試作品で動きを試せます。`, go: tryIt, outcome: 'passed' };
+    case 'fixed':
+      return { text: `${fixes} 度落ちましたが、${FIX_AI} が直して通りました。直したところは記録にあります。`, go: tryIt, outcome: 'fixed' };
+    case 'failed': {
+      const gate = failedGate(run);
+      const where = gate ? `「${gateLabel(gate)}」で落ち、` : '';
+      return { text: `${where}${FIX_AI} が直しきれませんでした。前に動いた版を出しています。頼み方を変えて、もう一度試しますか。`, tone: 'warn', go: change, outcome: 'failed' };
+    }
+    case 'unverified':
+      return { text: '試作品を作りました。自動の確かめの一部は、確かめられませんでした。試作品で動きを試してください。', go: tryIt, outcome: 'unverified' };
+    case 'cancelled':
+      return { text: '止めました。前の版を出しています。', go: tryIt, outcome: 'cancelled' };
+    case 'unchanged':
+      return { text: '試作品のファイルは変わりませんでした。頼み方を変えて、もう一度試しますか。', go: change, outcome: 'unchanged' };
+    default:
+      return { text: `${(RUN_STATUS[run.status] ?? (() => '終わりました'))(run)}。前の版を出しています。頼み方を変えて、もう一度試しますか。`, tone: 'warn', go: change, outcome: run.status };
+  }
+}
+
+// 段 6 の次の一手(4.2)。通らない場面があれば「1 つ目から直す」、回した場面が全部通れば「質の見直しへ進む」。
+// まだ回していなければ、最初の一歩の進み方の 1 文(13 節)
+function measureStep(project) {
+  const quality = { label: '質の見直しへ進む', run: () => goStage('quality') };
+  const data = sceneUi.projectId === project.id ? sceneUi.data : null;
+  const last = data?.last ?? null;
+  const counts = sceneCounts(data);
+  if (last && counts.failed > 0) {
+    const first = (data.scenes ?? []).find((scene) => ['failed', 'error'].includes(sceneVerdict(last, scene.id)));
+    return { text: `${counts.failed} つの場面が通りませんでした。これを見つけるのが試す目的です。`, go: { label: '1 つ目から直す', run: () => fixScene(sceneRequest(last, first)) } };
+  }
+  if (last && last.status === 'done' && !last.stale && counts.total > 0 && counts.passed + counts.failed > 0) {
+    return { text: `回した ${counts.passed} つの場面は、全部通りました。次は質の見直しです。`, go: quality };
+  }
+  return { ...firstStepsStep(project), go: quality };
+}
+
+// 段 8 と段 9 の次の一手
+function nextStepTail(project, stage) {
   if (stage === 'show') {
     if (showUi.starting && frame.moved === els.showStart) return { text: '見せる画面を用意しています。', button: els.showStart, keep: true };
     if (shownAtHome(els.showStart)) return { text: '試作品と確かめたい問いだけの画面にして、人に見せます。', button: els.showStart };
@@ -8362,6 +8889,11 @@ function renderBand(project, stage) {
     nextGoAction = null;
     nextGo.remove();
   }
+  // 作っている間の弱いボタン「止める」。作る AI の欄の「止める」と同じ操作
+  if (step.stop) {
+    if (!nextStop.isConnected) els.nextSlot.append(nextStop);
+  } else nextStop.remove();
+  els.nextBand.dataset.outcome = step.outcome ?? '';
   // 作業台の注記(まだの段)
   const note = !screenOpen() && !showUi.open && ['talk', 'goal', 'design', 'review'].includes(stage) && project ? step.note ?? '' : '';
   els.stageNote.hidden = !note;
@@ -8378,6 +8910,21 @@ function renderBench(project, stage) {
   els.stageShow.hidden = open || stage !== 'show';
   els.stageCheck.hidden = open || stage !== 'quality';
   els.stageHandoff.hidden = open || stage !== 'handoff';
+  renderSide(stage);
+}
+
+// 段 5〜8 の右の列(2.2、2.4)。段 5 は作る AI の欄。段 6〜8 は段の欄で、右上の「■ 作る AI に頼む」で作る AI の欄に替える。
+// 見せている間は、見せる画面の問いの欄。どれを出すかは body の data-side で決める(CSS)
+const SIDE_NAMES = { measure: '測る', quality: '質の見直し', show: '見せる' };
+function renderSide(stage) {
+  const maker = stage === 'build' || frame.side === 'maker';
+  const side = showUi.open ? 'showing' : maker ? 'maker' : stage;
+  document.body.dataset.side = side;
+  els.sideSwitch.hidden = showUi.open || stage === 'build' || !LAYOUT_STAGES.has(stage);
+  els.sideMaker.hidden = maker;
+  els.sideBack.hidden = !maker;
+  els.sideBack.textContent = `← ${SIDE_NAMES[stage] ?? ''}に戻る`;
+  els.measure.hidden = side !== 'measure';
 }
 
 function renderFrame() {
@@ -8409,6 +8956,7 @@ function goStage(key) {
   setProjectMenu(false);
   if (!project && key !== 'talk') return;
   frame.stage = 'build';
+  frame.side = 'stage';
   if (key === 'talk') {
     if (!project) return $('new-project').click();
     const intent = project.intent?.status ?? 'none';
@@ -8437,8 +8985,8 @@ function goStage(key) {
   } else {
     closeScreens();
     frame.stage = key;
-    // 段 6 は場面の一覧と比べる表を、段 7 は質の見直しを開いて出す
-    if (key === 'measure' && !sceneEls.box.hidden) sceneEls.box.open = true;
+    // 段 6 は 3 つのタブ(前に選んだタブ)を、段 7 は質の見直しを開いて出す
+    if (key === 'measure') selectTab(frame.tab);
     if (key === 'quality' && !qualityEls.box.hidden) qualityEls.box.open = true;
   }
   renderFrame();
@@ -8459,6 +9007,17 @@ els.stageList.addEventListener('click', (event) => {
   if (button) goStage(button.dataset.stage);
 });
 els.stageCompact.addEventListener('click', () => setCompact(!frame.compactOpen));
+// 段 6〜8 の右上の「■ 作る AI に頼む」と「← (段)に戻る」
+els.sideMaker.addEventListener('click', () => {
+  frame.side = 'maker';
+  renderFrame();
+  els.requestText.focus({ preventScroll: true });
+});
+els.sideBack.addEventListener('click', () => {
+  frame.side = 'stage';
+  renderFrame();
+  els.sideMaker.focus({ preventScroll: true });
+});
 const stageRail = document.querySelector('.stage-rail');
 document.addEventListener('click', (event) => {
   if (frame.compactOpen && !event.composedPath().includes(stageRail)) setCompact(false);

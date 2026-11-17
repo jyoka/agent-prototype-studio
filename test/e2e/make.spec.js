@@ -2,10 +2,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { chooseSample, chooseTestRequest, closeMore, expect, expectReadableText, launchStudio, openDevDetails, ROOT, SAMPLES, test } from './studio.js';
 
-// 作る欄(言葉で直す)の縦切り。作る AI(直す AI)は決定的な偽接続(src/agent/fake-claude.js)か偽の claude で、
+// 作る欄(言葉で直す)の縦切り。作る AI(作る AI)は決定的な偽接続(src/agent/fake-claude.js)か偽の claude で、
 // モデルも外部の API も呼ばない。
 
-// 偽の claude(test/fixtures/fake-claude.js)。--version と auth status に答える。直す AI としては使わない
+// 偽の claude(test/fixtures/fake-claude.js)。--version と auth status に答える。作る AI としては使わない
 const FAKE_CLAUDE = path.join(ROOT, 'test', 'fixtures', 'fake-claude.js');
 // 「分かるか」の確かめ(ux-redesign.md 9 節)のスクリーンショットの置き場。test-results/ は git が無視する
 const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
@@ -51,7 +51,7 @@ test('作る欄の依頼で試作品のファイルが変わり、試す画面�
   try {
     await page.goto(studio.url);
     await chooseSample(page, SAMPLES.library);
-    const make = page.getByRole('region', { name: '言葉で直す' });
+    const make = page.getByRole('region', { name: '作る AI', exact: true });
     // 偽接続は、上の帯の印だけで分かる。直す欄の上に接続と認証の長文の枠はない
     await expect(page.getByRole('region', { name: '今の行' }).getByText('開発用: 偽の作る AI')).toBeVisible();
     await expect(make.locator('#make-target')).toHaveText('図書室への依頼');
@@ -76,7 +76,7 @@ test('作る欄の依頼で試作品のファイルが変わり、試す画面�
     await expect(run.locator('.bubble.user')).toContainText('見出しを「ひだまり図書室」にして');
     // 操作は短い文で出す。ファイルの名前と道具の名前は、実行ごとの「開発者向け」の中にだけ出す
     await expect(run.getByText('試作品のファイルを書き換えました')).toBeVisible();
-    await expect(run.locator('.bubble.agent .who').first()).toHaveText('直す AI');
+    await expect(run.locator('.bubble.agent .who').first()).toHaveText('作る AI');
     await expect(run.locator('.bubble.agent')).toContainText('見出しを「ひだまり図書室」に変えました');
     // 作る会話の項目の本文は利用者の言葉。ファイルの名前は開発者向けにだけ出す(ux-redesign.md 4 節)
     await expect(run.locator('.steps')).toContainText('試作品のファイルが 1 個変わりました。');
@@ -138,7 +138,7 @@ test('権限の確認で断られた操作と、作る AI の失敗を会話に�
     await dev.locator('summary').click();
     await expect(dev.locator('[data-dev-kind="denied"]')).toContainText('権限の確認で断られました: 書く:');
     await expect(dev.locator('[data-dev-kind="denied"]')).toContainText('outside-note.txt(app/ の外)');
-    await expect(run.locator('[data-kind="tool-error"]')).toContainText('直す AI の操作が、うまくいきませんでした。');
+    await expect(run.locator('[data-kind="tool-error"]')).toContainText('作る AI の操作が、うまくいきませんでした。');
     await expect(dev.locator('[data-dev-kind="tool-error"]')).toContainText('許可されていません');
     await expect(run).toContainText('試作品のファイルは変わっていません。');
     // 断られた書き込みを、書いたとは言わない
@@ -152,7 +152,7 @@ test('権限の確認で断られた操作と、作る AI の失敗を会話に�
     await chooseTestRequest(page, '失敗して');
     await page.getByLabel('依頼').press('Control+Enter');
     run = lastRun(page);
-    await expect(run.locator('[data-kind="failed"]')).toHaveText(/直す AI が途中で失敗しました。もう一度送ってください。/);
+    await expect(run.locator('[data-kind="failed"]')).toHaveText(/作る AI が途中で失敗しました。もう一度送ってください。/);
     await expect(run.locator('.run-dev [data-dev-kind="failed"]')).toContainText('偽接続 が失敗しました: 偽接続: 依頼どおりに失敗しました');
     await expect(run.locator('.run-status')).toContainText('失敗しました');
 
@@ -168,7 +168,7 @@ test('権限の確認で断られた操作と、作る AI の失敗を会話に�
     // 作る AI が直すラウンドでも直せないときの形(直せたときは make-loop.spec.js)
     await sendTestRequest(page, '壊して、直せないふりをして');
     run = lastRun(page);
-    await expect(run.locator('[data-kind="gave-up"]')).toContainText('直す AI が 2 回直そうとしましたが、「表示の準備」の問題が残っています');
+    await expect(run.locator('[data-kind="gave-up"]')).toContainText('作る AI が 2 回直そうとしましたが、「表示の準備」の問題が残っています');
     await expect(run.locator('.run-dev [data-dev-kind="gave-up"]')).toContainText('直すラウンドを 2 回行ったが、G4 ビルドで失敗したまま。');
     await expect(run.locator('.run-dev')).toContainText('変わったファイル: app/App.jsx');
     await expect(run.locator('[data-kind="build-failed"]')).toHaveCount(3);
@@ -196,9 +196,9 @@ test('作業中は中断でき、その間はほかの依頼と作り直しを�
     await sendTestRequest(page, 'ゆっくり進めて');
     const run = lastRun(page);
     await expect(run).toContainText('少しずつ進めています(1/60)');
-    // 作業中の表示は、操作の短い文と「直す AI が作業しています」
+    // 作業中の表示は、操作の短い文と「作る AI が作業しています」
     await expect(run.getByText('試作品のファイルを探しました')).toBeVisible();
-    await expect(run.locator('.run-status')).toContainText('直す AI が作業しています');
+    await expect(run.locator('.run-status')).toContainText('作る AI が作業しています');
     await expect(page.getByRole('button', { name: '送る' })).toBeDisabled();
     await expect(page.getByLabel('依頼')).toBeDisabled();
     // ファイルから作り直すは、仕組みの引き出しにある
@@ -215,12 +215,12 @@ test('作業中は中断でき、その間はほかの依頼と作り直しを�
     await page.reload();
     await chooseSample(page, SAMPLES.library);
     const menu = page.getByRole('navigation', { name: '試作品の一覧', includeHidden: true });
-    await expect(menu.getByRole('button', { name: SAMPLES.library.name, includeHidden: true })).toContainText('直す AI が作業中');
-    await expect(lastRun(page).locator('.run-status')).toContainText('直す AI が作業しています');
-    await page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '止める' }).click();
+    await expect(menu.getByRole('button', { name: SAMPLES.library.name, includeHidden: true })).toContainText('作る AI が作業中');
+    await expect(lastRun(page).locator('.run-status')).toContainText('作る AI が作業しています');
+    await page.getByRole('region', { name: '作る AI', exact: true }).getByRole('button', { name: '止める' }).click();
     await expect(lastRun(page).locator('[data-kind="cancelled"]')).toContainText('止めました。途中まで書き換えた試作品のファイルは、そのまま残っています。');
     await expect(lastRun(page).locator('.run-status')).toContainText('止めました');
-    await expect(page.getByRole('region', { name: '言葉で直す' }).getByRole('button', { name: '止める' })).toBeHidden();
+    await expect(page.getByRole('region', { name: '作る AI', exact: true }).getByRole('button', { name: '止める' })).toBeHidden();
     await expect(page.getByRole('button', { name: '送る' })).toBeEnabled();
     const steps = await lastRun(page).locator('li').count();
     // 中断の後は、もう進まない
@@ -259,7 +259,7 @@ test('Claude Code に切り替えると、版と認証の見込みを送る前�
     const consent = page.getByRole('group', { name: '本物の AI を使う前に' });
     await expect(consent).toContainText('AI は、あなたの Claude Code で動きます。');
     await expect(consent).toContainText('API キーの設定があるので、使った分だけ料金がかかります。');
-    await expect(consent).toContainText('直すときは、直す AI の 1 回の起動で 1 ドルまでです');
+    await expect(consent).toContainText('直すときは、作る AI の 1 回の起動で 1 ドルまでです');
     await expect(consent).not.toContainText('fictional-value-for-test');
     await expect(page.getByLabel('依頼')).toHaveValue('見出しを「本番の形で」にして');
     expect((await studio.api('/api/projects/sample-library/build-requests')).runs).toEqual([]);
@@ -272,7 +272,7 @@ test('Claude Code に切り替えると、版と認証の見込みを送る前�
     await consent.getByRole('button', { name: '同意して使う' }).click();
     await expect(consent).toBeHidden();
     const run = lastRun(page);
-    await expect(run.locator('.bubble.agent .who').first()).toHaveText('直す AI');
+    await expect(run.locator('.bubble.agent .who').first()).toHaveText('作る AI');
     await expect(run).toContainText('試作品に反映しました。');
     await expect(run.locator('.run-dev')).toContainText('接続: Claude Code');
     await expect(run.locator('.run-dev')).toContainText('認証の報告: ANTHROPIC_API_KEY');
@@ -308,7 +308,7 @@ test('U4: 既定の起動では試験用の依頼が見えず、利用者向け�
     await page.goto(studio.url);
     const app = page.frameLocator('iframe[title="試作品"]');
     await expect(app.getByRole('heading', { name: 'しおかぜ求人相談' })).toBeVisible();
-    const make = page.getByRole('region', { name: '言葉で直す' });
+    const make = page.getByRole('region', { name: '作る AI', exact: true });
     await expect(make.locator('#make-target')).toHaveText('求人相談への依頼');
     // AI のある試作品の例。1 つ目は、試作品の AI の設定の最後の項目を先に聞く
     const examples = make.getByRole('list', { name: '直し方の例' }).getByRole('button');
@@ -352,7 +352,7 @@ test('U4: STUDIO_AGENT=fake では、試験用の依頼は開発者向けの詳�
     for (const word of TEST_WORDS) expect(await visibleText(page)).not.toContain(word);
 
     await openDevDetails(page);
-    const tests = page.getByRole('list', { name: '偽の直す AI で試せる例' });
+    const tests = page.getByRole('list', { name: '偽の作る AI で試せる例' });
     await expect(tests).toBeVisible();
     for (const word of ['壊して', 'ゆっくり進めて', '失敗して', 'ログインしていないふりをして']) {
       await expect(tests.getByRole('button', { name: word, exact: true })).toBeVisible();
@@ -360,7 +360,7 @@ test('U4: STUDIO_AGENT=fake では、試験用の依頼は開発者向けの詳�
     // 試作品の AI の項目の名前を入れた例も、ここにある
     await expect(tests.getByRole('button', { name: '「時給の下限」を先に聞くようにして', exact: true })).toBeVisible();
 
-    // 選ぶと依頼の欄に入り、引き出しが閉じる。送ると直す AI が動く
+    // 選ぶと依頼の欄に入り、引き出しが閉じる。送ると作る AI が動く
     await sendTestRequest(page, '「時給の下限」を先に聞くようにして');
     const run = lastRun(page);
     await expect(run.locator('.run-updated')).toHaveText('AI の設定を変えました。試作品は新しくなっています。');
@@ -390,14 +390,14 @@ test('U8: Claude Code がないと、直す欄に何ができないかと手順�
     await expect(card.getByRole('listitem').filter({ hasText: 'Studio を止めて、もう一度起動する' })).toBeVisible();
     // 送れない。例も出さない
     await expect(page.getByRole('button', { name: '送る' }).last()).toBeDisabled();
-    await expect(page.getByLabel('依頼')).toHaveAttribute('placeholder', '直す AI が使えないので、送れません');
+    await expect(page.getByLabel('依頼')).toHaveAttribute('placeholder', '作る AI が使えないので、送れません');
     await expect(page.locator('#examples')).toBeHidden();
     await expect(page.locator('#dev-agent-mark')).toBeHidden();
     // サーバーの理由の文と、変数の名前は見えない。カードの中の「開発者向け」を開くと見える
     for (const word of ['ENOENT', 'spawn', 'claude が見つかりません', 'STUDIO_', missing]) {
       expect(await visibleText(page)).not.toContain(word);
     }
-    await expectReadableText(page, '直す AI が使えないとき');
+    await expectReadableText(page, '作る AI が使えないとき');
     await page.screenshot({ path: path.join(UX_SHOTS, 'P23-unavailable.png') });
     await card.getByText('開発者向け: 確かめた結果').click();
     await expect(card.getByText('claude が見つかりません')).toBeVisible();
@@ -479,8 +479,8 @@ test('作業中は操作を短い文で出し、終わったら何を変えた�
 
     const run = lastRun(page);
     await expect(run.getByText('AI の設定を読みました')).toBeVisible({ timeout: 15_000 });
-    await expect(run.locator('.run-status')).toHaveText('直す AI が作業しています…');
-    await expectReadableText(page, '直す AI が作業中');
+    await expect(run.locator('.run-status')).toHaveText('作る AI が作業しています…');
+    await expectReadableText(page, '作る AI が作業中');
     await page.screenshot({ path: path.join(UX_SHOTS, 'P23-working.png') });
     // ファイルの名前と道具の名前は見えない
     for (const word of ['ai.json', 'Read', '読む:', 'Claude Code']) expect(await run.innerText()).not.toContain(word);

@@ -132,7 +132,7 @@ function App() {
   return (
     <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem', lineHeight: 1.6 }}>
       <h1>新しい試作品</h1>
-      <p>まだ中身はありません。右の「言葉で直す」で、作りたいものを頼んでください。</p>
+      <p>まだ中身はありません。右の「作る AI」の欄で、作りたいものを頼んでください。</p>
     </main>
   );
 }

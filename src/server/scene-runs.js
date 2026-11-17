@@ -61,6 +61,30 @@ function compositionOf(group) {
   };
 }
 
+// AI の採点(check: judge)の確かめを数える。基準以上(passed)、基準より下(failed)、採点していない(unjudged)
+function judgeCounts(evals) {
+  const checks = evals.flatMap((item) => (item.checks ?? []).filter((check) => check.check === 'judge'));
+  return {
+    passed: checks.filter((check) => check.verdict === 'passed').length,
+    failed: checks.filter((check) => check.verdict === 'failed').length,
+    unjudged: checks.filter((check) => check.verdict !== 'passed' && check.verdict !== 'failed').length,
+  };
+}
+
+// 場面ごとの結果を、組(構成)をまたいでまとめる。1 つの組でも通らなければ通らない。画面の場面のタブの ✓ × ○ に使う
+const VERDICT_ORDER = ['failed', 'error', 'stopped', 'unjudged', 'passed', 'n/a'];
+export function sceneVerdictsOf(result) {
+  const verdicts = {};
+  for (const group of result.groups ?? []) {
+    for (const item of group.evals ?? []) {
+      const before = verdicts[item.id];
+      const rank = (verdict) => (VERDICT_ORDER.includes(verdict) ? VERDICT_ORDER.indexOf(verdict) : VERDICT_ORDER.length);
+      if (before === undefined || rank(item.verdict) < rank(before)) verdicts[item.id] = item.verdict;
+    }
+  }
+  return verdicts;
+}
+
 // 比べる表の 1 行(組)。通った数、道具の呼び方の正しさ、費用、待ち時間。モックの費用と待ち時間は振る舞いの差を表さないので、画面は「測れない」と出す
 export function rowOf(group, index) {
   const evals = group.evals ?? [];
@@ -85,6 +109,8 @@ export function rowOf(group, index) {
     notApplicable: evals.length - ran.length,
     // 採点(judge)だけの場面で、採点しなかったもの(画面の回しは採点しない)
     unjudged: evals.filter((item) => item.verdict === 'unjudged').length,
+    // AI の採点(judge)の確かめの数。比べる表で、測った数とは別の列「AI の判断」に出す(ui-ux-v2.md の 4.2)
+    judge: judgeCounts(evals),
     toolRecall: summary.toolRecall ?? null,
     wrongCalls: summary.wrongCalls ?? 0,
     toolCalls: summary.tools?.calls ?? 0,
@@ -96,7 +122,7 @@ export function rowOf(group, index) {
   };
 }
 
-// 「直す」で言葉で直す欄に入れる依頼の文。場面の id と、通らなかった確かめと、ツールの呼び出しの要約。
+// 「直す」で作る AI の欄に入れる依頼の文。場面の id と、通らなかった確かめと、ツールの呼び出しの要約。
 // 場面と守りを弱めて通さないことを、作る AI への決まり(fix-prompt.js の CLOSING)と同じ考えで書く
 export function fixRequestOf({ scene, row }) {
   const how = row.real ? '本物の AI' : 'お試しの AI';
@@ -164,6 +190,8 @@ export function tableOf(result, sceneIds = null) {
     rows,
     failures,
     failureCount,
+    // 場面ごとの結果(組をまたいでまとめたもの)。{ 場面の id: verdict }
+    verdicts: sceneVerdictsOf(result),
     stale,
   };
 }

@@ -59,7 +59,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     };
 
     // 既定はモック
-    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
+    await expect(page.locator('#ai-badge')).toHaveText('お試し');
     await say('カフェで働きたいです');
     await expect(log.last()).toContainText(AFTER_JOB);
     await expect(log.last()).toContainText('お試しの AI');
@@ -93,7 +93,7 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     // 「同意して使う」で、本物の AI を使う同意になり、切り替わる
     await page.getByRole('radio', { name: '本物の AI', exact: true }).check();
     await confirm.getByRole('button', { name: '同意して使う' }).click();
-    await expect(page.locator('#ai-badge')).toHaveText('AI: 本物');
+    await expect(page.locator('#ai-badge')).toHaveText('本物');
     expect((await studio.api('/api/real-ai')).consent.agreed).toBe(true);
     await expect(page.locator('#events')).toContainText('接続を「Claude Code」にしました');
     await expect(app.locator('.note')).toContainText('案内役の AI は Claude Code(実際の AI モデル)です');
@@ -164,14 +164,14 @@ test('モックの会話を引き継いで Claude Code(偽)に切り替え、自
     // 画面を読み込み直しても(開き直す)、会話と接続はそのまま
     await page.getByRole('button', { name: '画面を読み込み直す' }).click();
     await expect(log).toHaveCount(8);
-    await expect(page.locator('#ai-badge')).toHaveText('AI: 本物');
+    await expect(page.locator('#ai-badge')).toHaveText('本物');
 
     // モックに戻すのに確認は要らない。会話は続く
     // 選ぶと切り替わり、AI の切り替えは閉じる
     await openAiMenu(page);
     await page.getByRole('radio', { name: 'お試しの AI', exact: true }).click();
     await expect(page.locator('#ai-menu')).toBeHidden();
-    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
+    await expect(page.locator('#ai-badge')).toHaveText('お試し');
     await expect(page.locator('#real-ai-try')).toBeHidden();
     await say('やっぱりアルバイトがいいです');
     await expect(log.last()).toContainText('雇用区分「アルバイト・パート」と理解しました。');
@@ -301,7 +301,7 @@ test('実モデルは STUDIO_ALLOW_CLAUDE_CODE=0 では選べず、理由を出�
     await openAiMenu(page);
     await expect(page.getByRole('radio', { name: '本物の AI', exact: true })).toBeDisabled();
     await expect(page.locator('#ai-menu')).toContainText('本物の AI は、使わない設定で起動されています');
-    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
+    await expect(page.locator('#ai-badge')).toHaveText('お試し');
   } finally {
     await blocked.stop();
   }

@@ -102,7 +102,7 @@ async function runFlow(page, home, other, otherHome) {
     const ui = parts(page);
     await expect(ui.app.getByRole('heading', { name: 'あおぞら学習相談' })).toBeVisible();
     await expect(ui.log.first()).toContainText(GREETING);
-    await expect(page.locator('#ai-badge')).toHaveText('AI: お試し');
+    await expect(page.locator('#ai-badge')).toHaveText('お試し');
     await expect(page.locator('dl.ai-state dt')).toHaveText(['学びたいこと', 'いまの段階', '学び方', '1日に使える時間']);
     // 直す欄の例も、試験用の依頼も、この試作品の項目から作る(求人の項目の名前は出ない)
     await expect(page.locator('#example-list')).toContainText('1日に使える時間を先に聞くようにして');

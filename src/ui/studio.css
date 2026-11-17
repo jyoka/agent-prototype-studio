@@ -538,7 +538,7 @@ body[data-intent] .layout, body[data-intent] .stage-panel { display: none; }
 .intent-note { color: var(--color-text-muted); }
 .intent-error { color: var(--color-danger); }
 
-/* 2 列。左の「試す」が約 6 割、右の「言葉で直す」が約 4 割。主役の 2 つを、スクロールなしで 1 画面に収める */
+/* 段 5〜8 の 2 列(ui-ux-v2.md の 2.2、2.4)。左の試作品が約 6 割、右の入れ替わる列が約 4 割。主役の 2 つを、スクロールなしで 1 画面に収める */
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
@@ -547,7 +547,7 @@ body[data-intent] .layout, body[data-intent] .stage-panel { display: none; }
   min-height: 32rem;
   padding: 1rem;
 }
-.preview, .make {
+.preview, .make, .measure, .side > .stage-panel, .side > .quality {
   background: var(--color-surface);
   border: var(--stroke-hair) solid var(--color-line);
   border-radius: var(--radius-2);
@@ -707,7 +707,7 @@ body[data-intent] .layout, body[data-intent] .stage-panel { display: none; }
 .make > .muted { font-size: var(--text-2); }
 .make-target { margin: -0.3rem 0 0; font-weight: var(--weight-bold); color: var(--color-link); }
 .make-target:empty { display: none; }
-/* 直す AI が使えないときのカード(ux-redesign.md 7-5) */
+/* 作る AI が使えないときのカード(ux-redesign.md 7-5) */
 .agent-unavailable { padding: 0.6rem 0.8rem; border: var(--stroke-hair) solid var(--color-warn); border-radius: var(--radius-2); background: var(--color-warn-soft); }
 .agent-unavailable[hidden] { display: none; }
 .agent-unavailable h3 { margin: 0 0 0.3rem; font-size: var(--text-3); }
@@ -1040,7 +1040,8 @@ body[data-show] .bench > :not(.layout),
 body[data-show] .drawer { display: none !important; }
 /* 見せている間に、ほかの画面(目的、整理、設計、審査、会)が開いても、見せる画面を隠さない */
 body[data-show] .layout { display: grid !important; }
-body[data-show] .layout > .make,
+body[data-show] .side > .make,
+body[data-show] .side > :not(#show),
 body[data-show] .preview > :not(#frame-host):not(#ai-waiting),
 body[data-show] [data-studio-only] { display: none !important; }
 .show[hidden] { display: none; }
@@ -1341,4 +1342,136 @@ body[data-bench="handoff"] .layout, body[data-bench="note"] .layout { display: n
 }
 @media (max-width: 1023px) {
   .next-band { position: sticky; bottom: 0; z-index: 5; }
+}
+
+/* ---- 段 5〜8 の右の列(ui-ux-v2.md の 2.2、2.4、4.2、4.3) ---- */
+.side { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; min-height: 0; }
+.side > .make { flex: 1 1 auto; }
+/* どの欄を出すかは body の data-side で決める。段 5 と「■ 作る AI に頼む」は作る AI の欄 */
+body:not([data-side="maker"]) .side > .make { display: none; }
+body:not([data-side="measure"]) .side > .measure { display: none; }
+body:not([data-side="quality"]) .side > #stage-check,
+body:not([data-side="quality"]) .side > #quality { display: none; }
+body:not([data-side="show"]) .side > #stage-show { display: none; }
+.side > .stage-panel { margin: 0; }
+.side > .quality { padding: var(--space-2) var(--space-3); font-size: var(--text-2); overflow: auto; }
+.side-switch { display: flex; justify-content: flex-end; gap: var(--space-2); }
+.side-switch[hidden], .side-switch [hidden] { display: none; }
+.side-switch button { padding: 0.3rem 0.8rem; cursor: pointer; }
+.side-switch .actor-shape { color: var(--actor-maker); }
+.make-head h2 .actor-shape { color: var(--actor-maker); font-size: var(--text-2); }
+.toolbar .ai-switch .actor-shape { color: var(--actor-product); }
+
+/* 段 6 の 3 つのタブ。選んだタブは太字と 2px の下線(色だけで示さない) */
+.measure { display: flex; flex-direction: column; min-height: 0; overflow: hidden; font-size: var(--text-2); }
+.measure[hidden] { display: none; }
+.tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); border-bottom: var(--stroke-hair) solid var(--color-line-strong); margin-bottom: var(--space-2); }
+.tabs [role="tab"] { padding: 0.35rem 0.7rem; border: 0; border-bottom: var(--stroke-mark) solid transparent; border-radius: 0; background: transparent; color: var(--color-text-muted); font-size: var(--text-2); cursor: pointer; }
+.tabs [role="tab"][aria-selected="true"] { color: var(--color-text); font-weight: var(--weight-bold); border-bottom-color: var(--color-accent); }
+.tab-panel { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.tab-panel[hidden] { display: none; }
+.measure .turn-record, .measure .scene-runs { margin: 0; max-height: none; border: 0; padding: 0; background: transparent; }
+.scene-runs > h3 { margin: 0 0 0.2rem; font-size: var(--text-2); }
+.scene-runs > p { margin: 0.3rem 0; }
+
+/* この 1 ターンの流れ。時刻は等幅、形はモデル(▲)と守り(⬢)にだけ */
+.turn-timeline { list-style: none; margin: 0.3rem 0 0.5rem; padding: 0; }
+.timeline-row { display: grid; grid-template-columns: 3.2rem 1.2rem 3.6rem 1fr; align-items: baseline; gap: 0 var(--space-1); padding: 0.1rem 0; border-bottom: var(--stroke-hair) solid var(--color-line); }
+.tl-time { font-family: var(--font-mono); font-size: var(--text-1); color: var(--color-text-muted); text-align: right; }
+.tl-shape { text-align: center; font-size: var(--text-1); }
+.timeline-row[data-kind="model"] .tl-shape { color: var(--actor-product); }
+.timeline-row[data-kind="guard"] .tl-shape { color: var(--actor-gate); }
+.tl-kind.tag { justify-self: start; font-family: var(--font-mono); color: var(--color-text); }
+.timeline-row[data-kind="model"] .tl-kind { border-style: dashed; }
+.timeline-row[data-kind="guard"] .tl-kind { border-color: var(--actor-gate); }
+/* 守りが止めた行は失敗ではない。失敗の色(赤)にせず、⬢ と太字で示す */
+.turn-record .timeline-row[data-effect] { color: var(--color-text); font-weight: var(--weight-regular); }
+.timeline-row[data-kind="guard"][data-effect="blocked"] .tl-text { font-weight: var(--weight-bold); }
+.timeline-row[data-kind="note"] { border-bottom-style: dashed; }
+.timeline-row[data-kind="note"] .tl-shape { color: var(--actor-you); }
+.timeline-row[data-kind="note"] .tl-text { color: var(--color-text-muted); }
+.turn-more { margin-top: var(--space-1); padding: 0.25rem 0.6rem; cursor: pointer; }
+
+/* 場面の 3 つの状態。✓ 通った、× 通らない、○ まだ回していない。印と文で分け、「まだ」は点線の縁 */
+.scene-list-head { margin: 0.5rem 0 0.2rem; color: var(--color-text-muted); }
+.scene-states { list-style: none; margin: 0; padding: 0; }
+.scene-state { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem var(--space-2); padding: 0.3rem 0.4rem; margin: 0.2rem 0; border: var(--stroke-hair) solid var(--color-line); border-left-width: 4px; border-radius: var(--radius-1); }
+.scene-state[data-state="ok"] { border-left-color: var(--color-ok); }
+.scene-state[data-state="failed"] { border-left-color: var(--color-danger); }
+.scene-state[data-state="todo"] { border-style: dashed; border-left-style: dashed; border-left-color: var(--color-line-strong); }
+.scene-mark { font-weight: var(--weight-bold); }
+.scene-state[data-state="ok"] .scene-mark, .scene-state[data-state="ok"] .scene-word { color: var(--color-ok); }
+.scene-state[data-state="failed"] .scene-mark, .scene-state[data-state="failed"] .scene-word { color: var(--color-danger); }
+.scene-state[data-state="todo"] .scene-mark, .scene-state[data-state="todo"] .scene-word { color: var(--color-text-muted); }
+.scene-word { font-weight: var(--weight-bold); }
+.scene-name { font-family: var(--font-mono); font-size: var(--text-1); }
+.scene-about { flex: 1 1 100%; color: var(--color-text-muted); }
+.scene-detail { flex: 1 1 100%; margin: 0; }
+.scene-state > button { margin-left: auto; padding: 0.2rem 0.6rem; cursor: pointer; }
+
+/* 比べる。表の上に、同じ場面で測ったかの 1 文。AI の判断の列は点線で分ける */
+.compare-basis { margin: 0 0 0.3rem; font-weight: var(--weight-bold); }
+.compare-basis:empty { display: none; }
+/* 列が 7 つあるので、狭いときは縮めずに横にスクロールする */
+#panel-compare table { border-collapse: collapse; width: 100%; min-width: 34rem; margin: 0.3rem 0; font-size: var(--text-1); }
+#panel-compare th, #panel-compare td { border: var(--stroke-hair) solid var(--color-line); padding: 0.2rem 0.4rem; text-align: left; vertical-align: top; }
+#panel-compare small { display: block; color: var(--color-text-muted); }
+#panel-compare [data-judge] { border-style: dashed; background: var(--color-surface-sunken); }
+.rechoose { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin-top: var(--space-3); padding-top: var(--space-2); border-top: var(--stroke-hair) solid var(--color-line); }
+.rechoose[hidden] { display: none; }
+.rechoose button { padding: 0.3rem 0.8rem; cursor: pointer; }
+.rechoose p { flex: 1 1 14rem; margin: 0; }
+
+/* 作る AI の欄の「今していること」(4.3)。行は者の形と平たい名前と、状態の印と言葉 */
+.make-now { padding: var(--space-2) var(--space-3); border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface-sunken); }
+.make-now[hidden] { display: none; }
+.make-now-line { margin: 0 0 var(--space-1); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.make-now-label { font-weight: var(--weight-bold); }
+.make-now h3 { margin: var(--space-1) 0; font-size: var(--text-2); color: var(--color-text-muted); border-top: var(--stroke-hair) solid var(--color-line); padding-top: var(--space-1); }
+.make-now-list, .now-gate-list { list-style: none; margin: 0; padding: 0; }
+.now-gate-list { padding-left: 1.4rem; }
+.now-row { display: grid; grid-template-columns: 1.2rem 1.2rem 1fr auto; align-items: baseline; gap: 0 var(--space-1); padding: 0.1rem 0; }
+.now-gate-list .now-row { grid-template-columns: 1.2rem 0 1fr auto; }
+.now-gate-list .now-row .actor-shape { visibility: hidden; }
+.now-mark { text-align: center; font-weight: var(--weight-bold); }
+.now-state { color: var(--color-text-muted); font-size: var(--text-1); }
+.now-detail { grid-column: 3 / -1; color: var(--color-text-muted); font-size: var(--text-1); }
+.now-row[data-actor="maker"] .actor-shape { color: var(--actor-maker); }
+.now-gates > .actor-shape { color: var(--actor-gate); }
+.now-gates > .now-name { font-weight: var(--weight-bold); }
+.now-row[data-state="done"] .now-mark { color: var(--color-ok); }
+.now-row[data-state="failed"] .now-mark, .now-row[data-state="failed"] .now-state { color: var(--color-danger); font-weight: var(--weight-bold); }
+.now-row[data-state="warn"] .now-mark { color: var(--color-warn); }
+.now-row[data-state="todo"] .now-mark { color: var(--color-text-muted); }
+.now-row[data-state="active"] .now-name, .now-row[data-state="writing"] .now-name { font-weight: var(--weight-bold); }
+/* ● の行の横を短い線が流れる(10.5)。動きを止めると線は消え、「確かめています」の文だけになる */
+.now-row[data-state="active"] .now-state, .now-row[data-state="writing"] .now-state {
+  color: var(--color-text);
+  padding-bottom: 1px;
+  border-bottom: var(--stroke-mark) solid var(--actor-gate);
+  background-image: linear-gradient(90deg, transparent 0 40%, var(--color-text) 40% 60%, transparent 60% 100%);
+  background-size: 300% var(--stroke-mark);
+  background-repeat: no-repeat;
+  background-position: 100% 100%;
+  animation: actor-flow var(--motion-draw) var(--ease-linear) infinite;
+}
+.now-row[data-state="writing"] .now-state { border-bottom-color: var(--actor-maker); }
+.make-now-rounds, .make-now-time { margin: var(--space-1) 0 0; font-size: var(--text-1); color: var(--color-text-muted); }
+.make-now-rounds[hidden] { display: none; }
+.make-now-time { font-variant-numeric: tabular-nums; }
+
+/* 試作品の欄の版の 1 行(4.3)。前の版か、新しい版か */
+.frame-version { margin: 0 0 0.3rem; padding: 0.2rem 0.5rem; border-left: 3px solid var(--color-line-strong); background: var(--color-surface-sunken); font-size: var(--text-2); }
+.frame-version[hidden] { display: none; }
+.frame-version[data-kind="new"] { border-left-color: var(--color-ok); }
+
+@media (max-width: 1023px) {
+  .measure { overflow: visible; }
+  .tab-panel { overflow: visible; }
+}
+/* 段 6 と段 7 の右の列は表(比べる表、質の見直し)を持つので、2 列を半分ずつにする。段 5 と 8 は試作品が約 6 割 */
+@media (min-width: 1024px) {
+  body[data-side="measure"] .layout, body[data-side="quality"] .layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  /* 比べるタブは 7 列の表なので、右の列を約 6 割にする */
+  body[data-side="measure"][data-tab="compare"] .layout { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
 }

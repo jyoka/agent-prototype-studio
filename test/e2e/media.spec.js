@@ -33,7 +33,7 @@ for (const colorScheme of ['light', 'dark']) {
         await searchJobs(page);
         await askToSave(page);
         await writeFixRequest(page);
-        await expectNoLeaks(page, '試す画面と言葉で直す欄', home);
+        await expectNoLeaks(page, '試す画面と作る AI の欄', home);
 
         // 画面の地の色が、選んだ見た目(ダークとライト)に合う
         const background = await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor);

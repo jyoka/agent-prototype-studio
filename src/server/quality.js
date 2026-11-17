@@ -66,7 +66,7 @@ export const QUALITY_ROWS = Object.freeze([
     group: 'measured',
     label: '場面の結果',
     why: '場面の一覧は、この AI にできてほしい会話です。通らない場面は、使う人が困る所です。',
-    fix: '通らない場面を、言葉で直す欄で直します。場面の一覧と守りは弱めません。',
+    fix: '通らない場面を、作る AI の欄で直します。場面の一覧と守りは弱めません。',
   },
   {
     id: 'tools',
@@ -351,7 +351,7 @@ export function pickGroup(groups, defaultFile = null) {
   return [...pool].sort((a, b) => Number(Boolean(b.group.real)) - Number(Boolean(a.group.real)) || (a.group.round ?? 1) - (b.group.round ?? 1) || a.index - b.index)[0] ?? null;
 }
 
-// 場面の「直す」の依頼。通らない場面を 3 つまで並べ、言葉で直す欄の上限(4000 字)より短く切る
+// 場面の「直す」の依頼。通らない場面を 3 つまで並べ、作る AI の欄の上限(4000 字)より短く切る
 const MAX_SCENE_REQUESTS = 3;
 const MAX_REQUEST_CHARS = 3800;
 function sceneRequest(failures, failing) {

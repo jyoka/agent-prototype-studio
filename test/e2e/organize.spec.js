@@ -51,7 +51,7 @@ async function openBoard(page, studio) {
   await expect(s.mark).toHaveText('ヒアリングの整理');
   await s.mark.click();
   await expect(page.getByRole('heading', { level: 2, name: 'ヒアリングの整理' })).toBeVisible();
-  await expect(page.getByRole('region', { name: '言葉で直す' })).toBeHidden();
+  await expect(page.getByRole('region', { name: '作る AI', exact: true })).toBeHidden();
   return s;
 }
 
@@ -427,7 +427,7 @@ test('整理の板から別の画面へ移れる。はじめの画面と重な�
     // 試作品の画面に戻る
     await page.getByRole('button', { name: '試作品の画面に戻る' }).click();
     await expect(s.section).toBeHidden();
-    await expect(page.getByRole('region', { name: '言葉で直す' })).toBeVisible();
+    await expect(page.getByRole('region', { name: '作る AI', exact: true })).toBeVisible();
 
     // 目的の印を押すと、板を閉じて開く
     await s.mark.click();

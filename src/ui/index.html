@@ -481,28 +481,6 @@
       </section>
     </div>
   </section>
-    <!-- 人に見せる(user-journey.md の J7)。段 8 の作業台。押すと見せる画面にする。試作品と確かめたい問いだけを出し、開発の欄を隠す -->
-    <section id="stage-show" class="stage-panel" aria-labelledby="show-start-heading" hidden>
-      <h3 id="show-start-heading">人に見せる</h3>
-      <p class="muted">試作品と確かめたい問いだけの画面にします。聞いた答えは、見せた保存に残ります。コメントと承認は、見せる画面の右に出ます。</p>
-      <button type="button" id="show-start" class="primary" disabled>人に見せる</button>
-    </section>
-    <!-- 人の「確かめる」(harness.md の 3.1、P27)。試す欄の上には置かない(ux-redesign.md の U9)。
-         結果は「言葉で直す」の会話に、作る run と同じ結果の帯で出す -->
-    <section id="stage-check" class="stage-panel" aria-labelledby="check-heading" hidden>
-      <h3 id="check-heading">試作品を自動で確かめる</h3>
-      <p class="muted">いま表示している試作品を、決めた手順で自動で動かして確かめます。結果は「言葉で直す」の欄に出ます。試す欄の会話は変わりません。</p>
-      <fieldset id="check-ai" class="check-ai" hidden>
-        <legend>確かめるときの試作品の中の AI</legend>
-        <label><input type="radio" name="check-ai" value="mock" checked> お試しの AI(決まった言葉だけ分かります。無料です)</label>
-        <label><input type="radio" name="check-ai" value="claude-code"> 本物の AI(あなたの Claude Code。1 回の確かめで使います)</label>
-        <p id="check-ai-note" class="muted" hidden></p>
-      </fieldset>
-      <!-- 本物の AI で確かめるときの、同意のカード(P25 と同じ中身) -->
-      <div id="check-consent" class="check-consent" hidden></div>
-      <button type="button" id="check-run" disabled>試作品を自動で確かめる</button>
-      <p id="check-message" class="check-message" role="status" hidden></p>
-    </section>
     <section id="stage-handoff" class="stage-panel" aria-labelledby="handoff-heading" hidden>
       <h3 id="handoff-heading">本番開発へ渡す</h3>
       <p class="muted">今の試作品を、本番開発の担当者に渡すフォルダーにまとめます。試作品のファイル、AI の設定、会話と状態、本物につないだもの・お試しのもの・つないでいないものの区別、未決事項が入ります。秘密情報らしい文字列があると作りません。</p>
@@ -517,12 +495,14 @@
       </form>
       <div id="handoff-result" class="handoff-result" role="status" hidden></div>
     </section>
+  <!-- 段 5〜8 の 2 列(ui-ux-v2.md の 2.2、2.4)。左に試作品、右は段ごとに入れ替わる列。1024px より狭いと上下に並べる(2.8) -->
   <div class="layout">
     <section class="preview" aria-labelledby="try-heading">
       <div class="toolbar" id="try-toolbar">
-        <h2 id="try-heading">試す</h2>
+        <h2 id="try-heading">試作品</h2>
+        <!-- 試作品の中の AI の切り替え(ui-ux-v2.md の 4.2)。「▲ お試し ▾」。本物を選ぶと、同意のカードを試作品の上に出す -->
         <button type="button" id="ai-switch" class="ai-switch" aria-expanded="false" aria-controls="ai-menu" hidden>
-          <span id="ai-badge">AI</span><span aria-hidden="true"> ▾</span>
+          <span class="actor-shape" aria-hidden="true">▲</span> <span id="ai-badge">お試し</span><span aria-hidden="true"> ▾</span>
         </button>
         <!-- 本物の AI を使っている間の小さな印。押すと、同意のカードの中身をもう一度見られる(ux-redesign.md 6 節) -->
         <button type="button" id="real-ai-try" class="real-ai-mark" aria-expanded="false" aria-controls="real-ai-try-info" hidden>本物の AI(あなたの Claude Code)</button>
@@ -540,50 +520,96 @@
       <div id="preview-broken" class="preview-broken" role="group" aria-labelledby="preview-broken-heading" hidden>
         <h3 id="preview-broken-heading">試作品を表示できません</h3>
         <p id="preview-broken-lead"></p>
-        <button type="button" id="preview-broken-fix">直す AI に直してもらう</button>
+        <button type="button" id="preview-broken-fix">作る AI に直してもらう</button>
         <details id="preview-broken-dev" class="card-dev">
           <summary>開発者向け: 誤りの場所(ファイルと行)</summary>
           <ul id="preview-broken-errors" class="problem-list" aria-label="誤りの場所"></ul>
         </details>
       </div>
       <p id="frame-label" class="frame-label" hidden>試作品(前に表示できた状態)</p>
+      <!-- 試作品の版の 1 行(ui-ux-v2.md の 4.3)。作っている間は前の版を出し続けることを、新しい版が出たら時刻を言う。白紙にしない -->
+      <p id="frame-version" class="frame-version" role="status" hidden></p>
       <div id="frame-host" class="frame-host">
         <p id="frame-placeholder" class="placeholder">読み込んでいます…</p>
       </div>
-      <!-- 1 ターンの記録(task 423。ai-architecture-review.md の 15 節)。試す欄で最後に送った発言で、働いた参加者、道具、守りの層、時間、費用。
-           技術の言葉と平たい言葉を並べる。全部の中身は、仕組みの引き出しの「AI の実行の記録」にある。
-           お客さんに見せる画面(#391)には出さない(data-studio-only。試作品の iframe の外にだけ置く) -->
-      <section id="turn-record" class="turn-record" aria-labelledby="turn-record-heading" data-studio-only hidden>
-        <h3 id="turn-record-heading">1 ターンの記録</h3>
-        <div id="turn-record-body"></div>
-      </section>
-      <!-- 場面の一覧と比べる表(task 423)。場面の一覧を構成ごとに回し、通った数、道具の呼び方の正しさ、費用、待ち時間を並べる。
-           通らない場面の「直す」で、言葉で直す欄に依頼を入れる。本物の AI で回すときは、同意と費用の上限を通す。見せる画面には出さない -->
-      <details id="scene-runs" class="scene-runs" data-studio-only hidden>
-        <summary id="scene-runs-summary">場面の一覧と比べる表</summary>
-        <div class="scene-runs-body">
-          <p class="muted">場面の一覧(この AI にできてほしい会話)を、構成ごとに回して比べます。お試しの AI は費用がかからず、形が動くかの確かめだけです。</p>
-          <div class="scene-runs-actions">
-            <button type="button" id="scene-run-mock" class="primary">場面を回す(お試しの AI)</button>
-            <label for="scene-limit">費用の上限(USD)</label>
-            <input id="scene-limit" type="number" min="0.01" max="100" step="any" value="1">
-            <button type="button" id="scene-run-real">本物の AI で回す</button>
-            <button type="button" id="scene-cancel" hidden>止める</button>
-          </div>
-          <p id="scene-real-note" class="muted"></p>
-          <!-- 本物の AI で回すときの、同意のカード(直す欄、試す欄と同じ中身) -->
-          <div id="scene-consent" hidden></div>
-          <div id="scene-status" class="scene-status" role="status"></div>
-          <div id="scene-table"></div>
-          <div id="scene-failures"></div>
-          <details class="scene-list">
-            <summary id="scene-list-summary">回す場面</summary>
-            <ol id="scene-list" aria-label="回す場面"></ol>
-          </details>
+    </section>
+    <!-- 右の列(ui-ux-v2.md の 2.2、2.4)。段ごとに入れ替わる。段 5 は作る AI の欄。段 6〜8 は、右上の「■ 作る AI に頼む」で作る AI の欄に切り替えられる -->
+    <div id="side" class="side">
+      <div id="side-switch" class="side-switch" hidden>
+        <button type="button" id="side-back" class="quiet" hidden></button>
+        <button type="button" id="side-maker" class="quiet"><span class="actor-shape" aria-hidden="true">■</span> 作る AI に頼む</button>
+      </div>
+      <!-- 段 6 測る(ui-ux-v2.md の 4.2)。この 1 ターン、場面、比べるの 3 つのタブ。タブの名前に数を添える -->
+      <section id="measure" class="measure" aria-label="測る" data-studio-only hidden>
+        <div class="tabs" role="tablist" aria-label="測る">
+          <button type="button" role="tab" id="tab-turn" aria-controls="panel-turn" aria-selected="true">この 1 ターン</button>
+          <button type="button" role="tab" id="tab-scenes" aria-controls="panel-scenes" aria-selected="false" tabindex="-1">場面</button>
+          <button type="button" role="tab" id="tab-compare" aria-controls="panel-compare" aria-selected="false" tabindex="-1">比べる</button>
         </div>
-      </details>
+        <div role="tabpanel" id="panel-turn" class="tab-panel" aria-labelledby="tab-turn" tabindex="0">
+          <!-- 1 ターンの記録(task 423。ai-architecture-review.md の 15 節)。試す欄で最後に送った発言で、働いた参加者、道具、守りの層、時間、費用。
+               技術の言葉と平たい言葉を並べる。全部の中身は、仕組みの引き出しの「AI の実行の記録」にある。
+               お客さんに見せる画面(#391)には出さない(data-studio-only。試作品の iframe の外にだけ置く) -->
+          <section id="turn-record" class="turn-record" aria-labelledby="turn-record-heading" data-studio-only hidden>
+            <h3 id="turn-record-heading">1 ターンの記録</h3>
+            <!-- 1 行ごとに、時刻(等幅)、者の形、部品の種類、平たい 1 文。形はモデルの行(▲)と守りの行(⬢)にだけ付ける -->
+            <ol id="turn-timeline" class="turn-timeline" aria-label="この 1 ターンの流れ"></ol>
+            <div id="turn-record-body"></div>
+          </section>
+          <p id="turn-empty" class="muted">まだ話していません。左の試作品で話しかけると、1 回の返事で働いた部品が、時刻の順に出ます。</p>
+        </div>
+        <div role="tabpanel" id="panel-scenes" class="tab-panel" aria-labelledby="tab-scenes" tabindex="0" hidden>
+          <!-- 場面の一覧(task 423)。場面ごとに ✓ 通った、× 通らない、○ まだ回していない。通らない場面の「ここから直す」は、作る AI の欄を開き、
+               場面の名前を入れた頼む文で始める(ui-ux-v2.md の 2.3)。本物の AI で回すときは、同意と費用の上限を通す。見せる画面には出さない -->
+          <section id="scene-runs" class="scene-runs" aria-labelledby="scene-runs-summary" data-studio-only hidden>
+            <h3 id="scene-runs-summary">場面の一覧</h3>
+            <p class="muted">場面の一覧(この AI にできてほしい会話)を、構成ごとに回して比べます。お試しの AI は費用がかからず、形が動くかの確かめだけです。</p>
+            <div class="scene-runs-actions">
+              <button type="button" id="scene-run-mock">場面を回す(お試しの AI)</button>
+              <label for="scene-limit">費用の上限(USD)</label>
+              <input id="scene-limit" type="number" min="0.01" max="100" step="any" value="1">
+              <button type="button" id="scene-run-real">本物の AI で回す</button>
+              <button type="button" id="scene-cancel" hidden>止める</button>
+            </div>
+            <p id="scene-real-note" class="muted"></p>
+            <!-- 本物の AI で回すときの、同意のカード(作る AI の欄、試作品の欄と同じ中身) -->
+            <div id="scene-consent" hidden></div>
+            <div id="scene-status" class="scene-status" role="status"></div>
+            <p id="scene-list-summary" class="scene-list-head"></p>
+            <ol id="scene-list" class="scene-states" aria-label="場面ごとの結果"></ol>
+          </section>
+          <p id="scenes-empty" class="muted" hidden>この試作品には、場面の一覧がまだありません。作る AI に「場面を足して」と頼むと、確かめたい会話を足せます。</p>
+        </div>
+        <!-- 比べる。構成と前提ごとの表(通った数、費用、待ち)。同じ場面で測ったかを表の上に書く。AI の採点の列は頭に「AI の判断」 -->
+        <div role="tabpanel" id="panel-compare" class="tab-panel" aria-labelledby="tab-compare" tabindex="0" hidden>
+          <p id="compare-basis" class="compare-basis"></p>
+          <div id="scene-table"></div>
+          <!-- 構成を選び直す(弱いボタン)。審査の承認が消えることを、押す前に横の 1 文で言う -->
+          <div id="rechoose" class="rechoose" hidden>
+            <button type="button" id="rechoose-button" class="quiet" aria-describedby="rechoose-note">構成を選び直す</button>
+            <p id="rechoose-note" class="muted"></p>
+          </div>
+        </div>
+      </section>
+      <!-- 段 7 質 -->
+      <!-- 人の「確かめる」(harness.md の 3.1、P27)。試す欄の上には置かない(ux-redesign.md の U9)。
+           結果は作る AI の欄の会話に、作る run と同じ結果の帯で出す -->
+      <section id="stage-check" class="stage-panel" aria-labelledby="check-heading" hidden>
+        <h3 id="check-heading">試作品を自動で確かめる</h3>
+        <p class="muted">いま表示している試作品を、決めた手順で自動で動かして確かめます。結果は「作る AI」の欄に出ます。試す欄の会話は変わりません。</p>
+        <fieldset id="check-ai" class="check-ai" hidden>
+          <legend>確かめるときの試作品の中の AI</legend>
+          <label><input type="radio" name="check-ai" value="mock" checked> お試しの AI(決まった言葉だけ分かります。無料です)</label>
+          <label><input type="radio" name="check-ai" value="claude-code"> 本物の AI(あなたの Claude Code。1 回の確かめで使います)</label>
+          <p id="check-ai-note" class="muted" hidden></p>
+        </fieldset>
+        <!-- 本物の AI で確かめるときの、同意のカード(P25 と同じ中身) -->
+        <div id="check-consent" class="check-consent" hidden></div>
+        <button type="button" id="check-run" disabled>試作品を自動で確かめる</button>
+        <p id="check-message" class="check-message" role="status" hidden></p>
+      </section>
       <!-- 質の見直しの表(user-journey.md の J6。サーバーは src/server/quality.js)。測ったものと AI の判断を分け、各行に「なぜ大事か」と「直す」を付ける。
-           見ていない項目は「まだ見ていない」。「直す」で、言葉で直す欄に依頼を入れる(送るのは人)。見せる画面には出さない -->
+           見ていない項目は「まだ見ていない」。「直す」で、作る AI の欄に依頼を入れる(送るのは人)。見せる画面には出さない -->
       <details id="quality" class="quality" data-studio-only hidden>
         <summary id="quality-summary">質の見直し</summary>
         <div class="quality-body">
@@ -595,108 +621,125 @@
           <div id="quality-table"></div>
         </div>
       </details>
-    </section>
-    <!-- 見せる画面の問いの欄(user-journey.md の J7。サーバーは src/server/show.js)。見せている間だけ出し、「言葉で直す」の代わりに右に置く。
-         問いは目的の文書の成功の印から作る。答えは見せた版に結び付けて残し、版を戻しても消えない。開発の言葉と技術の言葉は出さない -->
-    <section id="show" class="show" aria-labelledby="show-heading" hidden>
-      <h2 id="show-heading" tabindex="-1">確かめたい問い</h2>
-      <p id="show-title" class="show-title"></p>
-      <p class="show-notice">これは試作品です。出てくるデータは、すべて架空です。</p>
-      <!-- 試作品の中の AI が本物の AI のときは、見せている間も印を出す(ux-redesign.md 6 節。試す欄の上の印は隠れるため) -->
-      <p id="show-real-ai" class="show-real-ai" hidden>試作品の中の AI は、本物の AI(あなたの Claude Code)を使っています。</p>
-      <p id="show-lead" class="muted"></p>
-      <form id="show-form" class="show-form">
-        <ol id="show-questions" class="show-questions" aria-label="確かめたい問い"></ol>
-        <label for="show-viewer">見せた相手(なくてもよい)</label>
-        <input id="show-viewer" type="text" maxlength="40" autocomplete="off">
-        <p class="muted">名前は書かず、「同僚」「お店の人」のように書いてください。</p>
-        <div class="show-actions">
-          <button type="submit" id="show-save" class="primary">答えを残す</button>
-          <button type="button" id="show-end">見せ終わる</button>
-        </div>
-      </form>
-      <p id="show-status" class="show-status" role="status"></p>
-      <!-- 画面へのコメント、反応、承認、列、直した記録、元に戻す(user-journey.md の K3。サーバーは src/server/comments.js)。
-           1 台の PC の形。作る AI に送るのは、承認がそろったコメントだけ。開発の言葉は、閉じた「開発者向け」の中にだけ出す -->
-      <section id="comments" class="comments" aria-labelledby="comments-heading">
-        <h3 id="comments-heading">コメント</h3>
-        <p class="muted">コメントや反応だけでは、試作品は変わりません。進行役か決める人が承認したコメントだけを、直す AI に送ります。要件のコメントは、進行役と決める人の 2 人が承認してから送ります。構成のコメントは、承認すると AI 構成の審査に戻します。</p>
-        <form id="comment-form" class="comment-form">
-          <div class="comment-place-row">
-            <button type="button" id="comment-place" aria-pressed="false">画面の場所を選ぶ</button>
-            <span id="comment-place-text">場所: 画面の全体</span>
-          </div>
-          <label for="comment-text">コメント</label>
-          <textarea id="comment-text" rows="2" maxlength="1000"></textarea>
-          <fieldset class="comment-kind">
-            <legend>種類</legend>
-            <label><input type="radio" name="comment-kind" value="look" checked> 見た目と動き</label>
-            <label><input type="radio" name="comment-kind" value="requirement"> 要件</label>
-            <label><input type="radio" name="comment-kind" value="architecture"> 構成</label>
-          </fieldset>
-          <label for="comment-author">書いた人(なくてもよい)</label>
-          <input id="comment-author" type="text" maxlength="40" autocomplete="off">
+      <!-- 段 8 見せる -->
+      <!-- 人に見せる(user-journey.md の J7)。段 8 の作業台。押すと見せる画面にする。試作品と確かめたい問いだけを出し、開発の欄を隠す -->
+      <section id="stage-show" class="stage-panel" aria-labelledby="show-start-heading" hidden>
+        <h3 id="show-start-heading">人に見せる</h3>
+        <p class="muted">試作品と確かめたい問いだけの画面にします。聞いた答えは、見せた保存に残ります。コメントと承認は、見せる画面の右に出ます。</p>
+        <button type="button" id="show-start" class="primary" disabled>人に見せる</button>
+      </section>
+      <!-- 見せる画面の問いの欄(user-journey.md の J7。サーバーは src/server/show.js)。見せている間だけ出し、作る AI の欄の代わりに右に置く。
+           問いは目的の文書の成功の印から作る。答えは見せた版に結び付けて残し、版を戻しても消えない。開発の言葉と技術の言葉は出さない -->
+      <section id="show" class="show" aria-labelledby="show-heading" hidden>
+        <h2 id="show-heading" tabindex="-1">確かめたい問い</h2>
+        <p id="show-title" class="show-title"></p>
+        <p class="show-notice">これは試作品です。出てくるデータは、すべて架空です。</p>
+        <!-- 試作品の中の AI が本物の AI のときは、見せている間も印を出す(ux-redesign.md 6 節。試す欄の上の印は隠れるため) -->
+        <p id="show-real-ai" class="show-real-ai" hidden>試作品の中の AI は、本物の AI(あなたの Claude Code)を使っています。</p>
+        <p id="show-lead" class="muted"></p>
+        <form id="show-form" class="show-form">
+          <ol id="show-questions" class="show-questions" aria-label="確かめたい問い"></ol>
+          <label for="show-viewer">見せた相手(なくてもよい)</label>
+          <input id="show-viewer" type="text" maxlength="40" autocomplete="off">
+          <p class="muted">名前は書かず、「同僚」「お店の人」のように書いてください。</p>
           <div class="show-actions">
-            <button type="submit" id="comment-add">コメントを書く</button>
+            <button type="submit" id="show-save" class="primary">答えを残す</button>
+            <button type="button" id="show-end">見せ終わる</button>
           </div>
         </form>
-        <fieldset class="comment-who">
-          <legend>承認と確かめの記録(なくてもよい)</legend>
-          <p class="muted">1 台の画面では、決める人が声に出し、進行役が押します。名前は書かず、「店長」「担当」のように書いてください。</p>
-          <label for="comment-pressed">押した人</label>
-          <input id="comment-pressed" type="text" maxlength="40" autocomplete="off">
-          <label for="comment-spoken">声に出した人</label>
-          <input id="comment-spoken" type="text" maxlength="40" autocomplete="off">
-        </fieldset>
-        <p id="comment-queue" class="comment-queue" role="status"></p>
-        <button type="button" id="comment-resume" hidden>列を進める</button>
-        <ol id="comment-list" class="comment-list" aria-label="コメントの一覧"></ol>
-        <p id="comment-status" class="show-status" role="status"></p>
+        <p id="show-status" class="show-status" role="status"></p>
+        <!-- 画面へのコメント、反応、承認、列、直した記録、元に戻す(user-journey.md の K3。サーバーは src/server/comments.js)。
+             1 台の PC の形。作る AI に送るのは、承認がそろったコメントだけ。開発の言葉は、閉じた「開発者向け」の中にだけ出す -->
+        <section id="comments" class="comments" aria-labelledby="comments-heading">
+          <h3 id="comments-heading">コメント</h3>
+          <p class="muted">コメントや反応だけでは、試作品は変わりません。進行役か決める人が承認したコメントだけを、作る AI に送ります。要件のコメントは、進行役と決める人の 2 人が承認してから送ります。構成のコメントは、承認すると AI 構成の審査に戻します。</p>
+          <form id="comment-form" class="comment-form">
+            <div class="comment-place-row">
+              <button type="button" id="comment-place" aria-pressed="false">画面の場所を選ぶ</button>
+              <span id="comment-place-text">場所: 画面の全体</span>
+            </div>
+            <label for="comment-text">コメント</label>
+            <textarea id="comment-text" rows="2" maxlength="1000"></textarea>
+            <fieldset class="comment-kind">
+              <legend>種類</legend>
+              <label><input type="radio" name="comment-kind" value="look" checked> 見た目と動き</label>
+              <label><input type="radio" name="comment-kind" value="requirement"> 要件</label>
+              <label><input type="radio" name="comment-kind" value="architecture"> 構成</label>
+            </fieldset>
+            <label for="comment-author">書いた人(なくてもよい)</label>
+            <input id="comment-author" type="text" maxlength="40" autocomplete="off">
+            <div class="show-actions">
+              <button type="submit" id="comment-add">コメントを書く</button>
+            </div>
+          </form>
+          <fieldset class="comment-who">
+            <legend>承認と確かめの記録(なくてもよい)</legend>
+            <p class="muted">1 台の画面では、決める人が声に出し、進行役が押します。名前は書かず、「店長」「担当」のように書いてください。</p>
+            <label for="comment-pressed">押した人</label>
+            <input id="comment-pressed" type="text" maxlength="40" autocomplete="off">
+            <label for="comment-spoken">声に出した人</label>
+            <input id="comment-spoken" type="text" maxlength="40" autocomplete="off">
+          </fieldset>
+          <p id="comment-queue" class="comment-queue" role="status"></p>
+          <button type="button" id="comment-resume" hidden>列を進める</button>
+          <ol id="comment-list" class="comment-list" aria-label="コメントの一覧"></ol>
+          <p id="comment-status" class="show-status" role="status"></p>
+        </section>
       </section>
-    </section>
-    <section class="make" aria-labelledby="make-heading">
-      <div class="make-head">
-        <h2 id="make-heading">言葉で直す</h2>
-        <button type="button" id="real-ai-make" class="real-ai-mark" aria-expanded="false" aria-controls="real-ai-make-info" hidden>本物の AI(あなたの Claude Code)</button>
-      </div>
-      <div id="real-ai-make-info" class="real-ai-info" hidden></div>
-      <!-- 選んでいる試作品の名前。作る会話は試作品ごとに分かれるので、どの試作品への依頼かを出す(ux-redesign.md の気づいたこと G) -->
-      <p id="make-target" class="make-target"></p>
-      <p class="muted">気になったところを、ふだんの言葉で頼んでください。直す AI が試作品を直します。</p>
-      <!-- 直す AI が使えないときのカード(ux-redesign.md 7-5)。理由の文やエラーの文は、カードの中の「開発者向け」にだけ出す -->
-      <div id="agent-unavailable" class="agent-unavailable" role="group" aria-labelledby="agent-unavailable-heading" hidden>
-        <h3 id="agent-unavailable-heading"></h3>
-        <p id="agent-unavailable-lead"></p>
-        <p class="card-label">今できること</p>
-        <ul>
-          <li>試作品を試す(お試しの AI)</li>
-          <li>保存、本番開発へ渡す(上の帯の「保存」と、段の道筋の「渡す」)</li>
-        </ul>
-        <p class="card-label">使えるようにするには</p>
-        <ol id="agent-unavailable-steps"></ol>
-        <p class="muted">詳しい手順は、README の「はじめる」と docs/claude-code.md にあります。</p>
-        <details id="agent-unavailable-dev" class="card-dev">
-          <summary>開発者向け: 確かめた結果</summary>
-          <div id="agent-unavailable-detail"></div>
-        </details>
-      </div>
-      <div id="examples" class="examples" hidden>
-        <p class="muted">例(押すと依頼の欄に入ります)</p>
-        <ul id="example-list" aria-label="直し方の例"></ul>
-      </div>
-      <ol id="conversation" class="conversation" aria-label="作る会話"></ol>
-      <form id="request-form" class="request-form">
-        <label for="request-text">依頼</label>
-        <textarea id="request-text" rows="3" maxlength="4000" placeholder="例: 見出しの色を落ち着いた青にして" disabled></textarea>
-        <div class="request-actions">
-          <button type="submit" id="send" disabled>送る</button>
-          <button type="button" id="cancel" hidden>止める</button>
-          <span class="muted">Ctrl+Enter(Mac は ⌘+Enter)でも送れます</span>
+      <!-- 作る AI の欄(ui-ux-v2.md の 4.3)。前の「言葉で直す」 -->
+      <section class="make" aria-labelledby="make-heading">
+        <div class="make-head">
+          <h2 id="make-heading"><span class="actor-shape" aria-hidden="true">■</span> 作る AI</h2>
+          <button type="button" id="real-ai-make" class="real-ai-mark" aria-expanded="false" aria-controls="real-ai-make-info" hidden>本物の AI(あなたの Claude Code)</button>
         </div>
-        <!-- その場での 1 行(ui-ux-v2.md の 5.1)。依頼を 2 回送ったら出さない -->
-        <p class="hint" data-hint="make-request">気になる所を 1 つずつ頼むと、何が変わったかを確かめやすくなります。</p>
-      </form>
-    </section>
+        <div id="real-ai-make-info" class="real-ai-info" hidden></div>
+        <!-- 選んでいる試作品の名前。作る会話は試作品ごとに分かれるので、どの試作品への依頼かを出す(ux-redesign.md の気づいたこと G) -->
+        <p id="make-target" class="make-target"></p>
+        <p class="muted">気になったところを、ふだんの言葉で頼んでください。作る AI が試作品を書いて直します。</p>
+        <!-- 作る AI が使えないときのカード(ux-redesign.md 7-5)。理由の文やエラーの文は、カードの中の「開発者向け」にだけ出す -->
+        <div id="agent-unavailable" class="agent-unavailable" role="group" aria-labelledby="agent-unavailable-heading" hidden>
+          <h3 id="agent-unavailable-heading"></h3>
+          <p id="agent-unavailable-lead"></p>
+          <p class="card-label">今できること</p>
+          <ul>
+            <li>試作品を試す(お試しの AI)</li>
+            <li>保存、本番開発へ渡す(上の帯の「保存」と、段の道筋の「渡す」)</li>
+          </ul>
+          <p class="card-label">使えるようにするには</p>
+          <ol id="agent-unavailable-steps"></ol>
+          <p class="muted">詳しい手順は、README の「はじめる」と docs/claude-code.md にあります。</p>
+          <details id="agent-unavailable-dev" class="card-dev">
+            <summary>開発者向け: 確かめた結果</summary>
+            <div id="agent-unavailable-detail"></div>
+          </details>
+        </div>
+        <!-- 今していること(ui-ux-v2.md の 4.3)。上に依頼の文、下に作る AI と関門の列。関門は 1 つずつ、利用者の言葉で、
+             ✓ 済み、● 確かめています、○ まだ、× 落ちた。経過の時間と目安(推測)を添える。いちばん新しい依頼を出す -->
+        <section id="make-now" class="make-now" aria-labelledby="make-now-heading" hidden>
+          <p class="make-now-line"><span class="make-now-label">依頼:</span> <span id="make-now-request" class="make-now-request"></span></p>
+          <h3 id="make-now-heading">今していること</h3>
+          <ol id="make-now-list" class="make-now-list" aria-label="今していること"></ol>
+          <p id="make-now-rounds" class="make-now-rounds" hidden></p>
+          <p id="make-now-time" class="make-now-time"></p>
+        </section>
+        <div id="examples" class="examples" hidden>
+          <p class="muted">例(押すと依頼の欄に入ります)</p>
+          <ul id="example-list" aria-label="直し方の例"></ul>
+        </div>
+        <ol id="conversation" class="conversation" aria-label="作る会話"></ol>
+        <form id="request-form" class="request-form">
+          <label for="request-text">依頼</label>
+          <textarea id="request-text" rows="3" maxlength="4000" placeholder="例: 見出しの色を落ち着いた青にして" disabled></textarea>
+          <div class="request-actions">
+            <button type="submit" id="send" disabled>送る</button>
+            <button type="button" id="cancel" hidden>止める</button>
+            <span class="muted">Ctrl+Enter(Mac は ⌘+Enter)でも送れます</span>
+          </div>
+          <!-- その場での 1 行(ui-ux-v2.md の 5.1)。依頼を 2 回送ったら出さない -->
+          <p class="hint" data-hint="make-request">気になる所を 1 つずつ頼むと、何が変わったかを確かめやすくなります。</p>
+        </form>
+      </section>
+    </div>
   </div>
   </main>
   <!-- 仕組みの引き出し(2.2、10.4)。「仕組みを見る」か . のキーで開き、もう一度で閉じる。作業台を隠さず、横に並べる。
@@ -714,19 +757,19 @@
         <div id="mechanism-prompts-body"></div>
       </section>
       <section aria-labelledby="agent-heading">
-        <h3 id="agent-heading">直す AI(作る AI)の接続</h3>
+        <h3 id="agent-heading">作る AIの接続</h3>
         <div id="agent-status" class="agent-status"></div>
       </section>
       <!-- 偽接続(STUDIO_AGENT=fake)で試せる依頼。利用者の画面には出さない(ux-redesign.md 5 節、U4) -->
       <section id="test-requests" hidden>
         <h3 id="test-requests-heading">試験用の依頼</h3>
-        <p class="muted">偽の直す AI が扱える依頼です。押すと「言葉で直す」の依頼の欄に入ります。</p>
-        <ul id="test-request-list" class="test-request-list" aria-label="偽の直す AI で試せる例"></ul>
+        <p class="muted">偽の作る AI が扱える依頼です。押すと「作る AI」の欄の依頼に入ります。</p>
+        <ul id="test-request-list" class="test-request-list" aria-label="偽の作る AI で試せる例"></ul>
       </section>
       <section aria-labelledby="build-heading">
         <h3 id="build-heading">ビルド</h3>
         <div id="build-status" class="build-status"></div>
-        <button type="button" id="rebuild" class="detail-button" disabled title="app/ のファイルから試作品を作り直します。直す AI の変更の後は自動で作り直されます">ファイルから作り直す</button>
+        <button type="button" id="rebuild" class="detail-button" disabled title="app/ のファイルから試作品を作り直します。作る AI の変更の後は自動で作り直されます">ファイルから作り直す</button>
       </section>
       <section aria-labelledby="ai-heading">
         <h3 id="ai-heading">プロダクト内 AI</h3>
@@ -762,7 +805,7 @@
     <!-- 自分のトークンをつなぐ(user-journey.md の J4)。形を確かめてから、Studio の持つ場所に置く -->
     <section aria-labelledby="tokens-heading">
       <h3 id="tokens-heading">自分のトークンをつなぐ</h3>
-      <p class="muted">色と字の決まりを書いたファイル(W3C の Design Tokens 2025.10 の形の JSON)を選びます。Studio が形を確かめ、この試作品に入れます。素材は Studio が持つので、直す AI は書き換えられません。直す AI への決まりには、値ではなく名前だけを書きます。</p>
+      <p class="muted">色と字の決まりを書いたファイル(W3C の Design Tokens 2025.10 の形の JSON)を選びます。Studio が形を確かめ、この試作品に入れます。素材は Studio が持つので、作る AI は書き換えられません。作る AI への決まりには、値ではなく名前だけを書きます。</p>
       <div id="tokens-connected" class="tokens-connected" hidden></div>
       <p id="tokens-message" class="versions-message" role="status" hidden></p>
       <form id="tokens-form" class="handoff-form">
@@ -788,7 +831,7 @@
          検査とライセンスの確かめは、AI ではなく決まった手順で行う。写しは試作品のフォルダーの design/ に置く -->
     <section aria-labelledby="guides-heading">
       <h3 id="guides-heading">部品と指針をつなぐ</h3>
-      <p class="muted">会社の指針の文や、Storybook の部品の一覧を、直す AI が読めるようにします。部品のパッケージ(npm)は、この試作品で使えるようにします。4 歩で進みます。Studio が決まった手順で確かめます。指針の写しは試作品のフォルダーに、パッケージは Studio の中に置きます。どちらも Studio だけが書きます。</p>
+      <p class="muted">会社の指針の文や、Storybook の部品の一覧を、作る AI が読めるようにします。部品のパッケージ(npm)は、この試作品で使えるようにします。4 歩で進みます。Studio が決まった手順で確かめます。指針の写しは試作品のフォルダーに、パッケージは Studio の中に置きます。どちらも Studio だけが書きます。</p>
       <div id="guides-enabled" class="guides-enabled" hidden></div>
       <p id="guides-message" class="versions-message" role="status" hidden></p>
       <ol id="guides-steps" class="guides-steps" aria-label="取り込みの案内の歩">
@@ -851,7 +894,7 @@
       </div>
       <div id="guides-try" class="handoff-form guides-step" role="group" aria-labelledby="guides-try-heading" hidden>
         <h4 id="guides-try-heading">3. 見本で試す</h4>
-        <p class="muted">有効にすると、直す AI が読む写しと、直す AI への決まりです。見本は文だけで描くので、外へは通信しません。</p>
+        <p class="muted">有効にすると、作る AI が読む写しと、作る AI への決まりです。見本は文だけで描くので、外へは通信しません。</p>
         <div id="guides-urls" class="guides-warning" role="alert" hidden></div>
         <div id="guides-preview" class="guides-preview"></div>
         <div class="guides-actions">

@@ -107,12 +107,12 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   }
 
   const connection = await resolveConnection(config, env);
-  // 本物の AI を使う前の同意。1 つを直す AI と試作品の中の AI で共有する。メモリーにだけ持ち、起動し直すと消える
+  // 本物の AI を使う前の同意。1 つを作る AI と試作品の中の AI で共有する。メモリーにだけ持ち、起動し直すと消える
   const consent = new RealAiConsent();
   const token = createToken();
   const store = new ProjectStore(config.home, log);
   const ports = { studio: config.studioPort, preview: config.previewPort };
-  // 外の AI に送る接続か(直す AI の同意の判定と同じ)
+  // 外の AI に送る接続か(作る AI の同意の判定と同じ)
   const sendsOutside = connection.kind === 'claude' && !connection.problem;
   // 会の始めと会のデータ(meeting.js)。同意の前は、どの AI も呼ばない。消すときは、下の部品のメモリーも捨てる
   const meetings = new ProjectMeetings({

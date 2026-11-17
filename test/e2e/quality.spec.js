@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, chooseProject, expect, expectNoDevWordsOnScreen, launchStudio, test, writeProject } from './studio.js';
+import { ROOT, chooseProject, expect, expectNoDevWordsOnScreen, goStage, launchStudio, openMeasureTab, test, writeProject } from './studio.js';
 
 // 質の見直しの表(docs/design/user-journey.md の J6)。試す欄の下の「質の見直し」。
 // わざと壊した見本(字と地の差が足りない、ラベルのない入力、値のまま書いた色)と、わざと壊した構成(呼ばなくてよい所で道具を呼ぶ、
@@ -28,7 +28,9 @@ const BROKEN_LOOK = {
   'style.css': '.faint { color: #c8c8c8; background: #ffffff; }\n',
 };
 
+// 段 7「質」の右の列の「質の見直し」を開く
 async function openQuality(page) {
+  if ((await page.locator('#stage-list button.stage[data-stage="quality"]').getAttribute('aria-current')) !== 'step') await goStage(page, '質');
   const box = page.locator('#quality');
   const summary = page.locator('#quality-summary');
   await expect(summary).toContainText('質の見直し(直す ');
@@ -81,12 +83,12 @@ test('わざと壊した見本で、アクセシビリティの違反、字と�
     await expect(box.locator('#quality-status')).toContainText('画面を確かめた時刻');
     await expect(page.locator('#quality-summary')).toContainText('質の見直し(直す 3、');
 
-    // 「直す」で、言葉で直す欄に依頼が入る。送るのは人(確かめの結果の帯のほかに、作る会話は増えない)
+    // 「直す」で、作る AI の欄に依頼が入る。送るのは人(確かめの結果の帯のほかに、作る会話は増えない)
     await a11y.getByRole('button', { name: '直す' }).click();
-    const request = page.getByRole('region', { name: '言葉で直す' }).getByLabel('依頼');
+    const request = page.getByRole('region', { name: '作る AI', exact: true }).getByLabel('依頼');
     await expect(request).toBeFocused();
     await expect(request).toHaveValue(/^質の見直しで、アクセシビリティの違反が 1 つありました。\n- ラベルのない入力: input\(本の名前\)/);
-    await expect(box).toContainText('「アクセシビリティの違反」を直す依頼を、言葉で直す欄に入れました。');
+    await expect(box).toContainText('「アクセシビリティの違反」を直す依頼を、作る AI の欄に入れました。');
     await expectNoDevWordsOnScreen(page);
   } finally {
     await studio.stop();
@@ -134,11 +136,12 @@ test('わざと壊した構成で場面を回すと、場面の結果、道具�
       await expect(rowOf(table, label).locator('td').first()).toHaveText(/^まだ見ていない。/);
     }
 
-    // 場面の一覧と比べる表で、お試しの AI で回す
-    const scenes = page.locator('#scene-runs');
-    await page.locator('#scene-runs-summary').click();
+    // 段 6 の場面のタブで、お試しの AI で回す。比べるタブに表が出たら、段 7 の質の見直しに戻る
+    const scenes = await openMeasureTab(page, '場面');
     await scenes.getByRole('button', { name: '場面を回す(お試しの AI)' }).click();
-    await expect(scenes.getByRole('table', { name: '構成ごとの比べる表' }).locator('tbody tr')).toHaveCount(1);
+    const compare = await openMeasureTab(page, '比べる');
+    await expect(compare.getByRole('table', { name: '構成ごとの比べる表' }).locator('tbody tr')).toHaveCount(1);
+    await openQuality(page);
 
     await expect(rowOf(table, '場面の結果').locator('td').first()).toContainText(/^直す 3 \/ 5 通った\(通らない 2\)。構成「RAG あり: 約款を探して読む\(架空\)」をお試しの AI で回した結果/);
     const tools = rowOf(table, '道具の呼び方の正しさ');
@@ -154,7 +157,7 @@ test('わざと壊した構成で場面を回すと、場面の結果、道具�
 
     // 守りの「直す」は、コードの守りを足す依頼
     await guards.getByRole('button', { name: '直す' }).click();
-    const request = page.getByRole('region', { name: '言葉で直す' }).getByLabel('依頼');
+    const request = page.getByRole('region', { name: '作る AI', exact: true }).getByLabel('依頼');
     await expect(request).toHaveValue(/^質の見直しで、危ない場面が止まりませんでした/);
     await expect(request).toHaveValue(/場面「risky-full-text」\(約款の全文をそのまま貼ってと頼まれる\): 止まらなかった/);
     await expect(request).toHaveValue(/コードの守り\(道具の守りか出口の確かめ\)を足して/);

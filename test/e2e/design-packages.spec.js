@@ -70,7 +70,7 @@ test('架空のパッケージで案内の 4 歩が通る。外への通信は�
     await expect(section.locator('#guides-checked')).toContainText('フォルダーの中のライセンスの書き方: 「MIT」');
     await section.getByRole('button', { name: '次へ(見本で試す)' }).click();
 
-    // 3. 見本で試す: 外への通信の場所と、試作品での使い方と、直す AI への決まりが、有効にする前に見える
+    // 3. 見本で試す: 外への通信の場所と、試作品での使い方と、作る AI への決まりが、有効にする前に見える
     const tryStep = section.getByRole('group', { name: '3. 見本で試す' });
     const alert = tryStep.getByRole('alert');
     await expect(alert).toContainText('外への通信が 3 か所あります。試作品は外へ通信できないので、この通信は届きません');
@@ -91,7 +91,7 @@ test('架空のパッケージで案内の 4 歩が通る。外への通信は�
     await expect(enableStep.locator('#guides-blocked')).toBeHidden();
     await expectNoDevWords(section);
     await enableStep.getByRole('button', { name: '有効にする' }).click();
-    await expect(section.locator('#guides-message')).toHaveText('有効にしました。この試作品は「@minato/ui」を import できます。直す AI は次の依頼から使えます。');
+    await expect(section.locator('#guides-message')).toHaveText('有効にしました。この試作品は「@minato/ui」を import できます。作る AI は次の依頼から使えます。');
     await expect(section.locator('#guides-enabled')).toContainText('有効にしています: 部品のパッケージ「@minato/ui」(1.2.0)');
     await expect(section.locator('#guides-enabled')).toContainText('外への通信が 3 か所あります。試作品からは届きません。');
     await expect(steps.locator('[aria-current="step"]')).toHaveText('聞く');

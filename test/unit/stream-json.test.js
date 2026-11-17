@@ -42,7 +42,7 @@ test('stream-json の行を、作る会話の項目に直す', () => {
     { type: 'user', message: { content: [{ type: 'tool_result', is_error: true, content: [{ type: 'text', text: 'denied' }] }, { type: 'tool_result', content: 'ok' }] } },
     APP,
   );
-  assert.deepEqual(toolError.items, [{ kind: 'tool-error', text: '直す AI の操作が、うまくいきませんでした。', detail: 'denied' }]);
+  assert.deepEqual(toolError.items, [{ kind: 'tool-error', text: '作る AI の操作が、うまくいきませんでした。', detail: 'denied' }]);
 
   const result = readMessage(
     {

@@ -181,7 +181,9 @@ test('審査のある試作品で、9 つのどの段でも 4 つの問いに答
 
     // 段 6 の枠を、ライトとダークで撮る
     await goStage(page, '測る');
-    await expect(page.locator('#scene-runs')).toHaveAttribute('open', '');
+    // 右の列は 3 つのタブ(この 1 ターン、場面、比べる)。前に選んだタブ(はじめは「この 1 ターン」)を出す
+    await expect(page.getByRole('tablist', { name: '測る' }).getByRole('tab')).toHaveText(['この 1 ターン', /^場面/, /^比べる/]);
+    await expect(page.getByRole('tab', { name: 'この 1 ターン' })).toHaveAttribute('aria-selected', 'true');
     for (const theme of ['light', 'dark']) {
       await page.emulateMedia({ colorScheme: theme });
       // 色の切り替えの動き(--motion-quick)が終わってから撮る
@@ -264,7 +266,7 @@ test('13 節の部品は全部どこかで使える。「その他」と「は�
 
     // 仕組みの引き出し: 接続、試験用の依頼、ビルド、プロダクト内 AI、構成と前提(構成のある試作品だけ)、実行の記録、試作品からの知らせ、画面を読み込み直す
     const drawer = await openMechanism(page);
-    for (const name of ['直す AI(作る AI)の接続', '試験用の依頼', 'ビルド', 'プロダクト内 AI', 'AI の実行の記録', '試作品からの知らせ']) {
+    for (const name of ['作る AIの接続', '試験用の依頼', 'ビルド', 'プロダクト内 AI', 'AI の実行の記録', '試作品からの知らせ']) {
       await expect(drawer.getByRole('heading', { name, exact: true })).toBeVisible();
     }
     await expect(drawer.getByRole('button', { name: 'ファイルから作り直す' })).toBeEnabled();

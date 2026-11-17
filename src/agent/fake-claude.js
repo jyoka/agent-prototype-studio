@@ -924,7 +924,7 @@ async function main() {
   if (/見出し/.test(request)) return changeHeading(request);
 
   // 画面の言葉(ux-redesign.md 4 節)で返す。扱える依頼の一覧は、開発者向けの詳細の「試験用の依頼」にある
-  const text = '開発用の偽の直す AI なので、決まった依頼だけを扱えます。扱える依頼は、その他 → 開発者向けの詳細の「試験用の依頼」にあります。';
+  const text = '開発用の偽の作る AI なので、決まった依頼だけを扱えます。扱える依頼は、「仕組みを見る」の「試験用の依頼」にあります。';
   await say(text);
   return finish({ text });
 }
