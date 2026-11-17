@@ -114,10 +114,13 @@ test('台本を会の始めから会の終わりまで通すと、7 つの成果
 
     // 会の中では、harness とデータと RAG は進行役と決める人の 2 人が承認する。1 台の形では、決める人が声に出し、進行役が押す
     await expect(page.getByRole('heading', { level: 2, name: 'AI 構成の審査' })).toBeVisible();
+    // 承認は次の一手の帯で、読んでいる欄から順に押す。帯の 1 文の下に、押した人と「声に出した人」の欄
     const review = page.locator('#review');
-    const approveButtons = review.getByRole('button', { name: /」を.*承認する$/ });
-    await expect(approveButtons).toHaveCount(6);
-    for (const name of await approveButtons.allInnerTexts()) await review.getByRole('button', { name, exact: true }).click();
+    const band = page.getByRole('region', { name: '次の一手' });
+    await expect(page.locator('#review-spoken')).toBeVisible();
+    for (const name of ['エージェントの構成を進行役として承認する', 'harness を進行役として承認する', 'harness を決める人として承認する', 'データと RAG を進行役として承認する', 'データと RAG を決める人として承認する', '技術の組を進行役として承認する']) {
+      await band.getByRole('button', { name, exact: true }).click();
+    }
     await expect(page.locator('#review-count')).toHaveText('承認 4 / 4');
     await expectNoDevWords(review);
     await page.getByRole('button', { name: 'この構成で作る' }).click();

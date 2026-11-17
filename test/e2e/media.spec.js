@@ -68,7 +68,7 @@ for (const colorScheme of ['light', 'dark']) {
         const review = await showReview(page, studio);
         await expect(review.getByRole('heading', { name: 'AI 構成の審査' })).toBeInViewport();
         const clip = await reviewClip(page);
-        // 撮る範囲は、上の帯から構成の図まで。承認の数と、承認済みの印が入る
+        // 撮る範囲は、上の帯から欄の一覧まで。流れ図、承認の数、承認済みの印が入る
         expect(clip.height).toBeGreaterThan(400);
         await expectNoLeaksInClip(page, clip, 'AI 構成の審査', home);
       } finally {

@@ -52,8 +52,10 @@ async function selectProject(page, id) {
 // 「この設計で作る」の後の AI 構成の審査(test/e2e/review.spec.js)。4 つを承認して「この構成で作る」を押す
 async function approveAndBuild(page) {
   await expect(page.getByRole('heading', { level: 2, name: 'AI 構成の審査' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'この構成で作る' })).toBeDisabled();
-  for (const label of ['エージェントの構成', 'harness', 'データと RAG', '技術の組']) await page.getByRole('button', { name: `「${label}」を承認する` }).click();
+  // 4 つそろうまで「この構成で作る」は出ない。承認は次の一手の帯で、読んでいる欄から順に押す
+  await expect(page.getByRole('button', { name: 'この構成で作る' })).toBeHidden();
+  const band = page.getByRole('region', { name: '次の一手' });
+  for (const name of ['エージェントの構成を承認する', 'harness を承認する', 'データと RAG を承認する', '技術の組を承認する']) await band.getByRole('button', { name }).click();
   await expect(page.locator('#review-count')).toHaveText('承認 4 / 4');
   await page.getByRole('button', { name: 'この構成で作る' }).click();
 }

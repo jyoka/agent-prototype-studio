@@ -405,14 +405,87 @@ body[data-design] .layout, body[data-design] .stage-panel { display: none; }
 .design-data-note { font-size: var(--text-2); }
 @media (max-width: 640px) { .design-band { grid-template-columns: 1fr; } }
 
-/* AI 構成の審査(ai-architecture-review.md)。4 つの欄を上から順に並べ、欄ごとに承認の印を出す */
-.review-count { margin: 0.3rem 0; font-size: var(--text-4); font-weight: var(--weight-bold); }
+/* AI 構成の審査(ai-architecture-review.md、ui-ux-v2.md の 4.1、10.4)。流れ図、承認の数、4 つの欄を上から順に並べる。
+   1 つだけを「読んでいる」にして開き(左に太い線)、ほかは短くたたむ。欄の状態は印と文の札で分け、色だけに頼らない */
+.review-lead { max-width: 46em; font-size: var(--text-4); }
+.review-basis { color: var(--color-text-muted); font-size: var(--text-2); }
+.review-count { margin: var(--space-2) 0; font-size: var(--text-4); font-weight: var(--weight-bold); }
 .review-count[data-ready="true"] { color: var(--color-ok); }
-.review-item { margin-top: 0.8rem; }
-.review-item[data-approved="true"] { border-color: var(--color-ok); }
-.review-item h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem; margin: 0; }
-.review-mark { font-size: var(--text-2); font-weight: var(--weight-regular); color: var(--color-warn); }
-.review-item[data-approved="true"] .review-mark { color: var(--color-ok); }
+/* 流れ図(この試作品の中で、1 回の問い合わせが流れる道)。製図の方眼の上に部品の箱を並べる */
+.review-schematic { display: flex; align-items: flex-start; gap: var(--space-4); margin: var(--space-3) 0; }
+.review-flow {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: var(--stroke-hair) solid var(--color-line);
+  border-radius: var(--radius-2);
+  background-color: var(--color-surface);
+  background-image: linear-gradient(color-mix(in srgb, var(--color-line) 55%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--color-line) 55%, transparent) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: -1px -1px;
+}
+.review-flow figcaption, .review-flow .flow-note { width: fit-content; padding: 0 var(--space-1); background: var(--color-surface); color: var(--color-text-muted); font-size: var(--text-1); }
+.review-flow figcaption { margin-bottom: var(--space-2); }
+.design .review-flow .flow-note { margin: var(--space-2) 0 0; }
+.flow-wrap { position: relative; }
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: var(--space-2) var(--space-5); margin: 0; padding: 0; list-style: none; }
+.node {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: var(--stroke-hair) solid var(--color-line-strong);
+  border-radius: var(--radius-1);
+  background: var(--color-surface);
+  transition: border-color var(--motion-quick) var(--ease-out);
+}
+.node:not(:last-child)::after { content: ""; position: absolute; left: 100%; top: 50%; width: var(--space-5); border-top: var(--stroke-hair) solid var(--color-line-strong); }
+.node:not(:last-child)::before { content: ""; position: absolute; left: calc(100% + var(--space-5) - 6px); top: calc(50% - 4px); border: 4px solid transparent; border-left: 6px solid var(--color-line-strong); }
+.node[data-kind="model"] { border-style: dashed; }
+.node[data-kind="guard"] { border-color: var(--actor-gate); }
+/* 読んでいる欄(または、カーソルや焦点が乗った欄)に関係する部品。縁を 2px にし、名前を太くする */
+.node[data-focus] { padding: calc(var(--space-2) - 1px) calc(var(--space-3) - 1px); border-width: var(--stroke-mark); border-color: var(--color-accent); }
+.node[data-focus] .node-name { font-weight: var(--weight-bold); }
+.node .tag { justify-self: start; color: var(--color-text-muted); font-family: var(--font-mono); }
+.tag[data-kind="code"] { border-style: solid; }
+.tag[data-kind="model"] { border-style: dashed; }
+.tag[data-kind="guard"] { color: var(--actor-gate); }
+.node .tag[data-kind="guard"] { color: var(--actor-gate); }
+.node-name { font-size: var(--text-2); white-space: nowrap; }
+/* 線の上を進む点(10.5)。動きを止めると消える */
+.flow-pulse { position: absolute; top: calc(50% - 3px); left: 0; z-index: 1; width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); pointer-events: none; animation: flow-travel var(--motion-draw) var(--ease-linear) infinite; }
+@keyframes flow-travel { from { left: 0; } to { left: calc(100% - 6px); } }
+@media (prefers-reduced-motion: reduce) { .flow-pulse { display: none; } }
+:root[data-motion="off"] .flow-pulse { display: none; }
+/* 4 つそろったときの AI 構成書の指紋 */
+.review-fingerprint { flex: none; display: grid; gap: 2px; margin: 0; padding: var(--space-2) var(--space-3); border: var(--stroke-hair) solid var(--color-ok); border-radius: var(--radius-1); background: var(--color-surface); }
+.review-fingerprint[hidden] { display: none; }
+.review-fingerprint-label { color: var(--color-text-muted); font-size: var(--text-1); }
+.review-fingerprint code { font-family: var(--font-mono); font-size: var(--text-3); }
+/* 4 つの欄 */
+.review-items { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.design-data.review-item { margin: 0; padding: var(--space-3) var(--space-4); gap: var(--space-2); border-radius: var(--radius-1); background: var(--color-surface); }
+.review-item[data-state="unseen"] { border-style: dashed; border-color: var(--color-line-strong); }
+.review-item[data-state="lost"] { border-color: var(--color-warn); }
+.review-item[data-reading] { border-color: var(--color-accent); border-style: solid; border-left-width: 4px; }
+.review-item-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3); }
+.design .review-item h3 { margin: 0; font-size: var(--text-4); }
+.review-term { color: var(--color-text-muted); font-size: var(--text-2); font-weight: var(--weight-regular); }
+.design .review-item p { margin: 0; }
+.review-lost { padding: var(--space-1) var(--space-2); border-left: var(--stroke-mark) solid var(--color-warn); background: var(--color-warn-soft); color: var(--color-warn); font-size: var(--text-2); }
+.review-from-comments { margin: 0; padding: var(--space-1) var(--space-2); border-left: var(--stroke-mark) solid var(--color-warn); list-style: none; background: var(--color-warn-soft); color: var(--color-warn); font-size: var(--text-2); }
+.review-choice { color: var(--color-text); }
+.review-guess { color: var(--color-warn); }
+.review-peek > summary, .explain > summary { width: fit-content; color: var(--color-link); font-size: var(--text-2); cursor: pointer; }
+.review-peek[open] { display: flex; flex-direction: column; gap: var(--space-2); }
+.explain { padding-top: var(--space-2); border-top: var(--stroke-hair) dashed var(--color-line); font-size: var(--text-2); }
+.explain dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3); margin: var(--space-2) 0; }
+.explain dt { color: var(--color-text-muted); }
+.explain dd { margin: 0; }
+.review-item-actions { display: flex; gap: var(--space-2); }
+.review-thinking { font-weight: var(--weight-bold); }
 .review-switch { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.4rem; }
 .review-switch button { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; text-align: left; }
 .review-switch button[aria-pressed="true"] { border: 2px solid var(--color-accent); background: var(--color-accent-soft); }
@@ -427,9 +500,10 @@ body[data-design] .layout, body[data-design] .stage-panel { display: none; }
 .review-badge { margin-left: 0.4rem; padding: 0 0.4rem; border: var(--stroke-hair) solid var(--color-warn); border-radius: var(--radius-pill); background: var(--color-warn-soft); color: var(--color-warn); font-size: var(--text-1); white-space: nowrap; }
 .review-prompts pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0.2rem 0 0.6rem; padding: 0.4rem; border: var(--stroke-hair) solid var(--color-line); border-radius: var(--radius-2); background: var(--color-bg); font-size: var(--text-2); }
 .review-done { color: var(--color-ok); font-size: var(--text-2); }
-.review-left { margin-top: 0.8rem; font-weight: var(--weight-bold); }
-.review-stopped { margin: 0.4rem 0; padding: 0.5rem; border: var(--stroke-hair) solid var(--color-warn); border-radius: var(--radius-2); background: var(--color-warn-soft); color: var(--color-warn); }
+/* 作る AI が承認の後に構成を変えたとき。作業台の上の ⬢ の帯 */
+.review-stopped { margin: 0 0 var(--space-3); padding: var(--space-2) var(--space-3); border: var(--stroke-hair) solid var(--actor-gate); border-left-width: 4px; border-radius: var(--radius-1); background: var(--color-warn-soft); color: var(--color-text); }
 .review-stopped[hidden] { display: none; }
+.review-stopped-shape, .review-stopped-who { color: var(--color-warn); font-weight: var(--weight-bold); }
 .review-skip { margin-top: 0.8rem; }
 
 
@@ -1046,8 +1120,6 @@ body[data-show] [data-studio-only] { display: none !important; }
 .fix-compare figcaption { font-size: var(--text-2); color: var(--color-text-muted); text-align: center; }
 .fix-events { margin: 0.3rem 0; padding-left: 1.2rem; font-size: var(--text-2); }
 .fix-request { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-2); }
-.review-comments[hidden] { display: none; }
-.review-comments { margin: 0.4rem 0; padding: 0.4rem 0.6rem 0.4rem 1.6rem; border-radius: var(--radius-1); background: var(--color-warn-soft); color: var(--color-warn); }
 
 /* 部品(ui-ux-v2.md の 10.4)。今の画面にある部品を、トークンで描く。段の道筋、今の行などの新しい部品は 3 枚目から。
    どの画面でも同じ形にするため、ファイルの最後に置く */
@@ -1209,7 +1281,12 @@ body[data-bench="handoff"] .layout, body[data-bench="note"] .layout { display: n
   border-top: var(--stroke-hair) solid var(--color-line-strong);
 }
 .next-label { flex: none; font-family: var(--font-mono); font-size: var(--text-1); color: var(--color-text-muted); text-transform: none; }
+.next-main { display: flex; flex: 1 1 auto; flex-direction: column; gap: 2px; min-width: 0; }
 .next-text { flex: 1 1 auto; margin: 0; min-width: 0; }
+/* 承認を押す人の名前。帯の 1 文の下に小さく置く */
+.next-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); color: var(--color-text-muted); font-size: var(--text-1); }
+.next-who[hidden], .next-who [hidden] { display: none; }
+.next-who input { width: 12rem; max-width: 100%; padding: 0.1rem 0.4rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-1); font-size: var(--text-2); }
 .next-text[data-tone="warn"] { color: var(--color-warn); font-weight: var(--weight-bold); }
 .next-slot { display: flex; flex: none; gap: var(--space-2); }
 .next-slot > button { padding: 0.45rem 1rem; white-space: nowrap; cursor: pointer; }

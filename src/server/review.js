@@ -87,6 +87,19 @@ export function itemApproved(approval, digest) {
   return approval.needs.every((role) => approval.by.some((entry) => entry.role === role && entry.digest === digest));
 }
 
+// 新しい審査に写す「消えた承認」。承認があった項目は why(item) の理由で消えたとする(null なら承認を残す項目)。
+// 前の審査で消えて、まだ承認し直していない項目は、前の理由のまま残す
+function lostApprovals(record, why) {
+  const at = new Date().toISOString();
+  const lost = {};
+  for (const item of REVIEW_ITEM_IDS) {
+    const reason = record.approvals[item].by.length > 0 ? why(item) : null;
+    if (reason) lost[item] = { ...reason, at };
+    else if (record.lost?.[item] && record.approvals[item].by.length === 0) lost[item] = record.lost[item];
+  }
+  return lost;
+}
+
 // 審査が要るか(none、required、skipped)、今の AI 構成書、飛ばした記録を読む。引き継ぎ(handoff.js)が使う。
 // paths は projectPaths の形(studio と meta)。AI 構成書が読めなければ record は null
 export async function readReviewState(paths) {
@@ -327,7 +340,7 @@ export class ProjectReviews {
     });
   }
 
-  async fresh(id, { origin, previous = null, approvals = null, comments = [] }) {
+  async fresh(id, { origin, previous = null, approvals = null, comments = [], lost = {} }) {
     const now = new Date().toISOString();
     const content = await this.content(id);
     const fingerprint = await architectureFingerprint(this.dirs(id).app);
@@ -349,6 +362,8 @@ export class ProjectReviews {
       stopped: null,
       // 画面へのコメントのうち、種類が「構成」で承認されて、審査に戻ったもの(comments.js。K3)。ないときは項目を足さない
       ...(comments.length > 0 ? { comments } : {}),
+      // 消えた承認と、その理由(項目ごと)。画面が欄の頭に 1 文で出す(ui-ux-v2.md の 4.1)。ないときは項目を足さない
+      ...(Object.keys(lost).length > 0 ? { lost } : {}),
     };
   }
 
@@ -378,12 +393,16 @@ export class ProjectReviews {
     const items = REVIEW_ITEMS.map((item) => {
       const approval = record.approvals[item.id];
       const digest = fingerprint.items[item.id].digest;
+      const by = approval.by.map((entry) => ({ ...entry, valid: entry.digest === digest }));
+      const approved = itemApproved(approval, digest);
       return {
         ...item,
         needs: approval.needs,
-        by: approval.by.map((entry) => ({ ...entry, valid: entry.digest === digest })),
-        approved: itemApproved(approval, digest),
+        by,
+        approved,
         changed: changed.includes(item.id),
+        // 承認が消えた理由。審査の中で消したもの(選び直す、審査に戻る、コメント)か、承認の後に中身が変わったもの
+        lost: approved ? null : (record.lost?.[item.id] ?? (by.some((entry) => !entry.valid) ? { reason: 'changed' } : null)),
       };
     });
     const approvedCount = items.filter((item) => item.approved).length;
@@ -408,6 +427,8 @@ export class ProjectReviews {
       ready: approvedCount === items.length && !record.stopped,
       fingerprint: { value: fingerprint.value, approved: record.approvedAt ? record.fingerprint.value : null },
       hasCopy: Boolean(record.approvedAt),
+      // 案を出す AI(設計の案内)が今、案を作っているか。画面は欄の中身の代わりに「案を作っています」を出す
+      thinking: Boolean(this.designs.calling?.has(id)),
       ...content,
     };
   }
@@ -420,8 +441,10 @@ export class ProjectReviews {
       if (record.stopped) throw new IntentError(409, 'review-stopped', '承認と違う構成になっています。先に「審査に戻る」か「承認した構成に戻す」を押してください');
       if (!this.designs.records.has(id)) throw new IntentError(409, 'owner-composition', '今の構成は書き換えません');
       if (typeof composition !== 'string' || !COMPOSITION_CHOICES.some((choice) => choice.id === composition)) throw new IntentError(400, 'invalid', '知らない構成です');
+      const from = SHAPE_LABELS[record.composition?.shape] ?? null;
       await this.designs.chooseComposition(id, composition);
-      const next = await this.fresh(id, { origin: record.origin, previous: record.id, comments: record.comments ?? [] });
+      const lost = lostApprovals(record, () => ({ reason: 'choose', item: 'composition', from, to: SHAPE_LABELS[composition] ?? composition }));
+      const next = await this.fresh(id, { origin: record.origin, previous: record.id, comments: record.comments ?? [], lost });
       await this.write(id, next);
       return null;
     });
@@ -448,6 +471,10 @@ export class ProjectReviews {
       next.fingerprint = fingerprint;
       // 承認した後に別の項目を承認し直したら、4 つの承認の時刻は取り直す
       next.approvedAt = null;
+      if (next.lost?.[item]) {
+        delete next.lost[item];
+        if (Object.keys(next.lost).length === 0) delete next.lost;
+      }
       await this.write(id, next);
       return null;
     });
@@ -595,7 +622,8 @@ export class ProjectReviews {
       const entry = { id: String(comment.id), number: comment.number, text: clip(comment.text, 1000), at: comment.at };
       await this.setFlag(id, 'required');
       const comments = [...(Array.isArray(record?.comments) ? record.comments : []), entry];
-      await this.write(id, await this.fresh(id, { origin: record?.origin ?? 'comment', previous: record?.id ?? null, comments }));
+      const lost = record ? lostApprovals(record, () => ({ reason: 'comment', number: comment.number })) : {};
+      await this.write(id, await this.fresh(id, { origin: record?.origin ?? 'comment', previous: record?.id ?? null, comments, lost }));
       this.log(`コメントから AI 構成の審査に戻しました: ${id}(コメント ${comment.number})`);
       return null;
     });
@@ -607,12 +635,13 @@ export class ProjectReviews {
       const record = await this.current(id);
       if (!record) throw new IntentError(409, 'no-review', 'まだ審査を始めていません');
       const fingerprint = await architectureFingerprint(this.dirs(id).app);
+      const same = (item) => record.fingerprint.items[item].digest === fingerprint.items[item].digest;
       const approvals = Object.fromEntries(REVIEW_ITEM_IDS.map((item) => {
         const approval = record.approvals[item];
-        const same = record.fingerprint.items[item].digest === fingerprint.items[item].digest;
-        return [item, { needs: approval.needs, by: same ? approval.by : [] }];
+        return [item, { needs: approval.needs, by: same(item) ? approval.by : [] }];
       }));
-      await this.write(id, await this.fresh(id, { origin: record.origin, previous: record.id, approvals, comments: record.comments ?? [] }));
+      const lost = lostApprovals(record, (item) => (same(item) ? null : { reason: 'changed' }));
+      await this.write(id, await this.fresh(id, { origin: record.origin, previous: record.id, approvals, comments: record.comments ?? [], lost }));
       return null;
     });
   }

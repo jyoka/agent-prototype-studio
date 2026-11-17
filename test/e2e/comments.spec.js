@@ -213,8 +213,10 @@ test('構成のコメントは承認しても起動せず、AI 構成の審査�
     await expect(page.getByRole('region', { name: '確かめたい問い' })).toBeHidden();
     const review = page.locator('#review');
     await expect(review).toBeVisible();
-    await expect(review.getByRole('list', { name: '審査に戻したコメント' })).toContainText('コメント 1): 答えに迷ったら、担当の人に渡すようにして');
-    await expect(page.locator('#review-count')).toHaveText('承認 0 / 4');
+    // 戻したコメントは、読んでいる欄の頭に「コメントから: …」の 1 行で出す(ui-ux-v2.md の 4.1)
+    const fromComments = review.locator('.review-item[data-reading]').getByRole('list', { name: '審査に戻したコメント' });
+    await expect(fromComments).toContainText('コメントから: 答えに迷ったら、担当の人に渡すようにして(コメント 1、');
+    await expect(page.locator('#review-count')).toHaveText('承認 0 / 4・あと 4 つ');
 
     // 審査の承認がそろうまで、言葉で直す依頼でも作る AI は起動しない
     const refused = await studio.post(`/api/projects/${ID}/build-requests`, { request: '見出しを「あさかぜ求人相談」にして' });

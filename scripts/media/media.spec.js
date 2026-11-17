@@ -200,11 +200,11 @@ for (const colorScheme of THEMES) {
         // 7 番目は、記録と構成を人が読んで承認する所(AI 構成の審査)。見本には設計がないので、架空の図書館の題材で撮る
         await showReview(page, studio);
         await hideDevOnlyMarks(page);
-        const item = page.getByRole('region', { name: /^1\. エージェントの構成/ });
-        const diagram = item.getByRole('img').first();
-        await expect(diagram).toBeInViewport();
-        const top = await item.boundingBox();
-        const bottom = await diagram.boundingBox();
+        // 流れ図から、承認した上の欄まで(ui-ux-v2.md の 4.1)
+        const figure = page.getByRole('figure', { name: 'この試作品の中で、1 回の問い合わせが流れる道' });
+        await expect(figure).toBeInViewport();
+        const top = await figure.boundingBox();
+        const bottom = await page.locator('#review-items .review-item').first().boundingBox();
         const clip = { x: top.x - 8, y: top.y - 8, width: top.width + 16, height: bottom.y + bottom.height + 8 - (top.y - 8) };
         await expectNoLeaksInClip(page, clip, '層の審査', home);
         await shoot(page, `layers/7-review-${colorScheme}.png`, home, { clip });

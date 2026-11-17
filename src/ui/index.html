@@ -381,35 +381,41 @@
     <p id="design-note-message" class="intent-note" role="status" hidden></p>
     <p id="design-error" class="intent-error" role="alert" hidden></p>
   </section>
-  <!-- AI 構成の審査(ai-architecture-review.md)。エージェントの構成、harness、データと RAG、技術の組の 4 つを上から順に並べ、欄ごとに承認する。
-       4 つそろうまで「この構成で作る」は押せない。技術の言葉は隠さず、平たい言葉と並べる。プロンプトの全文は閉じた details の中に置く -->
+  <!-- AI 構成の審査(ai-architecture-review.md、ui-ux-v2.md の 4.1)。エージェントの構成、harness、データと RAG、技術の組の 4 つを上から順に並べ、
+       1 つだけを「読んでいる」にして開く。承認は次の一手の帯のボタン(#review-approve を帯に移す)。4 つそろうまで「この構成で作る」は出さない。
+       流れ図は、読んでいる欄に関係する部品の縁を強くする。技術の言葉は隠さず、ふだんの言葉と並べる。プロンプトの全文は閉じた details の中に置く -->
   <section id="review" class="design review" aria-labelledby="review-heading" hidden>
-    <h2 id="review-heading" tabindex="-1">AI 構成の審査</h2>
-    <p class="muted">作る前に、AI の作りを 4 つに分けて読み、承認します。4 つそろうまで、作る AI は作り始めません。出している案は今日の一番良い推測です。</p>
-    <p id="review-count" class="review-count" role="status"></p>
-    <p id="review-state" class="intent-doc-state" role="status"></p>
-    <!-- 画面へのコメント(種類が「構成」)を承認して、審査に戻したもの(K3) -->
-    <ul id="review-comments" class="review-comments" aria-label="審査に戻したコメント" hidden></ul>
+    <!-- 作る AI が承認の後に構成を変えたとき(review-stopped)。作業台の上の ⬢ の帯。強いボタン「審査に戻る」は次の一手の帯に移る -->
     <div id="review-stopped" class="review-stopped" role="alert" hidden>
-      <p id="review-stopped-text"></p>
+      <p><span class="review-stopped-shape" aria-hidden="true">⬢</span> <span class="review-stopped-who">守りが止めました。</span><span id="review-stopped-text"></span></p>
       <div class="design-actions">
         <button type="button" id="review-back" class="primary">審査に戻る</button>
-        <button type="button" id="review-restore">承認した構成に戻す</button>
+        <button type="button" id="review-restore" class="quiet">承認した構成に戻す</button>
       </div>
     </div>
-    <div class="design-line review-who">
-      <label for="review-pressed">承認を押す人の名前(書かなくても進めます。Studio は本人を確かめません)</label>
-      <input id="review-pressed" type="text" maxlength="40" autocomplete="off">
-      <label for="review-spoken" id="review-spoken-label" hidden>声に出した人</label>
-      <input id="review-spoken" type="text" maxlength="40" autocomplete="off" hidden>
+    <h2 id="review-heading" tabindex="-1">AI 構成の審査</h2>
+    <p class="review-lead">AI の作りを 4 つに分けて読み、承認します。4 つそろうまで、作る AI は作り始めません。</p>
+    <p id="review-state" class="intent-doc-state" role="status"></p>
+    <div class="review-schematic" id="review-schematic" hidden>
+      <figure class="review-flow" aria-labelledby="review-flow-caption">
+        <figcaption id="review-flow-caption">この試作品の中で、1 回の問い合わせが流れる道</figcaption>
+        <div class="flow-wrap"><span class="flow-pulse" aria-hidden="true"></span><ol id="review-flow" class="flow"></ol></div>
+        <p class="flow-note">記録: 1 回ごとに、どの部品が働いたかを残します。</p>
+      </figure>
+      <!-- 4 つそろったとき、AI 構成書の指紋(等幅)。作る AI が構成を変えたかを、この指紋で比べる -->
+      <p id="review-fingerprint" class="review-fingerprint" hidden></p>
     </div>
-    <div id="review-items"></div>
-    <p id="review-left" class="review-left" role="status"></p>
-    <div class="design-actions">
-      <button type="button" id="review-build" class="primary">この構成で作る</button>
-      <button type="button" id="review-measure">お試しの AI で場面を回す</button>
-      <button type="button" id="review-to-design" hidden>設計の案内に戻る</button>
-      <button type="button" id="review-close">試作品の画面に戻る</button>
+    <p id="review-count" class="review-count" role="status"></p>
+    <ol id="review-items" class="review-items" aria-label="審査の 4 つの欄"></ol>
+    <!-- 案の日付と根拠(9 節)。おすすめの欄の文にも、札と日付と根拠の場面と「推測」を付ける -->
+    <p id="review-basis" class="review-basis"></p>
+    <div class="design-actions review-actions">
+      <!-- 読んでいる欄を承認する。次の一手の帯に移して出す(作業台の中には強いボタンを置かない) -->
+      <button type="button" id="review-approve" class="primary" hidden></button>
+      <button type="button" id="review-build" class="primary" hidden>この構成で作る</button>
+      <button type="button" id="review-measure" class="quiet">お試しの AI で場面を回す</button>
+      <button type="button" id="review-to-design" class="quiet" hidden>設計の案内に戻る</button>
+      <button type="button" id="review-close" class="quiet">試作品の画面に戻る</button>
     </div>
     <details id="review-skip-box" class="review-skip">
       <summary>審査を飛ばす</summary>
@@ -877,7 +883,16 @@
        ボタンは、今の段の作業台にあるものを、この帯に移して出す(同じボタンが 2 つにならないように) -->
   <section id="next-band" class="next-band" aria-label="次の一手">
     <span class="next-label">次の一手</span>
-    <p id="next-text" class="next-text"></p>
+    <div class="next-main">
+      <p id="next-text" class="next-text"></p>
+      <!-- 承認を押す人の名前(ui-ux-v2.md の 4.1)。審査の承認を待つ間だけ、帯の 1 文の下に小さく出す。会のときは「声に出した人」も -->
+      <div id="review-who" class="next-who review-who" hidden>
+        <label for="review-pressed">承認を押す人の名前(書かなくても進めます。Studio は本人を確かめません)</label>
+        <input id="review-pressed" type="text" maxlength="40" autocomplete="off">
+        <label for="review-spoken" id="review-spoken-label" hidden>声に出した人</label>
+        <input id="review-spoken" type="text" maxlength="40" autocomplete="off" hidden>
+      </div>
+    </div>
     <div id="next-slot" class="next-slot"></div>
   </section>
   <!-- 結果の帯のスクリーンショットを大きく見る -->
