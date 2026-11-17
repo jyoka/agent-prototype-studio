@@ -1,0 +1,447 @@
+<!doctype html>
+<!-- ui-ux-v2.md の見た目の案 A 製図(Drafting)のモック。静的なファイルで、外から何も読み込まない(字は OS の字)。
+     3 案で中身(HTML)は同じで、CSS だけが違う。題材と人物は架空。?theme=dark か ?theme=light で色を固定し、?depth=1 で仕組みを開き、?room=1 で会議室の大きさ(字を 1.25 倍)にする -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>見た目の案 A 製図: AI 構成の審査(モック)</title>
+<style>
+:root {
+  color-scheme: light;
+  --stroke-hair: 1px;
+  --stroke-mark: 2px;
+  --stroke-focus: 2px;
+  --radius-1: 3px;
+  --radius-2: 6px;
+  --radius-pill: 999px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --text-1: 0.8125rem;
+  --text-2: 0.875rem;
+  --text-3: 1rem;
+  --text-4: 1.125rem;
+  --text-5: 1.375rem;
+  --text-6: 1.75rem;
+  --text-7: 2.25rem;
+  --leading: 1.6;
+  --leading-tight: 1.3;
+  --weight-regular: 400;
+  --weight-bold: 600;
+  --font-sans: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, "Noto Sans JP", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --font-display: var(--font-sans);
+  --motion-quick: 120ms;
+  --motion-base: 200ms;
+  --motion-draw: 1600ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-linear: linear;
+  --root-size: 16px;
+  --rail-height: 52px;
+  --drawer-width: 420px;
+  --bench-max: 1040px;
+  --color-bg: #F4F5F6;
+  --color-surface: #FFFFFF;
+  --color-surface-sunken: #ECEEF0;
+  --color-line: #DADDE1;
+  --color-line-strong: #868C94;
+  --color-text: #16181B;
+  --color-text-muted: #535960;
+  --color-link: #1D4FB0;
+  --color-accent: #1D4FB0;
+  --color-on-accent: #FFFFFF;
+  --color-focus: #1D4FB0;
+  --color-ok: #17703D;
+  --color-warn: #8A5300;
+  --color-danger: #B42318;
+  --color-fiction: #8A5300;
+  --actor-you: #1D4FB0;
+  --actor-maker: #6E3FB8;
+  --actor-product: #0B6E6E;
+  --actor-gate: #8A5300;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+  --color-bg: #0F1113;
+  --color-surface: #171A1D;
+  --color-surface-sunken: #0B0D0F;
+  --color-line: #2B3036;
+  --color-line-strong: #6E757E;
+  --color-text: #E7E9EC;
+  --color-text-muted: #A2A9B1;
+  --color-link: #8DB2FF;
+  --color-accent: #8DB2FF;
+  --color-on-accent: #0A1733;
+  --color-focus: #8DB2FF;
+  --color-ok: #6FCF97;
+  --color-warn: #E0B15C;
+  --color-danger: #FF8A7A;
+  --color-fiction: #E0B15C;
+  --actor-you: #8DB2FF;
+  --actor-maker: #C3A6F7;
+  --actor-product: #5FC9C4;
+  --actor-gate: #E0B15C;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #0F1113;
+  --color-surface: #171A1D;
+  --color-surface-sunken: #0B0D0F;
+  --color-line: #2B3036;
+  --color-line-strong: #6E757E;
+  --color-text: #E7E9EC;
+  --color-text-muted: #A2A9B1;
+  --color-link: #8DB2FF;
+  --color-accent: #8DB2FF;
+  --color-on-accent: #0A1733;
+  --color-focus: #8DB2FF;
+  --color-ok: #6FCF97;
+  --color-warn: #E0B15C;
+  --color-danger: #FF8A7A;
+  --color-fiction: #E0B15C;
+  --actor-you: #8DB2FF;
+  --actor-maker: #C3A6F7;
+  --actor-product: #5FC9C4;
+  --actor-gate: #E0B15C;
+}
+/* 骨組み(3 案で同じ)。値は案ごとのトークンから取る */
+*, *::before, *::after { box-sizing: border-box; }
+html { font-size: var(--root-size); }
+body {
+  margin: 0; height: 100vh; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto;
+  font-family: var(--font-sans); font-size: var(--text-3); line-height: var(--leading);
+  color: var(--color-text); background: var(--color-bg);
+  -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums;
+}
+h1, h2, p, ol, ul, dl, figure { margin: 0; }
+ol, ul { padding: 0; list-style: none; }
+a { color: var(--color-link); text-underline-offset: 0.2em; }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: var(--stroke-focus) solid var(--color-focus); outline-offset: 2px; }
+.sep { color: var(--color-text-muted); padding: 0 0.15em; }
+.skip { position: absolute; left: -999px; }
+.skip:focus { left: var(--space-3); top: var(--space-2); background: var(--color-surface); padding: var(--space-2); z-index: 9; }
+kbd { font-family: var(--font-mono); font-size: var(--text-1); border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-1); padding: 0 0.35em; color: var(--color-text-muted); }
+
+/* 段の道筋(いつも) */
+.rail-bar { display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-4); min-height: var(--rail-height); background: var(--color-surface); border-bottom: var(--stroke-hair) solid var(--color-line); }
+.brand { font-weight: var(--weight-bold); font-size: var(--text-2); display: flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
+.brand-mark { width: 14px; height: 14px; border: var(--stroke-mark) solid var(--color-text); border-radius: var(--radius-1); }
+.project { background: none; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); padding: var(--space-1) var(--space-2); font-size: var(--text-2); white-space: nowrap; }
+.fiction-tag { font-size: var(--text-1); margin-left: var(--space-2); padding: 0 var(--space-1); border: var(--stroke-hair) solid var(--color-fiction); color: var(--color-fiction); border-radius: var(--radius-1); }
+.rail { display: flex; align-items: center; gap: var(--space-3); flex: 1; min-width: 0; }
+.rail ol { display: flex; gap: var(--space-1); }
+.rail a { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-2) var(--space-2); text-decoration: none; color: var(--color-text-muted); font-size: var(--text-2); border-bottom: var(--stroke-mark) solid transparent; white-space: nowrap; }
+.rail .n { font-family: var(--font-mono); font-size: var(--text-1); }
+.rail [data-state="done"] a { color: var(--color-text); }
+.rail .check { color: var(--color-ok); font-size: var(--text-1); }
+.rail [data-state="current"] a { color: var(--color-text); font-weight: var(--weight-bold); border-bottom-color: var(--color-accent); }
+.decide { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--actor-you); flex: none; }
+.rail-left, .rail-legend { font-size: var(--text-1); color: var(--color-text-muted); white-space: nowrap; display: flex; align-items: center; gap: var(--space-1); }
+.bar-tools { display: flex; gap: var(--space-2); }
+.tool { background: none; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); font-size: var(--text-1); padding: var(--space-1) var(--space-2); color: var(--color-text-muted); }
+
+/* 今の行: 4 者とお試しか本物か(いつも) */
+.now { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-2) var(--space-4); background: var(--color-surface-sunken); border-bottom: var(--stroke-hair) solid var(--color-line); font-size: var(--text-2); }
+.actors { display: flex; gap: var(--space-4); flex: 1; flex-wrap: wrap; }
+.actor { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-muted); }
+.actor .who { color: var(--color-text); }
+.actor[data-active] .who { font-weight: var(--weight-bold); }
+.actor[data-active] .doing { color: var(--color-text); text-decoration: underline; text-decoration-color: var(--actor-you); text-decoration-thickness: 2px; text-underline-offset: 0.3em; }
+.shape { width: 12px; height: 12px; flex: none; }
+[data-actor="you"] .shape { border-radius: 50%; background: var(--actor-you); }
+[data-actor="maker"] .shape { background: var(--actor-maker); border-radius: 2px; }
+[data-actor="product"] .shape { background: var(--actor-product); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+[data-actor="gate"] .shape { background: var(--actor-gate); clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
+.mode { display: flex; align-items: center; gap: var(--space-1); white-space: nowrap; color: var(--color-text); border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-pill); padding: 2px var(--space-2); }
+.mode-dot { width: 8px; height: 8px; border-radius: 50%; border: var(--stroke-mark) solid var(--color-text-muted); }
+.depth-toggle { background: none; border: none; color: var(--color-link); font-size: var(--text-2); white-space: nowrap; display: flex; gap: var(--space-1); align-items: center; }
+
+/* 作業台 */
+.bench { overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr); }
+.surface { width: 100%; max-width: var(--bench-max); margin: 0 auto; padding: var(--space-5) var(--space-5) var(--space-6); display: grid; gap: var(--space-4); align-content: start; }
+.eyebrow { font-size: var(--text-2); color: var(--color-text-muted); display: flex; align-items: center; gap: var(--space-1); }
+.surface-head h1 { font-size: var(--text-6); line-height: var(--leading-tight); font-weight: var(--weight-bold); margin: var(--space-1) 0 var(--space-2); font-family: var(--font-display); }
+.lead { font-size: var(--text-4); max-width: 46em; }
+.meta { font-size: var(--text-2); color: var(--color-text-muted); margin-top: var(--space-1); }
+
+.schematic { border: var(--stroke-hair) solid var(--color-line); border-radius: var(--radius-2); padding: var(--space-3) var(--space-4); background: var(--color-surface); }
+.schematic figcaption { font-size: var(--text-1); color: var(--color-text-muted); margin-bottom: var(--space-2); }
+.flow { display: flex; align-items: stretch; gap: var(--space-5); position: relative; }
+.node { position: relative; display: grid; gap: 2px; padding: var(--space-2) var(--space-3); border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-1); background: var(--color-surface); min-width: 0; }
+.node:not(:last-child)::after { content: ""; position: absolute; left: 100%; top: 50%; width: var(--space-5); border-top: var(--stroke-hair) solid var(--color-line-strong); }
+.node:not(:last-child)::before { content: ""; position: absolute; left: calc(100% + var(--space-5) - 6px); top: calc(50% - 4px); border: 4px solid transparent; border-left: 6px solid var(--color-line-strong); }
+.node .kind { font-family: var(--font-mono); font-size: var(--text-1); color: var(--color-text-muted); }
+.node .node-name { font-size: var(--text-2); white-space: nowrap; }
+.node[data-kind="guard"] { border-color: var(--actor-gate); }
+.node[data-focus] { border-color: var(--color-accent); box-shadow: inset 0 0 0 1px var(--color-accent); }
+.flow-note { font-size: var(--text-1); color: var(--color-text-muted); margin-top: var(--space-2); }
+.pulse { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); top: calc(50% - 3px); left: 0; animation: travel var(--motion-draw) var(--ease-linear) infinite; }
+@keyframes travel { from { transform: translateX(0); } to { transform: translateX(var(--travel, 600px)); } }
+
+.count { font-size: var(--text-3); }
+.items { display: grid; gap: var(--space-3); }
+.item { border: var(--stroke-hair) solid var(--color-line); border-radius: var(--radius-2); background: var(--color-surface); padding: var(--space-3) var(--space-4); display: grid; gap: var(--space-2); }
+.item[data-state="reading"] { border-color: var(--color-accent); border-left-width: 4px; }
+.item-head { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
+.item h2 { font-size: var(--text-4); font-weight: var(--weight-bold); }
+.term { font-weight: var(--weight-regular); font-size: var(--text-2); color: var(--color-text-muted); margin-left: var(--space-2); }
+.badge { font-size: var(--text-1); padding: 1px var(--space-2); border-radius: var(--radius-1); border: var(--stroke-hair) solid currentColor; white-space: nowrap; }
+.badge[data-state="approved"] { color: var(--color-ok); }
+.badge[data-state="reading"] { color: var(--color-accent); }
+.badge[data-state="unseen"] { color: var(--color-text-muted); border-style: dashed; }
+.choice { font-weight: var(--weight-bold); }
+.rec { font-size: var(--text-1); font-weight: var(--weight-regular); margin-left: var(--space-2); padding: 0 var(--space-1); color: var(--color-text-muted); border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-1); }
+.why { max-width: 52em; }
+.item-meta { font-size: var(--text-2); color: var(--color-text-muted); }
+.hint { font-size: var(--text-2); color: var(--color-text-muted); display: flex; gap: var(--space-1); }
+.hint-mark { color: var(--color-accent); }
+.rules { border-collapse: collapse; width: 100%; font-size: var(--text-2); }
+.rules caption { text-align: left; font-size: var(--text-1); color: var(--color-text-muted); padding-bottom: var(--space-1); }
+.rules th, .rules td { text-align: left; padding: var(--space-1) var(--space-2); border-bottom: var(--stroke-hair) solid var(--color-line); vertical-align: top; }
+.rules thead th { font-weight: var(--weight-regular); color: var(--color-text-muted); font-size: var(--text-1); }
+.rules tbody th { font-weight: var(--weight-bold); white-space: nowrap; }
+.tag { font-family: var(--font-mono); font-size: var(--text-1); padding: 0 var(--space-1); border-radius: var(--radius-1); border: var(--stroke-hair) solid var(--color-line-strong); color: var(--color-text); }
+.tag[data-kind="model"] { border-style: dashed; }
+.explain { border-top: var(--stroke-hair) dashed var(--color-line); padding-top: var(--space-2); font-size: var(--text-2); }
+.explain summary { color: var(--color-link); cursor: pointer; width: fit-content; }
+.explain dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3); margin-top: var(--space-2); }
+.explain dt { color: var(--color-text-muted); }
+.explain-more { margin-top: var(--space-2); }
+.item-actions { display: flex; gap: var(--space-2); }
+.quiet { background: none; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); padding: var(--space-1) var(--space-3); font-size: var(--text-2); }
+.tertiary { font-size: var(--text-2); color: var(--color-text-muted); }
+
+/* 次の一手(その場で。いつも同じ場所) */
+.next { display: flex; align-items: center; gap: var(--space-4); justify-content: space-between; padding: var(--space-3) var(--space-5); background: var(--color-surface); border-top: var(--stroke-hair) solid var(--color-line); }
+.next-text { font-size: var(--text-3); display: flex; gap: var(--space-3); align-items: baseline; }
+.next-label { font-size: var(--text-1); color: var(--color-text-muted); white-space: nowrap; }
+.primary { background: var(--color-accent); color: var(--color-on-accent); border: none; border-radius: var(--radius-2); padding: var(--space-2) var(--space-4); font-weight: var(--weight-bold); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; display: none; } }
+:root[data-motion="off"] .pulse { animation: none; display: none; }
+
+/* 仕組み(頼んだら開く) */
+body.depth-open .bench { grid-template-columns: minmax(0, 1fr) var(--drawer-width); }
+.mechanism { border-left: var(--stroke-hair) solid var(--color-line); background: var(--color-surface-sunken); padding: var(--space-5) var(--space-4); overflow: auto; display: grid; gap: var(--space-4); align-content: start; font-size: var(--text-2); }
+.mechanism h2 { font-size: var(--text-5); font-family: var(--font-display); }
+.mechanism h3 { font-size: var(--text-2); font-weight: var(--weight-bold); margin: 0 0 var(--space-2); }
+.mechanism pre { font-family: var(--font-mono); font-size: var(--text-1); white-space: pre-wrap; background: var(--color-surface); border: var(--stroke-hair) solid var(--color-line); border-radius: var(--radius-1); padding: var(--space-3); margin: 0; line-height: 1.7; }
+.layers, .trace { display: grid; gap: var(--space-2); }
+.layers li, .trace li { display: flex; gap: var(--space-2); align-items: baseline; }
+.trace .t { font-family: var(--font-mono); font-size: var(--text-1); color: var(--color-text-muted); min-width: 5.5em; }
+.flow-wrap { position: relative; }
+
+:root[data-room="on"] { --root-size: calc(16px * 1.25); }
+
+/* A 製図: 細い線、四角い角、図面の記号。仕組みの図が主役 */
+:root { --grid-line: color-mix(in srgb, var(--color-line) 55%, transparent); }
+.schematic { background-image: linear-gradient(var(--grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--grid-line) 1px, transparent 1px); background-size: 24px 24px; background-position: -1px -1px; background-color: var(--color-surface); }
+.schematic figcaption, .flow-note { background: var(--color-surface); width: fit-content; padding: 0 var(--space-1); }
+.item { border-radius: var(--radius-1); }
+
+</style>
+</head>
+<body>
+<a class="skip" href="#surface">作業台へ移る</a>
+<header class="rail-bar">
+  <p class="brand"><span class="brand-mark" aria-hidden="true"></span>Prototype Studio</p>
+  <button type="button" class="project" aria-haspopup="true">お店の問い合わせ<span class="fiction-tag">架空</span><span aria-hidden="true"> ▾</span></button>
+  <nav class="rail" aria-label="9 つの段">
+    <ol>
+      <li data-state="done"><a href="#"><span class="n">1</span><span class="label">話す</span><span class="check" aria-label="済み">✓</span></a></li>
+      <li data-state="done" data-decide><a href="#"><span class="n">2</span><span class="decide" title="人が決める段" aria-label="人が決める段"></span><span class="label">目的</span><span class="check" aria-label="済み">✓</span></a></li>
+      <li data-state="done" data-decide><a href="#"><span class="n">3</span><span class="decide" title="人が決める段" aria-label="人が決める段"></span><span class="label">設計</span><span class="check" aria-label="済み">✓</span></a></li>
+      <li data-state="current" data-decide><a href="#" aria-current="step"><span class="n">4</span><span class="decide" title="人が決める段" aria-label="人が決める段"></span><span class="label">審査</span></a></li>
+      <li data-state="todo"><a href="#"><span class="n">5</span><span class="label">作る</span></a></li>
+      <li data-state="todo"><a href="#"><span class="n">6</span><span class="label">測る</span></a></li>
+      <li data-state="todo"><a href="#"><span class="n">7</span><span class="label">質</span></a></li>
+      <li data-state="todo" data-decide><a href="#"><span class="n">8</span><span class="decide" title="人が決める段" aria-label="人が決める段"></span><span class="label">見せる</span></a></li>
+      <li data-state="todo"><a href="#"><span class="n">9</span><span class="label">渡す</span></a></li>
+    </ol>
+    <p class="rail-left">4 / 9 段。あと 5 段</p>
+    <p class="rail-legend"><span class="decide" aria-hidden="true"></span>人が決める段</p>
+  </nav>
+  <div class="bar-tools">
+    <button type="button" class="tool" id="theme-toggle" aria-pressed="false">ダーク</button>
+    <button type="button" class="tool" id="motion-toggle" aria-pressed="false">動きを止める</button>
+  </div>
+</header>
+
+<div class="now" role="status" aria-label="今、誰が働いているか">
+  <ul class="actors">
+    <li class="actor" data-actor="you" data-active><span class="shape" aria-hidden="true"></span><span class="who">あなた</span><span class="doing">あなたの番: 4 つの承認</span></li>
+    <li class="actor" data-actor="maker"><span class="shape" aria-hidden="true"></span><span class="who">作る AI</span><span class="doing">承認を待っています</span></li>
+    <li class="actor" data-actor="product"><span class="shape" aria-hidden="true"></span><span class="who">試作品の中の AI</span><span class="doing">まだありません</span></li>
+    <li class="actor" data-actor="gate"><span class="shape" aria-hidden="true"></span><span class="who">関門と守り</span><span class="doing">承認まで作らせません</span></li>
+  </ul>
+  <p class="mode"><span class="mode-dot" aria-hidden="true"></span>お試しの AI<span class="sep">・</span>料金なし</p>
+  <button type="button" class="depth-toggle" aria-expanded="false" aria-controls="mechanism">仕組みを見る <kbd>.</kbd></button>
+</div>
+
+<main class="bench">
+  <section class="surface" id="surface" aria-labelledby="surface-title">
+    <header class="surface-head">
+      <p class="eyebrow"><span class="decide" aria-hidden="true"></span>4 審査<span class="sep">・</span>人が決める段</p>
+      <h1 id="surface-title">AI 構成の審査</h1>
+      <p class="lead">AI の作りを 4 つに分けて読み、承認します。4 つそろうまで、作る AI は作り始めません。</p>
+      <p class="meta">案は 2026-11-17 時点の推測です。根拠は、目的の文書の場面 6 つです。</p>
+    </header>
+
+    <figure class="schematic" aria-labelledby="schematic-cap">
+      <figcaption id="schematic-cap">この試作品の中で、1 回の問い合わせが流れる道</figcaption>
+      <div class="flow-wrap"><span class="pulse" aria-hidden="true"></span>
+      <ol class="flow">
+        <li class="node" data-kind="person"><span class="kind">人</span><span class="node-name">お客さん</span></li>
+        <li class="node" data-kind="code" data-item="1"><span class="kind">コード</span><span class="node-name">固定の流れ</span></li>
+        <li class="node" data-kind="model" data-item="2" data-focus><span class="kind">モデル</span><span class="node-name">言葉を読む</span></li>
+        <li class="node" data-kind="data" data-item="3"><span class="kind">データ</span><span class="node-name">お店の情報 12 件</span></li>
+        <li class="node" data-kind="guard" data-item="2" data-focus><span class="kind">守り</span><span class="node-name">3 つの層</span></li>
+        <li class="node" data-kind="person"><span class="kind">人</span><span class="node-name">返事</span></li>
+      </ol></div>
+      <p class="flow-note">記録: 1 回ごとに、どの部品が働いたかを残します。</p>
+    </figure>
+
+    <p class="count" role="status"><strong>承認 1 / 4</strong><span class="sep">・</span>あと 3 つ</p>
+
+    <ol class="items">
+      <li class="item" data-state="approved">
+        <div class="item-head">
+          <span class="badge" data-state="approved"><span aria-hidden="true">✓</span> 承認した</span>
+          <h2>エージェントの構成 <span class="term">agent setup</span></h2>
+        </div>
+        <p class="choice">固定の流れ<span class="rec">おすすめ</span></p>
+        <p class="why">問い合わせの手順は決まっているので、次の一手をモデルに任せる要はない見込みです(推測)。</p>
+        <p class="item-meta">ほかの案: 単一エージェント、マスターとサブ<span class="sep">・</span>承認: 森野(架空) 10:42</p>
+      </li>
+
+      <li class="item" data-state="reading" aria-current="true">
+        <div class="item-head">
+          <span class="badge" data-state="reading"><span aria-hidden="true">●</span> 読んでいる</span>
+          <h2>harness <span class="term">ふだんの言葉: AI の周りの決まり</span></h2>
+        </div>
+        <p class="hint"><span class="hint-mark" aria-hidden="true">→</span>任せる所と縛る所を読みます。違えば、言葉で直せます。</p>
+        <table class="rules">
+          <caption>任せる所と縛る所</caption>
+          <thead><tr><th scope="col">中身</th><th scope="col">決めるもの</th><th scope="col">いまの決まり</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">順番</th><td><span class="tag" data-kind="code">コード</span></td><td>聞く、調べる、答えるの順で回す</td></tr>
+            <tr><th scope="row">言葉の読み取り</th><td><span class="tag" data-kind="model">モデル</span></td><td>日付と人数を読み取る</td></tr>
+            <tr><th scope="row">道具の権限</th><td><span class="tag" data-kind="code">コード</span></td><td>お店の情報を読むだけ。書かない</td></tr>
+            <tr><th scope="row">人に渡す条件</th><td><span class="tag" data-kind="code">コード</span></td><td>予約の変更と苦情は、店の人に渡す</td></tr>
+            <tr><th scope="row">上限</th><td><span class="tag" data-kind="code">コード</span></td><td>1 回の返事は 300 字まで</td></tr>
+          </tbody>
+        </table>
+        <details class="explain" open>
+          <summary>これは何?</summary>
+          <dl>
+            <dt>これは何か</dt><dd>モデルの周りで、決め、縛り、記録するコードです。</dd>
+            <dt>何をするのか</dt><dd>任せることと縛ることを読み、違えば直します。</dd>
+            <dt>次に何が起きるか</dt><dd>この決まりで試作品が動き、記録に残ります。</dd>
+          </dl>
+          <p class="explain-more"><a href="#mechanism">プロンプトの全文と守りの 3 つの層を見る</a></p>
+        </details>
+        <div class="item-actions">
+          <button type="button" class="quiet">言葉で直す</button>
+        </div>
+      </li>
+
+      <li class="item" data-state="unseen">
+        <div class="item-head">
+          <span class="badge" data-state="unseen"><span aria-hidden="true">○</span> まだ見ていない</span>
+          <h2>データと RAG <span class="term">何をどう読むか</span></h2>
+        </div>
+        <p class="choice">お店の情報を、そのまま読む<span class="rec">おすすめ</span></p>
+        <p class="why">12 件と少なく、変わるのは月に 1 回です。RAG は要らない見込みです(推測)。</p>
+      </li>
+
+      <li class="item" data-state="unseen">
+        <div class="item-head">
+          <span class="badge" data-state="unseen"><span aria-hidden="true">○</span> まだ見ていない</span>
+          <h2>技術の組 <span class="term">試作品と本番の候補</span></h2>
+        </div>
+        <p class="choice">試作品はお試しの AI。本番の候補は 2 つ</p>
+        <p class="why">候補は案で、決定ではありません。選び直すと、この欄の承認は消えます。</p>
+      </li>
+    </ol>
+    <p class="tertiary"><a href="#">審査を飛ばす</a>(飛ばした人、時刻、理由を記録します)</p>
+  </section>
+
+  <aside class="mechanism" id="mechanism" aria-labelledby="mech-title" hidden>
+    <p class="eyebrow">頼んだら開く<span class="sep">・</span>閉じるには、もう一度 <kbd>.</kbd></p>
+    <h2 id="mech-title">仕組み: harness</h2>
+    <p class="meta">AI 構成書の下書きです。4 つ承認すると、指紋を残します。</p>
+    <section>
+      <h3>守りの 3 つの層</h3>
+      <ol class="layers">
+        <li><span class="tag" data-kind="code">道具の守り</span>お店の情報を書く道具は渡しません</li>
+        <li><span class="tag" data-kind="model">プロンプトの頼み</span>予約を約束しないように頼みます</li>
+        <li><span class="tag" data-kind="code">出口の確かめ</span>電話番号らしい文字を返事から消します</li>
+      </ol>
+    </section>
+    <section>
+      <h3>プロンプトの全文</h3>
+<pre>あなたは架空のお店「こもれび堂」の問い合わせ係です。
+営業時間とメニューは、渡された情報だけで答えます。
+分からないことは、分からないと言い、店の人に渡します。
+予約の変更と苦情は、受け付けずに店の人に渡します。</pre>
+    </section>
+    <section>
+      <h3>1 回の記録の形(例)</h3>
+      <ol class="trace">
+        <li><span class="t">0.00 秒</span><span class="tag" data-kind="code">コード</span>聞く段に入る</li>
+        <li><span class="t">0.41 秒</span><span class="tag" data-kind="model">モデル</span>日付「土曜」、人数「4」を読み取る</li>
+        <li><span class="t">0.43 秒</span><span class="tag" data-kind="code">道具</span>お店の情報を 2 件読む</li>
+        <li><span class="t">0.90 秒</span><span class="tag" data-kind="code">守り</span>出口の確かめ: 消した文字 0</li>
+      </ol>
+    </section>
+  </aside>
+</main>
+
+<footer class="next" aria-label="次の一手">
+  <p class="next-text"><span class="next-label">次の一手</span>harness を読み、違わなければ承認します。承認すると、残りは 2 つです。</p>
+  <button type="button" class="primary">harness を承認する</button>
+</footer>
+
+<script>
+const root = document.documentElement;
+const q = new URLSearchParams(location.search);
+if (q.get('theme')) root.dataset.theme = q.get('theme');
+const isDark = () => root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+const themeButton = document.getElementById('theme-toggle');
+const sync = () => { themeButton.textContent = isDark() ? 'ライト' : 'ダーク'; themeButton.setAttribute('aria-pressed', String(isDark())); };
+sync();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', sync);
+themeButton.addEventListener('click', () => { root.dataset.theme = isDark() ? 'light' : 'dark'; sync(); });
+const motionButton = document.getElementById('motion-toggle');
+motionButton.addEventListener('click', () => {
+  const off = root.dataset.motion !== 'off';
+  root.dataset.motion = off ? 'off' : 'on';
+  motionButton.setAttribute('aria-pressed', String(off));
+  motionButton.textContent = off ? '動きを戻す' : '動きを止める';
+});
+const depthButton = document.querySelector('.depth-toggle');
+const mechanism = document.getElementById('mechanism');
+const toggleDepth = (open = mechanism.hidden) => {
+  mechanism.hidden = !open;
+  depthButton.setAttribute('aria-expanded', String(open));
+  document.body.classList.toggle('depth-open', open);
+};
+depthButton.addEventListener('click', () => toggleDepth());
+addEventListener('keydown', (event) => { if (event.key === '.' && !event.target.closest('input, textarea')) toggleDepth(); });
+if (q.get('depth') === '1') toggleDepth(true);
+if (q.get('room') === '1') root.dataset.room = 'on';
+const flow = document.querySelector('.flow');
+document.querySelector('.pulse').style.setProperty('--travel', flow.scrollWidth + 'px');
+</script>
+</body>
+</html>

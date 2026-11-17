@@ -3,7 +3,7 @@
 Prototype Studio が何でできていて、データがどこを流れるかの全体図です。今のコード(`src/`、`bin/`)から書きました。新しい機能を考えるときは、まずこの図のどこに手を入れるかを決めます。
 
 - なぜこの作りなのか(隔離の 3 つの層、作る AI の起動のしかた)は [ADR 0001](../adr/0001-local-runtime-and-isolation.md) に書きます。ここでは繰り返しません
-- 画面の設計し直しは [docs/design/ux-redesign.md](../design/ux-redesign.md) にあります。この HLD は、今の画面のまま書いています
+- 画面の作り直しの設計は [docs/design/ui-ux-v2.md](../design/ui-ux-v2.md) にあります(前の [ux-redesign.md](../design/ux-redesign.md) に置き換わった)。この HLD は、今の画面のまま書いています
 - 目的と範囲の元は [PRD](../prd.md) です
 - 関数、ファイルの形式、守る約束を書く LLD は、まだありません。harness の作り直し(#293)の後で作ります
 
