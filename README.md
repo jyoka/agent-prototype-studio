@@ -158,7 +158,7 @@ npm run evals -- sample-part-time --composition composition.json,compositions/b.
 | [handoff.md](docs/handoff.md) 引き継ぎの形(形式 4、仮) | [evidence/sim-a](docs/evidence/sim-a/README.md) 構成 A を実モデルで 1 回通した記録 | [design/agent-simulation.md](docs/design/agent-simulation.md) エージェントの構成を模擬して効果を見る基盤の設計(案) | |
 | | [evidence/sim-compare](docs/evidence/sim-compare/README.md) 場面の一覧を構成ごとに実モデルで回して比べた記録 | [ADR 0001](docs/adr/0001-local-runtime-and-isolation.md) ローカル実行と隔離の方式(仮採用) | |
 | | [evidence/](docs/evidence/) ほかの実機の記録 | [ADR 0003](docs/adr/0003-agent-simulation.md) エージェントの構成を模擬する基盤(案) | |
-| | | [design/ux-redesign.md](docs/design/ux-redesign.md) 初見で分かる画面の設計(設計。実装は別のカード) | [brand.md](docs/brand.md) 伝え方(1 文、名前、機能の文、見た目) |
+| | | [design/ui-ux-v2.md](docs/design/ui-ux-v2.md) 画面の作り直しの設計(設計。実装は別のカード) | [brand.md](docs/brand.md) 伝え方(1 文、名前、機能の文、見た目) |
 | | | [vision.md](docs/vision.md) 何のためにあるか、[design/ai-architecture-review.md](docs/design/ai-architecture-review.md) AI の作りを見せて人が承認する設計 | |
 
 ## 開発
