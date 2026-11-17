@@ -64,13 +64,12 @@ test('LP(site/)は外から何も読み込まない', async () => {
   }
 });
 
-test('tokens.css のライトの色は、今の画面(studio.css)と同じ名前なら同じ値', async () => {
-  const studio = rootVariables(await read('src/ui/studio.css'));
-  const tokens = rootVariables(await read('assets/brand/tokens.css'));
-  const shared = Object.keys(studio).filter((name) => name in tokens);
-  assert.ok(shared.length >= 10, `同じ名前の変数が少ない: ${shared.join(', ')}`);
-  for (const name of shared) assert.equal(tokens[name], studio[name], name);
-});
+// ui-ux-v2.md の 10.6 の CSS(見た目の土台の正)
+async function designTokens() {
+  const doc = await read('docs/design/ui-ux-v2.md');
+  const section = doc.slice(doc.indexOf('### 10.6'));
+  return /```css\n([\s\S]*?)```/.exec(section)[1];
+}
 
 // セレクターの { … } の中の変数を { 名前: 値 } で返す
 function blockVariables(css, selector) {
@@ -80,21 +79,47 @@ function blockVariables(css, selector) {
   return Object.fromEntries([...block.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
 }
 
-test('画面(studio.css)のダークは、tokens.css のダークと同じ値。OS の設定と data-theme の両方で切り替わる', async () => {
+test('画面(studio.css)のトークンは、ui-ux-v2.md の 10.6 と同じ値(ライト)', async () => {
+  const studio = rootVariables(await read('src/ui/studio.css'));
+  const design = rootVariables(await designTokens());
+  assert.ok(Object.keys(design).length >= 50, `10.6 のトークンが少ない: ${Object.keys(design).length}`);
+  assert.deepEqual(studio, design);
+});
+
+test('画面(studio.css)のダークは、10.6 のダークと同じ値。OS の設定と data-theme の両方で切り替わる', async () => {
   const studio = await read('src/ui/studio.css');
-  const tokens = await read('assets/brand/tokens.css');
-  const light = rootVariables(studio);
+  const expected = blockVariables(await designTokens(), ':root:not([data-theme="light"])');
+  const colors = Object.keys(rootVariables(studio)).filter((name) => /^--(color|actor)-/.test(name)).sort();
   for (const selector of [':root[data-theme="dark"]', ':root:not([data-theme="light"])']) {
     const dark = blockVariables(studio, selector);
-    const expected = blockVariables(tokens, selector);
-    // ライトで決めた色の変数は、ダークでも全部決める
-    assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).sort(), selector);
-    for (const [name, value] of Object.entries(dark)) assert.equal(value, expected[name], `${selector} ${name}`);
+    // ライトで決めた色のトークンは、ダークでも全部決める
+    assert.deepEqual(Object.keys(dark).sort(), colors, selector);
+    assert.deepEqual(dark, expected, selector);
   }
   assert.match(studio, /@media \(prefers-color-scheme: dark\)/);
-  // 色は :root の変数で書く。値のまま書いた色は、ダークで変わらない(試作品の iframe の地だけは白のまま)
+  // 色はトークンで書く。値のまま書いた色は、ダークで変わらない(試作品の iframe の地も、ブラウザの既定の Canvas にした)
   const rules = studio.slice(studio.indexOf('* { box-sizing'));
-  assert.deepEqual(rules.match(/#[0-9a-f]{3,8}\b/gi), ['#fff']);
+  assert.equal(rules.match(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(/gi), null);
+});
+
+test('画面(src/ui/)に、前の変数の名前(--bg、--panel など)が残っていない', async () => {
+  const old = /(?<![\w-])--(bg|panel|line|text|muted|accent|ok|error|warn|warn-bg|error-bg|accent-bg|on-accent|ok-bg|warn-text|violet|violet-text|violet-bg)(?![\w-])/;
+  for (const entry of await fs.readdir(path.join(STUDIO_ROOT, 'src/ui'), { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const file = `src/ui/${entry.name}`;
+    const lines = (await read(file)).split('\n');
+    const hit = lines.findIndex((line) => old.test(line));
+    assert.equal(hit, -1, `${file}:${hit + 1}: ${lines[hit]}`);
+  }
+});
+
+test('tokens.css(LP とバナー)は、ダークの 2 つの塊が同じ値で、ライトの色を全部決める', async () => {
+  // tokens.css は 8 枚目で A 製図の値に移すまで、LP の見た目の決まり(ui-ux-v2.md の 14 節)
+  const tokens = await read('assets/brand/tokens.css');
+  const light = rootVariables(tokens);
+  const media = blockVariables(tokens, ':root:not([data-theme="light"])');
+  assert.deepEqual(blockVariables(tokens, ':root[data-theme="dark"]'), media);
+  for (const name of Object.keys(media)) assert.ok(name in light, name);
 });
 
 test('tokens.css はダークと動きを止める設定を持ち、バナーと合わせて外から何も読み込まない', async () => {

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, expect, expectNoDevWords, launchStudio, test } from './studio.js';
+import { expect, expectNoDevWords, expectReadableText, launchStudio, ROOT, test } from './studio.js';
 
 // 会の終わりの成果物(docs/design/user-journey.md の K5、docs/design/field-session.md の段 7)。
 // 偽接続(STUDIO_AGENT=fake)で動かす。会はお試しの AI だけで始め、要点は手で振り分ける。実モデルは呼ばない。題材は架空
@@ -55,6 +55,7 @@ test('持ち主のない未決事項があると、会の終わりの画面に�
     // 要件の文書: 使う人の項目に、元の要点が付く
     await expect(page.locator('#closing-requirements')).toContainText('店の受付係が電話を受けている (元の要点 1「店の受付係が電話を受けている」)');
     await expectNoDevWords(section);
+    await expectReadableText(page, '会の終わり');
     await page.screenshot({ path: path.join(UX_SHOTS, 'K5-closing.png'), fullPage: true });
 
     // 記録らしいもの(電話番号)は持ち主に入れない

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseProject, chooseSample, expect, expectNoDevWords, launchStudio, test } from './studio.js';
+import { chooseProject, chooseSample, expect, expectNoDevWords, expectReadableText, launchStudio, ROOT, SAMPLES, test } from './studio.js';
 
 // 会の始めとお客さんのデータ(docs/design/field-session.md の段 0、docs/design/collaboration.md の 7 節、K4)。
 // 実モデルは呼ばない。偽の claude(test/fixtures/fake-claude.js)か、偽接続(STUDIO_AGENT=fake)で動かす。
@@ -91,6 +91,7 @@ test('同意の前に偽の claude が起動しない。画面に目的、流れ
     const pad = (n) => String(n).padStart(2, '0');
     await expect(page.getByLabel('消す日', { exact: true })).toHaveValue(`${expected.getFullYear()}-${pad(expected.getMonth() + 1)}-${pad(expected.getDate())}`);
     await expectNoDevWords(s.section);
+    await expectReadableText(page, '会の始め');
     await page.screenshot({ path: path.join(UX_SHOTS, 'K4-start.png'), fullPage: true });
 
     // ヒアリングの印を押しても、会の始めに戻る
@@ -129,6 +130,7 @@ test('同意の前に偽の claude が起動しない。画面に目的、流れ
     await expect(b.items.first()).toBeVisible();
     expect((await launches(log)).filter((entry) => entry.argv.some((arg) => arg.includes('toAsk')))).toHaveLength(1);
     expect((await launches(log)).length).toBe(1);
+    await expectReadableText(page, '会の整理の板');
     await page.screenshot({ path: path.join(UX_SHOTS, 'K4-board.png'), fullPage: true });
   } finally {
     await studio.stop();

@@ -37,7 +37,8 @@ for (const colorScheme of ['light', 'dark']) {
 
         // 画面の地の色が、選んだ見た目(ダークとライト)に合う
         const background = await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor);
-        expect(background).toBe(colorScheme === 'dark' ? 'rgb(22, 22, 20)' : 'rgb(246, 246, 244)');
+        // ui-ux-v2.md の 10.1 の --color-bg
+        expect(background).toBe(colorScheme === 'dark' ? 'rgb(15, 17, 19)' : 'rgb(244, 245, 246)');
 
         const choice = await showSimChoice(page);
         await expect(choice).toBeInViewport();

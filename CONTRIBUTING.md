@@ -87,7 +87,7 @@ samples/job-consult/app/ 固定のサンプル試作品(架空の求人相談と
 samples/study-consult/app/ 固定のサンプル試作品(架空の学習相談とモックの AI。求人ではない題材で汎用性を確かめる)
 test/                  unit、integration、e2e。fixtures/ に偽の Claude Code と、観察器の見本(fixtures/observe/)
 docs/                  使い方、設定、困ったとき、設計(architecture、adr、design)、伝え方(brand.md)
-assets/brand/          見た目の決まり(tokens.css)とバナー(banner-dark.svg、banner-light.svg)
+assets/brand/          LP とバナーの見た目の決まり(tokens.css)とバナー(banner-dark.svg、banner-light.svg)
 assets/media/          npm run media が撮った画像と動く画像(手で直さない)
 ```
 

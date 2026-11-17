@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, expectNoDevWords, expectNoDevWordsOnScreen, launchStudio, test } from './studio.js';
+import { chooseSample, expect, expectNoDevWords, expectNoDevWordsOnScreen, expectReadableText, launchStudio, ROOT, SAMPLES, test } from './studio.js';
 
 // 設計の案内(docs/design/user-journey.md の段 3、J2)。6 つの段の帯と案の比べ。データの段は K2。
 // 実モデルは呼ばない。偽接続(STUDIO_AGENT=fake)か、偽の claude(test/fixtures/fake-claude.js)で動かす
@@ -117,6 +117,7 @@ test('6 段を進んで戻れる。場面の段が下書きを書き、構成の
     await expect(d.next).toBeDisabled();
     await expect(d.step(/使う人/)).toBeDisabled();
     await expectNoDevWords(d.section);
+    await expectReadableText(page, '設計の案内(問題)');
     await page.screenshot({ path: path.join(UX_SHOTS, 'J2-problem.png'), fullPage: true });
 
     // 進む。選ぶまで次へ進めない。自分の言葉でも選べる
@@ -184,6 +185,7 @@ test('6 段を進んで戻れる。場面の段が下書きを書き、構成の
     await expect(d.section).not.toContainText('理想');
     await expect(d.section).not.toContainText('最適');
     await expectNoDevWords(d.section);
+    await expectReadableText(page, '設計の案内(構成)');
     await page.screenshot({ path: path.join(UX_SHOTS, 'J2-composition.png'), fullPage: true });
 
     // 選ぶと、Studio が構成のファイルを書き、検査が通る
@@ -640,6 +642,7 @@ test('データの段: 整理の板のデータの欄が全部データ設計に
     await expect(d.coverage.getByRole('listitem').filter({ hasText: dataItems[0] })).toContainText('問い合わせの問い合わせの中身');
     await expect(d.coverage.getByRole('listitem').filter({ hasText: dataItems[2] })).toContainText('聞いたことのメモ');
     await expectNoDevWords(d.section);
+    await expectReadableText(page, '設計の案内(データ)');
     await page.screenshot({ path: path.join(UX_SHOTS, 'K2-data.png'), fullPage: true });
     await d.dataBox.screenshot({ path: path.join(UX_SHOTS, 'K2-data-box.png') });
 

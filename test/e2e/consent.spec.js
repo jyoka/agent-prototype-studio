@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, expectNoDevWords, launchStudio, openAiMenu, test } from './studio.js';
+import { chooseSample, expect, expectNoDevWords, expectReadableText, launchStudio, openAiMenu, ROOT, SAMPLES, test } from './studio.js';
 
 // 本物の AI を使う前の同意のカード(docs/design/ux-redesign.md の 6 節、P25)。
 // 実モデルは呼ばない。claude は偽物で、直す AI としては偽接続(src/agent/fake-claude.js)、
@@ -75,6 +75,7 @@ test('直す欄の初回の送信でカードが出る。やめると送らず�
     await expect(card.getByRole('definition').nth(3)).toHaveText('Claude のアカウントでログインしているので、そのプランの利用枠を使います。');
     await expect(card).toContainText('架空のデータだけで試してください。');
     await expectNoDevWords(card);
+    await expectReadableText(page, '同意のカード');
     await page.screenshot({ path: path.join(UX_SHOTS, 'P25-card.png') });
 
     // 「詳しく」を開くと、AI への指示の全文、1 回の上限、記録の扱いが見える

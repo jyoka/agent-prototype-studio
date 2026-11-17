@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, expectNoDevWords, launchStudio, switchToRealAi, test } from './studio.js';
+import { chooseSample, expect, expectNoDevWords, expectReadableText, launchStudio, ROOT, SAMPLES, switchToRealAi, test } from './studio.js';
 
 // 最初の一歩の案内と試し直しの帯(docs/design/ux-redesign.md の 2 節、7-1、7-2、7-4、9 節の U2、U7。P28)。
 // 実モデルは呼ばない。claude は偽物で、直す AI としては偽接続(src/agent/fake-claude.js)、
@@ -136,6 +136,7 @@ test('U2、U7: 最初の画面の案内から、試す → 言葉で直す → �
     await expect(hint).toHaveText('3 つの手順が終わりました。ほかにも気になるところがあれば、言葉で直せます。');
     await expectNoDevWords(guide);
     await expectNoDevWords(bar);
+    await expectReadableText(page, 'はじめの手順の最後');
     await page.screenshot({ path: path.join(UX_SHOTS, 'P28-fixed.png') });
 
     // 試し直しの結果は、開発者向けの詳細には残さない(帯へ移した)

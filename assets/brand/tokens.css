@@ -1,7 +1,7 @@
 /*
- * Prototype Studio の見た目の決まり(docs/brand.md の「見た目」)。
- * ライトの値は、今の Studio の画面(src/ui/studio.css)の :root と同じ。同じ名前の変数は同じ値にする
- * (test/unit/brand.test.js が確かめる)。ダークは、この表で足した値。
+ * LP(site/)とバナーと README の画像の見た目の決まり(docs/brand.md の「見た目」)。
+ * Studio の画面(src/ui/studio.css)は、2026-11 に A 製図のトークン(docs/design/ui-ux-v2.md の 10 節)に移った。
+ * このファイルは、UI/UX の 8 枚目で A 製図の名前と値に移す(ui-ux-v2.md の 14 節)。それまでは前の画面の色のまま。
  * 外から読み込むもの(Web フォント、CDN)は使わない。字は、利用者の OS に入っている字を使う。
  *
  * 使い方: <link rel="stylesheet" href="assets/brand/tokens.css"> を読み、var(--bg) などで使う。
@@ -12,14 +12,14 @@
 :root {
   color-scheme: light;
 
-  /* 色: 地と線と字(studio.css と同じ) */
+  /* 色: 地と線と字 */
   --bg: #f6f6f4;
   --panel: #ffffff;
   --line: #d9d9d4;
   --text: #1f1f1d;
   --muted: #6b6b66;
 
-  /* 色: 意味のある色(studio.css と同じ) */
+  /* 色: 意味のある色 */
   --accent: #2459c4;
   --on-accent: #ffffff;
   --ok: #1d7a43;
@@ -27,7 +27,7 @@
   --warn-bg: #fff4e5;
   --error-bg: #fdecea;
 
-  /* 色: studio.css では値で書いている色に、名前を付けたもの */
+  /* 色: 前の画面で値のまま書いていた色に、名前を付けたもの */
   --accent-bg: #eef3fd;
   --ok-bg: #eaf5ee;
   --warn: #c77700;
@@ -56,7 +56,7 @@
   --text-xl: clamp(1.5rem, 4vw, 2.5rem);
   --leading: 1.6;
 
-  /* 角丸(studio.css と見本の会話の枠で使っている値) */
+  /* 角丸(前の画面と見本の会話の枠で使っていた値) */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;

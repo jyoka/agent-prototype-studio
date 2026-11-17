@@ -4602,6 +4602,65 @@ function setAiMenu(open) {
 
 els.projectMenuButton.addEventListener('click', () => setProjectMenu(els.projectMenu.hidden));
 
+// 表示のメニュー(ui-ux-v2.md の 2.2)。<html> の data-theme、data-motion、data-room を変え、studio.css のトークンが切り替わる。
+// 選んだものはこのブラウザ(localStorage)が覚える。Studio の外には送らない
+const DISPLAY_KEY = 'prototype-studio-display';
+const DISPLAY_DEFAULT = { theme: 'system', motion: 'on', room: 'off' };
+const displayButton = $('display-button');
+const displayMenu = $('display-menu');
+const displayThemes = [...displayMenu.querySelectorAll('input[name="display-theme"]')];
+const displayMotionOff = $('display-motion-off');
+const displayRoom = $('display-room');
+
+function readDisplay() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DISPLAY_KEY) ?? '{}');
+    return {
+      theme: ['light', 'dark', 'system'].includes(saved.theme) ? saved.theme : DISPLAY_DEFAULT.theme,
+      motion: saved.motion === 'off' ? 'off' : 'on',
+      room: saved.room === 'on' ? 'on' : 'off',
+    };
+  } catch {
+    return { ...DISPLAY_DEFAULT };
+  }
+}
+
+function applyDisplay(display) {
+  const root = document.documentElement;
+  if (display.theme === 'system') delete root.dataset.theme;
+  else root.dataset.theme = display.theme;
+  if (display.motion === 'off') root.dataset.motion = 'off';
+  else delete root.dataset.motion;
+  if (display.room === 'on') root.dataset.room = 'on';
+  else delete root.dataset.room;
+  for (const input of displayThemes) input.checked = input.value === display.theme;
+  displayMotionOff.checked = display.motion === 'off';
+  displayRoom.checked = display.room === 'on';
+}
+
+function changeDisplay() {
+  const display = {
+    theme: displayThemes.find((input) => input.checked)?.value ?? DISPLAY_DEFAULT.theme,
+    motion: displayMotionOff.checked ? 'off' : 'on',
+    room: displayRoom.checked ? 'on' : 'off',
+  };
+  applyDisplay(display);
+  try {
+    localStorage.setItem(DISPLAY_KEY, JSON.stringify(display));
+  } catch {
+    // 覚えられなくても、今の画面には効いている
+  }
+}
+
+function setDisplayMenu(open) {
+  displayMenu.hidden = !open;
+  displayButton.setAttribute('aria-expanded', String(open));
+}
+
+applyDisplay(readDisplay());
+displayMenu.addEventListener('change', changeDisplay);
+displayButton.addEventListener('click', () => setDisplayMenu(displayMenu.hidden));
+
 els.aiSwitch.addEventListener('click', () => setAiMenu(els.aiMenu.hidden));
 
 els.realAiTry.addEventListener('click', () => toggleRealAiInfo('try'));
@@ -4610,14 +4669,21 @@ els.realAiMake.addEventListener('click', () => toggleRealAiInfo('make'));
 // 一覧の外を押したら閉じる。試作品の iframe を押したときは、この画面から焦点が外れるので、それでも閉じる
 document.addEventListener('click', (event) => {
   if (!els.projectMenu.hidden && !event.target.closest('.project-switch')) setProjectMenu(false);
+  if (!displayMenu.hidden && !event.target.closest('.display-switch')) setDisplayMenu(false);
 });
-window.addEventListener('blur', () => setProjectMenu(false));
+window.addEventListener('blur', () => {
+  setProjectMenu(false);
+  setDisplayMenu(false);
+});
 
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
   if (!els.projectMenu.hidden) {
     setProjectMenu(false);
     els.projectMenuButton.focus();
+  } else if (!displayMenu.hidden) {
+    setDisplayMenu(false);
+    displayButton.focus();
   } else if (!els.aiMenu.hidden) {
     setAiMenu(false);
     els.aiSwitch.focus();

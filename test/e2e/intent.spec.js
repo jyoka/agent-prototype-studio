@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, SAMPLES, chooseSample, expect, expectNoDevWords, launchStudio, test } from './studio.js';
+import { chooseSample, expect, expectNoDevWords, expectReadableText, launchStudio, ROOT, SAMPLES, test } from './studio.js';
 
 // はじめの画面、目的の聞き出し、目的の文書(docs/design/user-journey.md の段 1、段 2、J1)。
 // 実モデルは呼ばない。偽接続(STUDIO_AGENT=fake)か、偽の claude(test/fixtures/fake-claude.js)で動かす。
@@ -49,6 +49,7 @@ test('あいまいな 1 文で問いが返り、「分からない」が決め�
     await expect(page.getByRole('region', { name: '言葉で直す' })).toBeHidden();
     await expect(page.getByRole('region', { name: 'はじめの手順' })).toBeHidden();
     await expectNoDevWords(s.section);
+    await expectReadableText(page, 'はじめの画面');
     await page.screenshot({ path: path.join(UX_SHOTS, 'J1-start.png') });
 
     // 例を押すと欄に入る。送ると、作り始める前に問いが 1 つ返る
@@ -89,6 +90,7 @@ test('あいまいな 1 文で問いが返り、「分からない」が決め�
     expect((await record(home, id)).status).toBe('draft');
     expect((await record(home, id)).decidedAt).toBeNull();
     await expectNoDevWords(s.section);
+    await expectReadableText(page, '目的の文書の下書き');
     await page.screenshot({ path: path.join(UX_SHOTS, 'J1-draft.png'), fullPage: true });
 
     // 人が直して「これで決める」を押すと、印が付く。書いていない項目は、決めていないことに足す
