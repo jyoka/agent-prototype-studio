@@ -95,7 +95,7 @@ test('作っている間: 強い色のボタンがなく、試作品の欄は前
     await expect(now).toBeVisible({ timeout: 15_000 });
     await expect(now.locator('#make-now-request')).toHaveText('時給の下限を先に聞くようにして');
     await expect(now.locator('#make-now-time')).toHaveText(/^経過 \d+ 秒\(多くは 3 分以内。推測\)$/);
-    await expect(page.locator('#next-text')).toHaveText('作る AI が試作品を書いています。止めても、前の版は残ります。');
+    await expect(page.locator('#next-text')).toHaveText('作る AI が試作品を書いています。止めても、前の版は残ります。その間に、足りない場面がないか見てみませんか。');
     const band = page.getByRole('region', { name: '次の一手' });
     await expect(band.getByRole('button', { name: '止める' })).toBeVisible();
     await expect(band.getByRole('button', { name: '止める' })).toHaveClass(/quiet/);
@@ -238,7 +238,7 @@ test('守りが止めた run: 帯は「言い換える」。段 6〜8 では右�
     await page.getByRole('button', { name: '送る' }).click();
     const now = page.getByRole('region', { name: '今していること' });
     await expect(now).not.toHaveAttribute('data-status', 'running', { timeout: 30_000 });
-    await expect(page.locator('#next-text')).toHaveText('試作品のフォルダーの外は触れないので、やめました。試作品の中で済む依頼に言い換えてください。');
+    await expect(page.locator('#next-text')).toHaveText('守りが、試作品のフォルダーの外を触る操作を止めました。失敗ではなく守りが働いた印で、試作品は前のままです。試作品の中で済む頼み方に、言い換えますか。');
     await expect(page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '言い換える' })).toBeVisible();
 
     // 段 6〜8 の右の列と、「■ 作る AI に頼む」

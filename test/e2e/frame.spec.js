@@ -121,7 +121,7 @@ test('審査のある試作品で、9 つのどの段でも 4 つの問いに答
     await showReview(page, studio);
     // 審査の画面は段 4。次の一手の帯は、読んでいる欄の承認(押せない「この構成で作る」は出さない)
     await expectFourAnswers(page, '審査');
-    await expect(page.locator('#next-text')).toHaveText('データと RAG を読み、違わなければ承認します。承認すると、残りは 1 つです。');
+    await expect(page.locator('#next-text')).toHaveText('あなたの承認を待っています。承認は 2 / 4 で、そろうまで作る AI は動きません。データと RAG を読み、違わなければ承認しますか。');
     await expect(page.getByRole('region', { name: '次の一手' }).getByRole('button')).toHaveText(['データと RAG を承認する']);
     await expect(page.locator('#now-line .actor[data-actor="you"]')).toHaveAttribute('data-active', 'true');
     await expect(page.locator('#now-line .actor[data-actor="you"] .actor-text')).toHaveText('あなたの番(承認 2 / 4)');

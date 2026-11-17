@@ -77,6 +77,18 @@ test('保存した版に、ファイルと会話と状態を戻せる。Studio �
   assert.deepEqual(view.messages.map((m) => m.role), ['assistant', 'user', 'assistant', 'correction']);
   assert.deepEqual(restored.working, { files: 'saved', versionId: saved.version.id, conversation: 'saved', baseVersionId: saved.version.id });
   assert.deepEqual(restored.versions.map((v) => v.number), [2, 1]);
+  // 戻す前の状態の版(画面の「戻す前に戻る」。ui-ux-v2.md の 5.4 の「元に戻した」)は、自動で保存した版
+  assert.equal(restored.before.id, restored.autoSaved.id);
+  // 戻す前に戻ると、戻す前は保存 1 と同じなので自動の保存はせず、戻す前の版は保存 1
+  const undone = await studio.versions.restore('travel', restored.before.id);
+  assert.equal(undone.autoSaved, null);
+  assert.equal(undone.before.id, saved.version.id);
+  assert.match(await fs.readFile(path.join(app, 'main.js'), 'utf8'), /二つ目/);
+  // 今と同じ版に戻すときは、戻す前の版はない
+  const same = await studio.versions.restore('travel', restored.before.id);
+  assert.equal(same.before, null);
+  // 続きの確かめのため、保存 1 に戻しておく
+  await studio.versions.restore('travel', saved.version.id);
 
   // 戻した会話から続けると、保存したときと同じ応答になる(修正を踏まえる)
   const next = await studio.aiSessions.send('travel', 'よろしく');

@@ -31,6 +31,8 @@ const UI_FILES = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/studio.js': ['studio.js', 'text/javascript; charset=utf-8'],
   '/studio.css': ['studio.css', 'text/css; charset=utf-8'],
+  // 案内の部品(12 の状態と「これは何?」の言葉)。studio.js が読む
+  '/guide.js': ['guide.js', 'text/javascript; charset=utf-8'],
   // 観察用の親ページ(src/observer/ が開く)
   '/observe.html': ['observe.html', 'text/html; charset=utf-8', 'observe'],
   '/observe.js': ['observe.js', 'text/javascript; charset=utf-8', 'observe'],

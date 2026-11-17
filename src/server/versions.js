@@ -272,7 +272,7 @@ export class ProjectVersions {
       // 応答を待っている会話を自動の版に入れそこねないよう、待つ
       if (this.aiSessions.isBusy(id)) throw new BusyError('試作品の中の AI が返事をしているところです。終わってから戻してください');
       const source = path.join(paths.versions, versionId, 'app');
-      const { saved } = await this.working(id, paths, versions);
+      const { saved, view: workingView } = await this.working(id, paths, versions);
       let autoSaved = null;
       let setAside = null;
       if (!saved) {
@@ -295,9 +295,13 @@ export class ProjectVersions {
       const conversation =
         build.ok || !version.builds ? (this.aiSessions.restore(id, version.ai) ? 'restored' : 'initial') : 'kept';
       this.log(`版を復元しました: ${id}(v${version.number}${autoSaved ? `。復元の前の作業中を v${autoSaved.number} に保存` : ''})`);
+      // 戻す前の状態と同じ版(「戻す前に戻る」で戻せる版)。自動で保存した版か、戻す前と同じ保存版。戻した版と同じなら、ない
+      const same = saved ? versions.find((v) => v.id === workingView.versionId && v.id !== versionId) : null;
+      const before = autoSaved ?? same ?? null;
       return {
         restored: versionView(version),
         autoSaved: autoSaved ? versionView(autoSaved) : null,
+        before: before ? versionView(before) : null,
         setAside,
         build: { ok: build.ok, errorCount: build.errors?.length ?? 0 },
         conversation,

@@ -152,7 +152,7 @@ test('4 つの承認がそろうまで作る AI が起動しない。そろう�
     await page.screenshot({ path: path.join(UX_SHOTS, 'review-0.png'), fullPage: true });
 
     // 次の一手の帯で、読んでいる欄を承認する。承認すると次の欄を読む
-    await expect(page.locator('#next-text')).toHaveText('エージェントの構成を読み、違わなければ承認します。承認すると、残りは 3 つです。');
+    await expect(page.locator('#next-text')).toHaveText('あなたの承認を待っています。承認は 0 / 4 で、そろうまで作る AI は動きません。エージェントの構成を読み、違わなければ承認しますか。');
     // 承認を待つ間は、今の行で ● あなたが働いている
     const you = page.locator('#now-line .actor[data-actor="you"]');
     await expect(you).toHaveAttribute('data-active', 'true');
@@ -191,7 +191,7 @@ test('4 つの承認がそろうまで作る AI が起動しない。そろう�
     for (const label of LABELS.slice(0, 3)) await expect(v.item(label)).toHaveAttribute('data-approved', 'true');
     await expect(v.count).toHaveText('承認 3 / 4・あと 1 つ');
     await expect(v.build).toBeHidden();
-    await expect(page.locator('#next-text')).toHaveText('技術の組を読み、違わなければ承認します。承認すると、4 つそろいます。');
+    await expect(page.locator('#next-text')).toHaveText('あなたの承認を待っています。承認は 3 / 4 で、そろうまで作る AI は動きません。技術の組を読み、違わなければ承認しますか。');
     await expect(page.locator('#review-fingerprint')).toBeHidden();
     const refused = await studio.post(`/api/projects/${id}/build-requests`, { request: '見出しを「架空の図書館」にして' });
     expect(refused.status).toBe(409);
@@ -275,7 +275,7 @@ test('流れ図が読んでいる欄の部品を示す。構成を選び直す�
     await expect(v.switch('単一エージェント')).toHaveAttribute('aria-pressed', 'true');
     await expect(v.count).toHaveText('承認 0 / 4・あと 4 つ');
     await expect(v.state('エージェントの構成')).toHaveText('! 承認が消えた');
-    await expect(composition.locator('.review-lost')).toHaveText('エージェントの構成を選び直したので、この欄の承認を消しました。読み直して承認してください。');
+    await expect(composition.locator('.review-lost')).toHaveText('エージェントの構成を選び直したので、この欄の承認を消しました。この欄は、まだ承認していない形に戻っています。読み直して、承認し直しますか。');
     await expect(v.reading).toHaveCount(1);
     await expect(composition).toHaveAttribute('data-reading', 'true');
     for (const label of LABELS.slice(1)) await expect(v.state(label)).toHaveText('○ まだ見ていない');
@@ -287,7 +287,7 @@ test('流れ図が読んでいる欄の部品を示す。構成を選び直す�
     await shootThemes(page, 'review-gray-lost');
     await page.locator('html').evaluate((el) => { el.style.filter = ''; });
     // 選び直した後の承認は、もう一度上から
-    await expect(page.locator('#next-text')).toContainText('エージェントの構成を読み、違わなければ承認します。');
+    await expect(page.locator('#next-text')).toContainText('エージェントの構成を読み、違わなければ承認しますか。');
     await expectReadableText(page, '審査(承認が消えた)');
     await shootThemes(page, 'review-lost');
     const file = await readJson(path.join(projectRoot(home, id), 'app', 'composition.json'));
@@ -373,7 +373,7 @@ test('承認した後に構成を変えると、関門 GA で止まり、試す�
     await expect(v.build).toBeHidden();
     await expect(v.reading).toHaveCount(0);
     await expect(page.locator('#review-items .review-state')).toHaveText(['! 承認が消えた', '! 承認が消えた', '✓ 承認した', '✓ 承認した']);
-    await expect(v.item('harness').locator('.review-lost')).toHaveText('承認の後に中身が変わったので、この欄の承認を消しました。読み直して承認してください。');
+    await expect(v.item('harness').locator('.review-lost')).toHaveText('承認の後に中身が変わったので、この欄の承認を消しました。この欄は、まだ承認していない形に戻っています。読み直して、承認し直しますか。');
     await expectNoDevWords(v.section);
     await expectReadableText(page, '審査(止まった)');
     await shootThemes(page, 'review-stopped', '#review-stopped');

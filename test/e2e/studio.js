@@ -183,6 +183,30 @@ export function devWordsIn(text) {
   return found;
 }
 
+// 話し方で言わない語(ui-ux-v2.md の 5.5 と 9 節)。「!」は文の終わりの感嘆だけを数える(! だけの印は 5.4 の「承認が消えた」の印)。
+// 百分率は、進み具合の褒め言葉(「80% 完了」など)だけを数える
+export const TONE_BANNED = [
+  ['すごい', /すごい/g],
+  ['完璧', /完璧/g],
+  ['!', /[\p{L}\p{N}。、)」]!|！/gu],
+  ['進み具合の百分率', /\d+\s*[%％]\s*(?:完了|済|終わ|達成|進)/g],
+  ['エラー: …', /エラー\s*[:：]/g],
+  ['本番で使える', /本番で使える/g],
+  ['理想の作り', /理想の作り/g],
+  ['誰でも 5 分で', /誰でも\s*5\s*分で/g],
+];
+
+// 文字の中の言わない語を、前後の文字つきで返す
+export function toneWordsIn(text) {
+  const found = [];
+  for (const [name, pattern] of TONE_BANNED) {
+    for (const match of text.matchAll(pattern)) {
+      found.push(`「${name}」: …${text.slice(Math.max(0, match.index - 30), match.index + match[0].length + 30).replace(/\s+/g, ' ')}…`);
+    }
+  }
+  return found;
+}
+
 // 要素の見える文字(閉じた details の中と hidden の要素は入らない)に、開発の言葉がない
 export async function expectNoDevWords(locator) {
   expect(devWordsIn(await locator.innerText())).toEqual([]);

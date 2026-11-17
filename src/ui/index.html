@@ -118,12 +118,14 @@
       <!-- STUDIO_AGENT=fake で起動したときだけ出す(13 節) -->
       <span id="dev-agent-mark" class="dev-agent-mark" hidden>開発用: 偽の作る AI</span>
       <!-- お試しか本物か(2.6)。本物のときは、押すと同意の中身をもう一度見られる -->
-      <span id="ai-mode" class="ai-mode" data-mode="trial">○ お試しの AI・料金なし</span>
+      <button type="button" id="ai-mode" class="ai-mode" data-mode="trial" aria-expanded="false" aria-controls="ai-mode-info">○ お試しの AI・料金なし</button>
       <button type="button" id="real-ai-now" class="ai-mode" data-mode="real" aria-expanded="false" aria-controls="real-ai-now-info" hidden>◉ 本物の AI・あなたの Claude Code</button>
       <button type="button" id="mechanism-button" class="mechanism-button" aria-controls="mechanism" aria-expanded="false" aria-keyshortcuts=".">仕組みを見る <kbd aria-hidden="true">.</kbd></button>
     </div>
   </section>
   <div id="real-ai-now-info" class="real-ai-info now-info" hidden></div>
+  <!-- お試しのとき、今の行の「○ お試しの AI・料金なし」を押すと開く中身(ui-ux-v2.md の 5.4 の「お試しか本物か」) -->
+  <div id="ai-mode-info" class="real-ai-info now-info" role="group" aria-label="お試しの AI" hidden></div>
   <div id="banner" class="banner" role="alert" hidden>
     <p id="banner-text"></p>
   </div>
@@ -132,8 +134,13 @@
   <!-- 作業台(2.2、2.4)。段ごとに中身が入れ替わる。横幅の上限は --bench-max -->
   <main id="bench" class="bench" aria-labelledby="bench-heading">
   <h2 id="bench-heading" class="bench-heading" tabindex="-1"></h2>
+  <!-- 元に戻した(ui-ux-v2.md の 5.4)。版を戻したとき、作業台の上に 1 行。次の操作で消える。弱いボタン「戻す前に戻る」 -->
+  <div id="reverted" class="reverted" role="status" hidden>
+    <p id="reverted-text"></p>
+    <button type="button" id="reverted-undo" class="quiet" hidden>戻す前に戻る</button>
+  </div>
   <!-- まだの段、または今の画面にない段を押したときの作業台。何が足りないかを出す -->
-  <section id="stage-note" class="stage-note" aria-label="この段で足りないもの" hidden>
+  <section id="stage-note" class="stage-note" aria-label="この段で足りないもの" data-explain="stage-note" hidden>
     <p id="stage-note-text"></p>
   </section>
   <!-- はじめの画面、目的の聞き出し、目的の文書(user-journey.md の段 1、段 2、J1)。出している間は、下の 2 列を隠す -->
@@ -151,7 +158,7 @@
         <button type="button" id="meeting-new-cancel">やめる</button>
       </div>
     </form>
-    <div id="meeting-body" hidden>
+    <div id="meeting-body" data-explain="meeting" data-explain-after="#meeting-facts" hidden>
       <dl id="meeting-facts" class="meeting-facts"></dl>
       <form id="meeting-delete-form" class="organize-line">
         <label for="meeting-delete-on">消す日</label>
@@ -177,7 +184,7 @@
       </div>
     </div>
     <!-- 会の終わりの画面(field-session.md の段 7、user-journey.md の K5)。7 つの成果物、未決事項の持ち主と期日、書き出し -->
-    <div id="meeting-closing" class="meeting-closing" hidden>
+    <div id="meeting-closing" class="meeting-closing" data-explain="closing" data-explain-after="#closing-unowned" hidden>
       <p id="closing-unowned" class="intent-error" role="alert" hidden></p>
       <h3 id="closing-deliverables-heading">7 つの成果物</h3>
       <ul id="closing-deliverables" class="organize-list closing-deliverables" aria-labelledby="closing-deliverables-heading"></ul>
@@ -216,13 +223,13 @@
   </section>
   <section id="intent" class="intent" aria-labelledby="intent-heading" hidden>
     <h2 id="intent-heading" tabindex="-1"></h2>
-    <form id="intent-start" class="intent-form" hidden>
+    <form id="intent-start" class="intent-form" data-explain="start" data-explain-after="#intent-examples" hidden>
       <p id="intent-lead"></p>
       <label for="intent-sentence">作りたいもの</label>
       <textarea id="intent-sentence" rows="2" maxlength="400"></textarea>
       <p class="muted">例(押すと欄に入ります)</p>
       <ul id="intent-examples" class="intent-examples" aria-label="例の 1 文"></ul>
-      <fieldset class="intent-depth">
+      <fieldset class="intent-depth" data-explain="depth">
         <legend>案内の深さ</legend>
         <label><input type="radio" name="intent-depth" value="quick"> 速く(問いは多くて 2 つ)</label>
         <label><input type="radio" name="intent-depth" value="normal" checked> ふつう(おすすめ。問いは多くて 4 つ)</label>
@@ -249,7 +256,7 @@
         <p>問いを考えています…</p>
         <button type="button" id="intent-stop">止める</button>
       </div>
-      <div id="intent-asking">
+      <div id="intent-asking" data-explain="question" data-explain-after="#intent-reason">
         <p id="intent-progress" class="muted"></p>
         <h3 id="intent-question"></h3>
         <p id="intent-reason" class="muted"></p>
@@ -264,7 +271,7 @@
         <p class="muted">分からないと答えた問いは、「決めていないこと」に入ります。</p>
       </div>
     </form>
-    <form id="intent-doc" class="intent-form" hidden>
+    <form id="intent-doc" class="intent-form" data-explain="intent-doc" data-explain-after="#intent-doc-state" hidden>
       <p id="intent-doc-state" class="intent-doc-state" role="status"></p>
       <label for="intent-doc-who">誰</label>
       <textarea id="intent-doc-who" rows="2" maxlength="1000"></textarea>
@@ -296,7 +303,7 @@
     <p id="intent-error" class="intent-error" role="alert" hidden></p>
   </section>
   <!-- 設計の案内(user-journey.md の段 3、J2)。6 つの段の帯と、各段の案の比べ。出している間は、下の 2 列を隠す。データの段は K2 -->
-  <section id="design" class="design" aria-labelledby="design-heading" hidden>
+  <section id="design" class="design" aria-labelledby="design-heading" data-explain="design" data-explain-after="#design-band" hidden>
     <h2 id="design-heading" tabindex="-1">設計の案内</h2>
     <p id="design-state" class="intent-doc-state" role="status"></p>
     <ol id="design-band" class="design-band" aria-label="設計の段"></ol>
@@ -316,7 +323,7 @@
         <button type="button" id="design-start" class="primary">案を作る</button>
       </div>
     </div>
-    <section id="design-step" class="design-step" aria-labelledby="design-step-heading" hidden>
+    <section id="design-step" class="design-step" aria-labelledby="design-step-heading" data-explain="design-options" data-explain-after="#design-basis" hidden>
       <h3 id="design-step-heading"></h3>
       <p id="design-step-lead" class="muted"></p>
       <p id="design-stale" class="intent-declined" hidden>前の段を変えました。この案のままでよいか確かめて、もう一度選んでください。</p>
@@ -327,7 +334,7 @@
         <input id="design-custom-text" type="text" maxlength="300" autocomplete="off">
         <button type="submit">これを選ぶ</button>
       </form>
-      <section id="design-scenes-box" class="design-scenes" aria-labelledby="design-scenes-heading" hidden>
+      <section id="design-scenes-box" class="design-scenes" aria-labelledby="design-scenes-heading" data-explain="design-scenes" hidden>
         <h4 id="design-scenes-heading">場面の一覧</h4>
         <p class="muted">使う人が言いそうな 1 文を直せます。分からない、断る、遅いの場面は 1 つずつ以上残します。直した分は、次の段へ進むときに保存します。</p>
         <ol id="design-scenes" class="organize-list" aria-label="場面の一覧"></ol>
@@ -340,7 +347,7 @@
         </form>
       </section>
       <!-- データの段で選んだ案(K2)。日常の言葉の表と図、整理の板のデータの欄がどこに載ったか、架空のデータ -->
-      <section id="design-data-box" class="design-data" aria-labelledby="design-data-heading" hidden>
+      <section id="design-data-box" class="design-data" aria-labelledby="design-data-heading" data-explain="design-data" hidden>
         <h4 id="design-data-heading">データ設計(選んだ案)</h4>
         <p class="muted">覚えておくもの(表)と、その項目と、つながりです。名前はお客さんの言葉にそろえてください。型と細かい決まりは、会の後に決めます。</p>
         <div id="design-data-figure"></div>
@@ -350,11 +357,11 @@
         <p id="design-data-sample" class="muted"></p>
       </section>
       <!-- AI が読むデータの棚と RAG の判定(task 421)。選んだ案と整理の板からの下書き。測っていないので推測 -->
-      <section id="design-shelf" class="design-shelf design-data" aria-labelledby="design-shelf-heading" hidden>
+      <section id="design-shelf" class="design-shelf design-data" aria-labelledby="design-shelf-heading" data-explain="design-shelf" hidden>
         <h4 id="design-shelf-heading">AI が読むデータの棚</h4>
         <p class="muted">AI が何をどう読むかの下書きです。変わる速さと個人情報は、本番のデータの話として確かめてください。</p>
         <div id="design-shelf-table"></div>
-        <div id="design-rag" class="design-rag" role="group" aria-labelledby="design-rag-heading">
+        <div id="design-rag" class="design-rag" role="group" aria-labelledby="design-rag-heading" data-explain="rag">
           <h4 id="design-rag-heading">RAG の判定</h4>
           <p class="muted">RAG は、文書から探した部分を AI に読ませて答えさせる仕組みです。簡単な読み方から順に問い、足りたらそこで止まります。</p>
           <p id="design-rag-verdict" class="design-rag-verdict"></p>
@@ -397,7 +404,7 @@
     <p class="review-lead">AI の作りを 4 つに分けて読み、承認します。4 つそろうまで、作る AI は作り始めません。</p>
     <p id="review-state" class="intent-doc-state" role="status"></p>
     <div class="review-schematic" id="review-schematic" hidden>
-      <figure class="review-flow" aria-labelledby="review-flow-caption">
+      <figure class="review-flow" aria-labelledby="review-flow-caption" data-explain="review-flow" data-explain-after=".flow-note">
         <figcaption id="review-flow-caption">この試作品の中で、1 回の問い合わせが流れる道</figcaption>
         <div class="flow-wrap"><span class="flow-pulse" aria-hidden="true"></span><ol id="review-flow" class="flow"></ol></div>
         <p class="flow-note">記録: 1 回ごとに、どの部品が働いたかを残します。</p>
@@ -406,6 +413,8 @@
       <p id="review-fingerprint" class="review-fingerprint" hidden></p>
     </div>
     <p id="review-count" class="review-count" role="status"></p>
+    <!-- まだ見ていない欄の数(ui-ux-v2.md の 5.4 の「まだ見ていない」)。○ の札の欄があるときだけ出す -->
+    <p id="review-unseen" class="review-unseen" hidden></p>
     <ol id="review-items" class="review-items" aria-label="審査の 4 つの欄"></ol>
     <!-- 案の日付と根拠(9 節)。おすすめの欄の文にも、札と日付と根拠の場面と「推測」を付ける -->
     <p id="review-basis" class="review-basis"></p>
@@ -442,7 +451,7 @@
     <p id="organize-note" class="intent-note" role="status" hidden></p>
     <p id="organize-error" class="intent-error" role="alert" hidden></p>
     <div class="organize-body">
-      <section class="organize-points" aria-labelledby="organize-points-heading">
+      <section class="organize-points" aria-labelledby="organize-points-heading" data-explain="points">
         <h3 id="organize-points-heading">聞き取りの欄</h3>
         <form id="organize-point-form" class="organize-line">
           <label for="organize-point">聞いた要点</label>
@@ -454,7 +463,7 @@
         <p class="hint" data-hint="organize-point">聞いた要点は 1 つずつ短く打ち、Enter で足します。板への整理は後でまとめてできます。</p>
         <ol id="organize-points" class="organize-list" aria-label="打った要点"></ol>
       </section>
-      <section class="organize-board" aria-labelledby="organize-board-heading">
+      <section class="organize-board" aria-labelledby="organize-board-heading" data-explain="board" data-explain-after=".organize-board-head">
         <div class="organize-board-head">
           <h3 id="organize-board-heading">整理の板</h3>
           <button type="button" id="organize-run" class="primary">整理する</button>
@@ -466,6 +475,8 @@
         <p id="organize-no-ai" class="muted" hidden>今は AI を使えないので、要点の横の欄で、手で振り分けてください。料金はかかりません。</p>
         <div id="organize-consent"></div>
         <p id="organize-declined" class="intent-declined" hidden>AI には送りませんでした。要点の横の欄で、手で振り分けられます。</p>
+        <!-- AI の推測(ui-ux-v2.md の 5.4)。話に出ていないので推測で埋めた項目があるときだけ出す -->
+        <p id="organize-guess" class="organize-guess" hidden></p>
         <div id="organize-columns" class="organize-columns"></div>
         <form id="organize-add-form" class="organize-line">
           <label for="organize-add-column">足す欄</label>
@@ -474,14 +485,14 @@
           <input id="organize-add-text" type="text" maxlength="300" autocomplete="off">
           <button type="submit">項目を足す</button>
         </form>
-        <section class="organize-asks" aria-labelledby="organize-asks-heading">
+        <section class="organize-asks" aria-labelledby="organize-asks-heading" data-explain="asks">
           <h4 id="organize-asks-heading">聞くこと</h4>
           <ul id="organize-asks" class="organize-list" aria-label="聞くことの一覧"></ul>
         </section>
       </section>
     </div>
   </section>
-    <section id="stage-handoff" class="stage-panel" aria-labelledby="handoff-heading" hidden>
+    <section id="stage-handoff" class="stage-panel" aria-labelledby="handoff-heading" data-explain="handoff" hidden>
       <h3 id="handoff-heading">本番開発へ渡す</h3>
       <p class="muted">今の試作品を、本番開発の担当者に渡すフォルダーにまとめます。試作品のファイル、AI の設定、会話と状態、本物につないだもの・お試しのもの・つないでいないものの区別、未決事項が入ります。秘密情報らしい文字列があると作りません。</p>
       <form id="handoff-form" class="handoff-form">
@@ -498,7 +509,7 @@
   <!-- 段 5〜8 の 2 列(ui-ux-v2.md の 2.2、2.4)。左に試作品、右は段ごとに入れ替わる列。1024px より狭いと上下に並べる(2.8) -->
   <div class="layout">
     <section class="preview" aria-labelledby="try-heading">
-      <div class="toolbar" id="try-toolbar">
+      <div class="toolbar" id="try-toolbar" data-explain="preview" data-explain-after="#try-heading">
         <h2 id="try-heading">試作品</h2>
         <!-- 試作品の中の AI の切り替え(ui-ux-v2.md の 4.2)。「▲ お試し ▾」。本物を選ぶと、同意のカードを試作品の上に出す -->
         <button type="button" id="ai-switch" class="ai-switch" aria-expanded="false" aria-controls="ai-menu" hidden>
@@ -540,7 +551,7 @@
         <button type="button" id="side-maker" class="quiet"><span class="actor-shape" aria-hidden="true">■</span> 作る AI に頼む</button>
       </div>
       <!-- 段 6 測る(ui-ux-v2.md の 4.2)。この 1 ターン、場面、比べるの 3 つのタブ。タブの名前に数を添える -->
-      <section id="measure" class="measure" aria-label="測る" data-studio-only hidden>
+      <section id="measure" class="measure" aria-label="測る" data-studio-only data-explain="measure" data-explain-after=".tabs" hidden>
         <div class="tabs" role="tablist" aria-label="測る">
           <button type="button" role="tab" id="tab-turn" aria-controls="panel-turn" aria-selected="true">この 1 ターン</button>
           <button type="button" role="tab" id="tab-scenes" aria-controls="panel-scenes" aria-selected="false" tabindex="-1">場面</button>
@@ -550,9 +561,11 @@
           <!-- 1 ターンの記録(task 423。ai-architecture-review.md の 15 節)。試す欄で最後に送った発言で、働いた参加者、道具、守りの層、時間、費用。
                技術の言葉と平たい言葉を並べる。全部の中身は、仕組みの引き出しの「AI の実行の記録」にある。
                お客さんに見せる画面(#391)には出さない(data-studio-only。試作品の iframe の外にだけ置く) -->
-          <section id="turn-record" class="turn-record" aria-labelledby="turn-record-heading" data-studio-only hidden>
+          <section id="turn-record" class="turn-record" aria-labelledby="turn-record-heading" data-studio-only data-explain="turn" hidden>
             <h3 id="turn-record-heading">1 ターンの記録</h3>
             <!-- 1 行ごとに、時刻(等幅)、者の形、部品の種類、平たい 1 文。形はモデルの行(▲)と守りの行(⬢)にだけ付ける -->
+            <!-- 守りが止めた(ui-ux-v2.md の 5.4)。このターンで守りが止めたものがあるときだけ、⬢ と 3 つの文を出す -->
+            <p id="turn-guard" class="turn-guard" hidden></p>
             <ol id="turn-timeline" class="turn-timeline" aria-label="この 1 ターンの流れ"></ol>
             <div id="turn-record-body"></div>
           </section>
@@ -561,7 +574,7 @@
         <div role="tabpanel" id="panel-scenes" class="tab-panel" aria-labelledby="tab-scenes" tabindex="0" hidden>
           <!-- 場面の一覧(task 423)。場面ごとに ✓ 通った、× 通らない、○ まだ回していない。通らない場面の「ここから直す」は、作る AI の欄を開き、
                場面の名前を入れた頼む文で始める(ui-ux-v2.md の 2.3)。本物の AI で回すときは、同意と費用の上限を通す。見せる画面には出さない -->
-          <section id="scene-runs" class="scene-runs" aria-labelledby="scene-runs-summary" data-studio-only hidden>
+          <section id="scene-runs" class="scene-runs" aria-labelledby="scene-runs-summary" data-studio-only data-explain="scenes" hidden>
             <h3 id="scene-runs-summary">場面の一覧</h3>
             <p class="muted">場面の一覧(この AI にできてほしい会話)を、構成ごとに回して比べます。お試しの AI は費用がかからず、形が動くかの確かめだけです。</p>
             <div class="scene-runs-actions">
@@ -581,7 +594,7 @@
           <p id="scenes-empty" class="muted" hidden>この試作品には、場面の一覧がまだありません。作る AI に「場面を足して」と頼むと、確かめたい会話を足せます。</p>
         </div>
         <!-- 比べる。構成と前提ごとの表(通った数、費用、待ち)。同じ場面で測ったかを表の上に書く。AI の採点の列は頭に「AI の判断」 -->
-        <div role="tabpanel" id="panel-compare" class="tab-panel" aria-labelledby="tab-compare" tabindex="0" hidden>
+        <div role="tabpanel" id="panel-compare" class="tab-panel" aria-labelledby="tab-compare" tabindex="0" data-explain="compare" data-explain-after="#compare-basis" hidden>
           <p id="compare-basis" class="compare-basis"></p>
           <div id="scene-table"></div>
           <!-- 構成を選び直す(弱いボタン)。審査の承認が消えることを、押す前に横の 1 文で言う -->
@@ -594,7 +607,7 @@
       <!-- 段 7 質 -->
       <!-- 人の「確かめる」(harness.md の 3.1、P27)。試す欄の上には置かない(ux-redesign.md の U9)。
            結果は作る AI の欄の会話に、作る run と同じ結果の帯で出す -->
-      <section id="stage-check" class="stage-panel" aria-labelledby="check-heading" hidden>
+      <section id="stage-check" class="stage-panel" aria-labelledby="check-heading" data-explain="check" hidden>
         <h3 id="check-heading">試作品を自動で確かめる</h3>
         <p class="muted">いま表示している試作品を、決めた手順で自動で動かして確かめます。結果は「作る AI」の欄に出ます。試す欄の会話は変わりません。</p>
         <fieldset id="check-ai" class="check-ai" hidden>
@@ -612,7 +625,7 @@
            見ていない項目は「まだ見ていない」。「直す」で、作る AI の欄に依頼を入れる(送るのは人)。見せる画面には出さない -->
       <details id="quality" class="quality" data-studio-only hidden>
         <summary id="quality-summary">質の見直し</summary>
-        <div class="quality-body">
+        <div class="quality-body" data-explain="quality" data-explain-after=":scope > p.muted">
           <p class="muted">試作品の質を、測ったものと AI の判断に分けて並べます。「直す」が 0 になるまで、上から順に片付けます。数は Studio が持つ記録から読みます。</p>
           <div class="quality-actions">
             <button type="button" id="quality-check" class="primary">画面を確かめて見直す</button>
@@ -623,17 +636,18 @@
       </details>
       <!-- 段 8 見せる -->
       <!-- 人に見せる(user-journey.md の J7)。段 8 の作業台。押すと見せる画面にする。試作品と確かめたい問いだけを出し、開発の欄を隠す -->
-      <section id="stage-show" class="stage-panel" aria-labelledby="show-start-heading" hidden>
+      <section id="stage-show" class="stage-panel" aria-labelledby="show-start-heading" data-explain="show-start" hidden>
         <h3 id="show-start-heading">人に見せる</h3>
         <p class="muted">試作品と確かめたい問いだけの画面にします。聞いた答えは、見せた保存に残ります。コメントと承認は、見せる画面の右に出ます。</p>
         <button type="button" id="show-start" class="primary" disabled>人に見せる</button>
       </section>
       <!-- 見せる画面の問いの欄(user-journey.md の J7。サーバーは src/server/show.js)。見せている間だけ出し、作る AI の欄の代わりに右に置く。
            問いは目的の文書の成功の印から作る。答えは見せた版に結び付けて残し、版を戻しても消えない。開発の言葉と技術の言葉は出さない -->
-      <section id="show" class="show" aria-labelledby="show-heading" hidden>
+      <section id="show" class="show" aria-labelledby="show-heading" data-explain="show-questions" data-explain-after="#show-lead" hidden>
         <h2 id="show-heading" tabindex="-1">確かめたい問い</h2>
         <p id="show-title" class="show-title"></p>
-        <p class="show-notice">これは試作品です。出てくるデータは、すべて架空です。</p>
+        <!-- お客さんの前(ui-ux-v2.md の 5.4)。「架空」の札と 3 つの文は studio.js が書く -->
+        <p id="show-notice" class="show-notice">これは試作品です。出てくるデータは、すべて架空です。</p>
         <!-- 試作品の中の AI が本物の AI のときは、見せている間も印を出す(ux-redesign.md 6 節。試す欄の上の印は隠れるため) -->
         <p id="show-real-ai" class="show-real-ai" hidden>試作品の中の AI は、本物の AI(あなたの Claude Code)を使っています。</p>
         <p id="show-lead" class="muted"></p>
@@ -650,7 +664,7 @@
         <p id="show-status" class="show-status" role="status"></p>
         <!-- 画面へのコメント、反応、承認、列、直した記録、元に戻す(user-journey.md の K3。サーバーは src/server/comments.js)。
              1 台の PC の形。作る AI に送るのは、承認がそろったコメントだけ。開発の言葉は、閉じた「開発者向け」の中にだけ出す -->
-        <section id="comments" class="comments" aria-labelledby="comments-heading">
+        <section id="comments" class="comments" aria-labelledby="comments-heading" data-explain="comments">
           <h3 id="comments-heading">コメント</h3>
           <p class="muted">コメントや反応だけでは、試作品は変わりません。進行役か決める人が承認したコメントだけを、作る AI に送ります。要件のコメントは、進行役と決める人の 2 人が承認してから送ります。構成のコメントは、承認すると AI 構成の審査に戻します。</p>
           <form id="comment-form" class="comment-form">
@@ -687,7 +701,7 @@
         </section>
       </section>
       <!-- 作る AI の欄(ui-ux-v2.md の 4.3)。前の「言葉で直す」 -->
-      <section class="make" aria-labelledby="make-heading">
+      <section class="make" aria-labelledby="make-heading" data-explain="maker" data-explain-after=":scope > p.muted">
         <div class="make-head">
           <h2 id="make-heading"><span class="actor-shape" aria-hidden="true">■</span> 作る AI</h2>
           <button type="button" id="real-ai-make" class="real-ai-mark" aria-expanded="false" aria-controls="real-ai-make-info" hidden>本物の AI(あなたの Claude Code)</button>
@@ -715,7 +729,7 @@
         </div>
         <!-- 今していること(ui-ux-v2.md の 4.3)。上に依頼の文、下に作る AI と関門の列。関門は 1 つずつ、利用者の言葉で、
              ✓ 済み、● 確かめています、○ まだ、× 落ちた。経過の時間と目安(推測)を添える。いちばん新しい依頼を出す -->
-        <section id="make-now" class="make-now" aria-labelledby="make-now-heading" hidden>
+        <section id="make-now" class="make-now" aria-labelledby="make-now-heading" data-explain="make-now" data-explain-after="#make-now-list" hidden>
           <p class="make-now-line"><span class="make-now-label">依頼:</span> <span id="make-now-request" class="make-now-request"></span></p>
           <h3 id="make-now-heading">今していること</h3>
           <ol id="make-now-list" class="make-now-list" aria-label="今していること"></ol>
