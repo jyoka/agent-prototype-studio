@@ -220,8 +220,10 @@ export async function showReview(page, studio) {
   await mark.click();
   const review = page.locator('#review');
   await expect(review).toBeVisible();
-  for (const label of REVIEW_SCENE.approved) await page.getByRole('button', { name: `「${label}」を承認する` }).click();
-  await expect(page.locator('#review-count')).toHaveText(`承認 ${REVIEW_SCENE.approved.length} / 4`);
+  // 承認は次の一手の帯で、読んでいる欄から順に押す(英字で終わる名前の後ろには空白)
+  const band = page.getByRole('region', { name: '次の一手' });
+  for (const label of REVIEW_SCENE.approved) await band.getByRole('button', { name: `${label}${/[A-Za-z]$/.test(label) ? ' ' : ''}を承認する` }).click();
+  await expect(page.locator('#review-count')).toHaveText(`承認 ${REVIEW_SCENE.approved.length} / 4・あと ${4 - REVIEW_SCENE.approved.length} つ`);
   await page.locator('#review-heading').evaluate((el) => el.scrollIntoView({ block: 'start', behavior: 'instant' }));
   return review;
 }
@@ -248,11 +250,12 @@ export async function expectNoLeaksInClip(page, clip, where, home) {
   expect(leaks, describeLeaks(where, leaks)).toEqual([]);
 }
 
-// 審査の画面のうち、撮る範囲。上の帯から、エージェントの構成の図まで(図の下の案の文には、案を出した日付が入るので撮らない)
+// 審査の画面のうち、撮る範囲。上の帯から、流れ図まで(図の下の案の文には、案を出した日付が入るので撮らない)
 export async function reviewClip(page) {
-  const diagram = page.getByRole('region', { name: /^1\. エージェントの構成/ }).getByRole('img').first();
+  const diagram = page.getByRole('figure', { name: 'この試作品の中で、1 回の問い合わせが流れる道' });
   await expect(diagram).toBeInViewport();
-  const box = await diagram.boundingBox();
+  // 欄の一覧の下までを撮る(一覧の下の案の日付は撮らない)
+  const box = await page.locator('#review-items').boundingBox();
   const viewport = page.viewportSize();
   return { x: 0, y: 0, width: viewport.width, height: Math.min(viewport.height, Math.ceil(box.y + box.height + 8)) };
 }

@@ -7000,14 +7000,18 @@ const reviewEls = {
   heading: $('review-heading'),
   count: $('review-count'),
   state: $('review-state'),
-  comments: $('review-comments'),
+  basis: $('review-basis'),
+  schematic: $('review-schematic'),
+  flow: $('review-flow'),
+  fingerprint: $('review-fingerprint'),
   stopped: $('review-stopped'),
   stoppedText: $('review-stopped-text'),
+  who: $('review-who'),
   pressed: $('review-pressed'),
   spoken: $('review-spoken'),
   spokenLabel: $('review-spoken-label'),
   items: $('review-items'),
-  left: $('review-left'),
+  approve: $('review-approve'),
   build: $('review-build'),
   measure: $('review-measure'),
   toDesign: $('review-to-design'),
@@ -7177,8 +7181,10 @@ function reviewCompositionBody(record) {
   body.push(compositionFigureSvg(c.figure, `${c.label}の図`));
   if (c.recommended) {
     const scenes = c.basisScenes.length > 0 ? c.basisScenes.map((scene) => `${scene.id}${scene.verdict ? `(${scene.verdict === 'passed' ? '通った' : scene.verdict === 'failed' ? '通らなかった' : scene.verdict})` : ''}`).join('、') : 'なし';
+    // おすすめには、札、日付、根拠の場面、「推測」を付ける。「理想の作り」とは言い切らない(ui-ux-v2.md の 9 節)
     const p = element('p', undefined, 'review-recommend');
-    p.append(element('strong', `おすすめ: ${c.recommended.label}`), document.createTextNode(`。理由: ${c.recommended.reason}(出した日: ${c.recommended.date ?? '不明'}。${c.recommended.source === 'ai' ? 'AI が出した案' : 'Studio の決まった案'}。今日の一番良い推測)。根拠の場面: ${scenes}${record.evidence.status === 'unmeasured' ? '(まだ回していない下書き)' : ''}。`));
+    const guess = element('span', '推測', 'badge review-guess');
+    p.append(element('span', 'おすすめ', 'badge'), document.createTextNode(' '), element('strong', c.recommended.label), document.createTextNode(' '), guess, document.createTextNode(`。理由: ${c.recommended.reason}。出した日: ${c.recommended.date ?? '不明'}(${c.recommended.source === 'ai' ? 'AI が出した案' : 'Studio の決まった案'}。その日の推測です)。根拠の場面: ${scenes}${record.evidence.status === 'unmeasured' ? '(まだ回していない下書き)' : ''}。`));
     body.push(p);
     if (c.recommended.option !== c.shape) body.push(element('p', `おすすめと違う「${c.label}」を選んでいます。${c.outOfOrder ? '簡単な方から問う順を飛ばして選んだ印が、AI 構成書に残ります。' : ''}`, 'review-warn'));
   }
@@ -7241,31 +7247,235 @@ function reviewStackBody(record) {
 
 const REVIEW_BODIES = { composition: reviewCompositionBody, harness: reviewHarnessBody, data: reviewDataBody, stack: reviewStackBody };
 
-function reviewItemSection(record, item, index) {
-  const section = element('section', undefined, 'review-item design-data');
-  section.dataset.approved = String(item.approved);
-  section.setAttribute('aria-labelledby', `review-h-${item.id}`);
-  const heading = element('h3', `${index + 1}. ${item.label}`);
-  heading.id = `review-h-${item.id}`;
-  heading.append(element('span', item.approved ? '承認済み' : item.changed && item.by.length > 0 ? '中身が変わったので承認し直す' : 'まだ承認していません', 'review-mark'));
-  section.append(heading, element('p', item.plain, 'muted'));
-  section.append(...REVIEW_BODIES[item.id](record));
-  const approve = element('div', undefined, 'design-line review-approve');
-  for (const role of item.needs) {
-    const done = item.by.find((entry) => entry.role === role && entry.valid);
-    if (done) {
-      approve.append(element('span', `${record.roles[role]}が承認(${formatTime(done.at)}${done.pressedBy ? `。押した人: ${done.pressedBy}` : ''}${done.spokenBy ? `。声に出した人: ${done.spokenBy}` : ''})`, 'review-done'));
-      continue;
-    }
-    const button = element('button', item.needs.length === 1 && role === 'owner' ? `「${item.label}」を承認する` : `「${item.label}」を${record.roles[role]}として承認する`);
-    button.type = 'button';
-    button.className = 'primary';
-    button.disabled = reviewUi.busy || Boolean(record.stopped) || record.status === 'skipped';
-    button.addEventListener('click', () => reviewAct('approve', { item: item.id, role, pressedBy: reviewEls.pressed.value.trim() || undefined, spokenBy: reviewEls.spoken.hidden ? undefined : reviewEls.spoken.value.trim() || undefined }));
-    approve.append(button);
+// 欄ごとの言葉(ui-ux-v2.md の 4.1、5.2)。term は見出しの横の語、hint はその場での 1 行、what/does/next は「これは何?」の 3 つの問い
+const REVIEW_TEXTS = {
+  composition: {
+    term: 'agent setup',
+    hint: '次の一手を、コードが決めるかモデルが決めるかを読みます。違えば、選び直せます。',
+    what: '次の一手を、コードが決めるか、モデルが決めるかです。',
+    does: '3 つから 1 つ選びます。足りる中で一番簡単なものを勧めます。',
+    next: '何を作るかが決まります。変えたら、承認し直します。',
+  },
+  harness: {
+    term: 'ふだんの言葉: AI の周りの決まり',
+    hint: '任せる所と縛る所を読みます。違えば、言葉で直せます。',
+    what: 'モデルの周りで、決め、縛り、記録するコードです。',
+    does: '任せることと縛ることを読み、違えば直します。',
+    next: 'この決まりで試作品が動き、記録に残ります。',
+  },
+  data: {
+    term: '何をどう読むか',
+    hint: '読むものと、個人情報の扱いを読みます。',
+    what: 'AI が読むものと、その読み方です。',
+    does: '読むものと個人情報の扱いを確かめます。',
+    next: '試作品は架空のデータで動きます。',
+  },
+  stack: {
+    term: '試作品と本番の候補',
+    hint: '試作品で使うものと、本番の候補を読みます。候補は案で、決定ではありません。',
+    what: '試作品と本番で使う候補です。案で、決定ではありません。',
+    does: '候補を読み、違えば選び直します。',
+    next: '選び直すと、この欄の承認は消えます。',
+  },
+};
+
+// 欄の 4 つの状態。印と文で分け、色だけに頼らない(10.4 の札)
+const REVIEW_STATES = {
+  approved: { mark: '✓', text: '承認した', tone: 'ok' },
+  reading: { mark: '●', text: '読んでいる', tone: 'accent' },
+  unseen: { mark: '○', text: 'まだ見ていない', tone: '' },
+  lost: { mark: '!', text: '承認が消えた', tone: 'warn' },
+};
+
+// 流れ図の部品の種類。コードは実線、モデルは点線、守りは関門と守りの色の縁(10.4)
+const FLOW_KINDS = { person: '人', code: 'コード', model: 'モデル', data: 'データ', guard: '守り' };
+const FLOW_DRIVERS = {
+  'fixed-flow': ['code', '固定の流れ'],
+  'single-agent': ['model', '1 つの AI が回す'],
+  'master-sub': ['model', '親の AI が子に任せる'],
+  handoff: ['model', 'AI 同士の引き継ぎ'],
+  none: ['code', 'AI なし'],
+};
+
+// 読んでいる欄。止まっているとき、飛ばしたときはない。それ以外は、上から見て最初の承認していない欄
+function readingItem(record) {
+  if (!record?.items?.length || record.stopped || record.status === 'skipped') return null;
+  return record.items.find((item) => !item.approved) ?? null;
+}
+
+// 次に押す承認(読んでいる欄と、まだ承認していない役)
+function nextApproval(record) {
+  const item = readingItem(record);
+  if (!item) return null;
+  const role = item.needs.find((need) => !item.by.some((entry) => entry.role === need && entry.valid));
+  return role ? { item, role } : null;
+}
+
+// 英字で終わる名前(harness、データと RAG)の後ろには、空白を 1 つ置く
+const spaced = (label) => (/[A-Za-z0-9]$/.test(label) ? `${label} ` : label);
+
+function reviewItemState(item, reading) {
+  if (item.approved) return 'approved';
+  if (item.lost) return 'lost';
+  return item === reading ? 'reading' : 'unseen';
+}
+
+// 承認が消えた理由の 1 文(5.4 の「承認が消えた」)
+function lostReason(record, item) {
+  const lost = item.lost;
+  if (lost.reason === 'choose') {
+    const label = record.items.find((entry) => entry.id === lost.item)?.label ?? 'エージェントの構成';
+    return `${label}を選び直したので、この欄の承認を消しました。読み直して承認してください。`;
   }
-  section.append(approve);
-  return section;
+  if (lost.reason === 'comment') return `コメント ${lost.number} から審査に戻したので、この欄の承認を消しました。読み直して承認してください。`;
+  return '承認の後に中身が変わったので、この欄の承認を消しました。読み直して承認してください。';
+}
+
+// 流れ図の部品。items は、その部品に関係する欄(読んでいる欄の部品の縁を強くする)
+function reviewFlowNodes(record) {
+  const shape = record.composition?.shape;
+  const [kind, name] = FLOW_DRIVERS[shape] ?? ['code', record.composition?.label ?? '流れ'];
+  const shelf = record.data?.shelf?.length ?? 0;
+  const nodes = [{ kind: 'person', name: '使う人', items: [] }, { kind, name, items: ['composition', 'stack'] }];
+  if (shape !== 'none') nodes.push({ kind: 'model', name: '言葉を読む、文を作る', items: ['harness', 'stack'] });
+  nodes.push({ kind: 'data', name: shelf > 0 ? `読むもの ${shelf} 種` : '読むものなし', items: ['data'] });
+  nodes.push({ kind: 'guard', name: '3 つの層', items: ['harness'] });
+  nodes.push({ kind: 'person', name: '返事', items: [] });
+  return nodes;
+}
+
+function renderReviewFlow(record) {
+  reviewEls.flow.replaceChildren(...reviewFlowNodes(record).map((node) => {
+    const li = element('li', undefined, 'node');
+    li.dataset.kind = node.kind;
+    li.dataset.items = node.items.join(' ');
+    const tag = element('span', FLOW_KINDS[node.kind], 'tag');
+    tag.dataset.kind = node.kind;
+    li.append(tag, element('span', node.name, 'node-name'));
+    return li;
+  }));
+}
+
+// 流れ図で、その欄に関係する部品の縁を強くする。id がなければ、どれも強くしない
+function highlightFlow(id) {
+  for (const node of reviewEls.flow.children) {
+    if (id && node.dataset.items.split(' ').includes(id)) node.dataset.focus = 'true';
+    else delete node.dataset.focus;
+  }
+  reviewEls.flow.dataset.focusItem = id ?? '';
+}
+
+// 「これは何?」(5.2)。開くと 3 つの問い。harness は、仕組みの引き出しのプロンプトへの道も出す
+function reviewExplain(item, { open = false } = {}) {
+  const texts = REVIEW_TEXTS[item.id];
+  const details = element('details', undefined, 'explain');
+  details.open = open;
+  const list = element('dl');
+  list.append(element('dt', 'これは何か'), element('dd', texts.what), element('dt', '何をするのか'), element('dd', texts.does), element('dt', '次に何が起きるか'), element('dd', texts.next));
+  details.append(element('summary', 'これは何?'), list);
+  if (item.id === 'harness') {
+    const more = element('button', 'プロンプトの全文を仕組みの引き出しで見る', 'text-button');
+    more.type = 'button';
+    more.addEventListener('click', () => setDrawer('mechanism'));
+    details.append(more);
+  }
+  return details;
+}
+
+// たたんだ欄の短い中身(1 行)
+function reviewItemSummary(record, item) {
+  if (item.id === 'composition') {
+    const c = record.composition;
+    const p = element('p', undefined, 'review-choice');
+    p.append(element('strong', c.label));
+    if (c.recommended?.option === c.shape) p.append(document.createTextNode(' '), Object.assign(element('span', 'おすすめ', 'badge'), { title: '案を出す AI のおすすめ(推測)' }));
+    const others = c.options.filter((option) => option.id !== c.shape).map((option) => option.label);
+    if (others.length > 0) p.append(document.createTextNode(`。ほかの案: ${others.join('、')}`));
+    return p;
+  }
+  if (item.id === 'harness') {
+    const h = record.harness;
+    return element('p', `モデルに任せる: ${h.modelDecides.join('、') || 'なし'}。コードで縛る: ${h.codeBinds.length} つ。人が決める: ${h.humanDecides.join('、') || 'なし'}。`, 'review-choice');
+  }
+  if (item.id === 'data') {
+    const { shelf, rag } = record.data;
+    return element('p', `読むもの ${shelf.length} 種。RAG: ${rag.verdict}。`, 'review-choice');
+  }
+  const model = record.stack.rows.find((row) => row.id === 'model');
+  return element('p', `試作品のモデル: ${model?.prototype ?? '不明'}。本番の候補は案で、まだつないでいません。`, 'review-choice');
+}
+
+// 承認した人と時刻(役ごと)
+function reviewApprovals(record, item) {
+  const done = item.by.filter((entry) => entry.valid);
+  if (done.length === 0) return null;
+  return element('p', done.map((entry) => `${record.roles[entry.role]}が承認(${formatTime(entry.at)}${entry.pressedBy ? `。押した人: ${entry.pressedBy}` : ''}${entry.spokenBy ? `。声に出した人: ${entry.spokenBy}` : ''})`).join('・'), 'review-done');
+}
+
+function reviewItemNode(record, item, reading) {
+  const state = reviewItemState(item, reading);
+  const isReading = item === reading;
+  const li = element('li', undefined, 'review-item-slot');
+  const section = element('section', undefined, 'review-item design-data');
+  section.dataset.item = item.id;
+  section.dataset.state = state;
+  section.dataset.approved = String(item.approved);
+  if (isReading) {
+    section.dataset.reading = 'true';
+    section.setAttribute('aria-current', 'true');
+  }
+  section.setAttribute('aria-labelledby', `review-h-${item.id}`);
+  // 欄の頭: 承認が消えた理由と、コメントから戻した項目
+  if (item.lost) section.append(element('p', lostReason(record, item), 'review-lost'));
+  const comments = record.comments ?? [];
+  if (comments.length > 0 && item === (reading ?? record.items[0])) {
+    const list = element('ul', undefined, 'review-from-comments');
+    list.setAttribute('aria-label', '審査に戻したコメント');
+    list.append(...comments.map((c) => element('li', `コメントから: ${c.text}(コメント ${c.number}、${formatTime(c.at)})`)));
+    section.append(list);
+  }
+  const head = element('div', undefined, 'review-item-head');
+  const look = REVIEW_STATES[state];
+  const badge = element('span', `${look.mark} ${look.text}`, 'badge review-state');
+  if (look.tone) badge.dataset.tone = look.tone;
+  const heading = element('h3', item.label);
+  heading.id = `review-h-${item.id}`;
+  heading.append(document.createTextNode(' '), element('span', REVIEW_TEXTS[item.id].term, 'review-term'));
+  head.append(badge, heading);
+  section.append(head);
+  if (!isReading) {
+    section.append(reviewItemSummary(record, item));
+    const approvals = reviewApprovals(record, item);
+    if (approvals) section.append(approvals);
+    // たたんだ欄の中身は、頼んだら開く(読む順は変えない)
+    const peek = element('details', undefined, 'review-peek');
+    peek.append(element('summary', '中身を見る'), ...REVIEW_BODIES[item.id](record), reviewExplain(item));
+    section.append(peek);
+    li.append(section);
+    return li;
+  }
+  if (record.thinking) {
+    // 案を出す AI が作業中。中身の代わりに、待つ間に読むもの(3 つの問い)を先に出す
+    section.append(element('p', '案を作っています。待つ間に、この欄の 3 つの問いを読めます。', 'review-thinking'), reviewExplain(item, { open: true }));
+    li.append(section);
+    return li;
+  }
+  const hint = element('p', REVIEW_TEXTS[item.id].hint, 'hint');
+  hint.dataset.hint = `review-${item.id}`;
+  section.append(hint, ...REVIEW_BODIES[item.id](record), reviewExplain(item));
+  const approvals = reviewApprovals(record, item);
+  if (approvals) section.append(approvals);
+  // 欄の中のボタンは、弱いボタン「言葉で直す」だけ(4.1)。承認の前は作る AI が動かないので、設計の案内に戻って選び直す
+  const actions = element('div', undefined, 'review-item-actions');
+  const fix = element('button', '言葉で直す', 'quiet');
+  fix.type = 'button';
+  fix.title = '設計の案内に戻り、この欄の元になった段を選び直します';
+  fix.disabled = reviewUi.busy;
+  fix.addEventListener('click', reviewToDesign);
+  actions.append(fix);
+  section.append(actions);
+  li.append(section);
+  return li;
 }
 
 function renderReview() {
@@ -7274,22 +7484,25 @@ function renderReview() {
   reviewEls.section.hidden = !open;
   if (open) document.body.dataset.design = 'open';
   else if (!designUi.open) delete document.body.dataset.design;
+  const reviewing = Boolean(open && record?.items?.length && record.composition && !['none', 'missing', 'skipped'].includes(record.status));
+  const asking = reviewing ? nextApproval(record) : null;
+  reviewEls.who.hidden = !asking;
+  reviewEls.approve.hidden = !asking;
   if (!open || !record) return;
-  if (record.status === 'none' || record.status === 'missing' || !record.items?.length || !record.composition) {
+  if (!reviewing) {
     reviewEls.count.textContent = '';
+    reviewEls.basis.textContent = '';
+    reviewEls.schematic.hidden = true;
     reviewEls.state.textContent = record.status === 'skipped' ? `審査を飛ばしました(${formatTime(record.skipped?.at)}。理由: ${record.skipped?.reason ?? '不明'})。「審査なし」の印のまま作れます。` : 'まだ審査を始めていません。設計の案内で「この設計で作る」を押すと始まります。';
     reviewEls.items.replaceChildren();
     reviewEls.build.hidden = true;
     reviewEls.measure.hidden = true;
-    reviewEls.left.textContent = '';
     reviewEls.stopped.hidden = true;
-    reviewEls.comments.hidden = true;
     return;
   }
-  reviewEls.build.hidden = false;
   reviewEls.measure.hidden = false;
   const left = record.total - record.approvedCount;
-  reviewEls.count.textContent = `承認 ${record.approvedCount} / ${record.total}`;
+  reviewEls.count.textContent = `承認 ${record.approvedCount} / ${record.total}${left > 0 ? `・あと ${left} つ` : ''}`;
   reviewEls.count.dataset.ready = String(record.ready);
   const meeting = record.mode === 'meeting';
   reviewEls.spoken.hidden = !meeting;
@@ -7297,22 +7510,40 @@ function renderReview() {
   reviewEls.stopped.hidden = !record.stopped;
   if (record.stopped) {
     const labels = (record.stopped.items ?? []).map((id) => record.items.find((item) => item.id === id)?.label).filter(Boolean);
-    reviewEls.stoppedText.textContent = `承認した構成と違うので、作るのを止めました(${formatTime(record.stopped.at)}。変わった所: ${labels.join('、') || '不明'})。審査に戻ると、変わった所だけ承認し直します。承認した構成に戻すと、構成のファイルだけを承認したときの中身に戻します。`;
+    reviewEls.stoppedText.textContent = `承認の後に AI の作りが変わったので、作るのを止めています。試す欄の試作品は、承認したときのままです(${formatTime(record.stopped.at)}。変わった所: ${labels.join('、') || '不明'})。審査に戻ると、変わった所だけ承認し直します。承認した構成に戻すと、構成のファイルだけを承認したときの中身に戻します。`;
   }
-  reviewEls.state.textContent = record.status === 'skipped'
-    ? '審査を飛ばしました。「審査なし」の印のまま作れます。'
-    : record.status === 'approved'
-      ? `${formatTime(record.approvedAt)}に 4 つを承認しました${record.approvedUnmeasured ? '(測らずに承認した印が残っています)' : ''}。次にすること: 「この構成で作る」を押してください。`
-      : record.stopped
-        ? '次にすること: 「審査に戻る」か「承認した構成に戻す」を押してください。'
-        : `次にすること: 4 つを上から読んで、欄ごとに承認してください。${record.evidence.status === 'unmeasured' ? '数はまだ測っていません。測らずに承認すると、その印が残ります。' : ''}`;
-  const returned = record.comments ?? [];
-  reviewEls.comments.hidden = returned.length === 0;
-  reviewEls.comments.replaceChildren(...returned.map((c) => element('li', `画面へのコメントから審査に戻しました(${formatTime(c.at)}。コメント ${c.number}): ${c.text}`)));
-  reviewEls.items.replaceChildren(...record.items.map((item, index) => reviewItemSection(record, item, index)));
-  reviewEls.build.disabled = reviewUi.busy || !record.ready;
+  reviewEls.state.textContent = record.status === 'approved'
+    ? `${formatTime(record.approvedAt)}に 4 つを承認しました${record.approvedUnmeasured ? '(測らずに承認した印が残っています)' : ''}。`
+    : record.evidence.status === 'unmeasured' && !record.stopped
+      ? '数はまだ測っていません。測らずに承認すると、その印が残ります。'
+      : '';
+  reviewEls.state.hidden = !reviewEls.state.textContent;
+  // 案の日付と根拠(9 節: 「理想の作り」と言い切らず、日付と根拠の場面と「推測」を付ける)
+  const c = record.composition;
+  reviewEls.basis.textContent = c.recommended ? `案は ${c.recommended.date ?? '日付不明'} 時点の推測です。根拠は、場面の一覧の ${c.basisScenes.length} つです。` : '案はありません。今の構成をそのまま読みます。';
+  // 流れ図と、4 つそろったときの指紋
+  reviewEls.schematic.hidden = false;
+  renderReviewFlow(record);
+  reviewEls.fingerprint.hidden = !record.ready;
+  if (record.ready) {
+    reviewEls.fingerprint.replaceChildren(element('span', 'AI 構成書の指紋', 'review-fingerprint-label'), element('code', `指紋 ${record.fingerprint.value.slice(0, 4)}…`));
+    reviewEls.fingerprint.title = record.fingerprint.value;
+  }
+  const reading = readingItem(record);
+  reviewEls.items.replaceChildren(...record.items.map((item) => reviewItemNode(record, item, reading)));
+  highlightFlow(reading?.id ?? null);
+  renderHints();
+  if (asking) {
+    const { item, role } = asking;
+    reviewEls.approve.textContent = item.needs.length === 1 && role === 'owner' ? `${spaced(item.label)}を承認する` : `${spaced(item.label)}を${record.roles[role]}として承認する`;
+    reviewEls.approve.dataset.item = item.id;
+    reviewEls.approve.dataset.role = role;
+  }
+  reviewEls.approve.disabled = reviewUi.busy || Boolean(record.thinking);
+  // 4 つそろうまで「この構成で作る」は出さない(押せないボタンを置かない。10.4)
+  reviewEls.build.hidden = !record.ready;
+  reviewEls.build.disabled = reviewUi.busy;
   reviewEls.measure.disabled = reviewUi.busy || Boolean(record.stopped);
-  reviewEls.left.textContent = record.ready ? '4 つそろいました。押すと作り始めます。' : record.stopped ? '承認と違う構成なので押せません。' : `あと ${left} つの承認で押せます。`;
   reviewEls.toDesign.hidden = !designUi.lastProjectId || designUi.lastProjectId !== reviewUi.projectId;
 }
 
@@ -7402,19 +7633,37 @@ async function buildFromReview(action, body = {}) {
   await submitRequest();
 }
 
-reviewEls.mark.addEventListener('click', () => openReview());
-reviewEls.build.addEventListener('click', () => buildFromReview('build'));
-reviewEls.measure.addEventListener('click', () => reviewAct('measure'));
-$('review-back').addEventListener('click', () => reviewAct('back'));
-$('review-restore').addEventListener('click', () => reviewAct('restore'));
-$('review-close').addEventListener('click', closeReview);
-reviewEls.toDesign.addEventListener('click', async () => {
+// 設計の案内に戻る(「設計の案内に戻る」と、欄の「言葉で直す」)
+async function reviewToDesign() {
   const id = reviewUi.projectId;
   closeReview();
   selectedId = id;
   render();
   await openDesign();
+}
+
+reviewEls.mark.addEventListener('click', () => openReview());
+reviewEls.approve.addEventListener('click', () => {
+  const { item, role } = reviewEls.approve.dataset;
+  if (!item) return;
+  sawHint(`review-${item}`);
+  reviewAct('approve', { item, role, pressedBy: reviewEls.pressed.value.trim() || undefined, spokenBy: reviewEls.spoken.hidden ? undefined : reviewEls.spoken.value.trim() || undefined });
 });
+// 欄にカーソルや焦点が乗ったら、流れ図でその欄の部品を示す。離れたら、読んでいる欄に戻す
+const reviewFocusOf = (event) => event.target.closest?.('.review-item')?.dataset.item ?? null;
+const reviewReadingId = () => readingItem(reviewUi.record)?.id ?? null;
+reviewEls.items.addEventListener('pointerover', (event) => highlightFlow(reviewFocusOf(event) ?? reviewReadingId()));
+reviewEls.items.addEventListener('pointerleave', () => highlightFlow(reviewReadingId()));
+reviewEls.items.addEventListener('focusin', (event) => highlightFlow(reviewFocusOf(event) ?? reviewReadingId()));
+reviewEls.items.addEventListener('focusout', (event) => {
+  if (!reviewEls.items.contains(event.relatedTarget)) highlightFlow(reviewReadingId());
+});
+reviewEls.build.addEventListener('click', () => buildFromReview('build'));
+reviewEls.measure.addEventListener('click', () => reviewAct('measure'));
+$('review-back').addEventListener('click', () => reviewAct('back'));
+$('review-restore').addEventListener('click', () => reviewAct('restore'));
+$('review-close').addEventListener('click', closeReview);
+reviewEls.toDesign.addEventListener('click', reviewToDesign);
 $('review-skip').addEventListener('click', () => {
   const reason = reviewEls.skipReason.value.trim();
   if (!reason) {
@@ -8036,11 +8285,19 @@ function nextStep(project, stage) {
     return { text, button };
   }
   if (reviewUi.open) {
-    if (shownAtHome($('review-back'))) return { text: '承認と違う構成なので、作るのを止めました。審査に戻って読み直します。', button: $('review-back') };
-    const left = 4 - (reviewUi.record?.approvedCount ?? project.review?.approved ?? 0);
+    const record = reviewUi.record;
+    if (shownAtHome($('review-back'))) return { text: '承認の後に AI の作りが変わったので、作るのを止めました。審査に戻って、変わった所を読み直します。', button: $('review-back') };
     if (reviewUi.busy && frame.moved === reviewEls.build) return { text: '作り始めています。', button: reviewEls.build, keep: true };
-    if (shownAtHome(reviewEls.build)) return { text: '4 つを承認しました。この構成で作ります。', button: reviewEls.build };
-    return { text: `4 つの欄を上から読み、違わなければ欄ごとに承認します。あと ${Math.max(left, 0)} つです。` };
+    if (shownAtHome(reviewEls.build)) return { text: 'この構成で作ります。作る AI が書き始め、守りが確かめます。', button: reviewEls.build };
+    const asking = nextApproval(record);
+    if (asking && record.thinking) return { text: '案を作っています。待つ間に、読んでいる欄の 3 つの問いを読めます。' };
+    if (asking) {
+      const left = record.total - record.approvedCount;
+      const after = left > 1 ? `承認すると、残りは ${left - 1} つです。` : '承認すると、4 つそろいます。';
+      const keep = reviewUi.busy && frame.moved === reviewEls.approve;
+      return { text: `${spaced(asking.item.label)}を読み、違わなければ承認します。${after}`, button: reviewEls.approve, keep };
+    }
+    return { text: record?.status === 'skipped' ? '審査を飛ばしました。試作品の画面に戻って作ります。' : '審査の記録を読んでいます。' };
   }
   if (stage === 'talk' || stage === 'goal' || stage === 'design' || stage === 'review') return noteStep(project, stage);
   const making = Boolean(project.running || sending?.projectId === project.id || runningRun(project.id));

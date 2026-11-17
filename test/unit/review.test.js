@@ -255,3 +255,33 @@ test('承認した構成に戻す: 目録の指し先を戻す。戻しても承
   await assert.rejects(reviews.restore(PROJECT), { code: 'restore-failed' });
   assert.equal(store.previewBuildId(PROJECT), shown);
 });
+
+test('消えた承認と理由: 中身が変わった項目、審査に戻った項目、コメントから戻した項目に理由が付き、承認し直すと消える', async (t) => {
+  const { reviews, app } = await setup(t);
+  await reviews.start(PROJECT, { origin: 'existing' });
+  for (const item of REVIEW_ITEM_IDS) await reviews.approve(PROJECT, { item });
+  await reviews.build(PROJECT);
+  // 承認の後に前提が変わると、技術の組だけが「中身が変わった」で消えた印になる
+  const assumption = path.join(app, 'assumptions', 'stand-in.json');
+  const value = await readJson(assumption);
+  await fs.writeFile(assumption, JSON.stringify({ ...value, model: { name: 'claude-haiku-5-5', standIn: true } }, null, 2));
+  const lostOf = async () => Object.fromEntries((await reviews.view(PROJECT)).items.map((item) => [item.id, item.lost?.reason ?? null]));
+  assert.deepEqual(await lostOf(), { composition: null, harness: null, data: null, stack: 'changed' });
+  // 審査に戻ると、変わった項目の承認が消え、理由が AI 構成書に残る。ほかの承認は残る
+  await reviews.markStopped(PROJECT, { changed: ['stack'] });
+  await reviews.back(PROJECT);
+  const view = await reviews.view(PROJECT);
+  assert.equal(view.approvedCount, 3);
+  assert.deepEqual(view.items.find((item) => item.id === 'stack').lost, { reason: 'changed', at: view.items.find((item) => item.id === 'stack').lost.at });
+  // 承認し直すと、消えた印はなくなる
+  await reviews.approve(PROJECT, { item: 'stack' });
+  assert.deepEqual(await lostOf(), { composition: null, harness: null, data: null, stack: null });
+  assert.equal((await reviews.current(PROJECT)).lost, undefined);
+  // コメントから審査に戻すと、承認があった 4 つ全部に、コメントの番号の理由が付く
+  await reviews.reopenFromComment(PROJECT, { id: 'c1', number: 3, text: '答えに迷ったら人に渡して', at: new Date().toISOString() });
+  const reopened = await reviews.view(PROJECT);
+  assert.equal(reopened.approvedCount, 0);
+  for (const item of reopened.items) assert.deepEqual({ reason: item.lost.reason, number: item.lost.number }, { reason: 'comment', number: 3 });
+  // 案を出す AI が働いていないときは thinking が false
+  assert.equal(reopened.thinking, false);
+});

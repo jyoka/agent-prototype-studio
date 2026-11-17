@@ -48,7 +48,7 @@ flowchart LR
 
 <table>
   <tr>
-    <td width="50%" valign="top"><a href="docs/usage.md#ai-構成の審査で-4-つを承認する"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/review-dark.png"><img width="400" alt="AI 構成の審査の画面。段の道筋の段の下に「目的: 決めた」「設計: 決めた」「審査: 承認 2 / 4」。エージェントの構成の欄で固定の流れを選んで承認済み。構成の図は、使う人、受付(コードの流れ)、AI(読み取りと言い方だけ)の順" src="assets/media/review-light.png"></picture></a><br>
+    <td width="50%" valign="top"><a href="docs/usage.md#ai-構成の審査で-4-つを承認する"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/review-dark.png"><img width="400" alt="AI 構成の審査の作業台。流れ図は、使う人、固定の流れ(コード)、言葉を読む(モデル)、読むもの 2 種(データ)、3 つの層(守り)、返事の順で、読んでいるデータの箱の縁が太い。承認 2 / 4・あと 2 つ。エージェントの構成(固定の流れ、おすすめ)と harness に ✓ 承認した。次の一手の帯に「データと RAG を承認する」" src="assets/media/review-light.png"></picture></a><br>
       <b>AI 構成の審査</b><br>作りを 4 つに分けて読み、承認するまで作る AI は動かない。</td>
     <td width="50%" valign="top"><a href="docs/usage.md#構成と前提を選ぶ"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/media/sim-choice-dark.png"><img width="400" alt="仕組みの引き出しの「構成と前提」。構成を選ぶ欄に、相手の会社のエージェントとこちらのツール、自社の harness だけ、受付と相談役と担当者の引き継ぎ、ツールだけを出す構成の 4 つ。前提を選ぶ欄に、カードを使える相手と、文とボタンだけの相手の 2 つ" src="assets/media/sim-choice-light.png"></picture></a><br>
       <b>構成の模擬</b><br>構成と前提を選ぶと、同じ試作品が別の組み方で話す。</td>

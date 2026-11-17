@@ -51,16 +51,39 @@ async function selectProject(page, id) {
   await page.locator(`[data-project-id="${id}"]`).click();
 }
 
-const r = (page) => ({
-  section: page.locator('#review'),
-  count: page.locator('#review-count'),
-  left: page.locator('#review-left'),
-  build: page.getByRole('button', { name: 'この構成で作る' }),
-  mark: page.locator('#review-mark'),
-  item: (label) => page.getByRole('region', { name: new RegExp(`^\\d\\. ${label}`) }),
-  approve: (label) => page.getByRole('button', { name: `「${label}」を承認する` }),
-  switch: (label) => page.getByRole('group', { name: '構成を切り替える' }).getByRole('button', { name: new RegExp(`^${label}`) }),
-});
+// 英字で終わる名前(harness、データと RAG)の後ろには空白を 1 つ置く(画面と同じ)
+const spaced = (label) => (/[A-Za-z0-9]$/.test(label) ? `${label} ` : label);
+
+// 審査の作業台(ui-ux-v2.md の 4.1)。承認のボタンは次の一手の帯にあり、読んでいる欄の名前が付く
+const r = (page) => {
+  const band = page.getByRole('region', { name: '次の一手' });
+  const item = (label) => page.locator('#review-items').getByRole('region', { name: new RegExp(`^${label}`) });
+  return {
+    section: page.locator('#review'),
+    count: page.locator('#review-count'),
+    band,
+    build: page.getByRole('button', { name: 'この構成で作る' }),
+    mark: page.locator('#review-mark'),
+    item,
+    state: (label) => item(label).locator('.review-state'),
+    reading: page.locator('#review-items .review-item[data-reading]'),
+    approve: (label) => band.getByRole('button', { name: `${spaced(label)}を承認する` }),
+    peek: (label) => item(label).locator('details.review-peek > summary'),
+    switch: (label) => page.getByRole('group', { name: '構成を切り替える' }).getByRole('button', { name: new RegExp(`^${label}`) }),
+    focused: page.locator('#review-flow .node[data-focus] .tag'),
+  };
+};
+
+// ライトとダークで撮る。色の切り替えの動き(--motion-quick)が終わってから、見出しを上に合わせて撮る
+async function shootThemes(page, name, top = '#review-heading') {
+  for (const theme of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme: theme });
+    await page.waitForTimeout(300);
+    await page.locator(top).evaluate((el) => el.scrollIntoView({ block: 'start', behavior: 'instant' }));
+    await page.screenshot({ path: path.join(UX_SHOTS, `${name}-${theme}.png`) });
+  }
+  await page.emulateMedia({ colorScheme: 'light' });
+}
 
 const LABELS = ['エージェントの構成', 'harness', 'データと RAG', '技術の組'];
 
@@ -85,13 +108,19 @@ test('4 つの承認がそろうまで作る AI が起動しない。そろう�
     await page.locator('#design-mark').click();
     await page.getByRole('button', { name: 'この設計で作る' }).click();
 
-    // 審査の画面。承認 0 / 4。4 つの欄が上から順に並び、作れない
+    // 審査の作業台。承認 0 / 4。4 つの欄が上から順に並び、上の 1 つだけを読んでいる。「この構成で作る」は出ない
     const v = r(page);
     await expect(page.getByRole('heading', { level: 2, name: 'AI 構成の審査' })).toBeVisible();
-    await expect(v.count).toHaveText('承認 0 / 4');
-    await expect(v.build).toBeDisabled();
-    await expect(v.left).toHaveText('あと 4 つの承認で押せます。');
-    await expect(page.locator('#review-items > section h3')).toHaveText([/^1\. エージェントの構成/, /^2\. harness/, /^3\. データと RAG/, /^4\. 技術の組/]);
+    await expect(v.count).toHaveText('承認 0 / 4・あと 4 つ');
+    await expect(v.build).toBeHidden();
+    await expect(page.locator('#review-items h3')).toHaveText([/^エージェントの構成/, /^harness/, /^データと RAG/, /^技術の組/]);
+    await expect(v.reading).toHaveCount(1);
+    await expect(v.state('エージェントの構成')).toHaveText('● 読んでいる');
+    for (const label of LABELS.slice(1)) await expect(v.state(label)).toHaveText('○ まだ見ていない');
+    // ふだんの言葉を見出しの横に置く
+    await expect(v.item('harness').locator('h3')).toHaveText('harness ふだんの言葉: AI の周りの決まり');
+    // おすすめ: 札、日付、根拠の場面、推測。「理想」の語は画面にない
+    await expect(page.locator('#review-basis')).toHaveText(/^案は \d{4}-\d{2}-\d{2} 時点の推測です。根拠は、場面の一覧の \d+ つです。$/);
 
     // 1. 構成: 3 つの切り替え、図、平たい言葉、おすすめと理由と日付、根拠の場面、まだ測っていない
     const composition = v.item('エージェントの構成');
@@ -100,11 +129,41 @@ test('4 つの承認がそろうまで作る AI が起動しない。そろう�
     await expect(v.switch('マスターとサブ')).toBeEnabled();
     await expect(composition.getByRole('img')).toHaveAttribute('aria-label', /使う人.*案内役/);
     await expect(composition).toContainText('1 つの AI が道具を選んで進む形');
-    await expect(composition).toContainText('おすすめ: 単一エージェント');
-    await expect(composition).toContainText('偽の構成の理由');
-    await expect(composition).toContainText(/出した日: \d{4}-\d{2}-\d{2}/);
-    await expect(composition).toContainText('根拠の場面: design-');
+    const recommend = composition.locator('.review-recommend');
+    await expect(recommend.locator('.badge').first()).toHaveText('おすすめ');
+    await expect(recommend).toContainText('単一エージェント 推測');
+    await expect(recommend).toContainText('偽の構成の理由');
+    await expect(recommend).toContainText(/出した日: \d{4}-\d{2}-\d{2}/);
+    await expect(recommend).toContainText('根拠の場面: design-');
     await expect(composition).toContainText('まだ測っていない');
+    // 「これは何?」は閉じたまま。開くと 3 つの問い(5.2)
+    const explain = composition.locator('details.explain');
+    await expect(explain.locator('dl')).toBeHidden();
+    await explain.locator('summary').click();
+    await expect(explain.locator('dt')).toHaveText(['これは何か', '何をするのか', '次に何が起きるか']);
+    await expect(explain.locator('dd').first()).toHaveText('次の一手を、コードが決めるか、モデルが決めるかです。');
+    // 欄の中のボタンは、弱いボタン「言葉で直す」だけ(切り替えの群は除く)
+    await expect(composition.locator('.review-item-actions button')).toHaveText(['言葉で直す']);
+    await expect(composition.locator('button.primary')).toHaveCount(0);
+    await expectNoDevWords(v.section);
+    await expect(page.locator('body')).not.toContainText('理想');
+    await expect(page.locator('body')).not.toContainText('最適');
+    await expectReadableText(page, '審査(承認 0)');
+    await page.screenshot({ path: path.join(UX_SHOTS, 'review-0.png'), fullPage: true });
+
+    // 次の一手の帯で、読んでいる欄を承認する。承認すると次の欄を読む
+    await expect(page.locator('#next-text')).toHaveText('エージェントの構成を読み、違わなければ承認します。承認すると、残りは 3 つです。');
+    // 承認を待つ間は、今の行で ● あなたが働いている
+    const you = page.locator('#now-line .actor[data-actor="you"]');
+    await expect(you).toHaveAttribute('data-active', 'true');
+    await expect(you.locator('.actor-text')).toHaveText('あなたの番(承認 0 / 4)');
+    await expect(page.locator('#now-line .actor[data-active]')).toHaveCount(1);
+    await v.approve('エージェントの構成').click();
+    await expect(v.state('エージェントの構成')).toHaveText('✓ 承認した');
+    await expect(you.locator('.actor-text')).toHaveText('あなたの番(承認 1 / 4)');
+    await expect(v.state('harness')).toHaveText('● 読んでいる');
+    await expect(v.count).toHaveText('承認 1 / 4・あと 3 つ');
+    await shootThemes(page, 'review-reading');
     // 2. harness: 表の列と行。プロンプトの全文は閉じた details の中で読める
     const harness = v.item('harness');
     const harnessTable = harness.getByRole('table', { name: 'harness の部品' });
@@ -115,42 +174,43 @@ test('4 つの承認がそろうまで作る AI が起動しない。そろう�
     await harness.getByText(/プロンプトの全文を読む/).click();
     await expect(harness.locator('pre').first()).toContainText('前提の hostPrompt');
     await harness.getByText(/プロンプトの全文を読む/).click();
+    await v.approve('harness').click();
     // 3. データと RAG: データの棚と RAG の判定
     const data = v.item('データと RAG');
+    await expect(v.state('データと RAG')).toHaveText('● 読んでいる');
     await expect(data.getByRole('table', { name: 'AI が読むデータの棚' })).toBeVisible();
     await expect(data.getByRole('group', { name: 'RAG の判定(審査)' })).toContainText('RAG');
+    await v.approve('データと RAG').click();
     // 4. 技術の組: 試作品で使うものと、本番の候補(案。未接続)
     const stack = v.item('技術の組').getByRole('table', { name: '技術の組' });
     await expect(stack.locator('thead th')).toHaveText(['部品', '試作品で使うもの', '本番の候補(案。未接続)']);
     for (const part of ['モデル', '回し方', 'ツールの接続', '知識(RAG)', '記憶', '評価', '記録']) await expect(stack).toContainText(part);
     await expect(stack).toContainText('代わりのモデル');
-    await expectNoDevWords(v.section);
-    await expect(v.section).not.toContainText('理想');
-    await expect(v.section).not.toContainText('最適');
-    await expectReadableText(page, '審査(承認 0)');
-    await page.screenshot({ path: path.join(UX_SHOTS, 'review-0.png'), fullPage: true });
 
     // 3 つ承認しても作れない。作る欄から送っても、作る AI は起動しない
-    for (const label of LABELS.slice(0, 3)) {
-      await v.approve(label).click();
-      await expect(v.item(label)).toHaveAttribute('data-approved', 'true');
-    }
-    await expect(v.count).toHaveText('承認 3 / 4');
-    await expect(v.build).toBeDisabled();
-    await expect(v.left).toHaveText('あと 1 つの承認で押せます。');
+    for (const label of LABELS.slice(0, 3)) await expect(v.item(label)).toHaveAttribute('data-approved', 'true');
+    await expect(v.count).toHaveText('承認 3 / 4・あと 1 つ');
+    await expect(v.build).toBeHidden();
+    await expect(page.locator('#next-text')).toHaveText('技術の組を読み、違わなければ承認します。承認すると、4 つそろいます。');
+    await expect(page.locator('#review-fingerprint')).toBeHidden();
     const refused = await studio.post(`/api/projects/${id}/build-requests`, { request: '見出しを「架空の図書館」にして' });
     expect(refused.status).toBe(409);
     expect(JSON.parse(refused.text).error.code).toBe('review-not-approved');
     expect((await studio.api(`/api/projects/${id}/build-requests`)).runs).toHaveLength(0);
     await expect(v.mark).toHaveText('審査: 承認 3 / 4');
 
-    // 4 つ目を承認すると押せる。押すと作る AI が動き、関門 GA が通る
+    // 4 つ目を承認すると「この構成で作る」に変わり、流れ図の右に AI 構成書の指紋が出る。押すと作る AI が動き、関門 GA が通る
     await page.getByLabel(/承認を押す人の名前/).fill('早瀬(架空)');
     await v.approve('技術の組').click();
     await expect(v.count).toHaveText('承認 4 / 4');
-    await expect(v.build).toBeEnabled();
+    await expect(v.reading).toHaveCount(0);
+    for (const label of LABELS) await expect(v.state(label)).toHaveText('✓ 承認した');
+    await expect(v.band.getByRole('button')).toHaveText(['この構成で作る']);
+    await expect(page.locator('#next-text')).toHaveText('この構成で作ります。作る AI が書き始め、守りが確かめます。');
+    await expect(page.locator('#review-fingerprint code')).toHaveText(/^指紋 [0-9a-f]{4}…$/);
+    await expect(page.getByLabel(/承認を押す人の名前/)).toBeHidden();
     await expectReadableText(page, '審査(承認 4)');
-    await page.screenshot({ path: path.join(UX_SHOTS, 'review-4.png'), fullPage: true });
+    await shootThemes(page, 'review-approved');
     await v.build.click();
     await expect(v.section).toBeHidden();
     await expect(v.mark).toHaveText('審査: 承認済み');
@@ -177,7 +237,7 @@ test('4 つの承認がそろうまで作る AI が起動しない。そろう�
   }
 });
 
-test('構成を選び直すと、4 つの承認が全部消え、図と数が変わる。数はお試しの AI で回した結果だけを出す', async ({ page, home }) => {
+test('流れ図が読んでいる欄の部品を示す。構成を選び直すと承認が消え(「! 承認が消えた」と理由の 1 文)、図と数が変わる。数はお試しの AI で回した結果だけを出す', async ({ page, home }) => {
   test.setTimeout(90_000);
   const studio = await launchStudio(home);
   try {
@@ -194,20 +254,48 @@ test('構成を選び直すと、4 つの承認が全部消え、図と数が変
     await expect(composition.getByRole('img')).toHaveAttribute('aria-label', /受付\(コードの流れ\)/);
     await expect(composition).toContainText('まだ測っていない');
 
+    // 流れ図: 構成を読んでいる間は、流れを決める部品(コード)を示す
+    await expect(v.focused).toHaveText(['コード']);
     await v.approve('エージェントの構成').click();
-    await v.approve('harness').click();
-    await expect(v.count).toHaveText('承認 2 / 4');
+    await expect(v.count).toHaveText('承認 1 / 4・あと 3 つ');
+    // harness を読むと、「モデル」と「守り」の箱の縁が強くなる
+    await expect(v.state('harness')).toHaveText('● 読んでいる');
+    await expect(v.focused).toHaveText(['モデル', '守り']);
+    await expect(page.locator('#review-flow .node[data-focus]').first()).toHaveCSS('border-top-width', '2px');
+    // ほかの欄にカーソルを乗せると、その欄の部品を示す。離すと読んでいる欄に戻る
+    await v.item('データと RAG').hover();
+    await expect(v.focused).toHaveText(['データ']);
+    await page.locator('#review-heading').hover();
+    await expect(v.focused).toHaveText(['モデル', '守り']);
 
-    // 選び直すと、承認は全部消える。Studio が構成のファイルを書き直し、図が変わる
+    // 選び直すと、承認した欄が「! 承認が消えた」になり、欄の頭に理由の 1 文が出て、承認の数が 1 つ減る。
+    // Studio が構成のファイルを書き直し、図が変わる
+    await v.peek('エージェントの構成').click();
     await v.switch('単一エージェント').click();
     await expect(v.switch('単一エージェント')).toHaveAttribute('aria-pressed', 'true');
-    await expect(v.count).toHaveText('承認 0 / 4');
+    await expect(v.count).toHaveText('承認 0 / 4・あと 4 つ');
+    await expect(v.state('エージェントの構成')).toHaveText('! 承認が消えた');
+    await expect(composition.locator('.review-lost')).toHaveText('エージェントの構成を選び直したので、この欄の承認を消しました。読み直して承認してください。');
+    await expect(v.reading).toHaveCount(1);
+    await expect(composition).toHaveAttribute('data-reading', 'true');
+    for (const label of LABELS.slice(1)) await expect(v.state(label)).toHaveText('○ まだ見ていない');
     await expect(page.locator('#review-message')).toContainText('4 つの承認は消えました');
     await expect(composition.getByRole('img')).toHaveAttribute('aria-label', /案内役/);
+    // 色を外しても、状態は印と文で分かる(灰色にして文を読む)
+    await page.locator('html').evaluate((el) => { el.style.filter = 'grayscale(1)'; });
+    await expect(page.locator('#review-items .review-state')).toHaveText(['! 承認が消えた', '○ まだ見ていない', '○ まだ見ていない', '○ まだ見ていない']);
+    await shootThemes(page, 'review-gray-lost');
+    await page.locator('html').evaluate((el) => { el.style.filter = ''; });
+    // 選び直した後の承認は、もう一度上から
+    await expect(page.locator('#next-text')).toContainText('エージェントの構成を読み、違わなければ承認します。');
+    await expectReadableText(page, '審査(承認が消えた)');
+    await shootThemes(page, 'review-lost');
     const file = await readJson(path.join(projectRoot(home, id), 'app', 'composition.json'));
     expect(file.participants.map((p) => p.kind)).toEqual(['agent']);
     // データの段で選んだ表を引くツールを Studio が書き、データの欄の棚に出る(#426)
     expect(file.participants[0].tools?.length).toBeGreaterThan(0);
+    // たたんだ欄の中身は「中身を見る」で開く
+    await v.peek('データと RAG').click();
     const shelf = v.item('データと RAG').getByRole('table', { name: 'AI が読むデータの棚' });
     await expect(shelf.locator('thead th').last()).toHaveText('引くツール');
     await expect(shelf.locator('tbody tr[data-read="tool"]').first().locator('td').last()).toHaveText(/^search_table_\d+/);
@@ -228,10 +316,12 @@ test('構成を選び直すと、4 つの承認が全部消え、図と数が変
     await v.switch('マスターとサブ').click();
     await expect(v.switch('マスターとサブ')).toHaveAttribute('aria-pressed', 'true');
     await expect(composition.getByRole('img')).toHaveAttribute('aria-label', /調べる係.*仕事を任せる/);
+    await v.peek('harness').click();
     await expect(v.item('harness').getByRole('table', { name: 'harness の部品' })).toContainText('子の AI に任せるか');
+    await v.peek('データと RAG').click();
     await expect(v.item('データと RAG').getByRole('table', { name: 'AI が読むデータの棚' })).toContainText('search_table_1');
     await expect(composition).toContainText('まだ測っていない');
-    await expect(v.count).toHaveText('承認 0 / 4');
+    await expect(v.count).toHaveText('承認 0 / 4・あと 4 つ');
     await expectNoDevWords(v.section);
     await page.screenshot({ path: path.join(UX_SHOTS, 'review-master-sub.png'), fullPage: true });
   } finally {
@@ -274,20 +364,32 @@ test('承認した後に構成を変えると、関門 GA で止まり、試す�
     await expect(page.locator('body')).toContainText('承認した構成と違うので、止めました');
     await expect(v.mark).toHaveText('審査: 承認と違う構成');
     await v.mark.click();
-    await expect(page.locator('#review-stopped')).toContainText('変わった所: エージェントの構成、harness');
-    await expect(v.build).toBeDisabled();
+    // 作業台の上に ⬢ の帯。強いボタン「審査に戻る」は次の一手の帯、弱いボタン「承認した構成に戻す」は ⬢ の帯
+    const stopped = page.locator('#review-stopped');
+    await expect(stopped).toContainText('⬢ 守りが止めました。承認の後に AI の作りが変わったので');
+    await expect(stopped).toContainText('変わった所: エージェントの構成、harness');
+    await expect(stopped.getByRole('button', { name: '承認した構成に戻す' })).toBeVisible();
+    await expect(v.band.getByRole('button')).toHaveText(['審査に戻る']);
+    await expect(v.build).toBeHidden();
+    await expect(v.reading).toHaveCount(0);
+    await expect(page.locator('#review-items .review-state')).toHaveText(['! 承認が消えた', '! 承認が消えた', '✓ 承認した', '✓ 承認した']);
+    await expect(v.item('harness').locator('.review-lost')).toHaveText('承認の後に中身が変わったので、この欄の承認を消しました。読み直して承認してください。');
     await expectNoDevWords(v.section);
     await expectReadableText(page, '審査(止まった)');
-    await page.screenshot({ path: path.join(UX_SHOTS, 'review-stopped.png'), fullPage: true });
+    await shootThemes(page, 'review-stopped', '#review-stopped');
 
-    // 審査に戻る: 新しい審査になり、変わらなかったデータと RAG、技術の組の承認は残る
-    await page.getByRole('button', { name: '審査に戻る' }).click();
-    await expect(v.count).toHaveText('承認 2 / 4');
+    // 審査に戻る: 新しい審査になり、変わらなかったデータと RAG、技術の組の承認は残る。変わった 2 つは理由つきで読み直す
+    await v.band.getByRole('button', { name: '審査に戻る' }).click();
+    await expect(stopped).toBeHidden();
+    await expect(v.count).toHaveText('承認 2 / 4・あと 2 つ');
     await expect(v.item('データと RAG')).toHaveAttribute('data-approved', 'true');
     await expect(v.item('エージェントの構成')).toHaveAttribute('data-approved', 'false');
+    await expect(v.item('エージェントの構成')).toHaveAttribute('data-reading', 'true');
+    await expect(v.state('エージェントの構成')).toHaveText('! 承認が消えた');
     await v.approve('エージェントの構成').click();
     await v.approve('harness').click();
-    await expect(v.build).toBeEnabled();
+    await expect(v.build).toBeVisible();
+    await expect(page.locator('#review-fingerprint code')).toHaveText(/^指紋 [0-9a-f]{4}…$/);
     const studioDir = path.join(projectRoot(home, id), '.studio', 'reviews');
     const current = await readJson(path.join(studioDir, 'current.json'));
     const doc = await readJson(path.join(studioDir, current.id, 'architecture.json'));

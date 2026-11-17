@@ -193,7 +193,7 @@ AI の作りを、1 回のトークで層に分けて見せ、7 つ目で人が�
 | 4 | ツール(MCP) | こちらが出すツール。データで書き、Studio のツールの口が動かす。 | Your tools, written as data and run by Studio's tool gate. | `save_wish`(場所: みなと町) | `--layer-tool` |
 | 5 | ガードレール | 3 つの層の守り。どの層が止めたかが分かる。 | Guardrails in three layers. You see which one stopped the turn. | ツールの守り `requires` が「止めた」 | `--layer-guard` |
 | 6 | 記録 | 渡したもの、呼んだツール、守りの判定を残す。 | Keeps what was sent, which tools ran, and each guardrail verdict. | 止めた層、持ち主、理由 | `--layer-record` |
-| 7 | AI 構成の審査 | 人が作りを読み、4 つを承認する。承認するまで、作る AI は動かない。 | A person reads the architecture and approves four parts. The maker AI waits until then. | 別の架空の題材で、エージェントの構成(固定の流れ)を承認した欄 | `--layer-review` |
+| 7 | AI 構成の審査 | 人が作りを読み、4 つを承認する。承認するまで、作る AI は動かない。 | A person reads the architecture and approves four parts. The maker AI waits until then. | 別の架空の題材で、流れ図と、エージェントの構成(固定の流れ)を承認した欄 | `--layer-review` |
 
 ### 動きと幅
 
