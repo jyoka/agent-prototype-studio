@@ -124,7 +124,7 @@ test('直す欄の初回の送信でカードが出る。やめると送らず�
     await makeMark.click();
     await expect(makeMark).toHaveAttribute('aria-expanded', 'true');
     const info = make.getByRole('group', { name: MARK });
-    await expect(info).toContainText('に同意しました。Studio を止めるまで有効です。');
+    await expect(info).toContainText('に、本物の AI を使うことに同意しました。AI はあなたの Claude Code で動き、同意は Studio を止めるまで効きます。');
     await expect(info).toContainText('Anthropic(Claude を作っている会社)');
     await expect(info.getByRole('button', { name: '同意して使う' })).toHaveCount(0);
     await expectNoDevWords(info);

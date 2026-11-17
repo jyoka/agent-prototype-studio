@@ -1,4 +1,6 @@
 // Studio 画面。トークンを持つ特権の画面なので、外から来た文字は必ず textContent で出す。
+import { clearState, explainBox, fillState, stateLine } from '/guide.js';
+
 const TOKEN_KEY = 'prototype-studio-token';
 const POLL_MS = 3000;
 const MESSAGE_WINDOW_MS = 5000;
@@ -124,6 +126,10 @@ const els = {
   nowLine: $('now-line'),
   actorOthers: $('actor-others'),
   aiMode: $('ai-mode'),
+  aiModeInfo: $('ai-mode-info'),
+  reverted: $('reverted'),
+  revertedText: $('reverted-text'),
+  revertedUndo: $('reverted-undo'),
   realAiNow: $('real-ai-now'),
   realAiNowInfo: $('real-ai-now-info'),
   nextBand: $('next-band'),
@@ -343,7 +349,8 @@ const firstSteps = { touching: false };
 // 画面の枠(ui-ux-v2.md の 2.2)。stage は、目的、設計、審査、会の画面を開いていないときの段。
 // drawer は開いている引き出し(mechanism か materials)。band は次の一手の帯に移したボタンと、その元の場所。
 // ready は、下の部品の状態がそろって、枠を描けるようになったか
-const frame = { stage: 'build', side: 'stage', tab: 'turn', drawer: null, compactOpen: false, pending: false, ready: false, moved: null, home: null, prompts: { projectId: null, key: '', seq: 0, data: null } };
+// trialInfo は今の行の「○ お試しの AI」の中身を開いているか。reverted は版を戻した後の 1 行(5.4 の「元に戻した」。次の操作で消える)
+const frame = { stage: 'build', side: 'stage', tab: 'turn', drawer: null, compactOpen: false, pending: false, ready: false, moved: null, home: null, prompts: { projectId: null, key: '', seq: 0, data: null }, trialInfo: false, reverted: null };
 // 「その場で」の 1 行(5.1)。counts は操作の種類ごとの回数、limit はこの回数で出さなくなる(hints.js)
 const hintState = { counts: {}, limit: 2, loaded: false };
 // はじめの画面、目的の聞き出し、目的の文書(user-journey.md の段 1、段 2、J1)。view は出している画面(start、talk、doc)で、null なら試作品の画面。
@@ -1696,12 +1703,6 @@ const DECLINED_TEXT = '言葉で直すには、本物の AI を使うことへ�
 // 開いている「詳しく」(再描画で閉じないよう、card か try か make で覚える)
 const openConsentDetails = new Set();
 
-// 料金の行。使った分だけかかる見込みのときは、上限の文も添える(ふだんは「詳しく」の中だけ)
-function costText(cost) {
-  const paid = ['api-key', 'settings'].includes(cost.kind) || ['api_key', 'third_party'].includes(cost.method);
-  return paid ? `${cost.text}${cost.limits}` : cost.text;
-}
-
 function consentCard(view, { tag = 'div', card = null, place = null } = {}) {
   const { summary } = view;
   const key = card ? 'card' : place;
@@ -1710,9 +1711,8 @@ function consentCard(view, { tag = 'div', card = null, place = null } = {}) {
   box.setAttribute('role', 'group');
   box.setAttribute('aria-label', card ? CONSENT_HEADING : REAL_AI_MARK);
   box.append(element('h3', card ? CONSENT_HEADING : REAL_AI_MARK));
-  if (!card && view.consent.agreedAt) {
-    box.append(element('p', `${formatTime(view.consent.agreedAt)}に同意しました。Studio を止めるまで有効です。`, 'muted'));
-  }
+  // 同意(5.4)。唯一の割り込み。印から開いた中身は「お試しか本物か」の本物の側
+  box.append(card ? stateLine('consent') : stateLine('mode-real', { at: view.consent.agreedAt ? formatTime(view.consent.agreedAt) : null }));
   box.append(element('p', summary.runsOn, 'consent-lead'));
   const facts = element('dl', undefined, 'consent-facts');
   const row = (term, value) => {
@@ -1726,7 +1726,10 @@ function consentCard(view, { tag = 'div', card = null, place = null } = {}) {
   row('送るもの', sends);
   row('送らないもの', summary.notSent);
   row('送り先', summary.to);
-  row('料金', costText(summary.cost));
+  row('料金', summary.cost.text);
+  // 上限は、カードの中でいつも見せる(料金と上限を先に出す。5.4 の「同意」)。聞き出す、整理する、案を出す AI のカードは、その AI の上限
+  const ownLimits = ['intent', 'organize', 'design'].includes(card?.use) ? view.details?.[card.use]?.limits : null;
+  row('上限', typeof ownLimits === 'string' ? ownLimits : summary.cost.limits);
   box.append(facts, element('p', summary.note, 'consent-note'), consentDetails(view, key));
   const buttons = element('div', undefined, 'consent-buttons');
   if (card) {
@@ -2485,10 +2488,15 @@ function showAnswers(version) {
   return box;
 }
 
+// 版を保存したり戻したりできない間(作る AI の作業中、ビルド中、確かめ中、渡すフォルダーを作っている間)
+function versionsLocked(project) {
+  return Boolean(!project || project.running || project.building || project.versioning || project.checking || versions.busy || handoff.busy);
+}
+
 function renderVersions(project) {
   scheduleFrame();
   const data = project && versions.projectId === project.id ? versions.data : null;
-  const locked = !project || project.running || project.building || project.versioning || project.checking || versions.busy || handoff.busy;
+  const locked = versionsLocked(project);
   els.versionName.disabled = locked;
   els.saveVersion.disabled = locked;
   lockHandoff(project);
@@ -3895,6 +3903,8 @@ async function restoreVersion(project, version) {
     if (!data.build.ok) text += 'ただし、戻した試作品を表示できません。試す欄は前の状態のままです。';
     else if (data.conversation === 'initial') text += '保存した会話は今の AI の設定に合わないので、会話は最初から始めます。';
     versions.message = { kind: data.build.ok ? 'ok' : 'failed', text };
+    // 元に戻した(5.4)。作業台の上の 1 行。表示できなかったときは、試す欄が前のままなので出さない
+    frame.reverted = data.build.ok ? { projectId: project.id, restored: data.restored, before: data.before ?? null, setAside: Boolean(data.setAside) } : null;
   } catch (error) {
     versionsFailed(error, '戻せませんでした');
   } finally {
@@ -4450,7 +4460,7 @@ function timelineRows(entry, nameOf) {
     for (const guard of guards ?? []) {
       if (!GUARD_DONE[guard.effect]) continue;
       const layer = LAYER_WORDS[guard.layer] ?? TURN_LAYERS[guard.layer] ?? guard.layer;
-      push('guard', `${GUARD_DONE[guard.effect]}: ${guard.tool ?? guard.guard}`, { effect: guard.effect });
+      push('guard', `${GUARD_DONE[guard.effect]}: ${guard.tool ?? guard.guard}`, { effect: guard.effect, name: guard.tool ?? guard.guard, layerWord: layer });
       if (guard.effect === 'blocked') push('note', `止めたのは${layer}。失敗ではなく、守りが働いた印です。`, { layer: guard.layer });
     }
   };
@@ -4509,7 +4519,19 @@ function timelineRows(entry, nameOf) {
 }
 
 function renderTimeline(entry, nameOf) {
-  const items = timelineRows(entry, nameOf).map((row) => {
+  const rows = timelineRows(entry, nameOf);
+  // 守りが止めた(5.4)。最初に止めたものの名前と層を、3 つの文で言う
+  const blocked = rows.find((row) => row.effect === 'blocked');
+  const guardLine = $('turn-guard');
+  guardLine.hidden = !blocked;
+  if (blocked) {
+    fillState(guardLine, 'guard-stopped', {
+      what: `「${blocked.name}」`,
+      now: `止めたのは${blocked.layerWord}で、失敗ではなく守りが働いた印です。`,
+      next: '何もしなくて大丈夫で、気になれば下の ⬢ の行を読めます。',
+    });
+  }
+  const items = rows.map((row) => {
     const li = element('li', undefined, 'timeline-row');
     li.dataset.kind = row.kind;
     if (row.effect) li.dataset.effect = row.effect;
@@ -5241,9 +5263,9 @@ function turnItems(turns) {
 function renderIntentDocState(record) {
   const decided = record.status === 'decided';
   intentEls.docState.dataset.state = record.status;
-  if (decided) intentEls.docState.textContent = `${formatTime(record.decidedAt)}に決めました。次にすること: この目的で設計に進んでください。`;
+  if (decided) intentEls.docState.textContent = `${formatTime(record.decidedAt)}に決めました。この目的で、設計に進みますか。`;
   else if (record.status === 'skipped') intentEls.docState.textContent = `${formatTime(record.skippedAt)}に飛ばしました。「目的なし」のまま進めています。決めるときは、中身を確かめて「これで決める」を押してください。`;
-  else intentEls.docState.textContent = 'まだ決めていません。答えから下書きを作りました。次にすること: 違うところを直して、「これで決める」を押してください。';
+  else intentEls.docState.textContent = '答えから下書きを作りました。まだ決めていません。違うところを直してから、「これで決める」を押しますか。';
   intentEls.decide.hidden = decided;
   intentEls.docSkip.hidden = decided || record.status === 'skipped';
   intentEls.begin.hidden = !decided;
@@ -5280,7 +5302,9 @@ function renderIntent() {
   if (view === 'start') {
     intentEls.heading.textContent = 'どんなものを作りたいですか';
     const project = intentUi.projectId ? selectedProject() : null;
-    intentEls.lead.textContent = project ? `「${project.title}」の目的を聞き出します。1 文で書いてください。` : '1 文で書いてください。あいまいなままで構いません。問いを 1 つずつ返します。';
+    // はじめて(5.4)。試作品がまだないときは、何が起きたか、今どうなっているか、次に何をするかの 3 つの文と「─」の印
+    if (project) clearState(intentEls.lead, `「${project.title}」の目的を聞き出します。1 文で書いてください。`);
+    else fillState(intentEls.lead, 'first', { none: projects.length === 0 });
     intentEls.fixedNote.hidden = Boolean(agent?.ready) || intentUi.guide === 'fixed';
     intentEls.send.disabled = intentUi.sending;
     renderIntentConsent();
@@ -5652,6 +5676,7 @@ const organizeEls = {
   consent: $('organize-consent'),
   declined: $('organize-declined'),
   columns: $('organize-columns'),
+  guess: $('organize-guess'),
   addForm: $('organize-add-form'),
   addColumn: $('organize-add-column'),
   addText: $('organize-add-text'),
@@ -5810,8 +5835,8 @@ function organizeStateText(board) {
   const guesses = board.items.filter((item) => item.guess).length;
   const counts = `要点 ${board.points.length} 個、項目 ${board.items.length} 個、推測 ${guesses} 個、聞くこと ${board.asks.length} 個。`;
   if (board.status === 'confirmed') return `${formatTime(board.confirmedAt)}に、決める人が確かめました。板を変えると、この印は外れます。${counts}`;
-  if (board.items.length === 0) return 'まだ整理していません。次にすること: 聞いた要点を打ち、「整理する」を押してください。';
-  return `まだ確かめていません。次にすること: 違う項目を直し、推測を確かめ、決める人が読んで押してください。${counts}`;
+  if (board.items.length === 0) return 'まだ整理していません。板は空です。聞いた要点を打ってから、「整理する」を押しますか。';
+  return `板を整理しました。${counts}まだ確かめていません。違う項目を直し、推測を確かめてから、決める人が読んで押しますか。`;
 }
 
 function renderOrganize() {
@@ -5829,8 +5854,12 @@ function renderOrganize() {
     organizeEls.run.disabled = true;
     organizeEls.waiting.hidden = true;
     for (const list of [organizeEls.points, organizeEls.columns, organizeEls.asks]) list.replaceChildren();
+    organizeEls.guess.hidden = true;
     return;
   }
+  const guesses = board.items.filter((item) => item.guess).length;
+  organizeEls.guess.hidden = guesses === 0;
+  if (guesses > 0) fillState(organizeEls.guess, 'guess', { count: guesses });
   const thinking = waiting || board.thinking;
   organizeEls.state.textContent = organizeStateText(board);
   organizeEls.state.dataset.state = board.status === 'confirmed' ? 'decided' : 'draft';
@@ -6052,7 +6081,7 @@ $('organize-design').addEventListener('click', () => openDesign());
 // view は 'new'(目的を書く)、'meeting'(会の中身)、'erased'(消した一覧)のどれか
 const MEETING_MARKS = { waiting: '会: 同意の前', agreed: '会: 同意した', trial: '会: お試しの AI だけ' };
 const MEETING_STATES = {
-  waiting: '同意の前です。整理する AI も作る AI も呼びません。次にすること: 中身をお客さんと読み、決める人が同意を押してください。',
+  waiting: '同意の前です。整理する AI も作る AI も呼びません。中身をお客さんと読み、決める人が同意を押しますか。',
   agreed: '決める人が同意しました。',
   trial: 'お試しの AI だけで進めます。外の AI には送りません。お客さんが送ってよいと決めたら、「同意して始める」を押せます。',
 };
@@ -6516,7 +6545,7 @@ function renderClosing() {
     return;
   }
   const allReady = data.deliverables.every((item) => item.status === 'ready');
-  meetingEls.state.textContent = `7 つの成果物のうち ${data.present} つがあります。${data.unowned === 0 ? '未決事項の全部に持ち主がいます。' : ''}次にすること: 未決事項を読み上げ、持ち主と期日を決めてから書き出してください。`;
+  meetingEls.state.textContent = `7 つの成果物のうち ${data.present} つがあります。${data.unowned === 0 ? '未決事項の全部に持ち主がいます。' : ''}未決事項を読み上げ、持ち主と期日を決めてから書き出しますか。`;
   meetingEls.state.dataset.state = allReady ? 'decided' : 'draft';
   unowned.hidden = data.unowned === 0;
   unowned.textContent = data.unowned > 0 ? `持ち主のない未決事項が ${data.unowned} 件あります。` : '';
@@ -7316,6 +7345,7 @@ const reviewEls = {
   spoken: $('review-spoken'),
   spokenLabel: $('review-spoken-label'),
   items: $('review-items'),
+  unseen: $('review-unseen'),
   approve: $('review-approve'),
   build: $('review-build'),
   measure: $('review-measure'),
@@ -7552,35 +7582,23 @@ function reviewStackBody(record) {
 
 const REVIEW_BODIES = { composition: reviewCompositionBody, harness: reviewHarnessBody, data: reviewDataBody, stack: reviewStackBody };
 
-// 欄ごとの言葉(ui-ux-v2.md の 4.1、5.2)。term は見出しの横の語、hint はその場での 1 行、what/does/next は「これは何?」の 3 つの問い
+// 欄ごとの言葉(ui-ux-v2.md の 4.1)。term は見出しの横の語、hint はその場での 1 行。「これは何?」の 3 つの問いは guide.js の EXPLAINS(review-欄の id)
 const REVIEW_TEXTS = {
   composition: {
     term: 'agent setup',
     hint: '次の一手を、コードが決めるかモデルが決めるかを読みます。違えば、選び直せます。',
-    what: '次の一手を、コードが決めるか、モデルが決めるかです。',
-    does: '3 つから 1 つ選びます。足りる中で一番簡単なものを勧めます。',
-    next: '何を作るかが決まります。変えたら、承認し直します。',
   },
   harness: {
     term: 'ふだんの言葉: AI の周りの決まり',
     hint: '任せる所と縛る所を読みます。違えば、言葉で直せます。',
-    what: 'モデルの周りで、決め、縛り、記録するコードです。',
-    does: '任せることと縛ることを読み、違えば直します。',
-    next: 'この決まりで試作品が動き、記録に残ります。',
   },
   data: {
     term: '何をどう読むか',
     hint: '読むものと、個人情報の扱いを読みます。',
-    what: 'AI が読むものと、その読み方です。',
-    does: '読むものと個人情報の扱いを確かめます。',
-    next: '試作品は架空のデータで動きます。',
   },
   stack: {
     term: '試作品と本番の候補',
     hint: '試作品で使うものと、本番の候補を読みます。候補は案で、決定ではありません。',
-    what: '試作品と本番で使う候補です。案で、決定ではありません。',
-    does: '候補を読み、違えば選び直します。',
-    next: '選び直すと、この欄の承認は消えます。',
   },
 };
 
@@ -7625,15 +7643,15 @@ function reviewItemState(item, reading) {
   return item === reading ? 'reading' : 'unseen';
 }
 
-// 承認が消えた理由の 1 文(5.4 の「承認が消えた」)
-function lostReason(record, item) {
+// 承認が消えた理由(5.4 の「承認が消えた」)。「〜ので、この欄の承認を消しました。」の「〜」の所
+function lostBecause(record, item) {
   const lost = item.lost;
   if (lost.reason === 'choose') {
     const label = record.items.find((entry) => entry.id === lost.item)?.label ?? 'エージェントの構成';
-    return `${label}を選び直したので、この欄の承認を消しました。読み直して承認してください。`;
+    return `${label}を選び直した`;
   }
-  if (lost.reason === 'comment') return `コメント ${lost.number} から審査に戻したので、この欄の承認を消しました。読み直して承認してください。`;
-  return '承認の後に中身が変わったので、この欄の承認を消しました。読み直して承認してください。';
+  if (lost.reason === 'comment') return `コメント ${lost.number} から審査に戻した`;
+  return '承認の後に中身が変わった';
 }
 
 // 流れ図の部品。items は、その部品に関係する欄(読んでいる欄の部品の縁を強くする)
@@ -7672,19 +7690,7 @@ function highlightFlow(id) {
 
 // 「これは何?」(5.2)。開くと 3 つの問い。harness は、仕組みの引き出しのプロンプトへの道も出す
 function reviewExplain(item, { open = false } = {}) {
-  const texts = REVIEW_TEXTS[item.id];
-  const details = element('details', undefined, 'explain');
-  details.open = open;
-  const list = element('dl');
-  list.append(element('dt', 'これは何か'), element('dd', texts.what), element('dt', '何をするのか'), element('dd', texts.does), element('dt', '次に何が起きるか'), element('dd', texts.next));
-  details.append(element('summary', 'これは何?'), list);
-  if (item.id === 'harness') {
-    const more = element('button', 'プロンプトの全文を仕組みの引き出しで見る', 'text-button');
-    more.type = 'button';
-    more.addEventListener('click', () => setDrawer('mechanism'));
-    details.append(more);
-  }
-  return details;
+  return explainBox(`review-${item.id}`, { open, onMore: () => setDrawer('mechanism') });
 }
 
 // たたんだ欄の短い中身(1 行)
@@ -7731,7 +7737,7 @@ function reviewItemNode(record, item, reading) {
   }
   section.setAttribute('aria-labelledby', `review-h-${item.id}`);
   // 欄の頭: 承認が消えた理由と、コメントから戻した項目
-  if (item.lost) section.append(element('p', lostReason(record, item), 'review-lost'));
+  if (item.lost) section.append(stateLine('lost', { because: lostBecause(record, item), className: 'review-lost' }));
   const comments = record.comments ?? [];
   if (comments.length > 0 && item === (reading ?? record.items[0])) {
     const list = element('ul', undefined, 'review-from-comments');
@@ -7800,6 +7806,7 @@ function renderReview() {
     reviewEls.schematic.hidden = true;
     reviewEls.state.textContent = record.status === 'skipped' ? `審査を飛ばしました(${formatTime(record.skipped?.at)}。理由: ${record.skipped?.reason ?? '不明'})。「審査なし」の印のまま作れます。` : 'まだ審査を始めていません。設計の案内で「この設計で作る」を押すと始まります。';
     reviewEls.items.replaceChildren();
+    reviewEls.unseen.hidden = true;
     reviewEls.build.hidden = true;
     reviewEls.measure.hidden = true;
     reviewEls.stopped.hidden = true;
@@ -7836,6 +7843,9 @@ function renderReview() {
   }
   const reading = readingItem(record);
   reviewEls.items.replaceChildren(...record.items.map((item) => reviewItemNode(record, item, reading)));
+  const unseen = record.items.filter((item) => reviewItemState(item, reading) === 'unseen').length;
+  reviewEls.unseen.hidden = unseen === 0;
+  if (unseen > 0) fillState(reviewEls.unseen, 'unseen', { count: unseen, total: record.total });
   highlightFlow(reading?.id ?? null);
   renderHints();
   if (asking) {
@@ -8661,7 +8671,27 @@ function renderNowLine(project, stage) {
   // お試しか本物か(2.6)。作る AI か試作品の中の AI のどちらかが本物なら、本物の印にする
   const real = tryRealAi() || Boolean(consent.agreed && agent?.kind === 'claude' && agent.ready);
   els.aiMode.hidden = real;
+  renderTrialInfo(!real && frame.trialInfo);
   renderRealAiMark(els.realAiNow, els.realAiNowInfo, real, 'now');
+}
+
+// お試しのときの中身(5.4 の「お試しか本物か」)。○ の印と 3 つの文。閉じるボタン
+function renderTrialInfo(open) {
+  els.aiMode.setAttribute('aria-expanded', String(open));
+  els.aiModeInfo.hidden = !open;
+  if (!open) {
+    els.aiModeInfo.replaceChildren();
+    return;
+  }
+  if (els.aiModeInfo.childElementCount > 0) return;
+  const close = element('button', '閉じる');
+  close.type = 'button';
+  close.addEventListener('click', () => {
+    frame.trialInfo = false;
+    renderFrame();
+    els.aiMode.focus();
+  });
+  els.aiModeInfo.append(stateLine('mode-trial'), close);
 }
 
 // ---- 次の一手の帯(2.2、10.4) ----
@@ -8722,9 +8752,9 @@ function nextStep(project, stage) {
     const button = firstShown(meetingEls.agree, meetingEls.organize);
     return { text: button === meetingEls.agree ? 'お客さんに会の決まりを読み上げ、同意をもらってから始めます。' : '同意をもらいました。聞き取りと整理の板に進みます。', button };
   }
-  if (intentUi.view === 'start') return { text: 'ラフな 1 文で大丈夫です。書いたら送ります。', button: firstShown(intentEls.send) };
+  if (intentUi.view === 'start') return { text: '1 文を書いて送ると、問いが 1 つずつ返ります。', button: firstShown(intentEls.send) };
   if (intentUi.view === 'talk') {
-    if (intentUi.waiting) return { text: '問いを考えています。待つ間に、前の答えを読み返せます。止めるときは、作業台の「止める」を押します。' };
+    if (intentUi.waiting) return { state: 'working', words: { who: '聞き出す AI ', doing: '次の問いを考えています', now: '前の答えは残っていて、止めても消えません。', next: '待つ間に、前の答えを読み返しませんか。' } };
     return { text: '問いに 1 つずつ答えます。分からなければ「分からない」で進めます。', button: firstShown(intentEls.reply) };
   }
   if (intentUi.view === 'doc') {
@@ -8732,30 +8762,28 @@ function nextStep(project, stage) {
     return { text: button === intentEls.decide ? '下書きを読み、違うところを直してから決めます。' : '目的を決めました。この目的で設計に進みます。', button };
   }
   if (organizeUi.open) {
-    if (organizeUi.waiting) return { text: 'AI が板を整理しています。その間も、聞いた要点は打ち続けられます。' };
+    if (organizeUi.waiting) return { state: 'working', words: { who: '整理する AI ', doing: '板を整理しています', now: '整理が終わるまで、板の項目は前のままです。', next: 'その間も、聞いた要点を打ち続けられます。' } };
     const items = organizeUi.board?.items?.length ?? 0;
     const button = firstShown($('organize-design'), items === 0 ? organizeEls.run : organizeEls.confirm, organizeEls.run);
     const text = button === organizeEls.run ? '聞いた要点を打ち、板に整理します。' : button === organizeEls.confirm ? '決める人が板を読み、合っていれば確かめます。' : '板を確かめました。この理解で設計に進みます。';
     return { text, button };
   }
   if (designUi.open) {
-    if (designUi.waiting) return { text: '案を作っています。止めるときは、作業台の「止める」を押します。' };
+    if (designUi.waiting) return { state: 'working', words: { who: '案を出す AI ', doing: '案を作っています', now: '前に選んだ案は、そのまま残っています。', next: '止めるときは、作業台の「止める」を押せます。' } };
     const button = firstShown(designEls.start, designEls.build, designEls.next);
     const text = button === designEls.start ? '問題から画面までの段ごとに、案を並べてもらいます。' : button === designEls.build ? '最後の段まで選びました。この設計で作り、作る前に審査します。' : button === designEls.next ? '案を比べて 1 つ選び、次の段へ進みます。' : '案を選びます。';
     return { text, button };
   }
   if (reviewUi.open) {
     const record = reviewUi.record;
-    if (shownAtHome($('review-back'))) return { text: '承認の後に AI の作りが変わったので、作るのを止めました。審査に戻って、変わった所を読み直します。', button: $('review-back') };
+    if (shownAtHome($('review-back'))) return { state: 'guard-stopped', words: { what: '承認と違う AI の作りで作ること', now: '試す欄の試作品は、承認したときのままです。', next: '審査に戻って、変わった所を読み直しますか。' }, button: $('review-back') };
     if (reviewUi.busy && frame.moved === reviewEls.build) return { text: '作り始めています。', button: reviewEls.build, keep: true };
     if (shownAtHome(reviewEls.build)) return { text: 'この構成で作ります。作る AI が書き始め、守りが確かめます。', button: reviewEls.build };
     const asking = nextApproval(record);
-    if (asking && record.thinking) return { text: '案を作っています。待つ間に、読んでいる欄の 3 つの問いを読めます。' };
+    if (asking && record.thinking) return { state: 'working', words: { who: '案を出す AI ', doing: '案を作っています', now: '終わるまで、承認は押せません。', next: '待つ間に、読んでいる欄の 3 つの問いを読みませんか。' } };
     if (asking) {
-      const left = record.total - record.approvedCount;
-      const after = left > 1 ? `承認すると、残りは ${left - 1} つです。` : '承認すると、4 つそろいます。';
       const keep = reviewUi.busy && frame.moved === reviewEls.approve;
-      return { text: `${spaced(asking.item.label)}を読み、違わなければ承認します。${after}`, button: reviewEls.approve, keep };
+      return { state: 'waiting', words: { approved: record.approvedCount, total: record.total, label: spaced(asking.item.label) }, button: reviewEls.approve, keep };
     }
     return { text: record?.status === 'skipped' ? '審査を飛ばしました。試作品の画面に戻って作ります。' : '審査の記録を読んでいます。' };
   }
@@ -8763,7 +8791,7 @@ function nextStep(project, stage) {
   const making = Boolean(project.running || sending?.projectId === project.id || runningRun(project.id));
   // 作っている間は、あなたの番ではないので強い色のボタンを出さない。弱いボタン「止める」と待つ間の 1 文だけ(4.3)
   if (making && LAYOUT_STAGES.has(stage)) {
-    return { text: '作る AI が試作品を書いています。止めても、前の版は残ります。', stop: Boolean(runningRun(project.id)) };
+    return { state: 'working', words: { who: `${FIX_AI} ` }, stop: Boolean(runningRun(project.id)) };
   }
   if (stage === 'build') return buildStep(project);
   if (stage === 'measure') return measureStep(project);
@@ -8794,7 +8822,7 @@ function buildStep(project) {
   const change = { label: '頼み方を変える', run: () => rephrase(run) };
   // 守りが止めた: 作る AI が試作品のフォルダーの外を触ろうとして、断られた
   if (run.items.some((item) => item.kind === 'denied') && !UPDATED_STATUSES.has(run.status)) {
-    return { text: '試作品のフォルダーの外は触れないので、やめました。試作品の中で済む依頼に言い換えてください。', tone: 'warn', go: { label: '言い換える', run: () => rephrase(run) }, outcome: 'guarded' };
+    return { state: 'guard-stopped', go: { label: '言い換える', run: () => rephrase(run) }, outcome: 'guarded' };
   }
   const fixes = (run.round ?? 1) - 1;
   const checked = (run.gates ?? []).filter((gate) => gate.status === 'passed').length;
@@ -8806,11 +8834,10 @@ function buildStep(project) {
       return { text: `${fixes} 度落ちましたが、${FIX_AI} が直して通りました。直したところは記録にあります。`, go: tryIt, outcome: 'fixed' };
     case 'failed': {
       const gate = failedGate(run);
-      const where = gate ? `「${gateLabel(gate)}」で落ち、` : '';
-      return { text: `${where}${FIX_AI} が直しきれませんでした。前に動いた版を出しています。頼み方を変えて、もう一度試しますか。`, tone: 'warn', go: change, outcome: 'failed' };
+      return { state: 'gate-failed', words: { gate: gate ? gateLabel(gate) : null }, tone: 'warn', go: change, outcome: 'failed' };
     }
     case 'unverified':
-      return { text: '試作品を作りました。自動の確かめの一部は、確かめられませんでした。試作品で動きを試してください。', go: tryIt, outcome: 'unverified' };
+      return { text: '試作品を作りました。自動の確かめの一部は、確かめられませんでした。試作品で動きを試しますか。', go: tryIt, outcome: 'unverified' };
     case 'cancelled':
       return { text: '止めました。前の版を出しています。', go: tryIt, outcome: 'cancelled' };
     case 'unchanged':
@@ -8876,7 +8903,9 @@ function noteStep(project, stage) {
 
 function renderBand(project, stage) {
   const step = nextStep(project, stage);
-  els.nextText.textContent = step.text;
+  // 12 の状態(5.4)は、何が起きたか、今どうなっているか、次に何をするかの 3 つの文と印で出す
+  if (step.state) fillState(els.nextText, step.state, step.words ?? {});
+  else clearState(els.nextText, step.text);
   els.nextText.dataset.tone = step.tone ?? '';
   // 押している最中(keep)は、押せなくなっても帯に残す(押した場所が消えないように)
   const button = step.button && (step.keep || shownAtHome(step.button)) ? step.button : null;
@@ -8927,10 +8956,44 @@ function renderSide(stage) {
   els.measure.hidden = side !== 'measure';
 }
 
+// 元に戻した(5.4)の 1 行。何時の版に戻したか、戻す前の版は残っているか、次に試すか。戻す前と同じ版があれば「戻す前に戻る」
+function renderReverted(project) {
+  const reverted = frame.reverted;
+  const shown = Boolean(reverted && project && reverted.projectId === project.id && !showUi.open);
+  els.reverted.hidden = !shown;
+  if (!shown) return;
+  const at = reverted.restored.savedAt ? new Date(reverted.restored.savedAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '';
+  fillState(els.revertedText, 'reverted', { at, kept: !reverted.setAside });
+  els.revertedUndo.hidden = !reverted.before;
+  // 版の一覧の「この状態に戻す」と同じ時に押せなくする(作る AI の作業中など)
+  els.revertedUndo.disabled = versionsLocked(project);
+}
+
+// 次の操作で、元に戻した 1 行を消す。1 行の中の「戻す前に戻る」は操作に数えない。
+// 試作品の名前のメニューが開いている間の押す操作(メニューの中の操作と、メニューを閉じる操作)も数えない。
+// 版を戻すのはメニューの中なので、メニューを閉じた後に 1 行を読めるように
+document.addEventListener(
+  'click',
+  (event) => {
+    if (!frame.reverted || els.reverted.contains(event.target) || !els.projectMenu.hidden) return;
+    frame.reverted = null;
+    scheduleFrame();
+  },
+  true,
+);
+
+els.revertedUndo.addEventListener('click', () => {
+  const project = selectedProject();
+  const before = frame.reverted?.before;
+  if (!project || !before || frame.reverted.projectId !== project.id) return;
+  restoreVersion(project, before);
+});
+
 function renderFrame() {
   if (!frame.ready) return;
   const project = selectedProject();
   const stage = viewedStage();
+  renderReverted(project);
   renderRail(project, stage);
   renderBench(project, stage);
   renderNowLine(project, stage);
@@ -9052,6 +9115,10 @@ els.materialsClose.addEventListener('click', () => {
   els.materialsButton.focus();
 });
 els.realAiNow.addEventListener('click', () => toggleRealAiInfo('now'));
+els.aiMode.addEventListener('click', () => {
+  frame.trialInfo = !frame.trialInfo;
+  renderFrame();
+});
 
 // . のキーで仕組みの引き出しを開き、もう一度で閉じる。字を打っている所では効かせない。見せる画面では開かない
 document.addEventListener('keydown', (event) => {
@@ -9140,6 +9207,22 @@ els.hintsReset.addEventListener('click', async () => {
   }
 });
 
+// ---- 「これは何?」(5.2) ----
+// data-explain の付いた部品に、閉じた「これは何?」を置く。置く場所は data-explain-after の子の後ろ。なければ最初の見出しの後ろ、それもなければ最後。
+// 専門の中身(プロンプト、記録、接続)は、仕組みの引き出しへのボタンにする
+function mountExplains() {
+  for (const part of document.querySelectorAll('[data-explain]')) {
+    if (part.querySelector(':scope > details.explain')) continue;
+    const box = explainBox(part.dataset.explain, { onMore: () => setDrawer('mechanism') });
+    const after = part.dataset.explainAfter ? part.querySelector(part.dataset.explainAfter) : part.querySelector(':scope > :is(h2, h3, h4, legend, figcaption)');
+    // 置く場所が部品の子でなければ(入れ子の中なら)、その子の後ろではなく、入れ子を含む子の後ろに置く
+    let anchor = after;
+    while (anchor && anchor.parentElement !== part) anchor = anchor.parentElement;
+    if (anchor) anchor.after(box);
+    else part.append(box);
+  }
+}
+
 // 案内のとおり同じタブに URL を貼ると、フラグメントだけが変わり、画面は読み直されない。
 // 新しい鍵を覚えてから読み直し、はじめからつなぎ直す。
 window.addEventListener('hashchange', () => {
@@ -9152,6 +9235,9 @@ if (!token) {
   els.buildStatus.replaceChildren(element('p', '鍵がないので読み込めません。', 'muted'));
 } else {
   setConnection('checking', '確かめています…');
+  mountExplains();
+  // お客さんの前(5.4)。見せる画面の「架空」の札と 3 つの文
+  fillState($('show-notice'), 'customer');
   frame.ready = true;
   loadHints();
   await refresh();

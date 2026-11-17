@@ -102,7 +102,7 @@ npm start                  # 既定のブラウザで Studio が開く
 
 入れるブラウザーは、Studio が試作品を開いて確かめるためだけに使います。利用者の Chrome や Edge は使いません。入れていないと、結果の帯に「自動の確かめができませんでした」と出ます([docs/troubleshooting.md](docs/troubleshooting.md))。ブラウザが開かないときは、ターミナルに出た `http://127.0.0.1:4317/#token=…` を開きます。止めるときは Ctrl+C です。
 
-Claude Code が見つからない、古い、ログインしていないときは、右の「作る AI」の欄に理由と手順のカードが出ます([画面](docs/evidence/ux/final/U10-07-unavailable.png))。Claude Code を入れてログインし、Studio を起動し直してください。本物の AI(Claude Code)を使う前に、Studio は「本物の AI を使う前に」のカードで、送るもの、送り先、料金を見せます。同意すると、頼んだ文や試作品のファイルが Anthropic に送られ、料金がかかります。先に [docs/claude-code.md](docs/claude-code.md) の「先に確かめること」を読んでください。
+Claude Code が見つからない、古い、ログインしていないときは、右の「作る AI」の欄に理由と手順のカードが出ます([画面](docs/evidence/ux/final/U10-07-unavailable.png))。Claude Code を入れてログインし、Studio を起動し直してください。本物の AI(Claude Code)を使う前に、Studio は「本物の AI を使う前に」のカードで、送るもの、送り先、料金と上限を見せます。同意すると、頼んだ文や試作品のファイルが Anthropic に送られ、料金がかかります。先に [docs/claude-code.md](docs/claude-code.md) の「先に確かめること」を読んでください。
 
 ## 使い方
 

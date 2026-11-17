@@ -94,7 +94,7 @@ test('U2、U7: 最初の画面の案内から、試す → 言葉で直す → �
     const run = lastRun(page);
     await expect(run.getByText('AI の設定を読みました')).toBeVisible({ timeout: 15_000 });
     await expect(run.locator('.run-status')).toHaveText('作る AI が作業しています…');
-    await expect(hint).toHaveText('作る AI が試作品を書いています。止めても、前の版は残ります。');
+    await expect(hint).toHaveText('作る AI が試作品を書いています。止めても、前の版は残ります。その間に、足りない場面がないか見てみませんか。');
     // 今の行では、作る AI か関門が働いている(あなたの番ではない)
     await expect(page.locator('#now-line .actor[data-active]')).toHaveAttribute('data-actor', /^(maker|gate)$/);
     await expect(page.locator('#now-line .actor[data-actor="you"]')).not.toHaveAttribute('data-active');

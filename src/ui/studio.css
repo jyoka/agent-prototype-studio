@@ -334,7 +334,7 @@ body[data-organize] .layout, body[data-organize] .stage-panel { display: none; }
 .organize-item-text { font-weight: var(--weight-bold); }
 .organize-source { color: var(--color-text-muted); font-size: var(--text-2); }
 .organize-badge { display: inline-block; padding: 0 0.45rem; border-radius: var(--radius-pill); font-size: var(--text-1); white-space: nowrap; border: var(--stroke-hair) solid var(--color-line); color: var(--color-text-muted); }
-.organize-badge[data-kind="guess"] { border-color: var(--color-warn); background: var(--color-warn-soft); color: var(--color-warn); }
+.organize-badge[data-kind="guess"] { border-color: var(--color-warn); border-style: dotted; background: var(--color-warn-soft); color: var(--color-warn); }
 .organize-badge[data-kind="conflict"] { border-color: var(--color-warn); color: var(--color-warn); }
 .organize-item-actions { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.25rem; font-size: var(--text-2); }
 .organize-edit { display: flex; flex-direction: column; gap: 0.3rem; }
@@ -484,6 +484,27 @@ body[data-design] .layout, body[data-design] .stage-panel { display: none; }
 .explain dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3); margin: var(--space-2) 0; }
 .explain dt { color: var(--color-text-muted); }
 .explain dd { margin: 0; }
+.explain > .text-button { margin-bottom: var(--space-2); }
+
+/* 12 の状態(ui-ux-v2.md の 5.4)。何が起きたか、今どうなっているか、次に何をするかの 3 つの文(span)を続けて読む。
+   印は data-mark を ::before で出す(読み上げは 3 つの文で足りるので、代わりの文を空にする)。色は印の補いだけ */
+.state-line[data-mark]::before { content: attr(data-mark); content: attr(data-mark) / ""; display: inline-block; margin-right: var(--space-2); font-weight: var(--weight-bold); white-space: nowrap; }
+.state-line[data-state="working"]::before { color: var(--actor-maker); }
+.state-line[data-state="waiting"]::before { color: var(--actor-you); }
+.state-line[data-state="gate-failed"]::before { color: var(--color-danger); }
+.state-line[data-state="guard-stopped"]::before { color: var(--actor-gate); }
+.state-line[data-state="lost"]::before { color: var(--color-warn); }
+.state-line[data-state="first"]::before, .state-line[data-state="unseen"]::before, .state-line[data-state="mode-trial"]::before { color: var(--color-text-muted); }
+/* 札の形の印(推測、架空)。推測は点線の縁 */
+.state-line[data-state="guess"]::before, .state-line[data-state="customer"]::before { padding: 0 var(--space-2); border: var(--stroke-hair) solid var(--color-fiction); border-radius: var(--radius-pill); color: var(--color-fiction); font-size: var(--text-1); font-weight: var(--weight-regular); }
+.state-line[data-state="guess"]::before { border-style: dotted; }
+.review-unseen, .organize-guess, .turn-guard { margin: 0 0 var(--space-2); padding: var(--space-1) var(--space-2); border: var(--stroke-hair) dashed var(--color-line-strong); border-radius: var(--radius-1); font-size: var(--text-2); }
+.organize-guess { border-style: dotted; border-color: var(--color-warn); }
+.turn-guard { border-style: solid; border-color: var(--actor-gate); }
+/* 元に戻した。作業台の上の 1 行。次の操作で消える */
+.reverted { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0 0 var(--space-3); padding: var(--space-2) var(--space-3); border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-1); background: var(--color-surface); font-size: var(--text-2); }
+.reverted[hidden] { display: none; }
+.reverted p { margin: 0; }
 .review-item-actions { display: flex; gap: var(--space-2); }
 .review-thinking { font-weight: var(--weight-bold); }
 .review-switch { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.4rem; }
@@ -558,6 +579,10 @@ body[data-intent] .layout, body[data-intent] .stage-panel { display: none; }
 .preview { display: flex; flex-direction: column; min-height: 0; }
 .toolbar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
 .toolbar h2 { margin-right: auto; }
+/* 試作品の欄の「これは何?」は、見出しの行の中に置く(試作品の高さを減らさない)。開くと次の行に広がる */
+.toolbar { flex-wrap: wrap; }
+.toolbar > .explain { order: 1; padding-top: 0; border-top: 0; }
+.toolbar > .explain[open] { flex-basis: 100%; order: 2; }
 .frame-host {
   flex: 1;
   min-height: 0;
