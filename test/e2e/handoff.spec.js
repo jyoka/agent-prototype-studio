@@ -86,7 +86,7 @@ async function exportAndCheck(page, home, other, otherHome) {
     await handoff.getByLabel('目的(この試作品で確かめたいこと)').fill('求職者が、AI の理解した条件を直しながら相談を続けられるか確かめる');
     await handoff.getByLabel('決まったこと').fill('条件は 職種、雇用区分、勤務地、時給の下限 の 4 つ');
     await handoff.getByLabel('未決事項').fill('求人の検索を本物の API にするか。問い合わせ先 hanako@example.com');
-    await page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '渡すフォルダーを作る' }).click();
+    await page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '本番開発へ渡す' }).click();
     const result = page.locator('#handoff-result');
     // 未決事項は、書いた 1 件と、形式 4 で Studio が足す 4 件(目的の文書がない、設計の決定がない、質の見直しの「直す」、人に見せた答えがない)
     await expect(result).toContainText('渡すフォルダーを作りました。本物につないだもの 2 件、お試しのもの 3 件、つないでいないもの 9 件、未決事項 5 件。');
@@ -208,7 +208,7 @@ async function exportAndCheck(page, home, other, otherHome) {
   }
 }
 
-test('秘密情報らしい文字列があると書き出さず、場所を画面に出す', async ({ page, home }) => {
+test('秘密情報らしい文字列があると書き出さず、⬢ の形で「渡すのを止めました」と場所を画面に出す', async ({ page, home }) => {
   await writeProject(
     home,
     'with-secret',
@@ -224,9 +224,15 @@ test('秘密情報らしい文字列があると書き出さず、場所を画�
     await chooseProject(page, /鍵を書いた試作品/);
     await expect(page.frameLocator('iframe[title="試作品"]').locator('#root')).toHaveText('鍵あり');
     const handoff = await openHandoff(page);
-    await page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '渡すフォルダーを作る' }).click();
+    await page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '本番開発へ渡す' }).click();
     const result = page.locator('#handoff-result');
-    await expect(result).toContainText('渡すフォルダーを作れませんでした: 秘密情報らしい文字列があるので、書き出しませんでした。消してから書き出してください(app/config.js:1 API キーらしい文字列)');
+    // 守りが止めた(ui-ux-v2.md の 5.4)と同じ ⬢ の形。何が起きたか、場所、次に何をするか(4.8)
+    const stopped = result.locator('.state-line[data-state="guard-stopped"]');
+    await expect(stopped).toHaveAttribute('data-mark', '⬢ 止めました');
+    await expect(stopped.locator('[data-part="happened"]')).toHaveText('秘密らしい文字列があったので、渡すのを止めました。');
+    await expect(stopped.locator('[data-part="now"]')).toHaveText('場所: config.js の 1 行目(API キーらしい文字列)。渡すフォルダーは作っていません。');
+    await expect(stopped.locator('[data-part="next"]')).toHaveText('その文字列を試作品から消してから、もう一度渡しますか。');
+    await expect(page.locator('#next-text')).toHaveText('秘密らしい文字列を試作品から消してから、もう一度渡します。');
     await expect(result).not.toContainText('sk-ant-');
     expect(await fs.readdir(path.join(home, 'handoffs')).catch(() => [])).toEqual([]);
   } finally {
@@ -287,7 +293,7 @@ test('目的の文書、設計の決定と理由、質の見直し、AI 構成�
       await page.locator(`[data-project-id="${id}"]`).click();
       const handoff = await openHandoff(page);
       await handoff.getByLabel('目的(この試作品で確かめたいこと)').fill('取り置きの問い合わせを AI で減らせるか確かめる');
-      await page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '渡すフォルダーを作る' }).click();
+      await page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '本番開発へ渡す' }).click();
       const result = page.locator('#handoff-result');
       await expect(result).toContainText('渡すフォルダーを作りました。');
       dir = await result.locator('code').textContent();

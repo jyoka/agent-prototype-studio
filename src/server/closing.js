@@ -6,7 +6,7 @@ import { COMMENTS_FILE, COMMENT_KINDS, COMMENT_STATUS_WORDS, FIX_RECORD_FORMAT, 
 import { FIELD_KINDS } from './data-design.js';
 import { describeDesign, describePurpose, describeReview } from './handoff-decisions.js';
 import { IntentError } from './intent.js';
-import { FIX_RECORDS_DIR } from './meeting.js';
+import { FIX_RECORDS_DIR, NOT_ERASABLE } from './meeting.js';
 import { COLUMNS } from './organize-ai.js';
 import { ORGANIZE_FILE, asksOf, isGuess } from './organize.js';
 import { isValidProjectId } from './projects.js';
@@ -321,7 +321,11 @@ export function describeClosing({ purpose, design, review, board, comments, reco
     fixRecords: describeFixRecords(records, requirements),
     openItems,
     unowned: openItems.filter((item) => !item.owner).length,
+    // そろった成果物の数(「そろった 6 / 7」。ui-ux-v2.md の 4.8)。present は、ないもの(missing)のほかの数
+    ready: deliverables.filter((item) => item.status === 'ready').length,
     timeline: describeTimeline(stages, records),
+    // 渡した後や会のデータを消した後も、消せないもの(meeting.js の消す操作と同じ一覧)
+    notErasable: [...NOT_ERASABLE],
   };
 }
 

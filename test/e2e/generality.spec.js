@@ -188,7 +188,7 @@ async function runFlow(page, home, other, otherHome) {
     const handoff = await openHandoff(page);
     await handoff.getByLabel('目的(この試作品で確かめたいこと)').fill('学ぶ人が、AI の理解した学習プランを直しながら相談を続けられるか確かめる');
     await handoff.getByLabel('未決事項').fill('講座の一覧を本物のデータにするか');
-    await page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '渡すフォルダーを作る' }).click();
+    await page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '本番開発へ渡す' }).click();
     const result = page.locator('#handoff-result');
     // 未決事項は、書いた 1 件と、保存版と違う作業中から書き出したことを Studio が足した 1 件と、形式 4 で足す 4 件
     // (目的の文書がない、設計の決定がない、質の見直しの「直す」、人に見せた答えがない)。未接続には、目録の未実装 3 つと制約が入る

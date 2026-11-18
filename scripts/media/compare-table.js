@@ -39,13 +39,13 @@ export function compareTableHtml({ head, rows }, { title, lead, tokensCss }) {
 <title>${escapeHtml(title)}</title>
 <style>
 ${tokensCss}
-body { margin: 0; padding: var(--space-5); background: var(--bg); color: var(--text); font-family: var(--font-sans); line-height: var(--leading); }
-main { display: inline-block; padding: var(--space-4); border: var(--border); border-radius: var(--radius-xl); background: var(--panel); }
-h1 { margin: 0 0 var(--space-1); font-size: var(--text-lg); }
-p { margin: 0 0 var(--space-3); color: var(--muted); font-size: var(--text-sm); }
-table { border-collapse: collapse; font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
-th, td { padding: var(--space-2) var(--space-3); border-bottom: var(--border); text-align: right; white-space: nowrap; }
-thead th { color: var(--muted); font-weight: 600; text-align: right; vertical-align: bottom; white-space: normal; min-width: 4.5em; max-width: 8em; }
+body { margin: 0; padding: var(--space-6); background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); line-height: var(--leading); }
+main { display: inline-block; padding: var(--space-5); border: var(--border); border-radius: var(--radius-2); background: var(--color-surface); }
+h1 { margin: 0 0 var(--space-1); font-size: var(--text-5); }
+p { margin: 0 0 var(--space-4); color: var(--color-text-muted); font-size: var(--text-2); }
+table { border-collapse: collapse; font-size: var(--text-2); font-variant-numeric: tabular-nums; }
+th, td { padding: var(--space-2) var(--space-4); border-bottom: var(--border); text-align: right; white-space: nowrap; }
+thead th { color: var(--color-text-muted); font-weight: 600; text-align: right; vertical-align: bottom; white-space: normal; min-width: 4.5em; max-width: 8em; }
 thead th:first-child, tbody th { text-align: left; }
 tbody th { font-family: var(--font-mono); font-weight: 500; }
 tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }

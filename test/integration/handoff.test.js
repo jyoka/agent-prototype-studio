@@ -232,6 +232,12 @@ test('秘密情報らしい文字列があると書き出さず、場所を伝�
   assert.equal(error.code, 'secret');
   assert.match(error.message, /app\/config\.js:1 鍵らしい名前の値、app\/config\.js:2 認証のトークンらしい文字列/);
   assert.ok(!error.message.includes('abc123def456ghi789'));
+  // 画面が ⬢ と場所を出すための場所(ファイル、行、種類)。値は入れない(ui-ux-v2.md の 4.8)
+  assert.deepEqual(error.places, [
+    { file: 'app/config.js', line: 1, kind: '鍵らしい名前の値' },
+    { file: 'app/config.js', line: 2, kind: '認証のトークンらしい文字列' },
+  ]);
+  assert.ok(!JSON.stringify(error.places).includes('abc123def456ghi789'));
   // 引用符のない書き方(.env、YAML)も止める
   await fs.writeFile(path.join(app, 'config.js'), '// ok\n');
   await fs.writeFile(path.join(app, 'settings.yaml'), 'api_key: abcd1234efgh5678\n');
@@ -419,6 +425,8 @@ test('足した中身(証拠の要約)に秘密らしい文字列があれば、
   assert.match(error.message, /handoff\.json:\d+ API キーらしい文字列/);
   assert.match(error.message, /README\.md:\d+ API キーらしい文字列/);
   assert.ok(!error.message.includes('abcdefghijklmnop'));
+  assert.ok(error.places.some((place) => place.file === 'handoff.json' && place.kind === 'API キーらしい文字列'));
+  assert.ok(!JSON.stringify(error.places).includes('abcdefghijklmnop'));
   // 書きかけは残さない
   assert.deepEqual(await fs.readdir(path.join(home, 'handoffs')), []);
 });

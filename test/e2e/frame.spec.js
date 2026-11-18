@@ -266,7 +266,7 @@ test('13 節の部品は全部どこかで使える。「その他」と「は�
     await expect(page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '人に見せる' })).toBeEnabled();
     await goStage(page, '渡す');
     await expect(page.getByRole('region', { name: '本番開発へ渡す' }).getByLabel('目的(この試作品で確かめたいこと)')).toBeEnabled();
-    await expect(page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '渡すフォルダーを作る' })).toBeEnabled();
+    await expect(page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '本番開発へ渡す' })).toBeEnabled();
 
     // 構成のある見本では、仕組みの引き出しに「構成と前提」が出る
     await goStage(page, '作る');

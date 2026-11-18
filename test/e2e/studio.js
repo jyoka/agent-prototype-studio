@@ -219,6 +219,22 @@ export async function expectNoDevWordsOnScreen(page) {
   expect(devWordsIn(text)).toEqual([]);
 }
 
+// 中身の始めが、最初の画面で読める。toBeInViewport は重なりを見ないので、固定の次の一手の帯に隠れていないかも見る。
+// 中身の上の端が帯の上の端より minVisible px 以上上にあり、その間の点を押すと中身そのものに当たる
+export async function expectStartReadable(locator, minVisible = 48) {
+  await expect(locator).toBeInViewport();
+  const seen = await locator.evaluate((element, min) => {
+    const box = element.getBoundingClientRect();
+    const band = document.querySelector('#next-band');
+    const bandTop = band && band.checkVisibility() ? band.getBoundingClientRect().top : window.innerHeight;
+    const bottom = Math.min(bandTop, window.innerHeight);
+    const hits = [box.top + 8, box.top + min / 2, box.top + min - 4].map((y) => document.elementFromPoint(box.left + 16, y));
+    return { top: Math.round(box.top), bandTop: Math.round(bottom), covered: hits.filter((hit) => !hit || !element.contains(hit)).map((hit) => hit?.id || hit?.className || 'none') };
+  }, minVisible);
+  expect(seen.bandTop - seen.top, `中身の上の端 ${seen.top}px と帯の上の端 ${seen.bandTop}px`).toBeGreaterThanOrEqual(minVisible);
+  expect(seen.covered).toEqual([]);
+}
+
 // 見えているボタンのうち、強い色(--color-accent の地)のもの。同意のカードの中は数えない(唯一の割り込み。5.1)
 export function strongButtons(page) {
   return page.evaluate(() => {
@@ -289,6 +305,9 @@ export const STAGES = { 話す: 'talk', 目的: 'goal', 設計: 'design', 審査
 export async function goStage(page, name) {
   const key = STAGES[name];
   if (!key) throw new Error(`段の名前が違います: ${name}`);
+  // 会の試作品では、段の道筋の代わりに会の帯が出る(ui-ux-v2.md の 2.7)。「9 段で見る」で段の道筋にする
+  const toggle = page.locator('#rail-toggle');
+  if ((await toggle.isVisible()) && (await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click();
   const compact = page.locator('#stage-compact');
   if ((await compact.isVisible()) && (await compact.getAttribute('aria-expanded')) !== 'true') await compact.click();
   await page.locator(`#stage-list button.stage[data-stage="${key}"]`).click();
@@ -375,10 +394,13 @@ export async function openCheck(page) {
   return region;
 }
 
-// 段 8「見せる」の作業台に移り、次の一手の帯の「人に見せる」を押して、見せる画面にする
+// 段 8「見せる」の作業台に移り、「人に見せる」を押して、見せる画面にする。
+// 初めては次の一手の帯にある。1 度見せた後は、帯が「渡す段へ進む」になり、「人に見せる」は作業台に残る(ui-ux-v2.md の 14 節)
 export async function startShowing(page) {
   await goStage(page, '見せる');
-  const button = page.getByRole('region', { name: '次の一手' }).getByRole('button', { name: '人に見せる' });
+  const band = page.getByRole('region', { name: '次の一手' });
+  await expect(band.getByRole('button', { name: /^(人に見せる|渡す段へ進む)$/ })).toBeVisible();
+  const button = page.getByRole('button', { name: '人に見せる', exact: true });
   await expect(button).toBeEnabled();
   await button.click();
 }

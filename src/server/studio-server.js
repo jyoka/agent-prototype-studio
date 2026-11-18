@@ -156,7 +156,7 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
 // quality は質の見直しの表(quality.js)。shows は人に見せる画面の問いと答え(show.js)。
 // comments は画面へのコメント、反応、承認、列、直した記録、元に戻す(comments.js)
 // hints は「その場で」の 1 行を覚えた回数(hints.js。ui-ux-v2.md の 5.1)
-export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, closings, intents, organizes, designs, reviews, sceneRuns, quality, shows, comments, materials, meetings, timeline = { mark: async () => false }, token, ports, realAi, consent, firstSteps, hints = new Hints() }) {
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, closings, intents, organizes, designs, reviews, sceneRuns, quality, shows, comments, materials, meetings, timeline = { mark: async () => false, view: async () => ({}) }, token, ports, realAi, consent, firstSteps, hints = new Hints() }) {
   const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes, designs, meetings, reviews, sceneRuns);
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
@@ -207,7 +207,15 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       // firstSteps は最初の一歩の案内を閉じたか(手順の済みは、試作品ごとの firstSteps)
       // start ははじめの画面を出すか
       // meetingsDue は消す日を過ぎた会の一覧(知らせるだけで、Studio は勝手に消さない)
-      return sendJson(res, 200, { projects: projects.map(view), agent, consent: consent.state(), firstSteps: firstSteps.state(), start: intents.startState(), meetingsDue: meetings.due(projects) });
+      // 会の試作品には、段ごとの時刻(timeline.js)を足す。画面の会の帯が、帯ごとに使った分を出す(ui-ux-v2.md の 2.7)
+      const views = await Promise.all(
+        projects.map(async (project) => {
+          const shown = view(project);
+          if (shown.meeting.status === 'none') return shown;
+          return { ...shown, meeting: { ...shown.meeting, marks: (await timeline.view?.(project.id).catch(() => null)) ?? {} } };
+        }),
+      );
+      return sendJson(res, 200, { projects: views, agent, consent: consent.state(), firstSteps: firstSteps.state(), start: intents.startState(), meetingsDue: meetings.due(projects) });
     }
     // はじめの画面。1 文から新しい試作品を作る({ sentence, guide })。本物の AI は、同意の前は 403(consent-required)で断り、試作品を作らない
     if (req.method === 'POST' && url.pathname === '/api/projects') return handleNewProject(req, res);
@@ -665,7 +673,10 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     } catch (error) {
       if (error instanceof NotFoundError) return sendError(res, 404, 'not-found', error.message);
       if (error instanceof BusyError) return sendError(res, 409, 'busy', error.message);
-      if (error instanceof HandoffError) return sendError(res, error.status, error.code, error.message);
+      if (error instanceof HandoffError) {
+        if (error.places) return sendJson(res, error.status, { error: { code: error.code, message: error.message, places: error.places } });
+        return sendError(res, error.status, error.code, error.message);
+      }
       if (error instanceof BodyError) return sendError(res, 400, 'invalid', error.message);
       throw error;
     }

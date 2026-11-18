@@ -69,12 +69,17 @@ const DATA_NAME = /(^|[/._-])(data|mock|mocks|fixture|fixtures|sample|samples|se
 const EXPORTED_LIST = /export\s+const\s+[A-Za-z_$][\w$]*\s*=\s*\[/;
 
 export class HandoffError extends Error {
-  constructor(status, code, message) {
+  // places は、秘密らしい文字列で止めたときの場所({ file, line, kind })。画面が「⬢ 渡すのを止めました」と場所を出す(ui-ux-v2.md の 4.8)
+  constructor(status, code, message, places = null) {
     super(message);
     this.status = status;
     this.code = code;
+    this.places = places;
   }
 }
+
+// 秘密らしい文字列の場所。値は入れない(ファイル、行、種類だけ)
+const secretPlaces = (list) => list.slice(0, 5).map((found) => ({ file: found.file, line: found.line, kind: found.kind }));
 
 function cleanNotes(raw) {
   const notes = {};
@@ -1294,6 +1299,7 @@ export class ProjectHandoffs {
             .slice(0, 5)
             .map((s) => `${where(s)} ${s.kind}`)
             .join('、')})`,
+          secretPlaces(scan.secrets),
         );
       }
 
@@ -1369,7 +1375,7 @@ export class ProjectHandoffs {
         requirements: closing.requirements,
         dataDesign: closing.dataDesign,
         fixRecords: closing.fixRecords,
-        closing: { present: closing.present, deliverables: closing.deliverables, figure: closing.figure, openItems: closing.openItems, unowned: closing.unowned, timeline: closing.timeline },
+        closing: { present: closing.present, ready: closing.ready, deliverables: closing.deliverables, figure: closing.figure, openItems: closing.openItems, unowned: closing.unowned, timeline: closing.timeline, notErasable: closing.notErasable },
         ai: definition
           ? {
               name: definition.name,
@@ -1450,6 +1456,7 @@ export class ProjectHandoffs {
             .slice(0, 5)
             .map((s) => `${where(s)} ${s.kind}`)
             .join('、')})`,
+          secretPlaces(secrets),
         );
       }
       for (const [file, text] of outputs) {

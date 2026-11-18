@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { chooseProject, chooseSample, expect, expectNoDevWords, expectReadableText, launchStudio, ROOT, SAMPLES, test } from './studio.js';
+import { chooseProject, chooseSample, expect, expectNoDevWords, expectReadableText, expectStartReadable, launchStudio, ROOT, SAMPLES, test } from './studio.js';
 
 // 会の始めとお客さんのデータ(docs/design/field-session.md の段 0、docs/design/collaboration.md の 7 節、K4)。
 // 実モデルは呼ばない。偽の claude(test/fixtures/fake-claude.js)か、偽接続(STUDIO_AGENT=fake)で動かす。
@@ -459,8 +459,8 @@ for (const [width, height] of [[1024, 700], [390, 700]]) {
       const bar = await page.getByRole('banner').boundingBox();
       const heading = await page.getByRole('heading', { level: 2, name: '会の始め' }).boundingBox();
       expect(bar.y + bar.height).toBeLessThanOrEqual(heading.y + 1);
-      // 狭い窓でも、中身がつぶれない
-      await expect(s.state).toBeInViewport();
+      // 狭い窓でも、中身がつぶれず、固定の次の一手の帯に隠れない(会議室の大きさの 1.25 倍で始まる)
+      await expectStartReadable(s.state);
       await page.screenshot({ path: path.join(UX_SHOTS, `K4-${width}.png`) });
       // 全部を読んで、一番下の同意まで進める
       await s.agree.scrollIntoViewIfNeeded();

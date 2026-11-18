@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ROOT, expect, expectNoDevWords, launchStudio, openMeasureTab, startShowing, test } from './studio.js';
+import { ROOT, expect, expectNoDevWords, expectNoDevWordsOnScreen, launchStudio, openMeasureTab, startShowing, test } from './studio.js';
 
 // 現場の場面の通し(docs/design/user-journey.md の K6、docs/design/field-session.md の 2 節と 6 節)。
 // 架空の台本(しおかぜ便の会の要点を順に打つ)で、会の始めから会の終わりまでを 1 台の PC の形で通す。
@@ -37,6 +37,13 @@ const HEADING = 'しおかぜ便 再配達の受付';
 const STAGES = ['start', 'listen', 'organize', 'review', 'prototype', 'show', 'fix', 'closing'];
 
 const readJson = async (file) => JSON.parse(await fs.readFile(file, 'utf8'));
+
+// お客さんの前(ui-ux-v2.md の 5.4、2.7)。会の試作品の間、ずっと、開発の言葉がなく、「データは架空です」が見えている。
+// 見せる画面では今の行を出さないので、見せる画面の札で見る
+async function expectCustomerFront(page) {
+  await expect(page.locator(':text-is("データは架空です"):visible').first()).toBeVisible();
+  await expectNoDevWordsOnScreen(page);
+}
 const timelineFile = (home, id) => path.join(home, 'projects', id, '.studio', 'timeline.json');
 const stagesOf = async (home, id) => (await readJson(timelineFile(home, id)).catch(() => ({ stages: {} }))).stages;
 
@@ -57,6 +64,10 @@ test('台本を会の始めから会の終わりまで通すと、7 つの成果
     const facts = page.locator('#meeting-facts');
     await expect(facts.locator('ol li')).toHaveText(['聞く', 'AI が整理する', 'AI 構成の審査', '試作品', '見せて、コメントをもらう', '承認して AI が直す', '要件の文書と引き継ぎ']);
     await expect(page.locator('#meeting')).not.toContainText('まだ作っていません');
+    // 会の帯(2.7)と、会議室の大きさ
+    await expect(page.getByRole('list', { name: '会の帯' })).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-room', 'on');
+    await expectCustomerFront(page);
     // 同意の前は、時刻を残さない
     expect(await stagesOf(home, id)).toEqual({});
     await page.getByRole('button', { name: '同意して始める' }).click();
@@ -82,6 +93,7 @@ test('台本を会の始めから会の終わりまで通すと、7 つの成果
     await page.getByRole('button', { name: 'この理解で合っている' }).click();
     await expect(page.locator('#organize-mark')).toHaveText('整理: 確かめた');
     await expect.poll(async () => Object.keys(await stagesOf(home, id))).toEqual(['start', 'listen', 'organize']);
+    await expectCustomerFront(page);
 
     // 目的の文書(J1)
     expect((await studio.post(`/api/projects/${id}/intent/start`, { sentence: PURPOSE, guide: 'fixed', depth: 'quick' })).status).toBe(200);
@@ -122,6 +134,7 @@ test('台本を会の始めから会の終わりまで通すと、7 つの成果
       await band.getByRole('button', { name, exact: true }).click();
     }
     await expect(page.locator('#review-count')).toHaveText('承認 4 / 4');
+    await expectCustomerFront(page);
     await expectNoDevWords(review);
     await page.getByRole('button', { name: 'この構成で作る' }).click();
     await expect(review).toBeHidden();
@@ -131,12 +144,14 @@ test('台本を会の始めから会の終わりまで通すと、7 つの成果
     await expect.poll(async () => Object.keys(await stagesOf(home, id))).toEqual(['start', 'listen', 'organize', 'review', 'prototype']);
     const app = page.frameLocator('iframe[title="試作品"]');
     await expect(app.locator('h1')).toBeVisible({ timeout: 30_000 });
+    await expectCustomerFront(page);
 
     // ---- 段 5. 見せて、コメントをもらう(見せる画面 J7、コメント K3) ----
     await startShowing(page);
     const show = page.getByRole('region', { name: '確かめたい問い' });
     await expect(show).toBeVisible();
     await expect(show).toContainText('再配達の受付が電話なしで済む');
+    await expectCustomerFront(page);
     const comments = page.getByRole('region', { name: 'コメント' });
     await comments.getByLabel('コメント', { exact: true }).fill(`見出しを「${HEADING}」にして`);
     await comments.getByRole('radio', { name: '見た目と動き' }).check();
@@ -157,6 +172,7 @@ test('台本を会の始めから会の終わりまで通すと、7 つの成果
     await first.getByRole('button', { name: '直った' }).click();
     await expect(first).toContainText('直った');
     await expect.poll(async () => Object.keys(await stagesOf(home, id))).toContain('fix');
+    await expectCustomerFront(page);
     await page.getByRole('button', { name: '見せ終わる' }).click();
     await expect(show).toBeHidden();
 
@@ -166,6 +182,7 @@ test('台本を会の始めから会の終わりまで通すと、7 つの成果
     await expect(page.getByRole('tab', { name: /^比べる \d+ 組$/ })).toBeVisible({ timeout: 60_000 });
     const compare = await openMeasureTab(page, '比べる');
     await expect(compare.getByRole('table', { name: '構成ごとの比べる表' })).toBeVisible();
+    await expectCustomerFront(page);
 
     // ---- 段 7. 要件の文書と引き継ぎ(会の終わり。K5) ----
     await meetingMark.click();
@@ -202,6 +219,11 @@ test('台本を会の始めから会の終わりまで通すと、7 つの成果
     await expect(page.locator('#closing-exported')).toContainText('書き出しました');
     await expect(table.locator('tr[data-reached="true"]')).toHaveCount(8);
     await page.screenshot({ path: path.join(UX_SHOTS, 'K6-closing.png'), fullPage: true });
+    await expectCustomerFront(page);
+    // 書き出すと、会の帯の 7 つが全部終わる(通らなかった帯はない)
+    // (場面を回すときに「9 段で見る」にしたので、会の帯に戻す)
+    await page.getByRole('button', { name: '会の帯で見る' }).click();
+    await expect(page.getByRole('list', { name: '会の帯' }).locator('button.band[data-state="done"]')).toHaveCount(7);
 
     // 段ごとの時刻が記録に残る。段の順に並ぶ
     const stages = await stagesOf(home, id);
