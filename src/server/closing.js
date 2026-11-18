@@ -61,10 +61,11 @@ export const OPEN_ITEM_FROM = Object.freeze({
   comment: '画面へのコメント',
 });
 
-// 要件のコメントのうち、要件の文書に載せるもの(2 人が承認し、戻していない、落ちていない、閉じていない)
-const REQUIREMENT_LIVE = new Set(['queued', 'fixing', 'review', 'resolved']);
+// 要件のコメントのうち、要件の文書に載せるもの(2 人が承認し、戻していない、落ちていない、閉じていない)。
+// awaiting は共有の場で 2 人の承認がそろい、進行役が送るのを待つもの(K7 の 3 枚目)
+const REQUIREMENT_LIVE = new Set(['awaiting', 'queued', 'fixing', 'review', 'resolved']);
 // まだ片付いていないコメント(未決事項に出す)
-const UNSETTLED = { open: 'まだ承認していない', queued: '承認したが、列で待っている', fixing: '直している途中', review: '直した版を、まだ確かめていない(「直った」を押していない)', failed: '直せなかった。「元に戻す」か「開き直す」を選んでいない' };
+const UNSETTLED = { open: 'まだ承認していない', awaiting: '承認はそろったが、進行役がまだ作る AI に送っていない', queued: '承認したが、列で待っている', fixing: '直している途中', review: '直した版を、まだ確かめていない(「直った」を押していない)', failed: '直せなかった。「元に戻す」か「開き直す」を選んでいない' };
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const objects = (value) => (Array.isArray(value) ? value.filter(isObject) : []);

@@ -1,8 +1,10 @@
-// 参加者のページ(docs/design/collaboration.md の 9.4。K7 の 2 枚目)。中継のサーバーが配る静的なファイルで、鍵は持たない。
-// 鍵と札は招待のリンクのフラグメント(# の後)にあり、開いたらすぐ sessionStorage に移してアドレス欄から消す。
+// 参加者のページ(docs/design/collaboration.md の 9.4。K7 の 2 枚目と 3 枚目)。中継のサーバーが配る静的なファイルで、鍵は持たない。
+// 鍵と札と署名の鍵は招待のリンクのフラグメント(# の後)にあり、開いたらすぐ sessionStorage に移してアドレス欄から消す。
+// 書き込み(板の項目、コメント、反応、承認)は、自分の署名の鍵で署名してから会の鍵で包む。Studio が署名と役を確かめて当てる。
+// 承認を送っても、作る AI はすぐには動かない。Studio が確かめ、進行役が自分の PC で「作る AI に送る」を押してから動く。
 // 中継のサーバーとは暗号文だけをやり取りする。写しはメモリーと sessionStorage だけに置き、長く残る所には置かない。
 // 外から来た文字は、必ず textContent で出す。
-import { aadOf, importKey, open, randomText, seal } from '/s/seal.js';
+import { aadOf, importKey, importSigner, open, randomText, seal, signEvent, textPrint } from '/s/seal.js';
 
 const STORE_PREFIX = 'prototype-studio-share:';
 const RETRY_MS = [500, 1000, 2000, 4000];
@@ -19,6 +21,8 @@ const state = {
   key: null,
   ticket: null,
   me: null,
+  // 署名の鍵(秘密の側)。招待のリンクになければ書けない
+  signer: null,
   docs: null,
   version: 0,
   online: false,
@@ -43,7 +47,7 @@ function element(tag, text, className) {
 function readLink() {
   const params = new URLSearchParams(location.hash.slice(1));
   if (params.get('k') && params.get('t') && params.get('m')) {
-    sessionStorage.setItem(storeKey, JSON.stringify({ k: params.get('k'), t: params.get('t'), m: params.get('m') }));
+    sessionStorage.setItem(storeKey, JSON.stringify({ k: params.get('k'), t: params.get('t'), m: params.get('m'), s: params.get('s') }));
     history.replaceState(null, '', location.pathname);
   }
   try {
@@ -78,6 +82,7 @@ function gone(text = 'この会のデータは消しました。この画面の�
   state.docs = null;
   state.pending = [];
   state.key = null;
+  state.signer = null;
   clearTimeout(state.resendTimer);
   sessionStorage.removeItem(storeKey);
   sessionStorage.removeItem(pendingKey);
@@ -89,7 +94,9 @@ function gone(text = 'この会のデータは消しました。この画面の�
 }
 
 const myRole = () => state.docs?.members?.find((m) => m.id === state.me)?.role ?? null;
-const canWrite = () => myRole() === 'participant';
+// 決める人と参加者は、板とコメントを書ける。承認できるのは決める人だけ(collaboration.md の 3 節)
+const canWrite = () => ['participant', 'decider'].includes(myRole()) && Boolean(state.signer);
+const canApprove = () => myRole() === 'decider' && Boolean(state.signer);
 
 async function loadDocs() {
   const response = await api('/files/docs');
@@ -131,7 +138,8 @@ async function flush() {
   try {
     for (const item of [...state.pending]) {
       if (item.seq !== null) continue;
-      const data = await seal(state.key, aadOf(sessionId, 'row'), item.op);
+      const signed = await signEvent(state.signer, sessionId, { ...item.op, by: state.me });
+      const data = await seal(state.key, aadOf(sessionId, 'row'), signed);
       let response;
       try {
         response = await api('/rows', { method: 'POST', body: JSON.stringify({ data }) });
@@ -141,7 +149,7 @@ async function flush() {
       if (response.status === 410) return gone();
       if (response.status === 403) {
         state.pending = state.pending.filter((p) => p !== item);
-        showError('この役では直せません。');
+        showError('この役では書けません。');
         render();
         continue;
       }
@@ -158,7 +166,8 @@ async function flush() {
 
 function send(op) {
   showError(null);
-  state.pending.push({ op: { ...op, opId: randomText(9) }, seq: null });
+  // 時刻は署名に入る。Studio は、反応と承認をこの時刻の順で当て、古いものの出し直しを断る
+  state.pending.push({ op: { ...op, opId: randomText(9), at: new Date().toISOString() }, seq: null });
   savePending();
   render();
   flush();
@@ -296,7 +305,79 @@ function render() {
   $('share-who').textContent = me ? `あなた: ${me.name}(${me.roleLabel})` : '';
   $('share-viewer').hidden = myRole() !== 'viewer';
   renderBoard();
+  renderComments();
   renderDocs();
+}
+
+// ---- コメント、反応、承認(K7 の 3 枚目) ----
+
+function commentStatus(text) {
+  $('share-comment-status').textContent = text ?? '';
+}
+
+function approvalWords(comment) {
+  const names = comment.approvals.map((a) => (a.name ? `${a.name}(${a.roleLabel})` : a.roleLabel));
+  const need = comment.needsBoth ? '2(進行役と決める人)' : '1(進行役か決める人)';
+  return `承認 ${comment.approvals.length} / ${need}${names.length > 0 ? `: ${names.join('、')}` : ''}`;
+}
+
+const STATUS_NOTES = {
+  awaiting: '承認がそろいました。進行役が自分の PC で「作る AI に送る」を押すと、作る AI が直します。',
+  queued: '進行役が送りました。順に作る AI が直します。',
+  fixing: '作る AI が直しています。',
+  review: '直した版ができました。進行役の画面で確かめます。',
+};
+
+function commentNode(comment) {
+  const li = element('li', undefined, 'share-comment');
+  li.dataset.status = comment.status;
+  const head = element('p', undefined, 'share-comment-head');
+  head.append(element('strong', `コメント ${comment.number}`), element('span', comment.kindLabel, 'share-badge'), element('span', comment.statusLabel, 'share-comment-state'));
+  li.append(head, element('p', comment.text, 'share-comment-text'));
+  li.append(element('p', [comment.author ? `書いた人: ${comment.author}` : '', `反応 ${comment.reactions}`, approvalWords(comment)].filter(Boolean).join('。'), 'muted'));
+  if (STATUS_NOTES[comment.status]) li.append(element('p', STATUS_NOTES[comment.status], 'share-note'));
+  const actions = element('div', undefined, 'share-actions');
+  const live = ['open', 'awaiting', 'queued'].includes(comment.status);
+  if (canWrite() && live) {
+    const react = element('button', '同じ意見');
+    react.type = 'button';
+    react.setAttribute('aria-label', `コメント ${comment.number} に反応を付ける(今 ${comment.reactions})`);
+    react.addEventListener('click', () => send({ op: 'comment-react', comment: comment.id }));
+    actions.append(react);
+  }
+  const mine = comment.approvals.some((a) => a.member === state.me);
+  if (canApprove() && comment.status === 'open' && comment.kind !== 'architecture' && !mine) {
+    const approve = element('button', '決める人として承認');
+    approve.type = 'button';
+    approve.addEventListener('click', async () => {
+      send({ op: 'comment-approve', comment: comment.id, textPrint: await textPrint(comment.text) });
+      commentStatus(`コメント ${comment.number} に承認を送りました。進行役の Studio が役を確かめ、承認がそろうと、進行役が作る AI に送ります。`);
+    });
+    actions.append(approve);
+  }
+  if (canApprove() && mine && live) {
+    const retract = element('button', '承認を取り消す');
+    retract.type = 'button';
+    retract.addEventListener('click', () => {
+      send({ op: 'comment-unapprove', comment: comment.id });
+      commentStatus(`コメント ${comment.number} の承認の取り消しを送りました。`);
+    });
+    actions.append(retract);
+  }
+  if (actions.childElementCount > 0) li.append(actions);
+  return li;
+}
+
+function renderComments() {
+  const comments = state.docs.comments ?? [];
+  $('share-comment-form').hidden = !canWrite();
+  const waiting = state.pending.filter((p) => p.op.op === 'comment-add').map(({ op }) => {
+    const li = element('li', undefined, 'share-comment');
+    li.append(element('p', op.text, 'share-comment-text'), element('p', '送りました。進行役の Studio が受け取ると、みんなの画面に出ます。', 'share-pending'));
+    return li;
+  });
+  const list = [...comments].reverse().map(commentNode);
+  $('share-comments').replaceChildren(...waiting, ...(list.length === 0 && waiting.length === 0 ? [element('li', '(まだコメントはありません)', 'muted')] : list));
 }
 
 // 中継のサーバーの受け取り(Server-Sent Events)を読む。fetch で読むのは、札を Authorization で送るため
@@ -369,6 +450,13 @@ async function main() {
   }
   state.ticket = link.t;
   state.me = link.m;
+  if (link.s) {
+    try {
+      state.signer = await importSigner(link.s);
+    } catch {
+      state.signer = null;
+    }
+  }
   state.pending = loadPending();
   $('share-add').addEventListener('submit', (event) => {
     event.preventDefault();
@@ -377,6 +465,16 @@ async function main() {
     if (!text) return;
     send({ op: 'item-add', column: $('share-add-column').value, text });
     input.value = '';
+  });
+  $('share-comment-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const input = $('share-comment-text');
+    const text = input.value.trim();
+    if (!text) return;
+    const kind = document.querySelector('input[name="share-comment-kind"]:checked')?.value ?? 'look';
+    send({ op: 'comment-add', kind, text });
+    input.value = '';
+    commentStatus('コメントを送りました。承認がそろうまで、作る AI には送りません。');
   });
   await listen();
 }

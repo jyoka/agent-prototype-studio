@@ -501,11 +501,17 @@
         <label for="share-role">役</label>
         <select id="share-role">
           <option value="participant">参加者(直せる)</option>
+          <option value="decider">決める人(承認できる)</option>
           <option value="viewer">見るだけ</option>
         </select>
         <button type="submit">招待のリンクを作る</button>
       </form>
       <ul id="share-members" class="organize-list" aria-label="招いた人"></ul>
+      <div id="share-awaiting-box" class="share-awaiting" hidden>
+        <h4>進行役が送る待ち</h4>
+        <p class="muted">共有の場で承認がそろったコメントです。依頼の文と承認した人を確かめ、この PC で「作る AI に送る」を押すと、作る AI が直します。押すまでは動きません。</p>
+        <ul id="share-awaiting" class="organize-list" aria-label="送る待ちのコメント"></ul>
+      </div>
       <ul id="share-refused" class="organize-list" aria-label="当てなかった書き込み" hidden></ul>
       <p id="share-error" class="intent-error" role="alert" hidden></p>
     </section>

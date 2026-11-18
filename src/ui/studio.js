@@ -2822,7 +2822,7 @@ function renderComments() {
   if (!open) return;
   const comments = data?.comments ?? [];
   // 試作品の枠の上の印(番号)。開いている、待っている、直しているコメントだけ
-  const pins = comments.filter((c) => c.place && ['open', 'queued', 'fixing', 'review'].includes(c.status)).map((c) => {
+  const pins = comments.filter((c) => c.place && ['open', 'awaiting', 'queued', 'fixing', 'review'].includes(c.status)).map((c) => {
     const pin = element('span', String(c.number), 'comment-pin');
     pin.style.left = `${c.place.x}%`;
     pin.style.top = `${c.place.y}%`;
@@ -2849,7 +2849,7 @@ function renderComments() {
   els.commentResume.disabled = commentsUi.busy;
   // 承認待ちと反応の数(4.6)
   const waiting = comments.filter((c) => c.status === 'open').length;
-  const reactions = comments.filter((c) => ['open', 'queued'].includes(c.status)).reduce((sum, c) => sum + c.reactions, 0);
+  const reactions = comments.filter((c) => ['open', 'awaiting', 'queued'].includes(c.status)).reduce((sum, c) => sum + c.reactions, 0);
   els.commentSummary.textContent = comments.length > 0 ? `承認待ち ${waiting} つ・反応 ${reactions}` : 'まだコメントはありません。';
   const snapshot = JSON.stringify([data, commentsUi.busy, commentsUi.confirmRevert]);
   if (snapshot === commentsUi.snapshot) return;
@@ -2859,7 +2859,7 @@ function renderComments() {
 
 function approvalWords(comment) {
   const by = (role) => comment.approvals.find((a) => a.role === role);
-  const who = (a) => [a.pressedBy ? `押した人: ${a.pressedBy}` : '', a.spokenBy ? `声に出した人: ${a.spokenBy}` : ''].filter(Boolean).join('、');
+  const who = (a) => (a.via === 'shared' ? `共有の場から: ${a.pressedBy ?? ''}` : [a.pressedBy ? `押した人: ${a.pressedBy}` : '', a.spokenBy ? `声に出した人: ${a.spokenBy}` : ''].filter(Boolean).join('、'));
   const one = (role) => {
     const a = by(role);
     return a ? `${COMMENT_ROLE_WORDS[role]} 済み${who(a) ? `(${who(a)})` : ''}` : `${COMMENT_ROLE_WORDS[role]} まだ`;
@@ -2895,7 +2895,7 @@ function commentItem(comment) {
   if (comment.held && comment.status !== 'queued') li.append(element('p', comment.held.message, 'comment-note'));
   const id = comment.id;
   // 反応と承認待ちを分ける(4.6)。反応は数だけで、作る AI は動かない。承認は数を「1 / 2」で出す
-  if (['open', 'queued'].includes(comment.status)) {
+  if (['open', 'awaiting', 'queued'].includes(comment.status)) {
     const reacts = element('div', undefined, 'comment-part comment-reacts');
     reacts.append(element('span', `反応 ${comment.reactions}`, 'comment-part-label'));
     const react = commentButton('同じ意見', () => commentAct(id, 'react'));
@@ -2912,7 +2912,9 @@ function commentItem(comment) {
         approvals.append(commentButton(`${COMMENT_ROLE_WORDS[role]}として承認`, () => commentAct(id, 'approve', { role, ...whoFields() }), { disabled: done }));
       }
     }
-    if (['open', 'queued'].includes(comment.status) && comment.approvals.length > 0) approvals.append(commentButton('承認を取り消す', () => commentAct(id, 'unapprove')));
+      // 共有の場で承認がそろった。作る AI に送る最後の 1 押しは進行役(collaboration.md の 9.2)
+    if (comment.status === 'awaiting') approvals.append(commentButton('作る AI に送る', () => commentAct(id, 'send', { pressedBy: els.commentPressed.value }), { primary: true }));
+    if (['open', 'awaiting', 'queued'].includes(comment.status) && comment.approvals.length > 0) approvals.append(commentButton('承認を取り消す', () => commentAct(id, 'unapprove')));
     li.append(approvals);
   }
   const actions = element('div', undefined, 'show-actions comment-actions');
@@ -3018,6 +3020,7 @@ async function commentAct(commentId, action, json = {}) {
     react: null,
     approve: c.status === 'queued' ? `コメント ${c.number} を承認しました。列に並べ、順に作る AI に送ります。` : c.status === 'returned' ? `コメント ${c.number} を承認しました。構成のコメントなので、作る AI には送らず、AI 構成の審査に戻しました。` : `コメント ${c.number} に承認を 1 つ付けました。もう 1 人の承認がそろうまで送りません。`,
     unapprove: `コメント ${c.number} の承認を取り消しました。作る AI には送りません。`,
+    send: `コメント ${c.number} を列に並べました。順に作る AI に送ります。`,
     close: `コメント ${c.number} を閉じました。`,
     reopen: `コメント ${c.number} を開き直しました。`,
     resolve: `コメント ${c.number} を「直った」にしました。`,
@@ -6402,6 +6405,8 @@ const shareEls = {
   name: $('share-name'),
   role: $('share-role'),
   members: $('share-members'),
+  awaitingBox: $('share-awaiting-box'),
+  awaiting: $('share-awaiting'),
   refused: $('share-refused'),
   error: $('share-error'),
 };
@@ -6418,7 +6423,7 @@ function shareStateText(view) {
   // 設定の名前(開発の言葉)は画面に出さない。決め方は使い方の文書に書いた
   if (!view.available) return '中継のサーバーが決まっていないので、共有できません。決め方は、使い方の文書の「その場の共有」にあります。';
   const synced = view.lastSyncAt ? `最後に合わせた時刻: ${formatTime(view.lastSyncAt)}。` : '';
-  if (view.state === 'online') return `共有しています。中継のサーバーにつながっています。招いた人のブラウザで、整理の板を同時に直せます。${synced}`;
+  if (view.state === 'online') return `共有しています。中継のサーバーにつながっています。招いた人のブラウザで、整理の板を同時に直し、コメントと承認を出せます。${synced}`;
   if (view.state === 'offline') return `中継のサーバーにつながっていません。この PC では、このまま続けられます。つながると合わせます。${synced}`;
   if (view.state === 'connecting') return '中継のサーバーにつないでいます…';
   if (view.state === 'ended') return view.problem ?? '共有は終わりました。';
@@ -6461,6 +6466,18 @@ function renderShare() {
   shareEls.stop.disabled = shareUi.busy;
   shareEls.invite.hidden = !sharing;
   shareEls.members.replaceChildren(...(sharing ? view.members.map(shareMemberItem) : []));
+  // 共有の場で承認がそろったコメント。作る AI に送る最後の 1 押しは、進行役がこの PC でする(collaboration.md の 9.2)
+  const awaiting = sharing ? view.awaiting ?? [] : [];
+  shareEls.awaitingBox.hidden = awaiting.length === 0;
+  shareEls.awaiting.replaceChildren(...awaiting.map((item) => {
+    const li = element('li', undefined, 'share-member');
+    li.append(element('span', `コメント ${item.number}「${item.text}」(${item.kindLabel})。承認: ${item.approvers.join('、')}`));
+    const sendButton = smallButton('作る AI に送る', () => sendAwaiting(item.id));
+    sendButton.setAttribute('aria-label', `コメント ${item.number} を作る AI に送る`);
+    sendButton.disabled = shareUi.busy;
+    li.append(sendButton);
+    return li;
+  }));
   const refused = sharing ? view.refused ?? [] : [];
   shareEls.refused.hidden = refused.length === 0;
   shareEls.refused.replaceChildren(...refused.map((r) => element('li', `${r.name}さんの書き込みを当てませんでした: ${r.message}`)));
@@ -6526,6 +6543,24 @@ async function shareAct(action, body = {}) {
   } finally {
     shareUi.busy = false;
     if (seq === shareUi.seq) renderShare();
+  }
+}
+
+// 「作る AI に送る」。コメントの口(comments の send)を呼び、共有の欄を読み直す
+async function sendAwaiting(commentId) {
+  const id = shareUi.projectId;
+  if (!id || shareUi.busy) return;
+  shareError(null);
+  shareUi.busy = true;
+  renderShare();
+  try {
+    await api(commentsPath(id, `/${commentId}/send`), { method: 'POST', json: {} });
+  } catch (error) {
+    shareError(error instanceof ApiError ? error.message : '送れませんでした。');
+  } finally {
+    shareUi.busy = false;
+    renderShare();
+    pollShare();
   }
 }
 
@@ -9635,6 +9670,9 @@ function showOperatorStep() {
   if (queued.length > 0) {
     return { text: `承認した ${queued.length} つが、直す列で待っています。段 5 の作る AI の欄で、直す様子を見られます。`, go: { label: `承認した ${queued.length} つを直す`, run: fixApproved } };
   }
+  // 共有の場で承認がそろったもの。作る AI に送る最後の 1 押しは進行役(collaboration.md の 9.2)
+  const awaiting = comments.filter((c) => c.status === 'awaiting').length;
+  if (awaiting > 0) return { text: `共有の場で承認がそろったコメントが ${awaiting} つあります。コメントの一覧で依頼の文と承認した人を確かめ、「作る AI に送る」を押すと直します。押すまでは動きません。` };
   const fixed = comments.filter((c) => c.status === 'review').length;
   if (fixed > 0) return { text: `作る AI が直したコメントが ${fixed} つあります。見せる画面で確かめ、違えばコメントの「元に戻す」で戻せます。`, go: toCustomer };
   const waiting = comments.filter((c) => c.status === 'open').length;

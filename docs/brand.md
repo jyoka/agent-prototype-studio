@@ -150,7 +150,7 @@ Studio が何で、何が違うかを 1 文で言い切る。運営者が 2026-1
 | 人の確かめと現場の通し | 初めての人が説明なしで進めるか、架空の題材の 1 時間の会で見せられるまでの時間を、人が通して測る。今の機能は、どれも人の確かめがまだ。 | Checks with people and a full session | People run a one-hour session on a fictional subject to see whether first-time users can follow it without help, and how long it takes to show something. No feature has been checked with people yet. | K6(jyoka/tasks#396) |
 | 本物の AI で案ごとに測る | 審査の画面から、構成の案ごとに本物の AI で場面を回して比べる。今の審査の画面から回せるのはお試しの AI だけで、本物の AI の数は試す欄の下の表かターミナルで回したときに出る。 | Measuring each proposal with the real model | Run evals for each setup proposal with the real model, right from the review screen. Today the review screen runs only the mock AI. Real-model numbers appear after you run them from the table under the try pane or in the terminal. | まだない(後のカード) |
 | AI の使いやすさの見直し | AI が試作品の画面を見て、使いやすさを判断する。質の見直しの表に行はあるが、今は「まだ見ていない」と出る。 | AI usability review | The AI looks at the prototype screens and judges usability. The quality review has a row for it, but today it says the item has not been checked. | まだない(後のカード) |
-| 何台もの PC で同時に作る | 何人もが自分の PC から同じ試作品にコメントし、同時に直す。今は 1 台の PC でみんなで使う形だけ。 | Building together on several devices | Several people comment on and edit the same prototype from their own devices at the same time. Today it works only with a group sharing one PC. | K7(まだない) |
+| 何台もの PC で同時に作る | 何人もが自分の PC から同じ試作品にコメントし、同時に直す。整理の板の同時編集とコメントの承認は、手元の中継のサーバーで試せる形まで作った。人の確かめと、参加者の画面の試作品はまだ。 | Building together on several devices | Several people comment on and edit the same prototype from their own devices at the same time. Shared board editing and comment approval work with a local relay server. Checks with people and the prototype on participants’ screens are not done yet. | K7(一部) |
 
 ### 3 つの問い
 
