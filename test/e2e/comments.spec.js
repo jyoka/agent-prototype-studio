@@ -19,9 +19,12 @@ function parts(page) {
   };
 }
 
+// 見せる画面にしてから、操作役の画面に切り替える(コメントの一覧と承認は操作役の画面にある。ui-ux-v2.md の 4.6)
 async function startShow(page) {
   await startShowing(page);
   await expect(page.getByRole('region', { name: '確かめたい問い' })).toBeVisible();
+  await page.getByRole('button', { name: '操作役の画面へ' }).click();
+  await expect(page.getByRole('list', { name: 'コメントの一覧' })).toBeAttached();
 }
 
 async function writeComment(page, text, kind = '見た目と動き', { place = null } = {}) {
@@ -151,12 +154,12 @@ test('要件のコメントは 2 人の承認がそろうまで起動しない�
     const req = ui.item(1);
     await req.getByRole('button', { name: '進行役として承認' }).click();
     await expect(ui.status).toContainText('コメント 1 に承認を 1 つ付けました。もう 1 人の承認がそろうまで送りません。');
-    await expect(req).toContainText('承認(2 人が要ります): 進行役 済み、決める人 まだ');
+    await expect(req).toContainText('承認 1 / 2(2 人が要ります): 進行役 済み、決める人 まだ');
     await expectNoLaunch(studio, page);
     await req.getByRole('button', { name: '承認を取り消す' }).click();
     await expect(ui.status).toContainText('コメント 1 の承認を取り消しました。作る AI には送りません。');
     await req.getByRole('button', { name: '決める人として承認' }).click();
-    await expect(req).toContainText('承認(2 人が要ります): 進行役 まだ、決める人 済み');
+    await expect(req).toContainText('承認 1 / 2(2 人が要ります): 進行役 まだ、決める人 済み');
     await expectNoLaunch(studio, page);
 
     // 2 人がそろうと 1 回だけ起動する

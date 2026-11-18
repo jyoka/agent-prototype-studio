@@ -219,6 +219,21 @@ export async function expectNoDevWordsOnScreen(page) {
   expect(devWordsIn(text)).toEqual([]);
 }
 
+// 見えているボタンのうち、強い色(--color-accent の地)のもの。同意のカードの中は数えない(唯一の割り込み。5.1)
+export function strongButtons(page) {
+  return page.evaluate(() => {
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--color-accent)';
+    document.body.append(probe);
+    const accent = getComputedStyle(probe).color;
+    probe.remove();
+    return [...document.querySelectorAll('button')]
+      .filter((button) => button.checkVisibility() && !button.closest('.consent-card'))
+      .filter((button) => getComputedStyle(button).backgroundColor === accent)
+      .map((button) => ({ text: button.innerText.trim(), inBand: Boolean(button.closest('#next-band')) }));
+  });
+}
+
 // サンプルの ID と、試作品の一覧の名前(Studio が目録の title と、試作品の中の AI があるかから作る)。
 // 一覧の順も、この順(求人相談、学習相談、バイト探し、図書室)
 export const SAMPLES = {

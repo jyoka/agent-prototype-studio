@@ -139,7 +139,7 @@ test('偽接続は同意なしで聞き出す。新しい試作品は表示で�
   assert.match(project.title, /…/);
   const view = await studio.intents.start(id, { sentence: '架空の 1 文', depth: 'quick' });
   assert.match(view.pending.question, /架空の 1 文/);
-  await assert.rejects(studio.intents.start(id, { sentence: '架空', depth: 'いちばん深く' }), /案内の深さ/);
+  await assert.rejects(studio.intents.start(id, { sentence: '架空', depth: 'いちばん深く' }), /聞き方の深さ/);
   await assert.rejects(studio.intents.start(id, { sentence: ' ' }), /1 文で/);
 });
 
@@ -157,7 +157,7 @@ test('形の合わない値は断る。文書でない doc では「決めた」
   const intents = studio.intents;
   await assert.rejects(intents.createProject({ sentence: '架空', guide: null }), /guide/);
   const id = await intents.createProject({ sentence: '架空の 1 文' });
-  await assert.rejects(intents.start(id, { sentence: '架空', depth: ['quick'] }), /案内の深さ/);
+  await assert.rejects(intents.start(id, { sentence: '架空', depth: ['quick'] }), /聞き方の深さ/);
   await intents.start(id, { sentence: '架空の 1 文', depth: 'quick' });
   await assert.rejects(intents.decide(id, { doc: 5 }), /文書の形/);
   await assert.rejects(intents.edit(id, { doc: ['a'] }), /文書の形/);

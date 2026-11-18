@@ -142,6 +142,8 @@ test('台本を会の始めから会の終わりまで通すと、7 つの成果
     await comments.getByRole('radio', { name: '見た目と動き' }).check();
     await comments.getByRole('button', { name: 'コメントを書く' }).click();
     await expect(page.locator('#comment-status')).toContainText('を書きました。承認するまで、作る AI には送りません。');
+    // コメントの一覧と承認は、操作役の画面にある(ui-ux-v2.md の 4.6)
+    await page.getByRole('button', { name: '操作役の画面へ' }).click();
     const first = comments.getByRole('list', { name: 'コメントの一覧' }).locator(':scope > li').first();
     await first.getByRole('button', { name: /に反応を付ける/ }).click();
     await expect.poll(async () => Object.keys(await stagesOf(home, id))).toContain('show');

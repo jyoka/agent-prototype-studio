@@ -153,6 +153,9 @@ const els = {
   showStart: $('show-start'),
   show: $('show'),
   showHeading: $('show-heading'),
+  showView: $('show-view'),
+  showTrialAi: $('show-trial-ai'),
+  commentSummary: $('comment-summary'),
   showTitle: $('show-title'),
   showLead: $('show-lead'),
   showForm: $('show-form'),
@@ -350,13 +353,14 @@ const firstSteps = { touching: false };
 // drawer は開いている引き出し(mechanism か materials)。band は次の一手の帯に移したボタンと、その元の場所。
 // ready は、下の部品の状態がそろって、枠を描けるようになったか
 // trialInfo は今の行の「○ お試しの AI」の中身を開いているか。reverted は版を戻した後の 1 行(5.4 の「元に戻した」。次の操作で消える)
-const frame = { stage: 'build', side: 'stage', tab: 'turn', drawer: null, compactOpen: false, pending: false, ready: false, moved: null, home: null, prompts: { projectId: null, key: '', seq: 0, data: null }, trialInfo: false, reverted: null };
+const frame = { stage: 'build', side: 'stage', tab: 'turn', drawer: null, compactOpen: false, pending: false, ready: false, moved: null, home: null, prompts: { projectId: null, key: '', seq: 0, data: null }, trialInfo: false, reverted: null, listenTimer: null };
 // 「その場で」の 1 行(5.1)。counts は操作の種類ごとの回数、limit はこの回数で出さなくなる(hints.js)
 const hintState = { counts: {}, limit: 2, loaded: false };
 // はじめの画面、目的の聞き出し、目的の文書(user-journey.md の段 1、段 2、J1)。view は出している画面(start、talk、doc)で、null なら試作品の画面。
 // projectId は聞き出している試作品(はじめの画面で新しく作るときは null)。record はサーバーの状態(src/server/intent.js)。
 // guide は聞き出し方(ai か fixed)。startSeen は起動後の最初の一覧を読んだか(はじめの画面は 1 回だけ開く)
-const intentUi = { view: null, projectId: null, record: null, waiting: false, guide: 'ai', declined: false, startSeen: false, sending: false, shownQuestion: null, seq: 0 };
+// example は、はじめの画面の欄に入れておいた例の文(人が書き換えるまで)。unknownNote は「分からない」の後の 1 文。edited は人が書き換えた文書の行
+const intentUi = { view: null, projectId: null, record: null, waiting: false, guide: 'ai', declined: false, startSeen: false, sending: false, shownQuestion: null, seq: 0, example: null, unknownNote: null, edited: new Set() };
 // AI の実行の記録(#277)。open は、開いている「渡したもの、受け取ったもの」の記録の ID
 const trace = { projectId: null, entries: null, snapshot: '', seq: 0, timer: null, open: new Set() };
 const TRACE_POLL_MS = 1000;
@@ -367,7 +371,8 @@ const waitingFor = (projectId) => waitingByProject.get(projectId) ?? 0;
 const versions = { projectId: null, data: null, seq: 0, busy: false, message: null };
 // 見せる画面(J7)。open の間は、試作品と確かめたい問いだけを出す。version は見せている版、questions は問い。
 // warned は、残していない答えがあるまま「見せ終わる」を 1 回押したか
-const showUi = { open: false, starting: false, saving: false, projectId: null, version: null, questions: [], source: null, savedNow: false, message: null, warned: false };
+// view は見せている間の画面。customer は見せる画面(お客さんが触る)、operator は操作役の画面(コメントの一覧と承認。ui-ux-v2.md の 4.6)
+const showUi = { open: false, view: 'customer', starting: false, saving: false, projectId: null, version: null, questions: [], source: null, savedNow: false, message: null, warned: false };
 // 画面へのコメント(K3。サーバーは src/server/comments.js)。見せる画面の中に出す。data はサーバーの一覧、snapshot は前に描いた中身。
 // place は書く前に選んだ画面の場所({ x, y } は見えている枠の中の %)、picking は場所を選んでいる最中か。
 // confirmRevert は「後のものも一緒に戻る」と知らせたコメント(もう一度押すと戻す)
@@ -514,6 +519,7 @@ function render() {
   renderList();
   const project = selectedProject();
   renderIntentMark(project);
+  if (intentUi.view === 'start') renderIntentSamples();
   els.title.textContent = project ? project.title : 'ありません';
   els.reopen.disabled = !project?.previewUrl;
   els.reset.disabled = !project?.previewUrl;
@@ -2603,6 +2609,7 @@ async function startShow() {
     closeMeeting();
     Object.assign(showUi, {
       open: true,
+      view: 'customer',
       projectId: project.id,
       version: show.version,
       questions: show.questions,
@@ -2650,9 +2657,11 @@ function showAnswerFields() {
 function renderShow() {
   scheduleFrame();
   els.show.hidden = !showUi.open;
-  if (showUi.open) document.body.dataset.show = 'open';
+  if (showUi.open) document.body.dataset.show = showUi.view;
   else delete document.body.dataset.show;
   if (!showUi.open) return;
+  els.showView.textContent = showUi.view === 'customer' ? '操作役の画面へ' : '見せる画面に戻る';
+  els.showHeading.textContent = showUi.view === 'customer' ? '確かめたい問い' : '確かめたい問い(操作役の画面)';
   const project = projects.find((p) => p.id === showUi.projectId);
   els.showTitle.textContent = project?.title ?? '';
   els.showLead.textContent = [
@@ -2662,7 +2671,10 @@ function renderShow() {
   ]
     .filter(Boolean)
     .join('');
+  // お試しか本物か(4.6)。試作品の中の AI がいないときは、どちらも出さない
+  const hasAi = Boolean(ai.projectId === showUi.projectId && ai.session);
   els.showRealAi.hidden = !tryRealAi();
+  els.showTrialAi.hidden = tryRealAi() || !hasAi;
   els.showSave.disabled = showUi.saving;
   els.showStatus.textContent = showUi.message?.text ?? '';
   els.showStatus.dataset.kind = showUi.message?.kind ?? '';
@@ -2709,13 +2721,32 @@ function endShow() {
     renderShow();
     return;
   }
-  Object.assign(showUi, { open: false, projectId: null, version: null, questions: [], source: null, savedNow: false, message: null, warned: false });
+  Object.assign(showUi, { open: false, view: 'customer', projectId: null, version: null, questions: [], source: null, savedNow: false, message: null, warned: false });
   els.showQuestions.replaceChildren();
   commentsUi.seq += 1;
   Object.assign(commentsUi, { projectId: null, data: null, snapshot: '', place: null, picking: false, message: null, confirmRevert: null });
   renderShow();
   scheduleFrame();
   els.benchHeading.focus();
+}
+
+// 見せる画面と操作役の画面を切り替える(4.6)。見せる画面にするときは、仕組みの引き出しを閉じる
+function setShowView(view) {
+  if (!showUi.open) return;
+  showUi.view = view;
+  if (view === 'customer') setDrawer(null);
+  commentsUi.snapshot = '';
+  renderShow();
+  els.showView.focus();
+}
+els.showView.addEventListener('click', () => setShowView(showUi.view === 'customer' ? 'operator' : 'customer'));
+
+// 承認した分を直す(4.6 の次の一手)。止めている列を進め、見せる画面を閉じて、段 5 の作る AI の欄に移る
+async function fixApproved() {
+  const held = (commentsUi.data?.comments ?? []).some((c) => c.status === 'queued' && c.held);
+  if (held) await resumeComments();
+  endShow();
+  if (!showUi.open) goStage('build');
 }
 
 // ---- 画面へのコメント(K3) ----
@@ -2761,6 +2792,7 @@ function applyComments(data) {
 }
 
 function renderComments() {
+  scheduleFrame();
   const data = commentsUi.data;
   const open = showUi.open && commentsUi.projectId === showUi.projectId;
   commentLayer.dataset.on = String(open);
@@ -2801,6 +2833,10 @@ function renderComments() {
     .join('');
   els.commentResume.hidden = !held;
   els.commentResume.disabled = commentsUi.busy;
+  // 承認待ちと反応の数(4.6)
+  const waiting = comments.filter((c) => c.status === 'open').length;
+  const reactions = comments.filter((c) => ['open', 'queued'].includes(c.status)).reduce((sum, c) => sum + c.reactions, 0);
+  els.commentSummary.textContent = comments.length > 0 ? `承認待ち ${waiting} つ・反応 ${reactions}` : 'まだコメントはありません。';
   const snapshot = JSON.stringify([data, commentsUi.busy, commentsUi.confirmRevert]);
   if (snapshot === commentsUi.snapshot) return;
   commentsUi.snapshot = snapshot;
@@ -2814,9 +2850,10 @@ function approvalWords(comment) {
     const a = by(role);
     return a ? `${COMMENT_ROLE_WORDS[role]} 済み${who(a) ? `(${who(a)})` : ''}` : `${COMMENT_ROLE_WORDS[role]} まだ`;
   };
-  if (comment.needsBoth) return `承認(2 人が要ります): ${one('facilitator')}、${one('decider')}`;
+  // 承認の数を「1 / 2」の形で出す(4.6)
+  if (comment.needsBoth) return `承認 ${comment.approvals.length} / 2(2 人が要ります): ${one('facilitator')}、${one('decider')}`;
   const done = comment.approvals[0];
-  return done ? `承認: ${COMMENT_ROLE_WORDS[done.role]}${who(done) ? `(${who(done)})` : ''}` : '承認: まだ(進行役か決める人の 1 人)';
+  return done ? `承認 1 / 1: ${COMMENT_ROLE_WORDS[done.role]}${who(done) ? `(${who(done)})` : ''}` : '承認 0 / 1: まだ(進行役か決める人の 1 人)';
 }
 
 function commentButton(text, onClick, { primary = false, disabled = false } = {}) {
@@ -2839,24 +2876,34 @@ function commentItem(comment) {
   li.append(head, element('p', comment.text, 'comment-text'));
   const meta = [`場所: ${comment.placeWords}`, comment.author ? `書いた人: ${comment.author}` : ''].filter(Boolean).join('。');
   li.append(element('p', meta, 'muted'));
-  if (comment.near?.length > 0) li.append(element('p', `同じ所に向いたコメント: ${comment.near.map((n) => `コメント ${n}`).join('、')}。承認の前に読み比べてください。`, 'comment-near'));
-  if (!['closed', 'returned'].includes(comment.status)) li.append(element('p', approvalWords(comment), 'comment-approvals'));
+  if (comment.near?.length > 0) li.append(element('p', `同じ所に向いたコメント: ${comment.near.map((n) => `コメント ${n}`).join('、')}。承認の前に読み比べますか。`, 'comment-near'));
   if (comment.status === 'returned') li.append(element('p', '承認したので、作る AI には送らず、AI 構成の審査に戻しました。審査で 4 つを承認し直すまで、作る AI は作り始めません。', 'comment-note'));
   if (comment.held && comment.status !== 'queued') li.append(element('p', comment.held.message, 'comment-note'));
-  const actions = element('div', undefined, 'show-actions comment-actions');
   const id = comment.id;
-  const react = commentButton(`同じ意見(反応 ${comment.reactions})`, () => commentAct(id, 'react'), { disabled: comment.status === 'closed' });
-  react.setAttribute('aria-label', `コメント ${comment.number} に反応を付ける(今 ${comment.reactions})`);
-  if (['open', 'queued'].includes(comment.status)) actions.append(react);
-  if (comment.status === 'open') {
-    for (const role of ['facilitator', 'decider']) {
-      const done = comment.approvals.some((a) => a.role === role);
-      actions.append(commentButton(`${COMMENT_ROLE_WORDS[role]}として承認`, () => commentAct(id, 'approve', { role, ...whoFields() }), { primary: true, disabled: done }));
-    }
+  // 反応と承認待ちを分ける(4.6)。反応は数だけで、作る AI は動かない。承認は数を「1 / 2」で出す
+  if (['open', 'queued'].includes(comment.status)) {
+    const reacts = element('div', undefined, 'comment-part comment-reacts');
+    reacts.append(element('span', `反応 ${comment.reactions}`, 'comment-part-label'));
+    const react = commentButton('同じ意見', () => commentAct(id, 'react'));
+    react.setAttribute('aria-label', `コメント ${comment.number} に反応を付ける(今 ${comment.reactions})`);
+    reacts.append(react, element('span', 'AI は動きません', 'muted'));
+    li.append(reacts);
   }
-  if (['open', 'queued'].includes(comment.status) && comment.approvals.length > 0) actions.append(commentButton('承認を取り消す', () => commentAct(id, 'unapprove')));
+  if (!['closed', 'returned'].includes(comment.status)) {
+    const approvals = element('div', undefined, 'comment-part comment-approve');
+    approvals.append(element('span', comment.status === 'open' ? '承認待ち' : '承認', 'comment-part-label'), element('span', approvalWords(comment), 'comment-approvals'));
+    if (comment.status === 'open') {
+      for (const role of ['facilitator', 'decider']) {
+        const done = comment.approvals.some((a) => a.role === role);
+        approvals.append(commentButton(`${COMMENT_ROLE_WORDS[role]}として承認`, () => commentAct(id, 'approve', { role, ...whoFields() }), { disabled: done }));
+      }
+    }
+    if (['open', 'queued'].includes(comment.status) && comment.approvals.length > 0) approvals.append(commentButton('承認を取り消す', () => commentAct(id, 'unapprove')));
+    li.append(approvals);
+  }
+  const actions = element('div', undefined, 'show-actions comment-actions');
   if (comment.status === 'open') actions.append(commentButton('閉じる', () => commentAct(id, 'close')));
-  if (comment.status === 'review') actions.append(commentButton('直った', () => commentAct(id, 'resolve', whoFields()), { primary: true }));
+  if (comment.status === 'review') actions.append(commentButton('直った', () => commentAct(id, 'resolve', whoFields())));
   if (['review', 'resolved', 'failed'].includes(comment.status) && comment.recordId) {
     const confirming = commentsUi.confirmRevert === id;
     actions.append(commentButton(confirming ? '後の直しも一緒に戻す' : '元に戻す', () => revertComment(id, confirming)));
@@ -5205,8 +5252,14 @@ const intentEls = {
   consent: $('intent-consent'),
   declined: $('intent-declined'),
   send: $('intent-send'),
+  goal: $('intent-goal'),
   talk: $('intent-talk'),
   talkSentence: $('intent-talk-sentence'),
+  askedDone: $('intent-asked-done'),
+  unknownNote: $('intent-unknown-note'),
+  samples: $('intent-samples'),
+  samplesNames: $('intent-samples-names'),
+  sampleList: $('intent-sample-list'),
   turns: $('intent-turns'),
   waiting: $('intent-waiting'),
   asking: $('intent-asking'),
@@ -5221,8 +5274,6 @@ const intentEls = {
   reopen: $('intent-reopen'),
   back: $('intent-back'),
   docSkip: $('intent-doc-skip'),
-  trailHead: $('intent-trail-head'),
-  trail: $('intent-trail'),
   note: $('intent-note'),
   error: $('intent-error'),
   mark: $('intent-mark'),
@@ -5262,16 +5313,84 @@ function turnItems(turns) {
 
 function renderIntentDocState(record) {
   const decided = record.status === 'decided';
+  const asking = record.status === 'interviewing';
   intentEls.docState.dataset.state = record.status;
   if (decided) intentEls.docState.textContent = `${formatTime(record.decidedAt)}に決めました。この目的で、設計に進みますか。`;
+  else if (asking) intentEls.docState.textContent = '答えると、ここに下書きが埋まります。まだ決めていません。問いの途中でも、読んで「これで決める」を押せます。';
   else if (record.status === 'skipped') intentEls.docState.textContent = `${formatTime(record.skippedAt)}に飛ばしました。「目的なし」のまま進めています。決めるときは、中身を確かめて「これで決める」を押してください。`;
   else intentEls.docState.textContent = '答えから下書きを作りました。まだ決めていません。違うところを直してから、「これで決める」を押しますか。';
   intentEls.decide.hidden = decided;
-  intentEls.docSkip.hidden = decided || record.status === 'skipped';
+  intentEls.docSkip.hidden = decided || asking || record.status === 'skipped';
   intentEls.begin.hidden = !decided;
   $('intent-design').hidden = !decided;
   intentEls.reopen.hidden = !decided;
-  for (const field of [...INTENT_TEXT_FIELDS, ...INTENT_LIST_FIELDS]) intentDocField(field).readOnly = decided;
+  // 聞いている間は、答えで下書きが変わるので直せない(直すのは問いが終わってから)
+  for (const field of [...INTENT_TEXT_FIELDS, ...INTENT_LIST_FIELDS]) intentDocField(field).readOnly = decided || asking;
+  renderIntentGuesses(record);
+}
+
+// 推測で埋めた行(4.4)。「推測」の札と点線の縁。人が書き換えた行は推測でなくなる
+function renderIntentGuesses(record) {
+  const guessed = new Set(record.status === 'decided' ? [] : record.guessed ?? []);
+  for (const row of intentEls.doc.querySelectorAll('.intent-row')) {
+    const field = row.dataset.field;
+    const on = guessed.has(field) && !intentUi.edited.has(field);
+    row.dataset.guess = String(on);
+    let badge = row.querySelector(':scope > .guess-badge');
+    if (on && !badge) {
+      badge = element('span', '推測', 'organize-badge guess-badge');
+      badge.dataset.kind = 'guess';
+      badge.title = '答えにないので、AI が推測で埋めました。違えば直します';
+      row.querySelector('label').after(badge);
+    } else if (!on && badge) badge.remove();
+  }
+}
+
+// 答えが入った行だけ、縁を短く強くする(光らせない。120ms。4.4)
+function flashIntentRows(before, after) {
+  for (const field of [...INTENT_TEXT_FIELDS, ...INTENT_LIST_FIELDS]) {
+    if (JSON.stringify(before?.[field] ?? null) === JSON.stringify(after?.[field] ?? null)) continue;
+    const row = intentDocField(field).closest('.intent-row');
+    row.dataset.changed = 'true';
+    setTimeout(() => delete row.dataset.changed, 120);
+  }
+}
+
+// 見本の試作品から始める(4.4)。見本は段 1〜4 を「飛ばした」で始まる
+function renderIntentSamples() {
+  const samples = projects.filter(isSample);
+  intentEls.samples.hidden = samples.length === 0 || Boolean(intentUi.projectId);
+  const names = samples.map((project) => project.title.replace(/[((]架空.*$/, ''));
+  intentEls.samplesNames.textContent = samples.length > 0 ? `(${names.join('、')})` : '';
+  const key = samples.map((project) => `${project.id}:${project.title}`).join('|');
+  if (intentEls.sampleList.dataset.key === key) return;
+  intentEls.sampleList.dataset.key = key;
+  intentEls.sampleList.replaceChildren(...samples.map((project) => {
+    const li = element('li');
+    const button = element('button', project.title);
+    button.type = 'button';
+    button.addEventListener('click', () => startFromSample(project.id));
+    li.append(button);
+    return li;
+  }));
+}
+
+async function startFromSample(id) {
+  if (intentUi.sending) return;
+  intentUi.sending = true;
+  intentError(null);
+  try {
+    await api('/api/start', { method: 'POST' });
+    selectedId = id;
+    closeIntent();
+    lastSnapshot = '';
+    await refresh();
+    render();
+  } catch (error) {
+    intentFailed(error);
+  } finally {
+    intentUi.sending = false;
+  }
 }
 
 // 文書の欄を、サーバーの文書で埋める。書いている途中の文を上書きしないよう、文書の画面に入るときと、決めた後だけ呼ぶ
@@ -5294,50 +5413,60 @@ function renderIntent() {
   if (view) document.body.dataset.intent = view;
   else delete document.body.dataset.intent;
   intentEls.start.hidden = view !== 'start';
-  intentEls.talk.hidden = view !== 'talk';
-  intentEls.doc.hidden = view !== 'doc';
+  // 段 2 は 2 列。聞いている間も、右に目的の文書の下書きを出す
+  intentEls.goal.hidden = view !== 'talk' && view !== 'doc';
   intentEls.note.hidden = !record?.note || view === 'start';
   intentEls.note.textContent = record?.note ?? '';
   renderIntentMark(selectedProject());
   if (view === 'start') {
-    intentEls.heading.textContent = 'どんなものを作りたいですか';
+    intentEls.heading.textContent = '思いつきを 1 文で書いてください';
     const project = intentUi.projectId ? selectedProject() : null;
     // はじめて(5.4)。試作品がまだないときは、何が起きたか、今どうなっているか、次に何をするかの 3 つの文と「─」の印
-    if (project) clearState(intentEls.lead, `「${project.title}」の目的を聞き出します。1 文で書いてください。`);
+    if (project) clearState(intentEls.lead, `「${project.title}」の目的を聞き出します。ラフな 1 文で大丈夫です。`);
     else fillState(intentEls.lead, 'first', { none: projects.length === 0 });
     intentEls.fixedNote.hidden = Boolean(agent?.ready) || intentUi.guide === 'fixed';
     intentEls.send.disabled = intentUi.sending;
+    renderIntentSamples();
     renderIntentConsent();
-  } else if (view === 'talk') {
-    intentEls.heading.textContent = '目的を聞いています';
-    intentEls.talkSentence.textContent = record?.sentence ?? intentEls.sentence.value.trim();
-    intentEls.turns.replaceChildren(...turnItems(record?.turns ?? []));
-    intentEls.waiting.hidden = !waiting;
-    intentEls.asking.hidden = waiting || !record?.pending;
-    if (record?.pending) {
-      intentEls.progress.textContent = `問い ${record.turns.length + 1} / 多くて ${record.limit}(案内の深さ: ${record.depthLabel})`;
-      intentEls.question.textContent = record.pending.question;
-      intentEls.reason.textContent = record.pending.reason;
-    }
-  } else if (view === 'doc') {
-    intentEls.heading.textContent = '目的の文書';
-    renderIntentDocState(record);
-    intentEls.trailHead.textContent = record.depthLabel ? `最初の 1 文: ${record.sentence}(案内の深さ: ${record.depthLabel})` : `最初の 1 文: ${record.sentence}`;
-    intentEls.trail.replaceChildren(...turnItems(record.turns ?? []));
+    return;
   }
+  if (view !== 'talk' && view !== 'doc') return;
+  const asking = view === 'talk';
+  intentEls.heading.textContent = asking ? '目的を聞いています' : '目的の文書';
+  intentEls.talkSentence.textContent = `最初の 1 文: ${record?.sentence ?? intentEls.sentence.value.trim()}${record?.depthLabel ? `(聞き方の深さ: ${record.depthLabel})` : ''}`;
+  intentEls.turns.replaceChildren(...turnItems(record?.turns ?? []));
+  intentEls.waiting.hidden = !asking || !waiting;
+  intentEls.asking.hidden = !asking || waiting || !record?.pending;
+  intentEls.askedDone.hidden = asking;
+  if (asking && record?.pending) {
+    intentEls.progress.textContent = `問い ${record.turns.length + 1} / 多くて ${record.limit}`;
+    intentEls.question.textContent = record.pending.question;
+    intentEls.reason.textContent = record.pending.reason;
+  }
+  intentEls.unknownNote.hidden = !intentUi.unknownNote;
+  intentEls.unknownNote.textContent = intentUi.unknownNote ?? '';
+  // 最初の問いを待つ間は、まだ記録がない。聞いている形で出し、決めるのは問いが来てから
+  renderIntentDocState(record ?? { status: 'interviewing', guessed: [] });
+  intentEls.decide.disabled = Boolean(waiting) || !record;
 }
 
+// はじめの画面。白紙の欄を見せない(4.4)。1 文がなければ例の 1 つ目を入れて選んでおく。打つと置き換わり、そのまま送ってもよい
 function openStart(projectId, sentence = '') {
   intentUi.view = 'start';
   intentUi.projectId = projectId;
   intentUi.record = null;
   intentUi.guide = 'ai';
   intentUi.declined = false;
-  intentEls.sentence.value = sentence;
+  intentUi.example = sentence ? null : INTENT_EXAMPLES[0];
+  intentEls.sentence.value = sentence || INTENT_EXAMPLES[0];
   intentError(null);
   renderIntent();
   intentEls.sentence.focus();
+  intentEls.sentence.select();
 }
+
+// 欄の文が、入れておいた例のままか(飛ばすときは、書いていないものとして扱う)
+const sentenceIsExample = () => intentUi.example !== null && intentEls.sentence.value.trim() === intentUi.example;
 
 // 別の画面へ移る。書いた文書は下書きとして残す
 function leaveIntent() {
@@ -5355,6 +5484,10 @@ function closeIntent() {
   intentUi.record = null;
   intentUi.waiting = false;
   intentUi.declined = false;
+  intentUi.unknownNote = null;
+  intentUi.edited = new Set();
+  // 前の試作品の文書を、次に開く聞き出しに持ち込まない
+  fillIntentDoc({});
   intentError(null);
   renderIntent();
 }
@@ -5362,10 +5495,16 @@ function closeIntent() {
 // サーバーの状態を画面にする。聞いている間は会話、終わったら文書
 function showIntent(record) {
   const entering = intentUi.view !== 'doc';
+  const before = intentUi.record?.doc ?? null;
   intentUi.record = record;
   intentUi.waiting = false;
   intentUi.view = record.status === 'interviewing' ? 'talk' : 'doc';
-  if (intentUi.view === 'doc' && entering) fillIntentDoc(record.doc);
+  // 聞いている間は、答えのたびに下書きを読み直す(欄は直せない)。文書になったら、入るときだけ埋める(書いている途中の文を上書きしない)
+  if (intentUi.view === 'talk' || entering) {
+    intentUi.edited = new Set();
+    fillIntentDoc(record.doc);
+    if (before) flashIntentRows(before, record.doc);
+  }
   renderIntent();
   if (intentUi.view === 'talk') {
     // 問いが変わったときだけ、答えの欄を空にする(開き直しで、書いている途中の文を消さない)
@@ -5426,6 +5565,8 @@ async function sendSentence() {
     }
     intentUi.view = 'talk';
     intentUi.waiting = true;
+    intentUi.record = null;
+    fillIntentDoc({});
     renderIntent();
     await refreshAfterIntent();
     const { intent } = await api(intentPath(id, 'start'), { method: 'POST', json: { sentence, depth, guide } });
@@ -5457,11 +5598,16 @@ async function sendAnswer(text) {
     return;
   }
   intentError(null);
+  const asked = intentUi.record?.pending?.question ?? '';
   intentUi.waiting = true;
+  intentUi.unknownNote = null;
   renderIntent();
   try {
     const turn = intentUi.record?.turns?.length;
     const { intent } = await api(intentPath(id, 'answer'), { method: 'POST', json: text === null ? { unknown: true, turn } : { answer: text, turn } });
+    // 「分からない」は、決めていないことに入れたと 1 文で言う(4.4)
+    const last = intent.turns?.at(-1);
+    if (last?.unknown && last.question === asked) intentUi.unknownNote = `「${asked}」は、決めていないことに入れました。`;
     if (intentUi.projectId === id && intentUi.view) showIntent(intent);
   } catch (error) {
     intentUi.waiting = false;
@@ -5491,7 +5637,7 @@ async function intentAction(action, body = {}) {
 // はじめの画面の「飛ばす」。1 文があれば新しい試作品を作って「目的なし」を残す。なければ、はじめの画面を閉じるだけ(サンプルで試せる)
 async function skipFromStart() {
   if (intentUi.sending) return;
-  const sentence = intentEls.sentence.value.trim();
+  const sentence = sentenceIsExample() ? '' : intentEls.sentence.value.trim();
   intentError(null);
   intentUi.sending = true;
   try {
@@ -5523,6 +5669,7 @@ async function reloadIntent(id) {
     intentUi.record = intent;
     intentUi.view = 'talk';
     intentUi.waiting = true;
+    fillIntentDoc(intent.doc ?? {});
     renderIntent();
     setTimeout(() => {
       if (seq === intentUi.seq) reloadIntent(id).catch(handleError);
@@ -5584,6 +5731,7 @@ intentEls.examples.replaceChildren(
     button.type = 'button';
     button.addEventListener('click', () => {
       intentEls.sentence.value = text;
+      intentUi.example = null;
       intentEls.sentence.focus();
     });
     li.append(button);
@@ -5599,6 +5747,10 @@ $('new-project').addEventListener('click', () => {
   closeReview();
   closeMeeting();
   openStart(null);
+});
+// 人が欄を書き換えたら、入れておいた例の文ではなくなる
+intentEls.sentence.addEventListener('input', () => {
+  intentUi.example = null;
 });
 intentEls.start.addEventListener('submit', (event) => {
   event.preventDefault();
@@ -5627,6 +5779,13 @@ async function skipFromIntent() {
 }
 $('intent-talk-skip').addEventListener('click', skipFromIntent);
 intentEls.docSkip.addEventListener('click', skipFromIntent);
+// 人が書き換えた行は、推測の札を外す
+intentEls.doc.addEventListener('input', (event) => {
+  const row = event.target.closest('.intent-row');
+  if (!row || !intentUi.record) return;
+  intentUi.edited.add(row.dataset.field);
+  renderIntentGuesses(intentUi.record);
+});
 intentEls.doc.addEventListener('submit', async (event) => {
   event.preventDefault();
   const intent = await intentAction('decide', { doc: readIntentDoc() });
@@ -5647,6 +5806,7 @@ intentEls.back.addEventListener('click', async () => {
   closeIntent();
 });
 intentEls.begin.addEventListener('click', () => {
+  if (!intentUi.record?.doc) return;
   const text = intentRequestText(intentUi.record.doc);
   closeIntent();
   fillRequest(text);
@@ -5801,7 +5961,8 @@ function organizeItemNode(item, pointText) {
   } else if (item.sources.length === 0) {
     li.append(element('span', '人が確かめた', 'organize-badge'));
   }
-  for (const n of item.sources) li.append(element('p', `元の要点 ${n}: ${pointText.get(n) ?? ''}`, 'organize-source'));
+  // 元の要点は「元: n 行目」(4.5)。打った要点の番号と文
+  for (const n of item.sources) li.append(element('p', `元: ${n} 行目「${pointText.get(n) ?? ''}」`, 'organize-source'));
   const buttons = element('div', undefined, 'organize-item-actions');
   if (item.guess) buttons.append(smallButton('この項目は合っている', () => organizeAct('item-check', { id: item.id })));
   buttons.append(
@@ -8347,7 +8508,7 @@ sceneEls.cancel.addEventListener('click', cancelScenes);
 const qualityUi = { projectId: null, data: null, version: null, seq: 0, starting: false, message: null };
 const qualityEls = {
   box: $('quality'),
-  summary: $('quality-summary'),
+  count: $('quality-count'),
   check: $('quality-check'),
   status: $('quality-status'),
   table: $('quality-table'),
@@ -8385,24 +8546,50 @@ async function syncQuality(project, { force = false } = {}) {
   renderQuality(selectedProject());
 }
 
-function qualityTableOf(rows, group, label) {
+// 行の印(4.7)。見ていない行は ○ と「まだ見ていない」で、✓ と同じ見た目にしない。印と文を組にし、色だけで示さない
+const QUALITY_MARKS = { ok: ['✓', '問題なし'], fix: ['!', '直す'], info: ['─', '目安なし'], unseen: ['○', 'まだ見ていない'], na: ['─', '当てはまらない'] };
+
+// 見た数とまだの数。当てはまらない行は数えない
+function qualityCounts(rows) {
+  const counted = rows.filter((row) => row.status !== 'na');
+  const unseen = counted.filter((row) => row.status === 'unseen').length;
+  return { total: counted.length, seen: counted.length - unseen, unseen, fix: rows.filter((row) => row.status === 'fix').length };
+}
+
+// 「直す」。作る AI の欄に、この行を直す依頼を入れる(送るのは人)
+function fixQualityRow(row) {
+  fillRequest(row.request);
+  qualityUi.message = `「${row.label}」を直す依頼を、作る AI の欄に入れました。読んで、送りますか。`;
+  renderQuality(selectedProject());
+}
+
+// 見直しの表(4.7)。1 つの表で、「測った数」と「AI の判断」を別の列にする。行の結果は、その行の種類の列にだけ入れ、もう 1 つの列は「─」
+function qualityTableOf(rows) {
   const table = element('table', undefined, 'quality-rows');
-  table.setAttribute('aria-label', label);
+  table.setAttribute('aria-label', '質の見直しの表');
   const head = element('tr');
-  for (const name of ['項目', '結果', 'なぜ大事か', '直す']) head.append(element('th', name));
+  for (const name of ['項目', '測った数', 'AI の判断', 'なぜ大事か', '直す']) head.append(element('th', name));
+  head.firstChild.setAttribute('scope', 'col');
   const thead = element('thead');
   thead.append(head);
   const tbody = element('tbody');
-  for (const row of rows.filter((item) => item.group === group)) {
+  for (const row of rows) {
     const tr = element('tr');
     tr.dataset.row = row.id;
     tr.dataset.status = row.status;
+    tr.dataset.group = row.group;
     const name = element('th');
     name.setAttribute('scope', 'row');
+    const [mark, word] = QUALITY_MARKS[row.status] ?? ['─', ''];
+    const markNode = element('span', mark, 'quality-state');
+    markNode.setAttribute('aria-hidden', 'true');
+    markNode.dataset.status = row.status;
+    name.append(markNode, ' ');
+    if (row.status === 'unseen') name.append(element('span', 'まだ見ていない', 'quality-unseen'), ' ');
+    else name.append(element('span', `(${word})`, 'visually-hidden'));
     name.append(document.createTextNode(row.label));
-    if (row.group === 'judged') name.append(' ', element('span', '判断', 'quality-mark'));
     const result = element('td');
-    if (QUALITY_BADGES[row.status]) result.append(element('span', QUALITY_BADGES[row.status], `quality-badge quality-${row.status}`), ' ');
+    if (row.status !== 'unseen' && QUALITY_BADGES[row.status]) result.append(element('span', QUALITY_BADGES[row.status], `quality-badge quality-${row.status}`), ' ');
     result.append(document.createTextNode(row.result));
     if (row.note) result.append(element('small', row.note));
     if (row.places.length > 0) {
@@ -8413,20 +8600,30 @@ function qualityTableOf(rows, group, label) {
       places.append(list);
       result.append(places);
     }
+    const none = () => {
+      const cell = element('td', '─', 'quality-none');
+      cell.setAttribute('aria-label', 'なし');
+      return cell;
+    };
+    let measured = result;
+    let judged = none();
+    if (row.group === 'judged') {
+      // AI の判断の行は「AI の判断」の札を付ける。測った数ではない
+      result.prepend(element('span', 'AI の判断', 'quality-mark'), ' ');
+      judged = result;
+      measured = none();
+    }
     const fix = element('td');
     fix.append(document.createTextNode(row.fix));
     if (row.request) {
       const button = element('button', '直す');
       button.type = 'button';
       button.title = '作る AI の欄に、この行を直す依頼を入れます。送るのはあなたです';
-      button.addEventListener('click', () => {
-        fillRequest(row.request);
-        qualityUi.message = `「${row.label}」を直す依頼を、作る AI の欄に入れました。読んで、送ってください。`;
-        renderQuality(selectedProject());
-      });
+      button.setAttribute('aria-label', `「${row.label}」を直す`);
+      button.addEventListener('click', () => fixQualityRow(row));
       fix.append(' ', button);
     }
-    tr.append(name, result, element('td', row.why), fix);
+    tr.append(name, measured, judged, element('td', row.why), fix);
     tbody.append(tr);
   }
   table.append(thead, tbody);
@@ -8439,15 +8636,17 @@ function renderQuality(project) {
   qualityEls.box.hidden = !project;
   if (!project) return;
   const checking = Boolean(project.checking) || qualityUi.starting;
-  qualityEls.summary.textContent = data
-    ? `質の見直し(直す ${data.summary.fix}、まだ見ていない ${data.summary.unseen}${checking ? '。確かめています…' : ''})`
-    : '質の見直し';
+  // 表の頭に「見た 5 / 8・まだ 3」の形で数を出す(4.7)
+  if (data) {
+    const counts = qualityCounts(data.rows);
+    qualityEls.count.textContent = `見た ${counts.seen} / ${counts.total}・まだ ${counts.unseen}・直す ${counts.fix}${checking ? '。確かめています…' : ''}`;
+  } else qualityEls.count.textContent = '';
   qualityEls.check.disabled = !canCheck(project) || !project.previewUrl;
   qualityEls.check.textContent = checking ? '確かめています…' : '画面を確かめて見直す';
   const lines = [];
   if (checking) lines.push('試作品を自動で確かめています。終わると、アクセシビリティと字と地の差の行が埋まります。');
   if (data?.audit) lines.push(`画面を確かめた時刻: ${formatTime(data.audit.at)}(確かめの最後の画面を、${QUALITY_VIEWPORTS[data.audit.viewport] ?? '最後の画面幅'}で見た)。`);
-  if (data?.audit?.stale) lines.push('確かめた後に試作品か素材が変わったので、アクセシビリティと字と地の差の行は古いです。もう一度確かめてください。');
+  if (data?.audit?.stale) lines.push('確かめた後に試作品か素材が変わったので、アクセシビリティと字と地の差の行は古いです。もう一度確かめますか。');
   if (data?.scenes?.stale) lines.push('場面を回した後に場面の一覧が変わったので、場面の行は古いです。');
   if (data?.scenes && QUALITY_PARTIAL[data.scenes.status]) lines.push(QUALITY_PARTIAL[data.scenes.status]);
   if (qualityUi.message) lines.push(qualityUi.message);
@@ -8457,11 +8656,8 @@ function renderQuality(project) {
     return;
   }
   qualityEls.table.replaceChildren(
-    element('h4', '測ったもの'),
-    qualityTableOf(data.rows, 'measured', '質の見直し: 測ったもの'),
-    element('h4', 'AI の判断'),
-    element('p', 'AI の判断は、AI が読んで決めたものです。ぶれがあるので、人が確かめます。', 'muted'),
-    qualityTableOf(data.rows, 'judged', '質の見直し: AI の判断'),
+    element('p', '「AI の判断」の札は、AI が読んで決めたものです。ぶれがあるので、人が確かめます。', 'muted'),
+    qualityTableOf(data.rows),
   );
 }
 
@@ -8485,9 +8681,6 @@ async function startQualityCheck() {
   }
 }
 
-qualityEls.box.addEventListener('toggle', () => {
-  if (qualityEls.box.open) syncQuality(selectedProject(), { force: true });
-});
 qualityEls.check.addEventListener('click', startQualityCheck);
 
 // ---- 画面の枠(ui-ux-v2.md の 2.2〜2.6、2.8、5.1、5.3、13 節) ----
@@ -8755,7 +8948,8 @@ function nextStep(project, stage) {
   if (intentUi.view === 'start') return { text: '1 文を書いて送ると、問いが 1 つずつ返ります。', button: firstShown(intentEls.send) };
   if (intentUi.view === 'talk') {
     if (intentUi.waiting) return { state: 'working', words: { who: '聞き出す AI ', doing: '次の問いを考えています', now: '前の答えは残っていて、止めても消えません。', next: '待つ間に、前の答えを読み返しませんか。' } };
-    return { text: '問いに 1 つずつ答えます。分からなければ「分からない」で進めます。', button: firstShown(intentEls.reply) };
+    // 聞いている間も、次の一手は「これで決める」(4.4)。押すまで段 2 に ✓ は付かない
+    return { text: '問いに 1 つずつ答えます。右の下書きでよければ、問いの途中でも決められます。', button: firstShown(intentEls.decide) };
   }
   if (intentUi.view === 'doc') {
     const button = firstShown($('intent-design'), intentEls.decide);
@@ -8764,6 +8958,14 @@ function nextStep(project, stage) {
   if (organizeUi.open) {
     if (organizeUi.waiting) return { state: 'working', words: { who: '整理する AI ', doing: '板を整理しています', now: '整理が終わるまで、板の項目は前のままです。', next: 'その間も、聞いた要点を打ち続けられます。' } };
     const items = organizeUi.board?.items?.length ?? 0;
+    // 会の「聞く」の時間が残っている間は、次の一手を「聞くこと」に向ける(4.5)。強い色のボタンは出さない
+    const asks = organizeUi.board?.asks ?? [];
+    if (asks.length > 0 && organizeUi.board.status !== 'confirmed' && listeningTime(project)) {
+      // 聞く時間が終わったら、帯を描き直す(押さなくても、次の一手が「この理解で合っている」に戻る)
+      clearTimeout(frame.listenTimer);
+      frame.listenTimer = setTimeout(scheduleFrame, Date.parse(project.meeting.startedAt) + LISTEN_UNTIL_MINUTES * 60_000 - Date.now() + 1000);
+      return { text: `「聞くこと」の 1 つ目を、お客さんに聞きます。${asks[0].text}`, ask: true };
+    }
     const button = firstShown($('organize-design'), items === 0 ? organizeEls.run : organizeEls.confirm, organizeEls.run);
     const text = button === organizeEls.run ? '聞いた要点を打ち、板に整理します。' : button === organizeEls.confirm ? '決める人が板を読み、合っていれば確かめます。' : '板を確かめました。この理解で設計に進みます。';
     return { text, button };
@@ -8795,8 +8997,16 @@ function nextStep(project, stage) {
   }
   if (stage === 'build') return buildStep(project);
   if (stage === 'measure') return measureStep(project);
-  if (stage === 'quality') return { text: '見直しの表の「直す」を上から片付けます。終わったら、人に見せます。', go: { label: '見せる段へ進む', run: () => goStage('show') } };
+  if (stage === 'quality') return qualityStep(project);
   return nextStepTail(project, stage);
+}
+
+// 会の「聞く、AI が整理する」の時間が残っているか。会を始めて(同意して)から 25 分(ui-ux-v2.md の 2.7 の「始める 5 分」と「聞く 20 分」。仮の値)
+const LISTEN_UNTIL_MINUTES = 25;
+function listeningTime(project) {
+  const started = project?.meeting?.startedAt;
+  if (!started) return false;
+  return Date.now() - Date.parse(started) < LISTEN_UNTIL_MINUTES * 60_000;
 }
 
 // 最初の一歩の進み方(試す → 言葉で直す → 直った結果を試す)の 1 文(13 節。前の「はじめの手順」の 1 文)
@@ -8864,9 +9074,23 @@ function measureStep(project) {
   return { ...firstStepsStep(project), go: quality };
 }
 
+// 段 7 の次の一手(4.7)。「直す」のある行があれば、上の 1 つを直す。なければ、まだ見ていない数を言って見せる段へ
+function qualityStep(project) {
+  const show = { label: '見せる段へ進む', run: () => goStage('show') };
+  const data = qualityUi.projectId === project.id ? qualityUi.data : null;
+  if (!data) return { text: '見直しの表を読んでいます。', go: show };
+  if (project.checking || qualityUi.starting) return { text: '試作品を自動で確かめています。終わると、表の「まだ見ていない」が埋まります。' };
+  const first = data.rows.find((row) => row.status === 'fix' && row.request);
+  if (first) return { text: `「${first.label}」に直すところがあります。作る AI に直してもらいますか。`, go: { label: `${first.label}を直す`, run: () => fixQualityRow(first) } };
+  const counts = qualityCounts(data.rows);
+  if (counts.unseen > 0) return { text: `見た ${counts.seen} / ${counts.total} で、直すところはありません。まだ見ていない ${counts.unseen} つは、右上の「試作品を自動で確かめる」で見られます。`, go: show };
+  return { text: '見直しの表に、直すところはありません。次は人に見せます。', go: show };
+}
+
 // 段 8 と段 9 の次の一手
 function nextStepTail(project, stage) {
   if (stage === 'show') {
+    if (showUi.open) return showOperatorStep();
     if (showUi.starting && frame.moved === els.showStart) return { text: '見せる画面を用意しています。', button: els.showStart, keep: true };
     if (shownAtHome(els.showStart)) return { text: '試作品と確かめたい問いだけの画面にして、人に見せます。', button: els.showStart };
     return { text: '保存か、作る AI の作業が終わると、人に見せられます。' };
@@ -8877,6 +9101,21 @@ function nextStepTail(project, stage) {
     return { text: '保存か、作る AI の作業が終わると、渡すフォルダーを作れます。' };
   }
   return { text: '' };
+}
+
+// 操作役の画面の次の一手(4.6)。承認した分があれば「承認した n つを直す」。承認待ちがあれば、承認を待つ 1 文
+function showOperatorStep() {
+  const comments = commentsUi.data?.comments ?? [];
+  const toCustomer = { label: '見せる画面に戻る', run: () => setShowView('customer') };
+  const queued = comments.filter((c) => c.status === 'queued' || c.status === 'fixing');
+  if (queued.length > 0) {
+    return { text: `承認した ${queued.length} つが、直す列で待っています。段 5 の作る AI の欄で、直す様子を見られます。`, go: { label: `承認した ${queued.length} つを直す`, run: fixApproved } };
+  }
+  const fixed = comments.filter((c) => c.status === 'review').length;
+  if (fixed > 0) return { text: `作る AI が直したコメントが ${fixed} つあります。見せる画面で確かめ、違えばコメントの「元に戻す」で戻せます。`, go: toCustomer };
+  const waiting = comments.filter((c) => c.status === 'open').length;
+  if (waiting > 0) return { text: `承認待ちのコメントが ${waiting} つあります。反応では作る AI は動きません。決める人が声に出したら、承認を押します。` };
+  return { text: '見せる画面に戻り、試作品を触ってもらいます。', go: toCustomer };
 }
 
 // まだの段、または開ける画面のない段を押したときの作業台。何が足りないかを言い、次の一手を 1 つ出す
@@ -8989,12 +9228,32 @@ els.revertedUndo.addEventListener('click', () => {
   restoreVersion(project, before);
 });
 
+// 見せている間(操作役の画面でも)は、試作品の切り替え、段の移動、目的や整理などの画面を開く操作を止める。
+// 見せている試作品と答えを残す先がずれないように(4.6)。見せるのを終えると戻る
+const SHOW_LOCKED = ['project-menu-button', 'stage-compact', 'meeting-mark', 'intent-mark', 'organize-mark', 'design-mark', 'review-mark'];
+function lockDuringShow() {
+  for (const id of SHOW_LOCKED) {
+    const button = $(id);
+    if (showUi.open) {
+      button.disabled = true;
+      button.title = '見せている間は使えません。「見せ終わる」で戻ります';
+      button.dataset.showLocked = 'true';
+    } else if (button.dataset.showLocked) {
+      button.disabled = false;
+      button.removeAttribute('title');
+      delete button.dataset.showLocked;
+    }
+  }
+  if (showUi.open) for (const button of els.stageList.querySelectorAll('button.stage')) button.disabled = true;
+}
+
 function renderFrame() {
   if (!frame.ready) return;
   const project = selectedProject();
   const stage = viewedStage();
   renderReverted(project);
   renderRail(project, stage);
+  lockDuringShow();
   renderBench(project, stage);
   renderNowLine(project, stage);
   renderBand(project, stage);
@@ -9050,7 +9309,8 @@ function goStage(key) {
     frame.stage = key;
     // 段 6 は 3 つのタブ(前に選んだタブ)を、段 7 は質の見直しを開いて出す
     if (key === 'measure') selectTab(frame.tab);
-    if (key === 'quality' && !qualityEls.box.hidden) qualityEls.box.open = true;
+    // 段 7 に入るたびに、見直しの表を読み直す
+    if (key === 'quality') syncQuality(project, { force: true });
   }
   renderFrame();
   els.benchHeading.focus({ preventScroll: true });
@@ -9125,7 +9385,7 @@ document.addEventListener('keydown', (event) => {
   if (event.key !== '.' || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
   const target = event.target;
   if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select'))) return;
-  if (showUi.open) return;
+  if (showUi.open && showUi.view === 'customer') return;
   event.preventDefault();
   toggleDrawer('mechanism');
 });

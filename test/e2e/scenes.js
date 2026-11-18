@@ -260,19 +260,19 @@ export async function reviewClip(page) {
   return { x: 0, y: 0, width: viewport.width, height: Math.min(viewport.height, Math.ceil(box.y + box.height + 8)) };
 }
 
-// 段 7「質」の右の列の「質の見直し」を開いて、見える所まで動かす
+// 段 7「質」の右の列の「質の見直し」に移り、見える所まで動かす
 export async function showQuality(page) {
   await closeMore(page);
   await goStage(page, '質');
   const box = page.locator('#quality');
-  await expect(page.locator('#quality-summary')).toContainText('質の見直し(直す ');
-  if (!(await box.evaluate((el) => el.open))) await page.locator('#quality-summary').click();
-  const table = box.getByRole('table', { name: '質の見直し: 測ったもの' });
+  await expect(page.locator('#quality-count')).toHaveText(/^見た \d+ \/ \d+・まだ \d+/);
+  const table = box.getByRole('table', { name: '質の見直しの表' });
   await expect(table).toBeVisible();
   // 画面を確かめる(観察器が試作品を開く)。確かめた後は、アクセシビリティの行が「まだ見ていない」でなくなる
   await box.getByRole('button', { name: '画面を確かめて見直す' }).click();
   const a11y = table.locator('tbody tr').filter({ has: page.getByRole('rowheader', { name: 'アクセシビリティの違反' }) });
   await expect(a11y.locator('td').first()).not.toHaveText(/^まだ見ていない/, { timeout: 60_000 });
-  await page.locator('#quality-summary').evaluate((el) => el.scrollIntoView({ block: 'start', behavior: 'instant' }));
+  // 表を列の上に寄せる(表の頭の「見た n / m」は上に残る)
+  await page.locator('#quality-table').evaluate((el) => el.scrollIntoView({ block: 'start', behavior: 'instant' }));
   return { box, table };
 }

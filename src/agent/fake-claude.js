@@ -630,7 +630,7 @@ async function slow() {
 
 // 聞き出す AI の偽物(src/server/intent-ai.js)。--json-schema に draft がある起動で動く。
 // プロダクト内 AI と同じ守りの引数(--restricted、--safe-mode、道具なし)を確かめ、1 文の中の語を入れた問いを順に返す。
-// 下書きは答えをそのまま項目に入れる。聞くことが尽きるか、残りの問いの数が 0 なら、問いを空にする
+// 下書きは答えをそのまま項目に入れる。まだ聞いていない成功の印だけは推測で埋める。聞くことが尽きるか、残りの問いの数が 0 なら、問いを空にする
 const INTENT_QUESTIONS = [
   ['who', (sentence) => `「${sentence}」で、一番困っているのは誰ですか?`],
   ['problem', () => 'その人は、今どんなことで困っていますか?'],
@@ -663,6 +663,8 @@ async function intentCall(argv) {
     if (field === 'notDoing') draft.notDoing.push(answers[index]);
     else draft[field] = answers[index];
   });
+  // まだ聞いていない成功の印は、推測で埋める(画面の「推測」の札を試せるように。ui-ux-v2.md の 4.4)
+  if (!asked.includes('success')) draft.success = '同じ問い合わせに答える手間が減る';
   const next = remaining > 0 ? INTENT_QUESTIONS.find(([field]) => !asked.includes(field)) : null;
   const output = {
     question: next ? next[1](sentence) : '',

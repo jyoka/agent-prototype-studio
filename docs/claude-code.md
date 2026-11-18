@@ -149,7 +149,7 @@ Claude Code の起動のしかた(どれも Claude Code の CLI のフラグで�
 
 - 起動の引数は `src/server/intent-ai.js` の `buildIntentArgs`。`-p --restricted --safe-mode --tools "" --strict-mcp-config --permission-mode dontAsk --no-session-persistence --output-format json --json-schema=… --system-prompt=… --max-budget-usd 0.1`。cwd は空の一時フォルダー。
 - 送るのは、書いた 1 文、これまでの問いと答え、今の下書きだけ。stdin で渡す。試作品のファイルは送らない。
-- 1 回の呼び出しは 90 秒、0.1 ドルまで。形が壊れていたら 1 回やり直す。1 文か 1 つの答えで多くて 2 回呼ぶ。問いの数の上限は案内の深さ(2、4、7)で、Studio が数える。
+- 1 回の呼び出しは 90 秒、0.1 ドルまで。形が壊れていたら 1 回やり直す。1 文か 1 つの答えで多くて 2 回呼ぶ。問いの数の上限は聞き方の深さ(2、4、7)で、Studio が数える。
 - 失敗、2 回続けて壊れた出力、「止める」のときは、残りを Studio の決まった問いに切り替えて、もう呼ばない。
 - 返事に入れられるのは、問い、理由、問いが埋める項目、下書きだけ。「決めた」の印を AI が付ける口はない。
 - `STUDIO_AGENT=fake` は `src/agent/fake-claude.js` が答える(モデルを呼ばない)。`STUDIO_ALLOW_CLAUDE_CODE=0` のときは呼ばず、決まった問いで進む。

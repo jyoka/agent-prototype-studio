@@ -170,8 +170,9 @@ export class ProjectMeetings {
   // 一覧に載せる短い形
   summary(id) {
     const record = this.records.get(id);
-    if (!record) return { status: 'none', deleteOn: null, overdue: false, updatedAt: null };
-    return { status: record.status, deleteOn: record.deleteOn, overdue: isOverdue(record), updatedAt: record.updatedAt ?? null };
+    if (!record) return { status: 'none', deleteOn: null, overdue: false, updatedAt: null, startedAt: null };
+    // startedAt は会を始めた(同意した)時刻。整理の板の次の一手が、聞く時間が残っているかを見る(ui-ux-v2.md の 4.5)
+    return { status: record.status, deleteOn: record.deleteOn, overdue: isOverdue(record), updatedAt: record.updatedAt ?? null, startedAt: record.status === 'waiting' ? null : record.startedAt ?? record.decidedAt ?? null };
   }
 
   // 消す日を過ぎた会の一覧
@@ -222,7 +223,11 @@ export class ProjectMeetings {
     if (record.status === 'agreed' && status !== 'agreed') throw new IntentError(409, 'already-agreed', 'この会は同意の後です。やめるときは、会のデータを消してください');
     const nextDelete = deleteOn === undefined ? record.deleteOn : validDeleteOn(deleteOn);
     // agreedOutside は、外の AI に送ると見せて取った同意か。違う同意で、後から外へ送らない(load)
-    if (record.status !== status) await this.write(id, { ...record, status, deleteOn: nextDelete, decidedAt: new Date().toISOString(), agreedOutside: status === 'agreed' && this.sendsOutside });
+    // startedAt は会を初めて始めた時刻。お試しから同意に変えても動かさない(整理の板の「聞く」の時間を測るため。ui-ux-v2.md の 4.5)
+    if (record.status !== status) {
+      const now = new Date().toISOString();
+      await this.write(id, { ...record, status, deleteOn: nextDelete, decidedAt: now, startedAt: record.startedAt ?? now, agreedOutside: status === 'agreed' && this.sendsOutside });
+    }
     else if (nextDelete !== record.deleteOn) await this.write(id, { ...record, deleteOn: nextDelete });
     if (status === 'agreed' && this.sendsOutside) this.consent.agree();
     return this.view(id);

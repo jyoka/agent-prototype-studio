@@ -122,7 +122,7 @@ function intentDetails({ intentPrompt }) {
     items: ['書いた 1 文', 'これまでの問いと答え', '今の目的の文書の下書き'],
     notSent: '試作品のファイル、PC のほかのファイル、ほかの試作品は送りません。',
     tools: '聞き出す AI には道具を渡しません。ファイル、コマンド、Web は使えません。',
-    limits: `1 回の呼び出しで ${INTENT_AI_LIMITS.maxBudgetUsd} ドルまで、1 回の答えで多くて ${INTENT_AI_LIMITS.attempts} 回呼びます。問いの数の上限は、案内の深さで決まります。`,
+    limits: `1 回の呼び出しで ${INTENT_AI_LIMITS.maxBudgetUsd} ドルまで、1 回の答えで多くて ${INTENT_AI_LIMITS.attempts} 回呼びます。問いの数の上限は、聞き方の深さで決まります。`,
     systemPrompt: intentPrompt,
   };
 }

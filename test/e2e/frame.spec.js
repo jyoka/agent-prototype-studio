@@ -12,6 +12,7 @@ import {
   openMaterials,
   openMechanism,
   openVersions,
+  strongButtons,
   switchToRealAi,
   test,
 } from './studio.js';
@@ -24,21 +25,6 @@ import { showReview } from './scenes.js';
 const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
 const NAMES = Object.keys(STAGES);
 const ACTORS = ['● あなた', '■ 作る AI', '▲ 試作品の中の AI', '⬢ 関門と守り'];
-
-// 見えているボタンのうち、強い色(--color-accent の地)のもの。同意のカードの中は数えない(唯一の割り込み。5.1)
-function strongButtons(page) {
-  return page.evaluate(() => {
-    const probe = document.createElement('span');
-    probe.style.color = 'var(--color-accent)';
-    document.body.append(probe);
-    const accent = getComputedStyle(probe).color;
-    probe.remove();
-    return [...document.querySelectorAll('button')]
-      .filter((button) => button.checkVisibility() && !button.closest('.consent-card'))
-      .filter((button) => getComputedStyle(button).backgroundColor === accent)
-      .map((button) => ({ text: button.innerText.trim(), inBand: Boolean(button.closest('#next-band')) }));
-  });
-}
 
 // 要素がスクロールしないで見える(画面の中にある)
 async function expectOnScreen(page, locator, label) {

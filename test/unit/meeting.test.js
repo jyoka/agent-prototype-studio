@@ -56,7 +56,7 @@ test('架空の電話番号を含む要点は、断り、板にもファイル�
   await assert.rejects(organize.addPoint('p', { text: RECORD_POINT }), (error) => {
     assert.equal(error.code, 'record');
     assert.equal(error.status, 422);
-    assert.ok(error.message.startsWith('記録らしいものを省きました(電話番号)'));
+    assert.ok(error.message.startsWith('電話番号らしいものは省きます。'));
     assert.doesNotMatch(error.message, /090/);
     return true;
   });
@@ -92,7 +92,7 @@ test('AI の返事: 記録らしい項目と聞くことは板の項目になら
   // 記録があると言った要点を元にした項目は、番号を抜いた文でも作らない
   assert.deepEqual(next.items.map((item) => item.text), ['不在票の番号']);
   assert.deepEqual(next.asks.map((ask) => ask.text), ['時間帯は']);
-  assert.ok(next.note.startsWith('記録らしいものを省きました(3 件)'));
+  assert.ok(next.note.startsWith('個人の記録らしいものは省きます(3 件)'));
   assert.doesNotMatch(JSON.stringify(next), /090/);
 });
 
@@ -114,7 +114,7 @@ test('全部の要点が記録のときの返事を受け、要点を消す。�
   await organize.addPoint('p', { text: '佐藤はなこの家は坂の上にある' });
   const view = await organize.run('p');
   assert.deepEqual(view.points, []);
-  assert.ok(view.note.startsWith('記録らしいものを省きました(1 件)'));
+  assert.ok(view.note.startsWith('個人の記録らしいものは省きます(1 件)'));
 });
 
 test('AI の返事: 記録があると言った要点を元にしていた、人が決めた項目は残り、元の番号だけが消える', () => {
@@ -151,7 +151,7 @@ test('前の板の記録らしいものを、要点、項目、聞くこと、�
   assert.deepEqual(scrubbed.items.map((item) => [item.id, item.sources]), [['i1', [1]]]);
   assert.deepEqual(scrubbed.asks, []);
   assert.deepEqual(scrubbed.dismissed.items, ['残す文']);
-  assert.match(scrubbed.note, /記録らしいものを省きました/);
+  assert.match(scrubbed.note, /個人の記録らしいものは省きます/);
   assert.doesNotMatch(JSON.stringify(scrubbed), /090/);
   // 何もなければ同じ板
   const clean = boardWith(['不在票に荷物の番号がある']);
