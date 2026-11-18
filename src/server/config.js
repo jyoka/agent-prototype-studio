@@ -31,6 +31,25 @@ function parseBudget(value) {
   return budget;
 }
 
+// 中継のサーバー(STUDIO_RELAY_URL。共有の場、collaboration.md の 9.4)。書かなければ共有しない。
+// HTTPS だけを受ける。手元の試し(127.0.0.1、localhost)だけ http を受ける
+export function parseRelayUrl(value) {
+  if (value === undefined || value === null || value === '') return null;
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new ConfigError(`STUDIO_RELAY_URL が URL として読めません(今の値: ${value})`);
+  }
+  const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+    throw new ConfigError('STUDIO_RELAY_URL は https:// で始めてください(手元の試しだけ http://127.0.0.1 を使えます)');
+  }
+  // 参加者のページは /s/ と /api/ を中継のサーバーの根から読むので、道(パス)は付けない
+  if (url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new ConfigError('STUDIO_RELAY_URL は、https://<名前>(:<番号>) の形にしてください。利用者名、道(パス)、問い、# は入れません');
+  return url.origin;
+}
+
 // 本物の AI(試作品の中の AI の Claude Code)を選べるか。既定は選べる(使う前に画面で同意する。real-ai.js)。
 // 0 で選べなくする(会社として止めたいとき)。1 は前の決まりの名残りで、書いても既定と同じ
 function parseAllowClaudeCode(value) {
@@ -69,5 +88,7 @@ export function loadConfig(env = process.env) {
     claudeBin: env.STUDIO_CLAUDE_BIN || null,
     // API キーなど、サブスクの枠でないときに 1 回の依頼に付ける費用の上限
     maxBudgetUsd: parseBudget(env.STUDIO_MAX_BUDGET_USD),
+    // 共有の場の中継のサーバー。null なら共有しない(Studio は外へつながない)
+    relayUrl: parseRelayUrl(env.STUDIO_RELAY_URL),
   };
 }

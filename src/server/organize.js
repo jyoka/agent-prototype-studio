@@ -159,14 +159,16 @@ export function boardView(board) {
 export class ProjectOrganizes {
   // ai は整理する AI の接続(organize-ai.js)。consent は本物の AI を使う前の同意(real-ai.js)。
   // aiMode(id) は 'fake'(偽接続。同意なし)、'real'(同意が要る)、null(使えない。人が手で振り分ける)のどれか。
-  // talkGate(id) は、会の同意の前に投げる(meeting.js)。お客さんの話を、同意の前に板へ入れない
-  constructor({ home, store, ai, consent, aiMode, talkGate = () => {}, log = () => {} }) {
+  // talkGate(id) は、会の同意の前に投げる(meeting.js)。お客さんの話を、同意の前に板へ入れない。
+  // onWrite(id) は板を書いた後に呼ぶ(共有の場の写しを置き直す。share.js)
+  constructor({ home, store, ai, consent, aiMode, talkGate = () => {}, onWrite = () => {}, log = () => {} }) {
     this.home = home;
     this.store = store;
     this.ai = ai;
     this.consent = consent;
     this.aiMode = aiMode;
     this.talkGate = talkGate;
+    this.onWrite = onWrite;
     this.log = log;
     this.boards = new Map();
     // 応答を待っている試作品ごとの AbortController
@@ -211,6 +213,7 @@ export class ProjectOrganizes {
     await fs.writeFile(tmp, `${JSON.stringify(board, null, 2)}\n`);
     await fs.rename(tmp, file);
     this.boards.set(id, board);
+    this.onWrite(id);
   }
 
   // 一覧に載せる短い形。板がなければ none

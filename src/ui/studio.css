@@ -320,6 +320,11 @@ body[data-organize] .layout, body[data-organize] .stage-panel { display: none; }
 .organize[hidden], .organize [hidden] { display: none; }
 .organize h2 { margin: 0 0 0.5rem; font-size: var(--text-5); }
 .organize h2:focus { outline: none; }
+/* その場の共有(K7)。招待のリンクは長いので、欄の幅で折り返さずに出す */
+.share-panel { border: var(--stroke-hair) solid var(--color-line); border-radius: var(--radius-2); padding: var(--space-2); margin: var(--space-2) 0; }
+.share-panel h3 { margin: 0 0 0.25rem; }
+.share-member { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.share-member input { flex: 1 1 18rem; min-width: 0; font-size: var(--text-1); }
 .organize h3 { margin: 0; font-size: var(--text-4); }
 .organize h4 { margin: 0 0 0.3rem; font-size: var(--text-3); }
 .organize p { margin: 0.3rem 0; }

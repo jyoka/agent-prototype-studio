@@ -156,7 +156,7 @@ function projectView(project, previewPort, runs, checks, firstSteps, intents, or
 // quality は質の見直しの表(quality.js)。shows は人に見せる画面の問いと答え(show.js)。
 // comments は画面へのコメント、反応、承認、列、直した記録、元に戻す(comments.js)
 // hints は「その場で」の 1 行を覚えた回数(hints.js。ui-ux-v2.md の 5.1)
-export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, closings, intents, organizes, designs, reviews, sceneRuns, quality, shows, comments, materials, meetings, timeline = { mark: async () => false, view: async () => ({}) }, token, ports, realAi, consent, firstSteps, hints = new Hints() }) {
+export function createStudioHandler({ store, requests, checks, agent, aiSessions, versions, handoffs, closings, intents, organizes, designs, reviews, sceneRuns, quality, shows, comments, materials, meetings, timeline = { mark: async () => false, view: async () => ({}) }, token, ports, realAi, consent, firstSteps, hints = new Hints(), shares = null }) {
   const view = (project) => projectView(project, ports.preview, requests.summary(project.id), checks.summary(project.id), firstSteps, intents, organizes, designs, meetings, reviews, sceneRuns);
 
   // 作る欄の依頼。実行の様子を、1 行 1 つの JSON(NDJSON)で流す。
@@ -231,6 +231,9 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     // 目的の聞き出しと目的の文書。GET は今の状態。「決めた」の印は decide でだけ付く
     const intentMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/intent(?:\/(start|answer|finish|edit|decide|skip|cancel))?$/.exec(url.pathname);
     if (intentMatch && (intentMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleIntent(req, res, intentMatch[1], intentMatch[2]);
+    // 共有の場(share.js)。GET は今の状態と招待のリンク。start、invite、remove、stop は人が押したときだけ
+    const shareMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/share(?:\/(start|invite|remove|stop))?$/.exec(url.pathname);
+    if (shareMatch && shares && (shareMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleShare(req, res, shareMatch[1], shareMatch[2]);
     // ヒアリングの整理。GET は今の板。「確かめた」の印は confirm でだけ付く
     const organizeMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/organize(?:\/([a-z-]+))?$/.exec(url.pathname);
     if (organizeMatch && (organizeMatch[2] ? req.method === 'POST' && Object.hasOwn(ORGANIZE_ACTIONS, organizeMatch[2]) : req.method === 'GET')) return handleOrganize(req, res, organizeMatch[1], organizeMatch[2]);
@@ -408,6 +411,16 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       const organize = await organizes[ORGANIZE_ACTIONS[action]](id, body ?? {});
       await markOrganize(id);
       return sendJson(res, 200, { organize });
+    } catch (error) {
+      return sendIntentError(res, error);
+    }
+  }
+
+  async function handleShare(req, res, id, action) {
+    try {
+      if (!action) return sendJson(res, 200, { share: await shares.view(id) });
+      const body = (await readJson(req)) ?? {};
+      return sendJson(res, 200, { share: await shares[action](id, body) });
     } catch (error) {
       return sendIntentError(res, error);
     }

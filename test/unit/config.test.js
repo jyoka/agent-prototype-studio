@@ -53,3 +53,12 @@ test('作る AI の既定は自動。偽接続は STUDIO_AGENT=fake、Claude Cod
   assert.throws(() => loadConfig({ STUDIO_AGENT: 'gpt' }), /STUDIO_AGENT/);
   assert.throws(() => loadConfig({ STUDIO_MAX_BUDGET_USD: '-1' }), ConfigError);
 });
+
+test('中継のサーバー(STUDIO_RELAY_URL)は HTTPS だけを受け、手元の試しだけ http://127.0.0.1 を受ける', () => {
+  assert.equal(loadConfig({}).relayUrl, null);
+  assert.equal(loadConfig({ STUDIO_RELAY_URL: 'https://relay.example/' }).relayUrl, 'https://relay.example');
+  assert.equal(loadConfig({ STUDIO_RELAY_URL: 'http://127.0.0.1:4320' }).relayUrl, 'http://127.0.0.1:4320');
+  for (const value of ['http://relay.example', 'http://192.168.0.10:4320', 'ftp://relay.example', 'relay', 'https://user:pass@relay.example', 'https://relay.example/?a=1', 'https://relay.example/#k', 'https://relay.example/studio']) {
+    assert.throws(() => loadConfig({ STUDIO_RELAY_URL: value }), ConfigError, value);
+  }
+});

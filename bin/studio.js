@@ -107,6 +107,9 @@ if (config.allowClaudeCode) {
 } else {
   console.log('試作品の中の AI は、お試しの AI(モック)だけで動きます(STUDIO_ALLOW_CLAUDE_CODE=0)。');
 }
+if (config.relayUrl) {
+  console.log(`その場の共有: 中継のサーバー ${config.relayUrl} へ、この PC から外へつなぎます(会の鍵で包んだ文書だけを置きます)。`);
+}
 console.log('止めるときは、このターミナルで Ctrl+C を押してください。');
 console.log('');
 if (config.openBrowser) openBrowser(studio.url);
