@@ -5,14 +5,16 @@ import { IntentError } from './intent.js';
 import { isValidProjectId, listProjects, projectPaths } from './projects.js';
 import { findRecords } from './redact.js';
 import { NotFoundError } from './store.js';
-import { aadOf, importKey, open, randomText, seal, ticketHash } from '../share-page/seal.js';
+import { aadOf, generateSigner, importKey, importVerifier, open, randomText, seal, ticketHash, verifyEvent } from '../share-page/seal.js';
 
-// 共有の場の Studio の側(docs/design/collaboration.md の 9.4、ADR 0004 の段 2 の層 4。K7 の 2 枚目)。
+// 共有の場の Studio の側(docs/design/collaboration.md の 9.4、ADR 0004 の段 2 の層 4。K7 の 2 枚目と 3 枚目)。
 // Studio のサーバーは 127.0.0.1 のまま。中継のサーバーへは、ここから外へつなぐだけで、外から Studio には入らない。
 // 中継のサーバーに置くのは、会の鍵で包んだ文書の写し(docs)と、参加者の書き込みの暗号文だけ。
 // app/ のソース、ビルド、版、run の記録、作る AI の会話は、ここを通らない(docsOf が作る写しに入れない)。
 // 文書の正は進行役の PC の Studio。参加者の書き込み(項目を足す、直す、消す)は、Studio が受け取って整理の板に当て、
 // 新しい写しを配る。だから記録らしいものを断る決まり(K4)は、参加者の書き込みにも同じに効く。
+// コメント、反応、承認も同じに受け取る(3 枚目)。書き込みは人ごとの署名の鍵で署名され、Studio が役の表の公開の鍵で確かめる。
+// 承認がそろっても、作る AI に送るのは進行役の「作る AI に送る」だけ(comments.js の send)。
 // 中継のサーバーに届かない間も、手元の Studio はそのまま使える。つながり直すと、届いていない書き込みを当て、写しを置き直す。
 // 置き場は .studio/share.json(会の鍵と札を持つ。.studio/ は Studio だけが書く場所で、作る AI は読み書きできない)。
 
@@ -20,8 +22,10 @@ export const SHARE_FILE = 'share.json';
 // 消せなかった中継のサーバーの写し。プロジェクトの外に置き、次の起動で消すのをやり直す(collaboration.md の 9.4 の「消す」)
 export const SHARE_PENDING_FILE = 'share-pending.json';
 const FORMAT = 1;
-// 役は 2 つ(K7 の 2 枚目)。決める人と承認は 3 枚目で足す
-export const SHARE_ROLES = Object.freeze({ participant: '参加者(直せる)', viewer: '見るだけ' });
+// 招く人の役(collaboration.md の 3 節)。進行役は Studio そのもので、招かない。
+// 決める人は承認ができ、参加者は文書とコメントを書け、見るだけの人は読むだけ(中継のサーバーも書き込みを断る)
+export const SHARE_ROLES = Object.freeze({ decider: '決める人(承認できる)', participant: '参加者(直せる)', viewer: '見るだけ' });
+const WRITERS = ['decider', 'participant'];
 const MAX_NAME = 40;
 const MAX_RESULTS = 30;
 const RETRY_MS = [500, 1000, 2000, 4000];
@@ -111,6 +115,23 @@ class ShareLink {
     return this.record.relayUrl;
   }
 
+  // 外した人の札を、中継のサーバーで消す。消せたもの(もうないものも)は覚えから外す。届かなければ投げる
+  async revoke() {
+    for (const member of [...(this.record.revoked ?? [])]) {
+      // 中継のサーバーは、もういない人の札を消しても 200 を返す
+      await this.request(`/members/${member}`, { method: 'DELETE' });
+      this.record.revoked = (this.record.revoked ?? []).filter((m) => m !== member);
+      if (this.active) await this.shares.save(this.id, this.record);
+    }
+  }
+
+  // 人の署名を確かめる鍵(公開の側)。読み込んだものを覚えておく
+  async verifier(member) {
+    this.verifiers ??= new Map();
+    if (!this.verifiers.has(member.id)) this.verifiers.set(member.id, await importVerifier(member.publicKey));
+    return this.verifiers.get(member.id);
+  }
+
   request(pathname, options = {}) {
     return relayFetch(this.shares.fetchImpl, this.base, `/api/sessions/${this.record.sessionId}${pathname}`, { ticket: this.record.studioTicket, signal: this.controller.signal, ...options });
   }
@@ -194,6 +215,7 @@ class ShareLink {
         // つながったら、届いていない書き込みを受け取り、写しを置き直す(手元で直したものを合わせる)
         this.enqueue(() => this.pull());
         this.enqueue(() => this.publish({ force: true }));
+        if (this.record.revoked?.length) this.enqueue(() => this.revoke());
         await this.read(response.body, connection);
       } catch (error) {
         if (signal.aborted) return;
@@ -266,19 +288,27 @@ class ShareLink {
     return !this.controller.signal.aborted && this.shares.links.get(this.id) === this;
   }
 
+  // 書き込みを 1 つ確かめて当てる。確かめる順: 役の表にいる書ける人か、会の鍵で開けるか、
+  // 中継のサーバーが付けた人と書き込みの中の人が同じか、その人の署名の鍵で署名が合うか、同じ書き込みが 2 度でないか。
+  // どれかが通らなければ捨て、理由を残す(進行役の画面と参加者のページに出る)。中継のサーバーの返事だけでは何も当たらない
   async applyRow(row) {
     const member = this.record.members.find((entry) => entry.id === row.member);
     // 役の表にない人と見るだけの人の書き込みは捨てる(中継のサーバーが断り損ねても)
-    if (!member || member.role !== 'participant') return { ok: false, message: '書ける人の書き込みではないので、当てませんでした' };
+    if (!member || !WRITERS.includes(member.role)) return { ok: false, message: '書ける人の書き込みではないので、当てませんでした' };
     let op;
     try {
       op = await open(this.key, aadOf(this.record.sessionId, 'row'), row.data);
     } catch {
       return { ok: false, message: '書き込みを開けなかったので、当てませんでした' };
     }
-    // 同じ書き込み(送り直し、中継のサーバーの送り直し)は 1 度だけ当てる
-    const opId = typeof op?.opId === 'string' ? op.opId.slice(0, 64) : null;
-    if (opId && (this.record.applied ?? []).includes(opId)) return { ok: true, op: op?.op ?? null, duplicate: true };
+    // 人ごとの署名(K7 の 3 枚目)。中継のサーバーは署名の鍵を持たないので、書き込みを作れず、書いた人を差し替えられない
+    if (op?.by !== member.id || typeof member.publicKey !== 'string' || !(await verifyEvent(await this.verifier(member), this.record.sessionId, op))) {
+      return { ok: false, op: typeof op?.op === 'string' ? op.op : null, message: '署名が合わないので、当てませんでした' };
+    }
+    // 同じ書き込み(送り直し、中継のサーバーの送り直し)は 1 度だけ当てる。書き込みの ID のないものは当てない
+    const opId = typeof op?.opId === 'string' && op.opId ? op.opId.slice(0, 64) : null;
+    if (!opId) return { ok: false, op: typeof op?.op === 'string' ? op.op : null, message: '書き込みの ID がないので、当てませんでした' };
+    if ((this.record.applied ?? []).includes(opId)) return { ok: true, op: op?.op ?? null, duplicate: true };
     try {
       await this.shares.apply(this.id, op, member);
       return { ok: true, op: op?.op ?? null, opId };
@@ -298,7 +328,7 @@ class ShareLink {
       members: this.record.members.map((m) => ({ id: m.id, name: m.name, role: m.role, roleLabel: SHARE_ROLES[m.role] })),
       // ここまでの書き込みを当てた。参加者のページは、これより前の自分の書き込みの「送った」の印を外す
       seen: this.record.cursor,
-      results: (this.record.results ?? []).map(({ seq, member, ok, message }) => ({ seq, member, ok, ...(message ? { message } : {}) })),
+      results: (this.record.results ?? []).map(({ seq, member, ok, op, message }) => ({ seq, member, ok, ...(op ? { op } : {}), ...(message ? { message } : {}) })),
     };
     const hash = sha256(JSON.stringify(value));
     if (!force && hash === this.publishedHash) return;
@@ -319,8 +349,12 @@ export class ProjectShares {
   // relayUrl は中継のサーバー(STUDIO_RELAY_URL。null なら共有できない)。
   // docsOf(id) は中継のサーバーに置く文書の写し。apply(id, op, member) は参加者の書き込みを整理の板に当てる。
   // gate(id) は会の同意の前と、消している間に断る。expiresOf(id) は消す日(YYYY-MM-DD。会でなければ null)
-  constructor({ home, store, relayUrl = null, docsOf, apply, gate = () => {}, expiresOf = () => null, fetchImpl = globalThis.fetch, tickMs = 1000, log = () => {} }) {
+  // awaitingOf(id) は、共有の場で承認がそろい、進行役が送るのを待つコメント(comments.js の awaitingOf)
+  // onRemoved(id, member) は人を外したとき(comments.js の dropSharedMember。その人の承認を外す)
+  constructor({ home, store, relayUrl = null, docsOf, apply, gate = () => {}, expiresOf = () => null, awaitingOf = async () => [], onRemoved = async () => {}, fetchImpl = globalThis.fetch, tickMs = 1000, log = () => {} }) {
     this.home = home;
+    this.awaitingOf = awaitingOf;
+    this.onRemoved = onRemoved;
     this.store = store;
     this.relayUrl = relayUrl;
     this.docsOf = docsOf;
@@ -428,12 +462,14 @@ export class ProjectShares {
       lastSyncAt: link.lastSyncAt,
       members: record.members.map((m) => ({ id: m.id, name: m.name, role: m.role, roleLabel: SHARE_ROLES[m.role], link: this.linkOf(record, m) })),
       refused: (record.results ?? []).filter((r) => !r.ok).slice(-5).map((r) => ({ seq: r.seq, name: record.members.find((m) => m.id === r.member)?.name ?? '(外した人)', message: r.message })),
+      // 共有の場で承認がそろい、進行役が「作る AI に送る」を押すのを待つコメント
+      awaiting: await this.awaitingOf(id),
     };
   }
 
-  // 招待のリンク。鍵と札はフラグメント(# の後)に入れる。ブラウザは中継のサーバーに送らない
+  // 招待のリンク。会の鍵、札、署名の鍵(秘密の側)はフラグメント(# の後)に入れる。ブラウザは中継のサーバーに送らない
   linkOf(record, member) {
-    return `${record.relayUrl}/s/${record.sessionId}#k=${record.key}&t=${member.ticket}&m=${member.id}`;
+    return `${record.relayUrl}/s/${record.sessionId}#k=${record.key}&t=${member.ticket}&m=${member.id}${member.signingKey ? `&s=${member.signingKey}` : ''}`;
   }
 
   // 共有を始める。人が押したときだけ呼ぶ。会の同意の前は断る。同じ試作品で始めている途中なら、それを待つ
@@ -493,9 +529,12 @@ export class ProjectShares {
     const kinds = findRecords(clean);
     if (kinds.length > 0) throw new ShareError(422, 'record', `記録らしいものがあるので、入れませんでした(${kinds.join('、')})。呼び名か役だけを書いてください。`);
     if (!Object.hasOwn(SHARE_ROLES, role ?? '')) throw new ShareError(400, 'invalid', `役は ${Object.values(SHARE_ROLES).join('、')} のどれかです`);
-    const member = { id: randomText(12), name: clean, role, ticket: randomText(32), invitedAt: new Date().toISOString() };
+    // 人ごとの署名の鍵。秘密の側は招待のリンクに入れ、公開の側で Studio が書き込みを確かめる。中継のサーバーには送らない。
+    // 見るだけの人は書かないので、作らない
+    const signer = WRITERS.includes(role) ? await generateSigner() : null;
+    const member = { id: randomText(12), name: clean, role, ticket: randomText(32), ...(signer ? { signingKey: signer.privateKey, publicKey: signer.publicKey } : {}), invitedAt: new Date().toISOString() };
     try {
-      await link.request(`/members/${member.id}`, { method: 'PUT', body: { ticketHash: await ticketHash(member.ticket), write: role === 'participant' } });
+      await link.request(`/members/${member.id}`, { method: 'PUT', body: { ticketHash: await ticketHash(member.ticket), write: WRITERS.includes(role) } });
     } catch (error) {
       throw new ShareError(502, 'relay', `招けませんでした。${error.message}`);
     }
@@ -505,19 +544,24 @@ export class ProjectShares {
     return this.view(id);
   }
 
-  // 人を外す。中継のサーバーで札を消す。会の鍵の作り直しは 3 枚目(collaboration.md の 9.5)
+  // 人を外す。中継のサーバーで札を消し、役の表から外す(外した人の書き込みは、署名が合っても当てない)。
+  // 会の鍵の作り直しは、まだ作っていない(collaboration.md の 9.8)。外した人が前に受け取った写しは、手元に残りうる
+  // 中継のサーバーに届かなくても、役の表からは先に外す(外した人の書き込みと承認を、手元で数えないため)。
+  // 中継のサーバーの札は、消せなければ覚えておき、つながったときに消し直す
   async remove(id, { member } = {}) {
     await this.requireProject(id);
     const link = this.requireLink(id);
     if (!link.record.members.some((m) => m.id === member)) throw new ShareError(404, 'no-member', 'その人は招いていません');
-    try {
-      await link.request(`/members/${member}`, { method: 'DELETE' });
-    } catch (error) {
-      throw new ShareError(502, 'relay', `外せませんでした。${error.message}`);
-    }
     link.record.members = link.record.members.filter((m) => m.id !== member);
+    link.record.revoked = [...new Set([...(link.record.revoked ?? []), member])];
     await this.save(id, link.record);
+    await this.onRemoved(id, member);
     link.enqueue(() => link.publish());
+    try {
+      await link.revoke();
+    } catch (error) {
+      throw new ShareError(502, 'relay', `役の表からは外しました。この人の書き込みと承認は数えません。中継のサーバーの札は消せなかったので、つながったときに消し直します(${error.message})`);
+    }
     return this.view(id);
   }
 

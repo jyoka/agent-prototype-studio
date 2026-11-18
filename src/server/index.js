@@ -98,8 +98,11 @@ function sharedBoard(view) {
   };
 }
 
-// 参加者の書き込みを板に当てる。足す、直す、消すの 3 つだけ。整理する AI と「確かめた」の印は、進行役の画面でだけ
-function applySharedOp(organizes, id, op) {
+// 参加者の書き込みを当てる。share.js が署名と役の表を確かめた後に呼ぶ。
+// 板は足す、直す、消すの 3 つだけ。整理する AI と「確かめた」の印は、進行役の画面でだけ。
+// コメント、反応、承認、承認の取り消しは comments.js に渡す(K7 の 3 枚目)。承認がそろっても列には並べない
+function applySharedOp(organizes, comments, id, op, member) {
+  if (typeof op?.op === 'string' && op.op.startsWith('comment-')) return comments.applyShared(id, op, member);
   if (op?.op === 'item-edit' && typeof op.id === 'string' && typeof op.text === 'string') return organizes.editItem(id, { id: op.id, text: op.text });
   if (op?.op === 'item-add' && typeof op.column === 'string' && typeof op.text === 'string') return organizes.addItem(id, { column: op.column, text: op.text });
   if (op?.op === 'item-remove' && typeof op.id === 'string') return organizes.removeItem(id, { id: op.id });
@@ -345,13 +348,16 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   });
   // 共有の場(K7 の 2 枚目、collaboration.md の 9.4)。Studio から中継のサーバーへ外へつなぐだけ。待ち受けは増やさない。
   // 中継のサーバーに置くのは、整理の板と、要件の文書、データ設計、場面の一覧、未決事項の写しだけ(会の鍵で包む)。
-  // 参加者の書き込みは、人が画面で押したときと同じ口(organizes の editItem など)で板に当てる。記録らしいものは同じに断る
+  // 参加者の書き込みは、人が画面で押したときと同じ口(organizes の editItem など)で板に当てる。記録らしいものは同じに断る。
+  // コメント、反応、承認も写しに載せ、署名と役を確かめてから comments に当てる(3 枚目)。承認がそろっても、送るのは進行役
   shares = new ProjectShares({
     home: config.home,
     store,
     relayUrl: config.relayUrl ?? null,
-    docsOf: async (id) => ({ title: (await store.list()).find((p) => p.id === id)?.title ?? '', board: sharedBoard(organizes.viewOf(id)), ...(await closings.shared(id)) }),
-    apply: (id, op) => applySharedOp(organizes, id, op),
+    docsOf: async (id) => ({ title: (await store.list()).find((p) => p.id === id)?.title ?? '', board: sharedBoard(organizes.viewOf(id)), ...(await closings.shared(id)), comments: await comments.sharedView(id) }),
+    apply: (id, op, member) => applySharedOp(organizes, comments, id, op, member),
+    awaitingOf: (id) => comments.awaitingOf(id),
+    onRemoved: (id, member) => comments.dropSharedMember(id, member),
     gate: talkGate,
     expiresOf: (id) => meetings.records.get(id)?.deleteOn ?? null,
     log,

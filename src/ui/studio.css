@@ -1649,3 +1649,5 @@ body:not([data-side="show"]) .side > #stage-show { display: none; }
 /* 表の頭(見た数とまだの数)は、列の中でスクロールしても上に残す */
 .side > .quality > .quality-head { position: sticky; top: calc(-1 * var(--space-2)); z-index: 1; margin: calc(-1 * var(--space-2)) 0 0; padding: var(--space-2) 0; background: var(--color-surface); }
 #quality-table { scroll-margin-top: 2.6rem; }
+.share-awaiting { border-left: 3px solid var(--color-accent); padding-left: var(--space-2); margin: var(--space-2) 0; }
+.share-awaiting h4 { margin: 0 0 0.25rem; }

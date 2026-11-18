@@ -16,7 +16,7 @@
   </header>
   <p id="share-gone" class="share-gone" role="alert" hidden></p>
   <main id="share-main" hidden>
-    <p id="share-viewer" class="muted" hidden>見るだけの役です。文書を読めますが、直すことはできません。</p>
+    <p id="share-viewer" class="muted" hidden>見るだけの役です。文書とコメントを読めますが、直すことと、コメントを書くことはできません。</p>
     <p id="share-error" class="share-error" role="alert" hidden></p>
     <section class="share-section" aria-labelledby="share-board-heading">
       <h2 id="share-board-heading">整理の板</h2>
@@ -31,6 +31,22 @@
       </form>
       <h3>聞くこと</h3>
       <ul id="share-asks" class="share-list" aria-label="聞くことの一覧"></ul>
+    </section>
+    <section class="share-section" aria-labelledby="share-comments-heading">
+      <h2 id="share-comments-heading">コメント</h2>
+      <p class="muted">気づいたことをコメントに書けます。反応を付けても、作る AI は動きません。見た目と動きのコメントは決める人の 1 人の承認で、要件のコメントは進行役と決める人の 2 人の承認で、進行役が作る AI に送ります。</p>
+      <p id="share-comment-status" class="share-comment-status" role="status"></p>
+      <form id="share-comment-form" class="share-comment-form" hidden>
+        <label for="share-comment-text">コメント</label>
+        <textarea id="share-comment-text" maxlength="1000" rows="3"></textarea>
+        <fieldset>
+          <legend class="muted">種類</legend>
+          <label><input type="radio" name="share-comment-kind" value="look" checked> 見た目と動き</label>
+          <label><input type="radio" name="share-comment-kind" value="requirement"> 要件</label>
+        </fieldset>
+        <button type="submit">コメントを書く</button>
+      </form>
+      <ul id="share-comments" class="share-list" aria-label="コメントの一覧"></ul>
     </section>
     <section class="share-section" aria-labelledby="share-requirements-heading">
       <h2 id="share-requirements-heading">要件の文書</h2>

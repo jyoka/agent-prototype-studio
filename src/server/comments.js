@@ -5,6 +5,7 @@ import { FIX_RECORDS_DIR } from './meeting.js';
 import { isValidProjectId, projectPaths } from './projects.js';
 import { findRecords } from './redact.js';
 import { BusyError, NotFoundError } from './store.js';
+import { textPrint } from '../share-page/seal.js';
 
 // 画面へのコメント、反応、承認、列、直した記録、元に戻す(docs/design/user-journey.md の K3。docs/design/collaboration.md の 3〜5 節)。
 // 1 台の PC の形(collaboration.md の 6 節の案 A)。役は進行役と決める人だけ。名前は申告で、Studio は本人を確かめない。
@@ -38,9 +39,14 @@ export const COMMENT_KINDS = Object.freeze({
 // 役。1 台の形では、決める人が声に出し、進行役が押す。押した人と声に出した人の両方を残す
 export const COMMENT_ROLES = Object.freeze({ facilitator: '進行役', decider: '決める人' });
 
+// 共有の場の参加者が書けるコメントの種類。構成のコメントは進行役の画面でだけ書き、承認する
+export const SHARED_COMMENT_KINDS = Object.freeze(['look', 'requirement']);
+
 // 状態(collaboration.md の 4 節の図)。approved は列に入る前の一瞬なので、残すのは queued から
 export const COMMENT_STATUS_WORDS = Object.freeze({
   open: '開いている',
+  // 共有の場で承認がそろい、進行役が「作る AI に送る」を押すのを待つ(collaboration.md の 9.4。K7 の 3 枚目)
+  awaiting: '進行役が送る待ち',
   queued: '待っている',
   fixing: '直している',
   review: '確かめる',
@@ -155,8 +161,11 @@ export function newFixRecord({ comment, request, before, id = newId(), at = now(
     },
     approval: {
       // 2 人のときは 2 人とも。1 台の形では、押した人と声に出した人
-      approvers: comment.approvals.map((a) => ({ role: a.role, roleLabel: COMMENT_ROLES[a.role], pressedBy: a.pressedBy, spokenBy: a.spokenBy, at: a.at })),
+      // 共有の場から来た承認は、署名した人の ID と「共有の場から」を残す(collaboration.md の 9.4)
+      approvers: comment.approvals.map((a) => ({ role: a.role, roleLabel: COMMENT_ROLES[a.role], pressedBy: a.pressedBy, spokenBy: a.spokenBy, at: a.at, ...(a.via === 'shared' ? { via: 'shared', viaLabel: '共有の場から', member: a.member } : {}) })),
       completedAt: comment.queuedAt ?? at,
+      // 共有の場で承認がそろったコメントを、作る AI に送った人(最後の 1 押し)
+      sentBy: comment.sentBy ?? null,
     },
     request: { text: request },
     versions: { before: versionRef(before), after: null },
@@ -396,8 +405,8 @@ export class ProjectComments {
     await writeAtomic(path.join(this.paths(id).records, record.id, FIX_RECORD_FILE), json(record));
   }
 
-  // コメントを書く。{ text, kind, place, author }。作る AI は動かない
-  async create(id, { text, kind = 'look', place = null, author = '' } = {}) {
+  // コメントを書く。{ text, kind, place, author }。作る AI は動かない。sharedBy は共有の場から書いた人の ID
+  async create(id, { text, kind = 'look', place = null, author = '' } = {}, { sharedBy = null } = {}) {
     await this.requireProject(id);
     this.talkGate(id);
     const body = clip(text, COMMENT_LIMITS.maxText);
@@ -424,6 +433,7 @@ export class ProjectComments {
       queuedAt: null,
       held: null,
       recordId: null,
+      ...(sharedBy ? { sharedBy, reactors: [] } : {}),
     };
     data.comments.push(comment);
     await this.save(id);
@@ -471,6 +481,8 @@ export class ProjectComments {
       return { comment, review: returned };
     }
     comment.approvals = approvals;
+    // 進行役の手元の承認でそろったときは、その承認が最後の 1 押し。前の回の「送った人」は残さない
+    comment.sentBy = null;
     if (approvalSatisfied(comment.kind, approvals)) {
       comment.status = 'queued';
       comment.queuedAt = now();
@@ -484,20 +496,183 @@ export class ProjectComments {
     return { comment, review: null };
   }
 
-  // 承認を取り消す。作る AI が動き出す前(開いている、待っている)だけ。動き出した後は元に戻すで扱う
+  // 承認を取り消す。作る AI が動き出す前(開いている、送る待ち、待っている)だけ。動き出した後は元に戻すで扱う
   async unapprove(id, commentId) {
     const { comment } = await this.find(id, commentId);
-    if (!['open', 'queued'].includes(comment.status) || this.isStarting(id, comment.id) || this.returning.has(comment.id)) {
+    if (!['open', 'awaiting', 'queued'].includes(comment.status) || this.isStarting(id, comment.id) || this.returning.has(comment.id)) {
       throw new CommentError(409, 'started', '作る AI が動き出した後は、承認を取り消せません。直した後に「元に戻す」を使ってください');
     }
     if (comment.approvals.length === 0) throw new CommentError(409, 'no-approval', 'まだ承認していません');
     comment.approvals = [];
     comment.status = 'open';
     comment.queuedAt = null;
+    comment.awaitingAt = null;
+    comment.sentBy = null;
     comment.held = null;
     await this.save(id);
     this.log(`承認を取り消しました: ${id}(${comment.number})`);
     return { comment };
+  }
+
+  // 「作る AI に送る」(最後の 1 押し。collaboration.md の 9.2 の案 A)。共有の場で承認がそろったコメントを、進行役が自分の PC で列に並べる。
+  // 中継のサーバーの返事と参加者の承認だけでは、ここを通らないので作る AI は動かない
+  async send(id, commentId, { pressedBy } = {}) {
+    const { comment } = await this.find(id, commentId);
+    this.talkGate(id);
+    if (comment.status !== 'awaiting') throw new CommentError(409, 'not-awaiting', `「${COMMENT_STATUS_WORDS[comment.status]}」のコメントは送れません`);
+    if (!approvalSatisfied(comment.kind, comment.approvals)) throw new CommentError(409, 'not-approved', '承認がそろっていないので、送れません');
+    comment.status = 'queued';
+    comment.queuedAt = now();
+    comment.held = null;
+    comment.sentBy = { role: 'facilitator', roleLabel: COMMENT_ROLES.facilitator, pressedBy: clip(pressedBy, COMMENT_LIMITS.maxName) || null, at: comment.queuedAt };
+    await this.save(id);
+    this.log(`進行役が、承認のそろったコメントを列に並べました: ${id}(${comment.number})`);
+    this.kick(id);
+    return { comment };
+  }
+
+  // ---- 共有の場(K7 の 3 枚目。collaboration.md の 9.4) ----
+  // 参加者の書き込みのうち、コメント、反応、承認、承認の取り消しを当てる。share.js が署名と役の表を確かめてから呼ぶ。
+  // member は役の表の人({ id, name, role })。ここでも役を確かめ直す(承認は決める人だけ)。
+  // 承認がそろっても列には並べず「進行役が送る待ち」にする。作る AI を動かすのは進行役の「作る AI に送る」だけ
+  async applyShared(id, op, member) {
+    if (!member || !['participant', 'decider'].includes(member.role)) throw new CommentError(403, 'role', '書ける役ではないので、当てませんでした');
+    const commentId = typeof op?.comment === 'string' ? op.comment : null;
+    if (op?.op === 'comment-add') {
+      if (!SHARED_COMMENT_KINDS.includes(op.kind)) throw new CommentError(400, 'invalid', '共有の場から書けるコメントは、見た目と動きか要件です');
+      return this.create(id, { text: op.text, kind: op.kind, author: member.name }, { sharedBy: member.id });
+    }
+    // 反応、承認、承認の取り消しは、署名した時刻(at)で順を決める。古い書き込みの出し直しは当てない
+    const at = typeof op?.at === 'string' && Number.isFinite(Date.parse(op.at)) ? new Date(op.at).toISOString() : null;
+    if (!at) throw new CommentError(400, 'invalid', '書き込みに時刻がないので、当てませんでした');
+    if (op?.op === 'comment-react') return this.reactShared(id, commentId, member, at);
+    if (op?.op === 'comment-approve') return this.approveShared(id, commentId, member, op.textPrint, at);
+    if (op?.op === 'comment-unapprove') return this.unapproveShared(id, commentId, member, at);
+    throw new CommentError(400, 'invalid', 'その書き込みは使えません');
+  }
+
+  // 人ごと、コメントごと、種類(vote は承認と取り消し、react は反応)ごとに、最後に当てた書き込みの時刻を覚える。
+  // それより古いか同じ時刻の書き込みは、出し直し(中継のサーバーが古い暗号文を新しい番号で配り直した)として断る。
+  // 書き込みの ID で 2 度当てない守り(share.js の MAX_APPLIED)は直近の分だけなので、ここで順を守る
+  static newer(comment, member, kind, at) {
+    const key = `${member.id}:${kind}`;
+    const seen = comment.sharedSeen?.[key];
+    if (seen && at <= seen) throw new CommentError(409, 'replayed', '前に当てた書き込みより古いので、当てませんでした');
+    return () => {
+      comment.sharedSeen = { ...(comment.sharedSeen ?? {}), [key]: at };
+    };
+  }
+
+  // 反応は人ごとに 1 つ。押し直すと外れる。数だけを見せ、誰が付けたかは写しに載せない
+  async reactShared(id, commentId, member, at) {
+    const { comment } = await this.find(id, commentId);
+    if (!['open', 'awaiting', 'queued'].includes(comment.status)) throw new CommentError(409, 'closed', `「${COMMENT_STATUS_WORDS[comment.status]}」のコメントには反応を付けられません`);
+    ProjectComments.newer(comment, member, 'react', at)();
+    const reactors = Array.isArray(comment.reactors) ? comment.reactors : [];
+    if (reactors.includes(member.id)) {
+      comment.reactors = reactors.filter((m) => m !== member.id);
+      comment.reactions = Math.max(0, comment.reactions - 1);
+    } else {
+      comment.reactors = [...reactors, member.id];
+      comment.reactions = Math.min(COMMENT_LIMITS.maxReactions, comment.reactions + 1);
+    }
+    await this.save(id);
+    return { comment };
+  }
+
+  // 共有の場の承認。決める人の役だけ。会の同意、コメントの状態、文の指紋、書き込みの順を確かめる。そろったら「進行役が送る待ち」にする。
+  // 確かめてから書き換えるまでの間に待ちを入れない(その間に進行役が閉じたり承認したりしても、上書きしない)
+  async approveShared(id, commentId, member, print, at) {
+    const { comment } = await this.find(id, commentId);
+    const current = await textPrint(comment.text);
+    this.talkGate(id);
+    if (member.role !== 'decider') throw new CommentError(403, 'role', '決める人の役ではないので、承認として数えませんでした');
+    if (comment.kind === 'architecture') throw new CommentError(409, 'architecture', '構成のコメントは、進行役の画面で承認します');
+    const mark = ProjectComments.newer(comment, member, 'vote', at);
+    if (comment.approvals.some((a) => a.member === member.id) && comment.status !== 'open') return { comment };
+    if (comment.status !== 'open') throw new CommentError(409, 'not-open', `「${COMMENT_STATUS_WORDS[comment.status]}」のコメントは承認できません`);
+    if (typeof print !== 'string' || print !== current) throw new CommentError(409, 'changed', 'コメントの文が承認したときと違うので、数えませんでした');
+    mark();
+    comment.approvals = [
+      ...comment.approvals.filter((a) => a.role !== 'decider'),
+      { role: 'decider', pressedBy: clip(member.name, COMMENT_LIMITS.maxName) || null, spokenBy: null, via: 'shared', member: member.id, at: now() },
+    ];
+    if (approvalSatisfied(comment.kind, comment.approvals)) {
+      comment.status = 'awaiting';
+      comment.awaitingAt = now();
+      comment.held = null;
+      this.log(`共有の場の承認がそろいました。進行役が送るのを待ちます: ${id}(${comment.number})`);
+    }
+    await this.save(id);
+    return { comment };
+  }
+
+  // 共有の場の承認の取り消し。自分の承認だけを外す。作る AI が動き出す前だけ
+  async unapproveShared(id, commentId, member, at) {
+    const { comment } = await this.find(id, commentId);
+    const mark = ProjectComments.newer(comment, member, 'vote', at);
+    if (!comment.approvals.some((a) => a.member === member.id)) throw new CommentError(409, 'no-approval', 'あなたの承認はありません');
+    if (!['open', 'awaiting', 'queued'].includes(comment.status) || this.isStarting(id, comment.id)) {
+      throw new CommentError(409, 'started', '作る AI が動き出した後は、承認を取り消せません');
+    }
+    mark();
+    this.dropApprovals(comment, member.id);
+    await this.save(id);
+    return { comment };
+  }
+
+  // ある人の共有の場の承認を外す。そろわなくなったら、開いている状態に戻す(列からも外す)
+  dropApprovals(comment, memberId) {
+    comment.approvals = comment.approvals.filter((a) => a.member !== memberId);
+    if (comment.status !== 'open' && !approvalSatisfied(comment.kind, comment.approvals)) {
+      comment.status = 'open';
+      comment.queuedAt = null;
+      comment.awaitingAt = null;
+      comment.sentBy = null;
+      comment.held = null;
+    }
+  }
+
+  // 招いた人を外した(share.js の remove)。その人の承認は、作る AI が動き出す前のコメントから外す。
+  // 外した人の承認で「作る AI に送る」を押せないようにする。動き出した後のものは、直した記録に残す
+  async dropSharedMember(id, memberId) {
+    const data = await this.load(id);
+    if (data.broken) return;
+    let changed = false;
+    for (const comment of data.comments) {
+      if (!comment.approvals.some((a) => a.member === memberId)) continue;
+      if (!['open', 'awaiting', 'queued'].includes(comment.status) || this.isStarting(id, comment.id)) continue;
+      this.dropApprovals(comment, memberId);
+      changed = true;
+    }
+    if (changed) await this.save(id);
+  }
+
+  // 共有の場に置く写し。文、種類、状態、反応の数、承認した役。誰が反応したか、直した記録、依頼の全文は載せない
+  async sharedView(id) {
+    const data = await this.load(id);
+    return data.comments.map((c) => ({
+      id: c.id,
+      number: c.number,
+      text: c.text,
+      kind: c.kind,
+      kindLabel: COMMENT_KINDS[c.kind],
+      status: c.status,
+      statusLabel: COMMENT_STATUS_WORDS[c.status],
+      author: c.author || null,
+      placeWords: placeWords(c.place),
+      reactions: c.reactions,
+      needsBoth: c.kind === 'requirement',
+      approvals: c.approvals.map((a) => ({ role: a.role, roleLabel: COMMENT_ROLES[a.role], ...(a.via === 'shared' ? { name: a.pressedBy, member: a.member } : {}) })),
+    }));
+  }
+
+  // 進行役が送るのを待っているコメント(共有の欄に出す)
+  async awaitingOf(id) {
+    const data = await this.load(id);
+    return data.comments
+      .filter((c) => c.status === 'awaiting')
+      .map((c) => ({ id: c.id, number: c.number, text: c.text, kindLabel: COMMENT_KINDS[c.kind], approvers: c.approvals.map((a) => `${a.pressedBy ?? COMMENT_ROLES[a.role]}(${COMMENT_ROLES[a.role]}${a.via === 'shared' ? '、共有の場から' : ''})`) }));
   }
 
   // 閉じる。開いているコメントだけ(書いた人か進行役が閉じる)
@@ -517,6 +692,8 @@ export class ProjectComments {
     comment.status = 'open';
     comment.approvals = [];
     comment.queuedAt = null;
+    comment.awaitingAt = null;
+    comment.sentBy = null;
     comment.held = null;
     await this.save(id);
     return { comment };

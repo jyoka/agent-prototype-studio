@@ -252,7 +252,7 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
     if (showMatch && (showMatch[2] ? req.method === 'POST' : req.method === 'GET')) return handleShow(req, res, showMatch[1], showMatch[2]);
     // 画面へのコメント(K3)。GET は一覧と直した記録。POST はコメントを書く。resume は列を進める。
     // コメントごとの操作は react、approve、unapprove、close、reopen、resolve、revert。作る AI を動かすのは、承認がそろったときだけ
-    const commentsMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/comments(?:\/(resume)|\/([a-f0-9]{16})\/(react|approve|unapprove|close|reopen|resolve|revert))?$/.exec(url.pathname);
+    const commentsMatch = /^\/api\/projects\/([a-z0-9-]{1,64})\/comments(?:\/(resume)|\/([a-f0-9]{16})\/(react|approve|unapprove|send|close|reopen|resolve|revert))?$/.exec(url.pathname);
     if (commentsMatch && (commentsMatch[2] || commentsMatch[3] ? req.method === 'POST' : req.method === 'GET' || req.method === 'POST')) {
       return handleComments(req, res, commentsMatch[1], commentsMatch[2] ?? commentsMatch[4] ?? null, commentsMatch[3] ?? null);
     }
@@ -523,7 +523,7 @@ export function createStudioHandler({ store, requests, checks, agent, aiSessions
       }
       else if (action === 'resume') result = await comments.resume(id);
       else if (action === 'approve') result = await comments.approve(id, commentId, body);
-      else if (action === 'resolve' || action === 'revert') result = await comments[action](id, commentId, body);
+      else if (action === 'resolve' || action === 'revert' || action === 'send') result = await comments[action](id, commentId, body);
       else result = await comments[action](id, commentId);
       return sendJson(res, 200, { ...(action === 'resume' ? {} : result), comments: await comments.view(id) });
     } catch (error) {
