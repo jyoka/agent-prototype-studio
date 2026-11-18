@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cleanDoc, draftFromTurns, mergeDraft, singleQuestion } from '../../src/server/intent.js';
+import { cleanDoc, draftFromTurns, guessedFields, mergeDraft, singleQuestion } from '../../src/server/intent.js';
 import { buildIntentArgs, intentInput, intentOutputProblem } from '../../src/server/intent-ai.js';
 
 const turn = (field, answer, unknown = false) => ({ field, question: `${field} の問い?`, reason: '', answer, unknown });
@@ -20,6 +20,15 @@ test('AI の下書きを合わせる: AI が書かなくても、分からない
   assert.equal(merged.who, 'お店の人');
   assert.equal(merged.problem, 'AI が書いた問題');
   assert.deepEqual(merged.undecided, ['scene の問い?', 'AI が書いた未決']);
+});
+
+test('推測で埋めた項目: AI の下書きにあって答えにない項目だけ。問題は最初の 1 文から分かるので推測にしない(ui-ux-v2.md の 4.4)', () => {
+  const record = { sentence: '架空の 1 文', turns: [turn('who', 'お店の人')] };
+  const draft = { who: 'お店の人', problem: 'AI が書いた問題', scene: '', success: 'AI が推測した成功の印', notDoing: ['AI が推測したしないこと'], undecided: [] };
+  assert.deepEqual(guessedFields(record, draft), ['success', 'notDoing']);
+  // 答えた項目は推測にしない。AI を使わないとき(下書きなし)は推測がない
+  assert.deepEqual(guessedFields({ ...record, turns: [turn('who', 'お店の人'), turn('success', '返事が早くなる')] }, draft), ['notDoing']);
+  assert.deepEqual(guessedFields(record, null), []);
 });
 
 test('文書の形: 知らない項目(status など)は捨てる', () => {

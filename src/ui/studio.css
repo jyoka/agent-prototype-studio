@@ -330,7 +330,8 @@ body[data-organize] .layout, body[data-organize] .stage-panel { display: none; }
 .organize-board-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
 .organize-columns { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.6rem; }
 .organize-column { padding: 0.5rem; border: var(--stroke-hair) solid var(--color-line); border-radius: var(--radius-2); background: var(--color-bg); min-width: 0; }
-.organize-item[data-guess="true"] { border-style: dashed; border-color: var(--color-warn); }
+/* 推測の項目は点線の縁と「推測」の文で分ける(色を外しても分かる。ui-ux-v2.md の 4.5) */
+.organize-item[data-guess="true"] { border-style: dotted; border-width: var(--stroke-mark); border-color: var(--color-warn); }
 .organize-item-text { font-weight: var(--weight-bold); }
 .organize-source { color: var(--color-text-muted); font-size: var(--text-2); }
 .organize-badge { display: inline-block; padding: 0 0.45rem; border-radius: var(--radius-pill); font-size: var(--text-1); white-space: nowrap; border: var(--stroke-hair) solid var(--color-line); color: var(--color-text-muted); }
@@ -558,6 +559,33 @@ body[data-intent] .layout, body[data-intent] .stage-panel { display: none; }
 .intent-doc-state[data-state="decided"] { background: var(--color-ok-soft); border-color: var(--color-ok); }
 .intent-note { color: var(--color-text-muted); }
 .intent-error { color: var(--color-danger); }
+/* 場面 4(ui-ux-v2.md の 4.4)。段 1 の弱いボタンと見本。段 2 は 2 列(左に問い 1 つ、右に目的の文書の下書き) */
+.intent-form button.quiet { background: transparent; font-size: var(--text-2); }
+.intent-samples { margin: var(--space-2) 0; }
+.intent-samples > summary { cursor: pointer; }
+.intent-samples > summary .muted { font-size: var(--text-2); }
+.intent-samples[hidden] { display: none; }
+.intent:has(.intent-goal:not([hidden])) { width: min(var(--bench-max), 100%); }
+.intent-goal { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+.intent-goal[hidden] { display: none; }
+.intent-goal h3 { margin: 0 0 var(--space-1); font-size: var(--text-4); }
+.intent-goal h4 { margin: var(--space-4) 0 0; font-size: var(--text-3); }
+.intent-ask, .intent-draft { min-width: 0; }
+.intent-question { margin: var(--space-2) 0; font-size: var(--text-4); font-weight: var(--weight-bold); }
+.intent-asked-done[hidden], #intent-asking[hidden], #intent-asked-done[hidden], #intent-unknown-note[hidden] { display: none; }
+/* 「分からない」は「答える」と同じ重さ。同じ形と幅 */
+.intent-answer-pair { display: grid; grid-template-columns: 1fr 1fr; }
+.intent-answer-pair button { font-weight: var(--weight-bold); }
+.intent-row { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2); border: var(--stroke-hair) solid var(--color-line); border-radius: var(--radius-2); transition: border-color var(--motion-quick) var(--ease-out); }
+.intent-row > label { display: flex; align-items: center; gap: var(--space-2); }
+.intent-row .guess-badge { align-self: flex-start; }
+/* 推測で埋めた行は点線の縁と「推測」の文(色を外しても分かる) */
+.intent-row[data-guess="true"] { border-style: dotted; border-width: var(--stroke-mark); border-color: var(--color-warn); }
+/* 答えが入った行だけ、縁を短く強くする(光らせない) */
+.intent-row[data-changed="true"] { border-color: var(--color-line-strong); border-width: var(--stroke-mark); }
+@media (max-width: 1023px) {
+  .intent-goal { grid-template-columns: 1fr; }
+}
 
 /* 段 5〜8 の 2 列(ui-ux-v2.md の 2.2、2.4)。左の試作品が約 6 割、右の入れ替わる列が約 4 割。主役の 2 つを、スクロールなしで 1 画面に収める */
 .layout {
@@ -1042,8 +1070,24 @@ body[data-intent] .layout, body[data-intent] .stage-panel { display: none; }
 /* 質の見直しの表(user-journey.md の J6)。場面の一覧と比べる表と同じ置き方 */
 .quality[hidden] { display: none; }
 .quality { margin-top: 0.5rem; padding: 0.3rem 0.6rem; border: var(--stroke-hair) solid var(--color-line); border-radius: var(--radius-2); font-size: var(--text-2); flex-shrink: 0; }
-.quality > summary { cursor: pointer; font-weight: var(--weight-bold); }
-.quality-body { max-height: 40vh; overflow: auto; }
+/* 場面 7(ui-ux-v2.md の 4.7)。表の頭に見た数とまだの数 */
+.quality-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.quality-head h3 { margin: 0; font-size: var(--text-3); }
+.quality-count { margin: 0; font-family: var(--font-mono); font-size: var(--text-2); }
+.quality-body { overflow: visible; }
+/* 行の印。✓ は実線、○(まだ見ていない)は点線の縁で、✓ と違う見た目にする */
+.quality-state { display: inline-block; min-width: 1.4em; text-align: center; font-weight: var(--weight-bold); }
+.quality-state[data-status="ok"] { color: var(--color-ok); }
+.quality-state[data-status="fix"] { color: var(--color-danger); }
+.quality-state[data-status="unseen"] { color: var(--color-text-muted); }
+.quality-unseen { display: inline-block; padding: 0 var(--space-1); border: var(--stroke-hair) dotted var(--color-line-strong); border-radius: var(--radius-1); font-size: var(--text-1); font-weight: var(--weight-regular); color: var(--color-text-muted); }
+.quality tr[data-status="unseen"] > th, .quality tr[data-status="unseen"] > td { border-style: dotted; }
+.quality-none { color: var(--color-text-muted); text-align: center; }
+/* 段 7 の右上の弱いボタン「試作品を自動で確かめる」 */
+.side > .stage-check { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); padding: var(--space-2) var(--space-3); }
+.stage-check .check-lead { flex: 1 1 100%; margin: 0; font-size: var(--text-1); text-align: right; }
+.stage-check > details.explain { flex: 1 1 100%; }
+.stage-check .check-ai, .stage-check .check-consent, .stage-check .check-message { flex: 1 1 100%; }
 .quality-body p { margin: 0.3rem 0; }
 .quality-body h4 { margin: 0.5rem 0 0.2rem; font-size: var(--text-2); }
 .quality-actions button { padding: 0.3rem 0.7rem; border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: var(--color-surface); color: var(--color-text); font-weight: var(--weight-bold); cursor: pointer; }
@@ -1060,15 +1104,31 @@ body[data-intent] .layout, body[data-intent] .stage-panel { display: none; }
 
 /* 見せる画面(user-journey.md の J7)。試作品と確かめたい問いだけを出す。
    上の帯、知らせ、言葉で直す、その他の引き出し、試す欄の道具と記録(data-studio-only)は隠す */
-body[data-show] > :not(.frame-body):not(dialog),
-body[data-show] .bench > :not(.layout),
-body[data-show] .drawer { display: none !important; }
+/* 見せる画面(data-show="customer")。段の道筋、今の行、次の一手の帯、仕組みの引き出しを出さない(ui-ux-v2.md の 4.6) */
+body[data-show="customer"] > :not(.frame-body):not(dialog),
+body[data-show="customer"] .bench > :not(.layout),
+body[data-show="customer"] .drawer { display: none !important; }
+/* 操作役の画面(data-show="operator")。枠は出し、作業台は試作品と見せる欄の 2 列にする */
+body[data-show="operator"] .bench > :not(.layout):not(#bench-heading) { display: none !important; }
 /* 見せている間に、ほかの画面(目的、整理、設計、審査、会)が開いても、見せる画面を隠さない */
 body[data-show] .layout { display: grid !important; }
 body[data-show] .side > .make,
 body[data-show] .side > :not(#show),
-body[data-show] .preview > :not(#frame-host):not(#ai-waiting),
-body[data-show] [data-studio-only] { display: none !important; }
+body[data-show="customer"] .preview > :not(#frame-host):not(#ai-waiting),
+body[data-show="customer"] [data-studio-only] { display: none !important; }
+/* 見せる画面には、コメントの一覧と承認を出さない。操作役の画面では、お客さん向けの 1 文を出さない */
+body[data-show="customer"] .operator-only,
+body[data-show="operator"] .customer-only { display: none !important; }
+.show-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.show-head h2 { margin: 0; }
+.comment-react-note { margin: 0.4rem 0; padding: 0.4rem 0.6rem; border-left: var(--stroke-mark) solid var(--actor-you); background: var(--color-surface-sunken); font-weight: var(--weight-bold); }
+.comment-summary { margin: 0.3rem 0; font-family: var(--font-mono); font-size: var(--text-2); }
+/* 反応と承認待ちを、1 つのコメントの中でも別の行に分ける */
+.comment-part { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-1) 0; padding: var(--space-1) var(--space-2); border-radius: var(--radius-1); }
+.comment-reacts { border: var(--stroke-hair) dashed var(--color-line-strong); }
+.comment-approve { border: var(--stroke-hair) solid var(--color-line-strong); }
+.comment-part-label { font-weight: var(--weight-bold); }
+.comment-part .muted { font-size: var(--text-1); }
 .show[hidden] { display: none; }
 .show {
   background: var(--color-surface);
@@ -1154,7 +1214,7 @@ body[data-show] [data-studio-only] { display: none !important; }
 button.primary { border-color: var(--color-line-strong); background: var(--color-surface); color: var(--color-text); font-weight: var(--weight-bold); border-radius: var(--radius-2); }
 .next-slot > button:not(.quiet),
 .consent-buttons button.primary,
-.show .show-actions button.primary { border-color: var(--color-accent); background: var(--color-accent); color: var(--color-on-accent); font-weight: var(--weight-bold); border-radius: var(--radius-2); }
+body[data-show="customer"] .show .show-form .show-actions button.primary { border-color: var(--color-accent); background: var(--color-accent); color: var(--color-on-accent); font-weight: var(--weight-bold); border-radius: var(--radius-2); }
 button.primary:disabled { border-color: var(--color-line-strong); background: var(--color-surface); color: var(--color-text-muted); }
 /* 弱いボタン。地なし、縁だけ */
 .quiet { border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-2); background: transparent; color: var(--color-text); font-size: var(--text-2); }
@@ -1496,7 +1556,28 @@ body:not([data-side="show"]) .side > #stage-show { display: none; }
 }
 /* 段 6 と段 7 の右の列は表(比べる表、質の見直し)を持つので、2 列を半分ずつにする。段 5 と 8 は試作品が約 6 割 */
 @media (min-width: 1024px) {
-  body[data-side="measure"] .layout, body[data-side="quality"] .layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  body[data-side="measure"] .layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  /* 質の見直しは 5 列の表(項目、測った数、AI の判断、なぜ大事か、直す)なので、右の列を約 6 割にする */
+  body[data-side="quality"] .layout { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); grid-template-rows: minmax(0, 1fr); }
   /* 比べるタブは 7 列の表なので、右の列を約 6 割にする */
   body[data-side="measure"][data-tab="compare"] .layout { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
 }
+/* 見せる画面の「データは架空です」の札(ui-ux-v2.md の 4.6)。題材が架空であることを、色ではなく文で出す */
+.show-fiction { color: var(--color-fiction); font-weight: var(--weight-bold); white-space: nowrap; }
+/* 質の見直しの表の列の幅(4.7)。項目の名前が 1 字ずつ折り返さないように、幅を決める */
+.quality-rows { table-layout: fixed; }
+.quality-rows th:nth-child(1) { width: 24%; }
+.quality-rows th:nth-child(2), .quality-rows td:nth-child(2) { width: 22%; }
+.quality-rows th:nth-child(3), .quality-rows td:nth-child(3) { width: 16%; }
+.quality-rows td { overflow-wrap: anywhere; }
+/* 段 7 の右の列。表は列の中でスクロールし、画面の枠(段の道筋、次の一手の帯)を押し出さない */
+.side > .stage-check { flex: none; }
+/* 表の中の読み上げだけの文(.visually-hidden)が、列の外へはみ出て画面を伸ばさないように、位置の基準にする */
+.side > .quality { flex: 0 1 auto; min-height: 0; position: relative; }
+.quality-rows th { position: relative; }
+@media (max-width: 1023px) {
+  .side > .quality { overflow: visible; }
+}
+/* 表の頭(見た数とまだの数)は、列の中でスクロールしても上に残す */
+.side > .quality > .quality-head { position: sticky; top: calc(-1 * var(--space-2)); z-index: 1; margin: calc(-1 * var(--space-2)) 0 0; padding: var(--space-2) 0; background: var(--color-surface); }
+#quality-table { scroll-margin-top: 2.6rem; }

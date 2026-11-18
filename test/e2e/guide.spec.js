@@ -68,7 +68,7 @@ test('はじめて: 段 1 の作業台に「─」と 3 つの文。例を押す
   const studio = await launchStudio(home, { env: { STUDIO_START_SCREEN: undefined } });
   try {
     await page.goto(studio.url);
-    await expect(page.getByRole('heading', { level: 2, name: 'どんなものを作りたいですか' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: '思いつきを 1 文で書いてください' })).toBeVisible();
     await expectState(page.locator('#intent-lead'), 'first', '─');
     await expect(page.locator('#intent-lead')).toContainText('ラフな 1 文で大丈夫です。');
     await expectNoInterrupt(page);
@@ -334,7 +334,7 @@ test('段 1〜9 の作業台に「これは何?」があり、見える文字に
   let studio = await launchStudio(home, { env: { STUDIO_START_SCREEN: undefined } });
   try {
     await page.goto(studio.url);
-    await expect(page.getByRole('heading', { level: 2, name: 'どんなものを作りたいですか' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: '思いつきを 1 文で書いてください' })).toBeVisible();
     await expectExplains(page, '話す');
     await expectTone(page, '話す');
   } finally {

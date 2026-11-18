@@ -28,12 +28,12 @@ const itemKey = (item) => `${item.column}\n${item.text}`;
 const hasRecord = (text) => findRecords(text).length > 0;
 const citesAny = (sources, numbers) => Array.isArray(sources) && sources.some((n) => numbers.includes(n));
 
-// 記録らしいものを省いたときの知らせ。値そのものは入れない
-const omittedNote = (count) => `記録らしいものを省きました(${count} 件)。整理の板には入れません。お客さんの記録は打たないでください。`;
+// 記録らしいものを省いたときの知らせ。値そのものは入れない。打った人を責めない言葉にする(ui-ux-v2.md の 4.5。「電話番号らしいものは省きます」の形)
+const omittedNote = (count) => `個人の記録らしいものは省きます(${count} 件)。整理の板にも AI にも入れていません。`;
 
 function refuseRecord(text) {
   const kinds = findRecords(text);
-  if (kinds.length > 0) throw new IntentError(422, 'record', `記録らしいものを省きました(${kinds.join('、')})。AI にも整理の板にも入れていません。その部分を抜いて、打ち直してください。`);
+  if (kinds.length > 0) throw new IntentError(422, 'record', `${kinds.join('や')}らしいものは省きます。AI にも整理の板にも入れていません。その部分を抜くと、要点に足せます。`);
 }
 
 export function emptyBoard() {

@@ -100,7 +100,7 @@ test('要点 10 個が 5 つの欄に振り分けられ、全項目に元の要�
     const items = await s.items.all();
     let guesses = 0;
     for (const item of items) {
-      const sources = await item.locator('.organize-source', { hasText: '元の要点' }).count();
+      const sources = await item.locator('.organize-source', { hasText: /^元: \d+ 行目/ }).count();
       const guess = await item.getByText('推測', { exact: true }).count();
       expect(sources + guess, await item.innerText()).toBeGreaterThan(0);
       expect(sources > 0 && guess > 0, await item.innerText()).toBe(false);
@@ -108,7 +108,7 @@ test('要点 10 個が 5 つの欄に振り分けられ、全項目に元の要�
     }
     expect(guesses).toBe(2);
     // 元の要点には、打った文がそのまま出る
-    await expect(s.column('要求').locator('.organize-item').first()).toContainText(`元の要点 1: ${POINTS[0]}`);
+    await expect(s.column('要求').locator('.organize-item').first()).toContainText(`元: 1 行目「${POINTS[0]}」`);
     // 偽の claude が「ない要点」を指した項目も「推測」になる
     await expect(s.column('決まりごと').locator('.organize-item', { hasText: '偽のない要点を指す項目' }).getByText('推測', { exact: true })).toBeVisible();
 
@@ -195,7 +195,7 @@ test('人が直して足して消す。整理し直しても、直した項目�
     await s.section.getByLabel('項目の文').fill('再配達の受付は 17 時まで');
     await s.section.getByLabel('項目の欄').selectOption({ label: '要求' });
     await s.section.getByRole('button', { name: '保存する' }).click();
-    await expect(s.column('要求').locator('.organize-item', { hasText: '再配達の受付は 17 時まで' })).toContainText('元の要点 1');
+    await expect(s.column('要求').locator('.organize-item', { hasText: '再配達の受付は 17 時まで' })).toContainText('元: 1 行目');
 
     // 直している途中に要点を足しても、書きかけの文は消えない
     const dataItem = s.column('データ').locator('.organize-item', { hasText: '不在票' });
@@ -218,14 +218,14 @@ test('人が直して足して消す。整理し直しても、直した項目�
     await page.getByLabel('足す欄').selectOption({ label: '使う人' });
     await page.getByLabel('足す項目').fill('受付の担当');
     await page.getByRole('button', { name: '項目を足す' }).click();
-    await expect(s.column('使う人').locator('.organize-item', { hasText: '受付の担当' })).toContainText('元の要点 4: 受付の担当');
+    await expect(s.column('使う人').locator('.organize-item', { hasText: '受付の担当' })).toContainText('元: 4 行目「受付の担当」');
 
     // 整理し直す
     await s.run.click();
     await expect(s.note).toBeHidden();
     await expect(s.column('要求').locator('.organize-item', { hasText: '再配達の受付は 17 時まで' })).toBeVisible();
     await expect(s.column('使う人').locator('.organize-item', { hasText: '受付の担当' })).toHaveCount(1);
-    await expect(s.section.locator('.organize-item', { hasText: '不在票に荷物の番号がある' }).filter({ hasNot: s.section.getByText('元の要点 4') })).toHaveCount(0);
+    await expect(s.section.locator('.organize-item', { hasText: '不在票に荷物の番号がある' }).filter({ hasNot: s.section.getByText('元: 4 行目') })).toHaveCount(0);
   } finally {
     await studio.stop();
   }
@@ -246,7 +246,7 @@ test('同意しないと AI を呼ばず、要点を手で振り分けられる�
     expect((await fs.readFile(log, 'utf8').catch(() => '')).includes('toAsk')).toBe(false);
 
     await page.getByLabel('要点 1 を入れる欄').selectOption({ label: '使う人' });
-    await expect(s.column('使う人').locator('.organize-item')).toContainText('元の要点 1: お年寄りのお客さんも多い');
+    await expect(s.column('使う人').locator('.organize-item')).toContainText('元: 1 行目「お年寄りのお客さんも多い」');
     await expect(s.asks).toContainText('「要求」の話をまだ聞いていません');
     await s.confirm.click();
     await expect(s.mark).toHaveText('整理: 確かめた');
@@ -371,7 +371,7 @@ test('読んだ後に板が変わっていると、押しても「確かめた�
 test('整理の板がある試作品があれば、読み込み直しても起動し直しても、はじめの画面で隠さない', async ({ page, home }) => {
   test.setTimeout(60_000);
   const env = { STUDIO_START_SCREEN: undefined };
-  const start = page.getByRole('heading', { level: 2, name: 'どんなものを作りたいですか' });
+  const start = page.getByRole('heading', { level: 2, name: '思いつきを 1 文で書いてください' });
   const first = await launchStudio(home, { env });
   try {
     await page.goto(first.url);
@@ -445,7 +445,7 @@ test('整理の板から別の画面へ移れる。はじめの画面と重な�
     await page.locator('#project-menu-button').click();
     await page.getByRole('button', { name: '新しく作る' }).click();
     await expect(s.section).toBeHidden();
-    await expect(page.getByRole('heading', { level: 2, name: 'どんなものを作りたいですか' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: '思いつきを 1 文で書いてください' })).toBeVisible();
     await expect(s.mark).toBeHidden();
   } finally {
     await studio.stop();

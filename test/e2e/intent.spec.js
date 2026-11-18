@@ -14,7 +14,7 @@ const UX_SHOTS = path.join(ROOT, 'test-results', 'ux');
 
 const ui = (page) => ({
   section: page.locator('#intent'),
-  heading: page.getByRole('heading', { level: 2, name: 'どんなものを作りたいですか' }),
+  heading: page.getByRole('heading', { level: 2, name: '思いつきを 1 文で書いてください' }),
   sentence: page.getByLabel('作りたいもの'),
   question: page.locator('#intent-question'),
   answer: page.getByLabel('答え', { exact: true }),
@@ -42,10 +42,10 @@ test('あいまいな 1 文で問いが返り、「分からない」が決め�
   try {
     await page.goto(studio.url);
     const s = ui(page);
-    // はじめの画面: 例の 1 文、案内の深さ(既定は「ふつう」)。試作品の画面は隠れている
+    // はじめの画面: 例の 1 文、聞き方の深さ(既定は「ふつう」)。試作品の画面は隠れている
     await expect(s.heading).toBeVisible();
     await expect(page.getByRole('list', { name: '例の 1 文' }).getByRole('button')).toHaveCount(3);
-    await expect(page.getByRole('group', { name: '案内の深さ' }).getByRole('radio', { checked: true })).toHaveAccessibleName(/ふつう/);
+    await expect(page.getByRole('group', { name: '聞き方の深さ' }).getByRole('radio', { checked: true })).toHaveAccessibleName(/ふつう/);
     await expect(page.getByRole('region', { name: '作る AI', exact: true })).toBeHidden();
     await expect(page.locator('#stage-list button.stage[data-stage="talk"]')).toHaveAttribute('aria-current', 'step');
     await expectNoDevWords(s.section);
@@ -206,7 +206,7 @@ for (const [width, height] of [[900, 900], [390, 700]]) {
       await expectWhole(s.section, page.getByRole('button', { name: '飛ばす' }));
 
       await s.sentence.fill(SENTENCE);
-      await page.getByRole('group', { name: '案内の深さ' }).getByRole('radio', { name: /速く/ }).click();
+      await page.getByRole('group', { name: '聞き方の深さ' }).getByRole('radio', { name: /速く/ }).click();
       await page.getByRole('button', { name: '送る' }).click();
       await expect(s.question).toContainText('誰');
       await expectWhole(s.section, s.reply);
@@ -266,7 +266,7 @@ test('深さごとの上限を超えて問いを出さない(偽の claude は�
     await page.goto(studio.url);
     const s = ui(page);
     await s.sentence.fill(SENTENCE);
-    await page.getByRole('group', { name: '案内の深さ' }).getByRole('radio', { name: /速く/ }).click();
+    await page.getByRole('group', { name: '聞き方の深さ' }).getByRole('radio', { name: /速く/ }).click();
     await page.getByRole('button', { name: '送る' }).click();
 
     // 同意のカード。カードの前に AI を起動せず、試作品も作らない
@@ -290,7 +290,7 @@ test('深さごとの上限を超えて問いを出さない(偽の claude は�
     await page.getByRole('button', { name: '新しく作る' }).click();
     await expect(s.heading).toBeVisible();
     await s.sentence.fill(SENTENCE);
-    await page.getByRole('group', { name: '案内の深さ' }).getByRole('radio', { name: /速く/ }).click();
+    await page.getByRole('group', { name: '聞き方の深さ' }).getByRole('radio', { name: /速く/ }).click();
     await page.getByRole('button', { name: '送る' }).click();
     await card.getByRole('button', { name: '同意して使う' }).click();
     await expect(s.question).toHaveText('偽の問い 1 は何ですか?');

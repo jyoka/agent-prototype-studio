@@ -28,19 +28,19 @@ const BROKEN_LOOK = {
   'style.css': '.faint { color: #c8c8c8; background: #ffffff; }\n',
 };
 
-// 段 7「質」の右の列の「質の見直し」を開く
+// 段 7「質」の右の列の「質の見直し」に移る。表の頭に「見た n / m・まだ k・直す j」が出るまで待つ(ui-ux-v2.md の 4.7)
 async function openQuality(page) {
   if ((await page.locator('#stage-list button.stage[data-stage="quality"]').getAttribute('aria-current')) !== 'step') await goStage(page, '質');
   const box = page.locator('#quality');
-  const summary = page.locator('#quality-summary');
-  await expect(summary).toContainText('質の見直し(直す ');
-  if (!(await box.evaluate((el) => el.open))) await summary.click();
+  await expect(page.locator('#quality-count')).toHaveText(/^見た \d+ \/ \d+・まだ \d+・直す \d+/);
   return box;
 }
 
-const measured = (box) => box.getByRole('table', { name: '質の見直し: 測ったもの' });
-const judged = (box) => box.getByRole('table', { name: '質の見直し: AI の判断' });
-const rowOf = (table, label) => table.locator('tbody tr').filter({ has: table.page().getByRole('rowheader', { name: label }) });
+// 1 つの表で、測ったものの行(data-group="measured")と AI の判断の行(judged)。
+// 測ったものの行は「測った数」の列(td の 1 つ目)、AI の判断の行は「AI の判断」の列(td の 2 つ目)に結果がある
+const table = (box) => box.getByRole('table', { name: '質の見直しの表' });
+const measured = table;
+const rowOf = (t, label) => t.locator('tbody tr').filter({ has: t.page().getByRole('rowheader', { name: label }) });
 
 test('わざと壊した見本で、アクセシビリティの違反、字と地の差、値のまま書いた色の行に「直す」が出る。見ていない項目は「まだ見ていない」', async ({ page, home }) => {
   await writeProject(home, 'broken-look', BROKEN_LOOK, '図書室の受付(架空)');
@@ -60,17 +60,18 @@ test('わざと壊した見本で、アクセシビリティの違反、字と�
     // 素材が入っていないので、部品の行は「まだ見ていない」。AI のない試作品なので、場面の行は当てはまらない
     await expect(rowOf(table, '素材に合わない部品').locator('td').first()).toHaveText(/^まだ見ていない。この試作品には部品の素材/);
     await expect(rowOf(table, '場面の結果').locator('td').first()).toHaveText(/^当てはまらない/);
-    // 各行に「なぜ大事か」と「直す」がある
+    // 各行に「なぜ大事か」と「直す」がある(td の 3 つ目と 4 つ目)
     for (const row of await table.locator('tbody tr').all()) {
       const cells = row.locator('td');
-      await expect(cells.nth(1)).not.toBeEmpty();
       await expect(cells.nth(2)).not.toBeEmpty();
+      await expect(cells.nth(3)).not.toBeEmpty();
     }
-    // AI の判断は別の表で、「判断」の印が付く
-    await expect(judged(box).locator('tbody tr')).toHaveCount(2);
-    await expect(rowOf(judged(box), /^使いやすさの見直し/).locator('th')).toContainText('判断');
-    await expect(rowOf(judged(box), /^返事の自然さ/).locator('th .quality-mark')).toHaveText('判断');
-    await expect(table.locator('.quality-mark')).toHaveCount(0);
+    // AI の判断の行は「AI の判断」の列にあり、「AI の判断」の札が付く。測った数の列は「─」
+    await expect(table.locator('tbody tr[data-group="judged"]')).toHaveCount(2);
+    await expect(rowOf(table, '使いやすさの見直し').locator('td').nth(1).locator('.quality-mark')).toHaveText('AI の判断');
+    await expect(rowOf(table, '返事の自然さ').locator('td').nth(1).locator('.quality-mark')).toHaveText('AI の判断');
+    await expect(rowOf(table, '返事の自然さ').locator('td').first()).toHaveText('─');
+    await expect(table.locator('tbody tr[data-group="measured"] .quality-mark')).toHaveCount(0);
 
     // 画面を確かめると、ラベルのない入力と、字と地の差が足りない所が出る
     await box.getByRole('button', { name: '画面を確かめて見直す' }).click();
@@ -81,7 +82,7 @@ test('わざと壊した見本で、アクセシビリティの違反、字と�
     await contrast.getByText('開発者向け: 場所(1)').click();
     await expect(contrast).toContainText('「返す日は、受付で聞いてください」');
     await expect(box.locator('#quality-status')).toContainText('画面を確かめた時刻');
-    await expect(page.locator('#quality-summary')).toContainText('質の見直し(直す 3、');
+    await expect(page.locator('#quality-count')).toContainText('・直す 3');
 
     // 「直す」で、作る AI の欄に依頼が入る。送るのは人(確かめの結果の帯のほかに、作る会話は増えない)
     await a11y.getByRole('button', { name: '直す' }).click();
@@ -153,7 +154,7 @@ test('わざと壊した構成で場面を回すと、場面の結果、道具�
     await expect(guards.locator('td').first()).toContainText('直す 危ない場面 1 のうち、止まった 0、止まらなかった 1');
     await expect(rowOf(table, '費用').locator('td').first()).toHaveText(/^まだ見ていない。お試しの AI では費用がかかりません/);
     await expect(rowOf(table, '待ち時間').locator('td').first()).toHaveText(/^まだ見ていない。/);
-    await expect(rowOf(judged(box), /^返事の自然さ/).locator('td').first()).toHaveText(/^まだ見ていない。/);
+    await expect(rowOf(table, '返事の自然さ').locator('td').nth(1)).toContainText('まだ見ていない。');
 
     // 守りの「直す」は、コードの守りを足す依頼
     await guards.getByRole('button', { name: '直す' }).click();

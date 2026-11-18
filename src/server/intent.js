@@ -13,7 +13,7 @@ import { applyStudioMaterials } from './materials.js';
 export const INTENT_FILE = 'intent.json';
 const FORMAT = 1;
 
-// 案内の深さ。limit は問いの数の上限(値は仮。人の確かめで直す)
+// 聞き方の深さ。limit は問いの数の上限(値は仮。人の確かめで直す)
 export const DEPTHS = {
   quick: { label: '速く', limit: 2 },
   normal: { label: 'ふつう', limit: 4 },
@@ -105,6 +105,24 @@ export function mergeDraft(record, draft) {
   merged.notDoing = given.notDoing.length > 0 ? given.notDoing : base.notDoing;
   merged.undecided = cleanList([...base.undecided, ...given.undecided]);
   return merged;
+}
+
+// 推測で埋めた項目(ui-ux-v2.md の 4.4)。AI の下書きにあって、答えからは分からない項目。
+// 問題(problem)は最初の 1 文から分かるので、推測にしない。人が直した項目と、決めた後は推測にしない
+export function guessedFields(record, draft) {
+  if (!draft) return [];
+  const base = draftFromTurns(record);
+  const given = cleanDoc(draft);
+  const fields = DOC_FIELDS.filter((field) => given[field] && !base[field]);
+  if (given.notDoing.length > 0 && base.notDoing.length === 0) fields.push('notDoing');
+  return fields;
+}
+
+const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+// 人が直した後も推測のままの項目。値が変わっていない項目だけ残す
+function stillGuessed(record, doc) {
+  return (record.guessed ?? []).filter((field) => sameValue(doc[field], record.doc?.[field]));
 }
 
 // 問いを 1 つだけにする(1 度に 1 つ聞く)。文に分け、最初の問いの文を返す。問いの文がなければ最初の文を返す
@@ -317,7 +335,7 @@ export class ProjectIntents {
   async start(id, { sentence, depth = DEFAULT_DEPTH, guide = 'ai' }) {
     return this.exclusive(id, async () => {
       const text = this.validSentence(sentence);
-      if (typeof depth !== 'string' || !Object.hasOwn(DEPTHS, depth)) throw new IntentError(400, 'invalid', `案内の深さは ${Object.keys(DEPTHS).join('、')} のどれかです`);
+      if (typeof depth !== 'string' || !Object.hasOwn(DEPTHS, depth)) throw new IntentError(400, 'invalid', `聞き方の深さは ${Object.keys(DEPTHS).join('、')} のどれかです`);
       this.requireConsent(guide, id);
       const record = {
         formatVersion: FORMAT,
@@ -368,6 +386,7 @@ export class ProjectIntents {
       }
     }
     record.doc = mergeDraft(record, aiOutput?.draft ?? null);
+    record.guessed = guessedFields(record, aiOutput?.draft ?? null);
     let pending = null;
     if (remaining > 0) {
       const question = aiOutput ? singleQuestion(aiOutput.question) : '';
@@ -436,7 +455,8 @@ export class ProjectIntents {
     return this.exclusive(id, async () => {
       requireDocShape(doc);
       const record = this.requireRecord(id);
-      await this.write(id, { ...record, doc: cleanDoc(doc ?? record.doc), pending: null, status: 'draft', decidedAt: null, skippedAt: null, note: null });
+      const next = cleanDoc(doc ?? record.doc);
+      await this.write(id, { ...record, doc: next, guessed: stillGuessed(record, next), pending: null, status: 'draft', decidedAt: null, skippedAt: null, note: null });
     });
   }
 
@@ -446,7 +466,7 @@ export class ProjectIntents {
       requireDocShape(doc);
       const record = this.requireRecord(id);
       const decided = withUnwritten(cleanDoc(doc ?? record.doc));
-      await this.write(id, { ...record, doc: decided, pending: null, status: 'decided', decidedAt: new Date().toISOString(), skippedAt: null, note: null });
+      await this.write(id, { ...record, doc: decided, guessed: [], pending: null, status: 'decided', decidedAt: new Date().toISOString(), skippedAt: null, note: null });
     });
   }
 

@@ -221,16 +221,18 @@
     </div>
     <p id="meeting-error" class="intent-error" role="alert" hidden></p>
   </section>
+  <!-- 場面 4: はじめと目的の聞き出し(ui-ux-v2.md の 4.4)。段 1 は 1 文の欄、段 2 は 2 列(左に問い 1 つ、右に目的の文書の下書き) -->
   <section id="intent" class="intent" aria-labelledby="intent-heading" hidden>
     <h2 id="intent-heading" tabindex="-1"></h2>
     <form id="intent-start" class="intent-form" data-explain="start" data-explain-after="#intent-examples" hidden>
       <p id="intent-lead"></p>
       <label for="intent-sentence">作りたいもの</label>
+      <!-- 白紙の欄を見せない。新しく始めるときは、例の 1 つ目を選んだ状態で入れる(打つと置き換わる) -->
       <textarea id="intent-sentence" rows="2" maxlength="400"></textarea>
       <p class="muted">例(押すと欄に入ります)</p>
       <ul id="intent-examples" class="intent-examples" aria-label="例の 1 文"></ul>
       <fieldset class="intent-depth" data-explain="depth">
-        <legend>案内の深さ</legend>
+        <legend>聞き方の深さ</legend>
         <label><input type="radio" name="intent-depth" value="quick"> 速く(問いは多くて 2 つ)</label>
         <label><input type="radio" name="intent-depth" value="normal" checked> ふつう(おすすめ。問いは多くて 4 つ)</label>
         <label><input type="radio" name="intent-depth" value="deep"> 深く(問いは多くて 7 つ)</label>
@@ -241,64 +243,89 @@
         <p>AI には送りませんでした。AI を使わず、決まった順の問いで進めることもできます。</p>
         <button type="button" id="intent-use-fixed">決まった問いで進める</button>
       </div>
+      <!-- 見本の試作品から始める(4.4)。段 1〜4 を「飛ばした」で始まる -->
+      <details id="intent-samples" class="intent-samples" hidden>
+        <summary>見本の試作品から始める<span id="intent-samples-names" class="muted"></span></summary>
+        <p class="muted">見本は架空の題材で、目的から審査までを飛ばした試作品です。押すと、その見本を開きます。</p>
+        <ul id="intent-sample-list" class="intent-examples" aria-label="見本の試作品"></ul>
+      </details>
       <div class="intent-actions">
         <button type="submit" id="intent-send" class="primary">送る</button>
-        <button type="button" id="intent-skip">飛ばす</button>
-        <button type="button" id="intent-meeting">お客さんとの会を始める</button>
+        <button type="button" id="intent-skip" class="quiet">飛ばす</button>
+        <button type="button" id="intent-meeting" class="quiet">お客さんとの会を始める</button>
       </div>
       <p class="muted">飛ばすと、目的を決めずに進みます。「目的なし」の印が付きます。上の帯の印から、あとで聞き出せます。</p>
-      <p class="muted">架空の題材で試してください。実在の人や会社の情報は入れないでください。</p>
+      <p class="muted">題材は架空にします。実在の人や会社の情報は入れません。</p>
     </form>
-    <form id="intent-talk" class="intent-form" hidden>
-      <p id="intent-talk-sentence" class="intent-sentence"></p>
-      <ol id="intent-turns" class="intent-turns" aria-label="問いと答え"></ol>
-      <div id="intent-waiting" class="intent-waiting" role="status" hidden>
-        <p>問いを考えています…</p>
-        <button type="button" id="intent-stop">止める</button>
-      </div>
-      <div id="intent-asking" data-explain="question" data-explain-after="#intent-reason">
-        <p id="intent-progress" class="muted"></p>
-        <h3 id="intent-question"></h3>
-        <p id="intent-reason" class="muted"></p>
-        <label for="intent-answer">答え</label>
-        <textarea id="intent-answer" rows="3" maxlength="1000"></textarea>
-        <div class="intent-actions">
-          <button type="submit" id="intent-reply" class="primary">答える</button>
-          <button type="button" id="intent-unknown">分からない</button>
-          <button type="button" id="intent-finish">ここまでで文書にする</button>
-          <button type="button" id="intent-talk-skip">飛ばす</button>
+    <div id="intent-goal" class="intent-goal" hidden>
+      <!-- 左: 問いは 1 つずつ。「分からない」は「答える」と同じ重さ -->
+      <form id="intent-talk" class="intent-form intent-ask" aria-labelledby="intent-ask-heading">
+        <h3 id="intent-ask-heading">問い</h3>
+        <p id="intent-talk-sentence" class="intent-sentence"></p>
+        <div id="intent-waiting" class="intent-waiting" role="status" hidden>
+          <p>問いを考えています…</p>
+          <button type="button" id="intent-stop">止める</button>
         </div>
-        <p class="muted">分からないと答えた問いは、「決めていないこと」に入ります。</p>
-      </div>
-    </form>
-    <form id="intent-doc" class="intent-form" data-explain="intent-doc" data-explain-after="#intent-doc-state" hidden>
-      <p id="intent-doc-state" class="intent-doc-state" role="status"></p>
-      <label for="intent-doc-who">誰</label>
-      <textarea id="intent-doc-who" rows="2" maxlength="1000"></textarea>
-      <label for="intent-doc-problem">何の問題</label>
-      <textarea id="intent-doc-problem" rows="2" maxlength="1000"></textarea>
-      <label for="intent-doc-scene">場面</label>
-      <textarea id="intent-doc-scene" rows="2" maxlength="1000"></textarea>
-      <label for="intent-doc-success">成功の印</label>
-      <textarea id="intent-doc-success" rows="2" maxlength="1000"></textarea>
-      <label for="intent-doc-notDoing">しないこと(1 行に 1 つ)</label>
-      <textarea id="intent-doc-notDoing" rows="2" maxlength="3000"></textarea>
-      <label for="intent-doc-undecided">決めていないこと(1 行に 1 つ)</label>
-      <textarea id="intent-doc-undecided" rows="3" maxlength="3000"></textarea>
-      <div class="intent-actions">
-        <button type="submit" id="intent-decide" class="primary">これで決める</button>
-        <button type="button" id="intent-design" class="primary">この目的で設計に進む</button>
-        <button type="button" id="intent-begin">この目的で試作品を作り始める</button>
-        <button type="button" id="intent-reopen">直す</button>
-        <button type="button" id="intent-back">試作品の画面に戻る</button>
-        <button type="button" id="intent-doc-skip">飛ばす</button>
-      </div>
-      <details class="intent-trail">
-        <summary>聞いた問いと答え</summary>
-        <p id="intent-trail-head" class="muted"></p>
-        <ol id="intent-trail" class="intent-turns" aria-label="聞いた問いと答え"></ol>
-      </details>
-    </form>
+        <div id="intent-asking" data-explain="question" data-explain-after="#intent-reason">
+          <p id="intent-progress" class="muted"></p>
+          <p id="intent-question" class="intent-question"></p>
+          <p id="intent-reason" class="muted"></p>
+          <label for="intent-answer">答え</label>
+          <textarea id="intent-answer" rows="3" maxlength="1000"></textarea>
+          <div class="intent-actions intent-answer-pair">
+            <button type="submit" id="intent-reply">答える</button>
+            <button type="button" id="intent-unknown">分からない</button>
+          </div>
+          <p class="muted">分からないと答えた問いは、右の「決めていないこと」に入ります。</p>
+          <div class="intent-actions">
+            <button type="button" id="intent-finish" class="quiet">ここで問いを終える</button>
+            <button type="button" id="intent-talk-skip" class="quiet">飛ばす</button>
+          </div>
+        </div>
+        <p id="intent-asked-done" class="muted" hidden>問いは終わりました。右の下書きを読み、違うところを直してから決めます。</p>
+        <!-- 「分からない」を押した後の 1 文。決めていないことに入れたと言う -->
+        <p id="intent-unknown-note" class="intent-note" role="status" hidden></p>
+        <h4 id="intent-turns-heading">聞いた問いと答え</h4>
+        <ol id="intent-turns" class="intent-turns" aria-label="問いと答え"></ol>
+      </form>
+      <!-- 右: 目的の文書の下書き。答えが入った行は縁を強くする。推測で埋めた行には「推測」の札と点線の縁 -->
+      <form id="intent-doc" class="intent-form intent-draft" aria-labelledby="intent-doc-heading" data-explain="intent-doc" data-explain-after="#intent-doc-state">
+        <h3 id="intent-doc-heading">目的の文書の下書き</h3>
+        <p id="intent-doc-state" class="intent-doc-state" role="status"></p>
+        <div class="intent-row" data-field="who">
+          <label for="intent-doc-who">誰</label>
+          <textarea id="intent-doc-who" rows="2" maxlength="1000"></textarea>
+        </div>
+        <div class="intent-row" data-field="problem">
+          <label for="intent-doc-problem">何の問題</label>
+          <textarea id="intent-doc-problem" rows="2" maxlength="1000"></textarea>
+        </div>
+        <div class="intent-row" data-field="scene">
+          <label for="intent-doc-scene">場面</label>
+          <textarea id="intent-doc-scene" rows="2" maxlength="1000"></textarea>
+        </div>
+        <div class="intent-row" data-field="success">
+          <label for="intent-doc-success">成功の印</label>
+          <textarea id="intent-doc-success" rows="2" maxlength="1000"></textarea>
+        </div>
+        <div class="intent-row" data-field="notDoing">
+          <label for="intent-doc-notDoing">しないこと(1 行に 1 つ)</label>
+          <textarea id="intent-doc-notDoing" rows="2" maxlength="3000"></textarea>
+        </div>
+        <div class="intent-row" data-field="undecided">
+          <label for="intent-doc-undecided">決めていないこと(1 行に 1 つ)</label>
+          <textarea id="intent-doc-undecided" rows="3" maxlength="3000"></textarea>
+        </div>
+        <div class="intent-actions">
+          <button type="submit" id="intent-decide" class="primary">これで決める</button>
+          <button type="button" id="intent-design" class="primary">この目的で設計に進む</button>
+          <button type="button" id="intent-begin">この目的で試作品を作り始める</button>
+          <button type="button" id="intent-reopen">直す</button>
+          <button type="button" id="intent-back" class="quiet">試作品の画面に戻る</button>
+          <button type="button" id="intent-doc-skip" class="quiet">飛ばす</button>
+        </div>
+      </form>
+    </div>
     <p id="intent-note" class="intent-note" role="status" hidden></p>
     <p id="intent-error" class="intent-error" role="alert" hidden></p>
   </section>
@@ -458,7 +485,9 @@
           <input id="organize-point" type="text" maxlength="500" autocomplete="off">
           <button type="submit">要点を足す</button>
         </form>
-        <p class="muted">要点だけを短く打ちます。架空の題材で試してください。実在の人の記録は入れないでください。</p>
+        <p class="muted">要点だけを短く打ちます。題材は架空です。</p>
+        <!-- 個人の記録らしいものを省くことを、責めない言葉で先に言う(ui-ux-v2.md の 4.5) -->
+        <p class="muted organize-omit">(電話番号や名前らしいものは省きます)</p>
         <!-- その場での 1 行(ui-ux-v2.md の 5.1)。要点を 2 回足したら出さない -->
         <p class="hint" data-hint="organize-point">聞いた要点は 1 つずつ短く打ち、Enter で足します。板への整理は後でまとめてできます。</p>
         <ol id="organize-points" class="organize-list" aria-label="打った要点"></ol>
@@ -604,12 +633,13 @@
           </div>
         </div>
       </section>
-      <!-- 段 7 質 -->
+      <!-- 段 7 質(ui-ux-v2.md の 4.7)。上に見直しの表の頭(見た数とまだの数)と、右上の弱いボタン「試作品を自動で確かめる」 -->
       <!-- 人の「確かめる」(harness.md の 3.1、P27)。試す欄の上には置かない(ux-redesign.md の U9)。
            結果は作る AI の欄の会話に、作る run と同じ結果の帯で出す -->
-      <section id="stage-check" class="stage-panel" aria-labelledby="check-heading" data-explain="check" hidden>
-        <h3 id="check-heading">試作品を自動で確かめる</h3>
-        <p class="muted">いま表示している試作品を、決めた手順で自動で動かして確かめます。結果は「作る AI」の欄に出ます。試す欄の会話は変わりません。</p>
+      <section id="stage-check" class="stage-panel stage-check" aria-labelledby="check-heading" data-explain="check" data-explain-after=".check-lead" hidden>
+        <h3 id="check-heading" class="visually-hidden">試作品を自動で確かめる</h3>
+        <button type="button" id="check-run" class="quiet" disabled>試作品を自動で確かめる</button>
+        <p class="muted check-lead">表示している試作品を、決めた手順で動かして確かめます。結果は「作る AI」の欄に出ます。試す欄の会話は変わりません。</p>
         <fieldset id="check-ai" class="check-ai" hidden>
           <legend>確かめるときの試作品の中の AI</legend>
           <label><input type="radio" name="check-ai" value="mock" checked> お試しの AI(決まった言葉だけ分かります。無料です)</label>
@@ -618,22 +648,25 @@
         </fieldset>
         <!-- 本物の AI で確かめるときの、同意のカード(P25 と同じ中身) -->
         <div id="check-consent" class="check-consent" hidden></div>
-        <button type="button" id="check-run" disabled>試作品を自動で確かめる</button>
         <p id="check-message" class="check-message" role="status" hidden></p>
       </section>
-      <!-- 質の見直しの表(user-journey.md の J6。サーバーは src/server/quality.js)。測ったものと AI の判断を分け、各行に「なぜ大事か」と「直す」を付ける。
-           見ていない項目は「まだ見ていない」。「直す」で、作る AI の欄に依頼を入れる(送るのは人)。見せる画面には出さない -->
-      <details id="quality" class="quality" data-studio-only hidden>
-        <summary id="quality-summary">質の見直し</summary>
+      <!-- 質の見直しの表(user-journey.md の J6。サーバーは src/server/quality.js)。1 つの表で、「測った数」と「AI の判断」を別の列にする。
+           AI の判断には「AI の判断」の札。見ていない行は ○ と「まだ見ていない」(✓ と違う見た目)。
+           「直す」で、作る AI の欄に依頼を入れる(送るのは人)。見せる画面には出さない -->
+      <section id="quality" class="quality" aria-labelledby="quality-summary" data-studio-only hidden>
+        <div class="quality-head">
+          <h3 id="quality-summary">質の見直し</h3>
+          <p id="quality-count" class="quality-count"></p>
+        </div>
         <div class="quality-body" data-explain="quality" data-explain-after=":scope > p.muted">
-          <p class="muted">試作品の質を、測ったものと AI の判断に分けて並べます。「直す」が 0 になるまで、上から順に片付けます。数は Studio が持つ記録から読みます。</p>
+          <p class="muted">試作品の質を、測った数と AI の判断に分けて並べます。「直す」が 0 になるまで、上から順に片付けます。数は Studio が持つ記録から読みます。</p>
           <div class="quality-actions">
-            <button type="button" id="quality-check" class="primary">画面を確かめて見直す</button>
+            <button type="button" id="quality-check">画面を確かめて見直す</button>
           </div>
           <div id="quality-status" class="scene-status" role="status"></div>
           <div id="quality-table"></div>
         </div>
-      </details>
+      </section>
       <!-- 段 8 見せる -->
       <!-- 人に見せる(user-journey.md の J7)。段 8 の作業台。押すと見せる画面にする。試作品と確かめたい問いだけを出し、開発の欄を隠す -->
       <section id="stage-show" class="stage-panel" aria-labelledby="show-start-heading" data-explain="show-start" hidden>
@@ -643,13 +676,20 @@
       </section>
       <!-- 見せる画面の問いの欄(user-journey.md の J7。サーバーは src/server/show.js)。見せている間だけ出し、作る AI の欄の代わりに右に置く。
            問いは目的の文書の成功の印から作る。答えは見せた版に結び付けて残し、版を戻しても消えない。開発の言葉と技術の言葉は出さない -->
+      <!-- 場面 6(ui-ux-v2.md の 4.6)。見せる画面(お客さんが触る画面)と操作役の画面を分ける。body の data-show が customer か operator。
+           見せる画面に出すのは、試作品、確かめたいこと、「データは架空です」、お試しか本物かだけ。コメントの一覧と承認は操作役の画面 -->
       <section id="show" class="show" aria-labelledby="show-heading" data-explain="show-questions" data-explain-after="#show-lead" hidden>
-        <h2 id="show-heading" tabindex="-1">確かめたい問い</h2>
-        <p id="show-title" class="show-title"></p>
+        <div class="show-head">
+          <h2 id="show-heading" tabindex="-1">確かめたい問い</h2>
+          <button type="button" id="show-view" class="quiet"></button>
+        </div>
+        <p class="show-title"><span id="show-title"></span> <span id="show-fiction" class="tag show-fiction">データは架空です</span></p>
         <!-- お客さんの前(ui-ux-v2.md の 5.4)。「架空」の札と 3 つの文は studio.js が書く -->
         <p id="show-notice" class="show-notice">これは試作品です。出てくるデータは、すべて架空です。</p>
         <!-- 試作品の中の AI が本物の AI のときは、見せている間も印を出す(ux-redesign.md 6 節。試す欄の上の印は隠れるため) -->
         <p id="show-real-ai" class="show-real-ai" hidden>試作品の中の AI は、本物の AI(あなたの Claude Code)を使っています。</p>
+        <!-- お試しか本物か(4.6)。お試しのときも、見せる画面に出す -->
+        <p id="show-trial-ai" class="show-real-ai" hidden><span class="actor-shape" aria-hidden="true">▲</span> 試作品の中の AI: お試し(決まった言葉だけ分かります。料金はかかりません)</p>
         <p id="show-lead" class="muted"></p>
         <form id="show-form" class="show-form">
           <ol id="show-questions" class="show-questions" aria-label="確かめたい問い"></ol>
@@ -666,7 +706,7 @@
              1 台の PC の形。作る AI に送るのは、承認がそろったコメントだけ。開発の言葉は、閉じた「開発者向け」の中にだけ出す -->
         <section id="comments" class="comments" aria-labelledby="comments-heading" data-explain="comments">
           <h3 id="comments-heading">コメント</h3>
-          <p class="muted">コメントや反応だけでは、試作品は変わりません。進行役か決める人が承認したコメントだけを、作る AI に送ります。要件のコメントは、進行役と決める人の 2 人が承認してから送ります。構成のコメントは、承認すると AI 構成の審査に戻します。</p>
+          <p class="muted customer-only">書いたコメントは、操作役の画面で読み、承認したものだけを直します。</p>
           <form id="comment-form" class="comment-form">
             <div class="comment-place-row">
               <button type="button" id="comment-place" aria-pressed="false">画面の場所を選ぶ</button>
@@ -686,6 +726,11 @@
               <button type="submit" id="comment-add">コメントを書く</button>
             </div>
           </form>
+          <!-- ここから操作役の画面だけ。反応と承認待ちを分ける。頭に、反応では AI は動かないと 1 文 -->
+          <div class="operator-only comment-operator">
+          <p id="comment-react-note" class="comment-react-note">反応(同じ意見)を付けても、作る AI は動きません。承認したコメントだけを、作る AI に送ります。</p>
+          <p class="muted">要件のコメントは、進行役と決める人の 2 人が承認してから送ります。ほかは 1 人です。構成のコメントは、承認すると AI 構成の審査に戻します。</p>
+          <p id="comment-summary" class="comment-summary"></p>
           <fieldset class="comment-who">
             <legend>承認と確かめの記録(なくてもよい)</legend>
             <p class="muted">1 台の画面では、決める人が声に出し、進行役が押します。名前は書かず、「店長」「担当」のように書いてください。</p>
@@ -697,6 +742,7 @@
           <p id="comment-queue" class="comment-queue" role="status"></p>
           <button type="button" id="comment-resume" hidden>列を進める</button>
           <ol id="comment-list" class="comment-list" aria-label="コメントの一覧"></ol>
+          </div>
           <p id="comment-status" class="show-status" role="status"></p>
         </section>
       </section>

@@ -188,7 +188,7 @@ test('架空の電話番号を含む要点は、AI に送らず、一覧にも�
 
     // 打つと断り、知らせる。直せるように、文は欄に戻す
     await typePoint(b, RECORD_POINT);
-    await expect(b.error).toContainText('記録らしいものを省きました(電話番号)');
+    await expect(b.error).toContainText('電話番号らしいものは省きます。');
     await expect(b.error).not.toContainText(PHONE);
     await expect(b.point).toHaveValue(RECORD_POINT);
     await expect(b.points.getByRole('listitem')).toHaveCount(1);
@@ -197,14 +197,14 @@ test('架空の電話番号を含む要点は、AI に送らず、一覧にも�
 
     // 全角と空白で打っても同じ
     await typePoint(b, '０９０　００００　００００ に電話があった');
-    await expect(b.error).toContainText('記録らしいものを省きました(電話番号)');
+    await expect(b.error).toContainText('電話番号らしいものは省きます。');
     await expect(b.points.getByRole('listitem')).toHaveCount(1);
 
     // 項目を足す欄でも入らない
     await page.getByLabel('足す欄').selectOption({ label: '場面' });
     await page.getByLabel('足す項目').fill(`${PHONE} から電話`);
     await page.getByRole('button', { name: '項目を足す' }).click();
-    await expect(b.error).toContainText('記録らしいものを省きました');
+    await expect(b.error).toContainText('らしいものは省きます');
     await expect(b.items).toHaveCount(0);
     await page.getByLabel('足す項目').fill('');
 
@@ -219,12 +219,12 @@ test('架空の電話番号を含む要点は、AI に送らず、一覧にも�
     await b.run.click();
     await page.getByRole('group', { name: '本物の AI を使う前に' }).getByRole('button', { name: '同意して使う' }).click();
     await expect(b.items.first()).toBeVisible();
-    await expect(b.note).toContainText('記録らしいものを省きました');
+    await expect(b.note).toContainText('らしいものは省きます');
     await expect(b.section).not.toContainText(PHONE);
     await expect(b.points.getByRole('listitem')).toHaveCount(2);
     // 一覧にも、カードの下の「元の要点」の行にもない
     await expect(b.section).not.toContainText('[記録を返す]');
-    await expect(b.section.locator('.organize-source', { hasText: '元の要点' }).first()).toBeVisible();
+    await expect(b.section.locator('.organize-source', { hasText: /^元: \d+ 行目/ }).first()).toBeVisible();
     await page.screenshot({ path: path.join(UX_SHOTS, 'K4-omitted.png'), fullPage: true });
 
     // AI に送った本文にない
@@ -264,7 +264,7 @@ test('前の板に残っていた記録らしいものは、起動のときに�
     const b = boardUi(page);
     await expect(b.points.getByRole('listitem')).toHaveCount(1);
     await expect(b.section).not.toContainText(PHONE);
-    await expect(b.note).toContainText('記録らしいものを省きました');
+    await expect(b.note).toContainText('らしいものは省きます');
     expect(await fs.readFile(file, 'utf8')).not.toContain(PHONE);
   } finally {
     await studio.stop();
