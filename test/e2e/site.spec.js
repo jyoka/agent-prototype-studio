@@ -281,7 +281,7 @@ test.describe('LP', () => {
     // 作っていたもの(審査、データの棚、質の見直し、人に見せる、みんなで作る)は、今できることのカードに畳んだ(jyoka/tasks#394)
     const cards = page.locator('#features .card h3');
     await expect(cards).toHaveText(
-      ['目的の聞き出し', 'ヒアリングの整理', '設計の案内', 'AI 構成の審査', 'データの棚と RAG の判定', '構成の模擬', '守りの層', '場面の比較', '質の見直し', '言葉で直す欄', '人に見せる', 'みんなで作る', '版と引き継ぎ', '作るループの関門'],
+      ['目的の聞き出し', 'ヒアリングの整理', '設計の案内', 'AI 構成の審査', 'データの棚と RAG の判定', '構成の模擬', '守りの層', '場面の比較', '質の見直し', '作る AI に頼む', '人に見せる', 'みんなで作る', '版と引き継ぎ', '作るループの関門'],
       SHOWN,
     );
     // 審査と質の見直しのカードは、本物の画面の絵を持つ
@@ -345,7 +345,7 @@ test.describe('LP', () => {
     await page.emulateMedia({ colorScheme: 'light' });
     await page.goto(site.url);
     const background = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-    expect(await background()).toBe('rgb(246, 246, 244)');
+    expect(await background()).toBe('rgb(244, 245, 246)');
     await expect(page.locator('.hero-shot img.on-light')).toBeVisible();
     await expect(page.locator('.hero-shot img.on-dark')).toBeHidden();
 
@@ -358,21 +358,21 @@ test.describe('LP', () => {
     await expect(page.locator('.hero-shot img.on-light')).toHaveAttribute('alt', /^The Studio screen/);
 
     await page.locator('#theme-toggle').click();
-    expect(await background()).toBe('rgb(22, 22, 20)');
+    expect(await background()).toBe('rgb(15, 17, 19)');
     await expect(page.locator('.hero-shot img.on-dark')).toBeVisible();
     await expect(page.locator('.hero-shot img.on-light')).toBeHidden();
 
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    expect(await background()).toBe('rgb(22, 22, 20)');
+    expect(await background()).toBe('rgb(15, 17, 19)');
 
     // ?lang=ja が残した言葉より優先する。OS がダークなら、何もしなくてもダーク
     await page.evaluate(() => localStorage.clear());
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.goto(`${site.url}?lang=ja`);
     await expect(page.locator('#sentence')).toHaveText(JA, SHOWN);
-    expect(await background()).toBe('rgb(22, 22, 20)');
+    expect(await background()).toBe('rgb(15, 17, 19)');
   });
 
   test('配るのは site/ と assets/ だけ。ほかのファイルとリポジトリの外は見せない', async ({ request }) => {

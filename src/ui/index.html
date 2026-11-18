@@ -100,7 +100,12 @@
         <li data-stage="show"><button type="button" class="stage" data-stage="show"></button></li>
         <li data-stage="handoff"><button type="button" class="stage" data-stage="handoff"></button></li>
       </ol>
+      <!-- 会の帯(ui-ux-v2.md の 2.7)。会の試作品では、9 段の道筋の代わりに 7 つの帯と予定の分を出す。帯の中身は studio.js が作る。
+           段の印(会、目的、整理、設計、審査)は、会の帯のあいだ、その帯の下に移して出す -->
+      <ol id="meeting-band" class="meeting-band" aria-label="会の帯" hidden></ol>
       <span id="stage-count" class="stage-count"></span>
+      <!-- 会の試作品だけに出す。9 段の道筋と会の帯を切り替える -->
+      <button type="button" id="rail-toggle" class="rail-toggle quiet" hidden></button>
     </nav>
   </header>
   <!-- 今の行(2.5、2.6)。4 者を、形と名前と今の文の組で、いつも同じ位置に出す。働いている者は data-active。
@@ -115,7 +120,9 @@
     <!-- 狭い画面で、働いていない者をまとめる(2.8) -->
     <span id="actor-others" class="actor-others"></span>
     <div class="now-end">
-      <!-- STUDIO_AGENT=fake で起動したときだけ出す(13 節) -->
+      <!-- お客さんの前(5.4)。会の試作品の間、ずっと出す -->
+      <span id="fiction-mark" class="fiction-mark" hidden>データは架空です</span>
+      <!-- STUDIO_AGENT=fake で起動したときだけ出す(13 節)。会の試作品の間は出さない(お客さんの前の決まり) -->
       <span id="dev-agent-mark" class="dev-agent-mark" hidden>開発用: 偽の作る AI</span>
       <!-- お試しか本物か(2.6)。本物のときは、押すと同意の中身をもう一度見られる -->
       <button type="button" id="ai-mode" class="ai-mode" data-mode="trial" aria-expanded="false" aria-controls="ai-mode-info">○ お試しの AI・料金なし</button>
@@ -185,8 +192,9 @@
     </div>
     <!-- 会の終わりの画面(field-session.md の段 7、user-journey.md の K5)。7 つの成果物、未決事項の持ち主と期日、書き出し -->
     <div id="meeting-closing" class="meeting-closing" data-explain="closing" data-explain-after="#closing-unowned" hidden>
-      <p id="closing-unowned" class="intent-error" role="alert" hidden></p>
+      <p id="closing-unowned" class="intent-error flag-line" role="alert" hidden></p>
       <h3 id="closing-deliverables-heading">7 つの成果物</h3>
+      <p id="closing-ready" class="deliverables-count"></p>
       <ul id="closing-deliverables" class="organize-list closing-deliverables" aria-labelledby="closing-deliverables-heading"></ul>
       <h3 id="closing-open-heading">未決事項の持ち主と期日</h3>
       <p class="muted">未決事項を読み上げ、持ち主と期日を決めてください。持ち主は、名前か役(進行役、決める人など)で書きます。電話番号やメールアドレスは書きません。</p>
@@ -209,6 +217,8 @@
       </div>
       <p class="muted">書き出しは、本番開発へ渡すフォルダー(引き継ぎ)と同じです。7 つの成果物、直した記録、未決事項の持ち主と期日、段ごとの時刻が入ります。</p>
       <div id="closing-exported" role="status" hidden></div>
+      <h3 id="closing-not-erasable-heading">消せないもの</h3>
+      <ul id="closing-not-erasable" class="meeting-notes" aria-labelledby="closing-not-erasable-heading"></ul>
     </div>
     <div id="meeting-erased" hidden>
       <ul id="meeting-erased-list" class="organize-list" aria-label="消した一覧"></ul>
@@ -524,6 +534,21 @@
     <section id="stage-handoff" class="stage-panel" aria-labelledby="handoff-heading" data-explain="handoff" hidden>
       <h3 id="handoff-heading">本番開発へ渡す</h3>
       <p class="muted">今の試作品を、本番開発の担当者に渡すフォルダーにまとめます。試作品のファイル、AI の設定、会話と状態、本物につないだもの・お試しのもの・つないでいないものの区別、未決事項が入ります。秘密情報らしい文字列があると作りません。</p>
+      <!-- 渡すもの(ui-ux-v2.md の 4.8)。7 つの成果物と「そろった 6 / 7」の数。足りないものは「!」と文。
+           未決事項の持ち主と期日、消せないもの。中身は会の終わりと同じ(/api/projects/:id/closing) -->
+      <div id="handoff-items" class="deliverables" data-explain="deliverables" data-explain-after="#handoff-ready">
+        <h4 id="handoff-items-heading">渡すもの</h4>
+        <p id="handoff-ready" class="deliverables-count"></p>
+        <ul id="handoff-deliverables" class="organize-list closing-deliverables" aria-labelledby="handoff-items-heading"></ul>
+        <h4 id="handoff-open-heading">未決事項の持ち主と期日</h4>
+        <p id="handoff-unowned" class="flag-line" hidden></p>
+        <p class="muted">持ち主は、名前か役(進行役、決める人など)で書きます。電話番号やメールアドレスは書きません。</p>
+        <!-- 名前に「未決事項」を入れない(下のメモの欄「未決事項」と名前が重ならないように) -->
+        <ul id="handoff-open" class="organize-list closing-open" aria-label="持ち主と期日を決める一覧"></ul>
+        <h4 id="handoff-not-erasable-heading">消せないもの</h4>
+        <ul id="handoff-not-erasable" class="meeting-notes" aria-labelledby="handoff-not-erasable-heading"></ul>
+        <p id="handoff-items-error" class="intent-error" role="alert" hidden></p>
+      </div>
       <form id="handoff-form" class="handoff-form">
         <label for="handoff-purpose">目的(この試作品で確かめたいこと)</label>
         <textarea id="handoff-purpose" rows="2" maxlength="4000" disabled></textarea>
@@ -531,7 +556,7 @@
         <textarea id="handoff-decided" rows="2" maxlength="4000" disabled></textarea>
         <label for="handoff-undecided">未決事項</label>
         <textarea id="handoff-undecided" rows="2" maxlength="4000" disabled></textarea>
-        <button type="submit" id="handoff-export" disabled>渡すフォルダーを作る</button>
+        <button type="submit" id="handoff-export" disabled>本番開発へ渡す</button>
       </form>
       <div id="handoff-result" class="handoff-result" role="status" hidden></div>
     </section>

@@ -249,10 +249,12 @@ AI 構成の審査([ai-architecture-review.md の 6 節](design/ai-architecture-
 | 項目 | 中身 |
 |---|---|
 | `present` | 7 つのうち、ある(`missing` でない)成果物の数 |
+| `ready` | 7 つのうち、そろった(`ready`)成果物の数。画面の「そろった 6 / 7」 |
 | `deliverables[]` | 7 つの成果物。`id`(`requirements`、`dataDesign`、`composition`、`review`、`prototype`、`scenes`、`openItems`)、`label`、`status`(`ready` そろった、`draft` 下書き、`missing` ない)、`statusLabel`、`note`(中身の 1 行)、`where`(handoff.json の中の場所) |
 | `figure` | 構成の図。`nodes[]`(`id`、`kind`(`person`、`ai`、`code`、`tool`)、`label`)と `edges[]`(`from`、`to`、`label`)。AI 構成の審査の画面の図と同じ作り |
 | `openItems[]` | 未決事項。`key`(持ち主を結ぶ印)、`from`(`conflict`、`unasked`、`guess`、`empty`、`purpose`、`design`、`review`、`comment`)、`fromLabel`、`text`、`owner`(持ち主。なければ空)、`due`(期日 `YYYY-MM-DD`。なければ空) |
 | `unowned` | 持ち主のない未決事項の数。1 以上なら、Studio が `openQuestions` にも書く |
+| `notErasable[]` | 会のデータを消しても消せないもの(文。外の AI の送り先に届いた分、書き出しを別の場所へ写したもの)。会の終わりと段 9 の画面に出す |
 | `timeline` | 段ごとの時刻(K6)。`stages[]`(`key`(`start`、`listen`、`organize`、`review`、`prototype`、`show`、`fix`、`closing`)、`label`、`mark`(時刻を残す印)、`planMinutes`(60 分の型の目安。仮)、`at`、`elapsedMs`(同意からの時間))、`reached`(時刻のある段の数)、`toShowMs`(見せられるまでの時間)、`fixes[]`(`recordId`、`comment`、`approvedAt`、`fixedAt`、`checked`(直した版の自動の確かめが通ったか)、`ms`。承認から直った版まで。`checked` が false なら null)、`longestFixMs`、`targets`(`showMinutes`、`fixMinutes`。どちらも仮)。会ではない試作品は `reached` が 0 で、`fixes` は空 |
 
 持ち主と期日は `.studio/closing.json`(`formatVersion`、`owners`: `{ key: { owner, due, at } }`)に置く。未決事項の文が変わると `key` が変わり、持ち主なしに戻る。

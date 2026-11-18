@@ -117,6 +117,9 @@ const els = {
   stageList: $('stage-list'),
   stageCompact: $('stage-compact'),
   stageCount: $('stage-count'),
+  meetingBand: $('meeting-band'),
+  railToggle: $('rail-toggle'),
+  fictionMark: $('fiction-mark'),
   benchHeading: $('bench-heading'),
   stageNote: $('stage-note'),
   stageNoteText: $('stage-note-text'),
@@ -309,11 +312,13 @@ const els = {
 };
 
 class ApiError extends Error {
-  constructor(code, message, next = '') {
+  constructor(code, message, next = '', places = null) {
     super(message);
     this.code = code;
     // サーバーが返す、次にすること
     this.next = next;
+    // 秘密らしい文字列で渡すのを止めたときの場所({ file, line, kind })。値は入らない
+    this.places = places;
   }
 }
 
@@ -353,7 +358,7 @@ const firstSteps = { touching: false };
 // drawer は開いている引き出し(mechanism か materials)。band は次の一手の帯に移したボタンと、その元の場所。
 // ready は、下の部品の状態がそろって、枠を描けるようになったか
 // trialInfo は今の行の「○ お試しの AI」の中身を開いているか。reverted は版を戻した後の 1 行(5.4 の「元に戻した」。次の操作で消える)
-const frame = { stage: 'build', side: 'stage', tab: 'turn', drawer: null, compactOpen: false, pending: false, ready: false, moved: null, home: null, prompts: { projectId: null, key: '', seq: 0, data: null }, trialInfo: false, reverted: null, listenTimer: null };
+const frame = { stage: 'build', side: 'stage', tab: 'turn', drawer: null, compactOpen: false, pending: false, ready: false, moved: null, home: null, prompts: { projectId: null, key: '', seq: 0, data: null }, trialInfo: false, reverted: null, listenTimer: null, nineStages: false, band: null, bandTimer: null, shown: new Set(), meetingRoom: null };
 // 「その場で」の 1 行(5.1)。counts は操作の種類ごとの回数、limit はこの回数で出さなくなる(hints.js)
 const hintState = { counts: {}, limit: 2, loaded: false };
 // はじめの画面、目的の聞き出し、目的の文書(user-journey.md の段 1、段 2、J1)。view は出している画面(start、talk、doc)で、null なら試作品の画面。
@@ -388,7 +393,9 @@ const tokens = { projectId: null, data: null, seq: 0, busy: false, file: null, c
 const guidesFlow = { step: 1, kind: null, files: null, check: null, busy: false, problems: [], message: null, seq: 0, enabledKey: '' };
 // その他の引き出しの「本番開発へ渡す」(#280)。メモは試作品を選んだときだけ読み、書いている途中の文を上書きしない
 // target は読み込みを頼んだ試作品、projectId は読み終えた試作品
-const handoff = { target: undefined, projectId: null, seq: 0, busy: false, result: null, message: null, last: null };
+const handoff = { target: undefined, projectId: null, seq: 0, busy: false, result: null, message: null, last: null, stopped: null };
+// 段 9 の「渡すもの」(ui-ux-v2.md の 4.8)。会の終わりと同じ中身(/api/projects/:id/closing)
+const handoffItems = { projectId: null, data: null, seq: 0, busy: false, error: null };
 
 // URL のフラグメントから鍵を読み、履歴に残さないよう消す(ADR-0001 の層 3)。
 function takeTokenFromHash() {
@@ -430,6 +437,7 @@ async function api(path, options = {}) {
       body?.error?.code ?? 'http',
       body?.error?.message ?? `サーバーが ${response.status} を返しました`,
       typeof body?.error?.next === 'string' ? body.error.next : '',
+      Array.isArray(body?.error?.places) ? body.error.places : null,
     );
   }
   return body;
@@ -689,7 +697,8 @@ els.previewBrokenFix.addEventListener('click', () => {
 // 開発者向けの詳細の「作る AIの接続」。接続の種類、版、認証の見込み、実行ファイル、使えない理由を出す
 function renderAgentStatus() {
   const nodes = [];
-  els.devAgentMark.hidden = agent?.kind !== 'fake';
+  // 会の試作品の間は出さない(お客さんの前の決まり。5.4)
+  els.devAgentMark.hidden = agent?.kind !== 'fake' || isMeeting(selectedProject());
   if (!agent) {
     els.agentStatus.replaceChildren();
     return;
@@ -2721,6 +2730,7 @@ function endShow() {
     renderShow();
     return;
   }
+  if (showUi.projectId) frame.shown.add(showUi.projectId);
   Object.assign(showUi, { open: false, view: 'customer', projectId: null, version: null, questions: [], source: null, savedNow: false, message: null, warned: false });
   els.showQuestions.replaceChildren();
   commentsUi.seq += 1;
@@ -2746,7 +2756,11 @@ async function fixApproved() {
   const held = (commentsUi.data?.comments ?? []).some((c) => c.status === 'queued' && c.held);
   if (held) await resumeComments();
   endShow();
-  if (!showUi.open) goStage('build');
+  if (showUi.open) return;
+  goStage('build');
+  // 会の帯では「直す」の帯にする(2.7)
+  frame.band = 'fix';
+  scheduleFrame();
 }
 
 // ---- 画面へのコメント(K3) ----
@@ -3064,13 +3078,21 @@ function lockHandoff(project) {
     !project || handoff.projectId !== project.id || project.running || project.building || project.versioning || project.checking || versions.busy || handoff.busy;
   for (const field of Object.values(els.handoffNotes)) field.disabled = locked;
   els.handoffExport.disabled = locked;
-  els.handoffExport.textContent = handoff.busy ? '作っています…' : '渡すフォルダーを作る';
+  els.handoffExport.textContent = handoff.busy ? '作っています…' : '本番開発へ渡す';
 }
 
 function renderHandoff(project) {
   scheduleFrame();
   lockHandoff(project);
+  renderHandoffItems(project);
   const box = els.handoffResult;
+  // 秘密らしい文字列で止めた(4.8)。⬢ の形と場所
+  if (handoff.stopped) {
+    box.hidden = false;
+    box.dataset.kind = 'stopped';
+    box.replaceChildren(secretStopLine(handoff.stopped));
+    return;
+  }
   if (handoff.message) {
     box.hidden = false;
     box.dataset.kind = 'failed';
@@ -3124,6 +3146,7 @@ async function loadHandoff(projectId) {
   handoff.projectId = null;
   handoff.result = null;
   handoff.message = null;
+  handoff.stopped = null;
   handoff.last = null;
   for (const field of Object.values(els.handoffNotes)) field.value = '';
   if (!projectId) return;
@@ -3917,6 +3940,7 @@ async function exportHandoff() {
   handoff.busy = true;
   handoff.result = null;
   handoff.message = null;
+  handoff.stopped = null;
   renderHandoff(project);
   renderVersions(project);
   try {
@@ -3927,12 +3951,164 @@ async function exportHandoff() {
     handoff.last = data.last;
   } catch (error) {
     if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
-    if (handoff.projectId === project.id) handoff.message = `渡すフォルダーを作れませんでした: ${error.message}`;
+    if (handoff.projectId === project.id) {
+      if (error instanceof ApiError && error.code === 'secret' && error.places?.length > 0) handoff.stopped = error.places;
+      else handoff.message = `渡すフォルダーを作れませんでした: ${error.message}`;
+    }
   } finally {
     handoff.busy = false;
     renderHandoff(selectedProject());
     renderVersions(selectedProject());
+    // 渡した後は、渡すものの一覧(未決事項の持ち主など)を読み直す
+    if (selectedId === project.id) loadHandoffItems(project.id);
+    // 帯で押した後の結果(作った場所、止めた場所)を、見える所に出す
+    if (!els.handoffResult.hidden) els.handoffResult.scrollIntoView({ block: 'nearest' });
   }
+}
+
+// 秘密らしい文字列の場所。試作品のフォルダーの中の名前と行で言う(app/ は出さない)。値は出さない
+function secretPlacesText(places) {
+  return places.map((place) => `${String(place.file).replace(/^app\//, '')} の ${place.line} 行目(${place.kind})`).join('、');
+}
+
+// 秘密らしい文字列で渡すのを止めたときの 1 行(ui-ux-v2.md の 4.8)。守りが止めた(5.4)の ⬢ の形で、場所を出す
+function secretStopLine(places) {
+  return stateLine('guard-stopped', {
+    happened: '秘密らしい文字列があったので、渡すのを止めました。',
+    now: `場所: ${secretPlacesText(places)}。渡すフォルダーは作っていません。`,
+    next: 'その文字列を試作品から消してから、もう一度渡しますか。',
+  });
+}
+
+// ---- 渡すもの(段 9 と会の終わり。ui-ux-v2.md の 4.8) ----
+// 成果物の 1 行。そろったものは ✓、足りないもの(下書き、ない)は「!」と文
+function deliverableLine(item) {
+  const li = element('li');
+  li.className = 'closing-row';
+  li.dataset.state = item.status;
+  const mark = element('span', item.status === 'ready' ? '✓' : '!', 'deliverable-mark');
+  mark.setAttribute('aria-hidden', 'true');
+  const state = element('span', item.statusLabel, 'closing-state');
+  state.dataset.state = item.status;
+  li.append(mark, element('strong', item.label), state, element('span', item.note));
+  return li;
+}
+
+const readyText = (data) => `そろった ${data.ready} / ${data.deliverables.length}`;
+
+// 足りないもの(そろっていない成果物)の名前。帯の 1 文に使う
+function lackingOf(data) {
+  return data.deliverables.filter((item) => item.status !== 'ready');
+}
+
+function lackingSentence(data) {
+  const lacking = lackingOf(data);
+  if (lacking.length === 0) return `渡すものが ${data.ready} / ${data.deliverables.length} そろいました。`;
+  const names = lacking.map((item) => (item.id === 'openItems' && data.unowned > 0 ? `未決事項(持ち主のないものが ${data.unowned} つ)` : item.label));
+  return `足りないものが ${lacking.length} つあります: ${names.join('、')}。足りないままでも渡せます。`;
+}
+
+// 未決事項の 1 行。持ち主と期日の欄。持ち主のないものは「!」と文
+function openItemLine(item, index, { prefix, busy, save }) {
+  const li = element('li');
+  li.dataset.unowned = String(!item.owner);
+  if (!item.owner) {
+    const mark = element('span', '!', 'deliverable-mark');
+    mark.setAttribute('aria-hidden', 'true');
+    li.append(mark);
+  }
+  const head = element('p', item.text);
+  const from = element('small', item.owner ? `${item.fromLabel}` : `${item.fromLabel}。持ち主なし`);
+  const form = element('form');
+  form.className = 'closing-owner';
+  const ownerId = `${prefix}-owner-${index}`;
+  const dueId = `${prefix}-due-${index}`;
+  const owner = element('input');
+  owner.type = 'text';
+  owner.id = ownerId;
+  owner.maxLength = 40;
+  owner.autocomplete = 'off';
+  owner.value = item.owner;
+  const due = element('input');
+  due.type = 'date';
+  due.id = dueId;
+  due.value = item.due;
+  const ownerLabel = element('label', '持ち主');
+  ownerLabel.htmlFor = ownerId;
+  const dueLabel = element('label', '期日');
+  dueLabel.htmlFor = dueId;
+  const button = element('button', '決める');
+  button.type = 'submit';
+  button.disabled = busy;
+  form.append(ownerLabel, owner, dueLabel, due, button);
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    save(item.key, owner.value, due.value);
+  });
+  li.append(head, from, form);
+  return li;
+}
+
+async function loadHandoffItems(projectId) {
+  const seq = ++handoffItems.seq;
+  Object.assign(handoffItems, { projectId, data: handoffItems.projectId === projectId ? handoffItems.data : null, error: null });
+  if (!projectId) return;
+  try {
+    const { closing } = await api(closingPath(projectId));
+    if (seq !== handoffItems.seq) return;
+    handoffItems.data = closing;
+  } catch (error) {
+    if (seq !== handoffItems.seq) return;
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    handoffItems.error = `渡すものの一覧を読めませんでした: ${error.message}`;
+  }
+  renderHandoffItems(selectedProject());
+  scheduleFrame();
+}
+
+async function saveHandoffOwner(key, owner, due) {
+  const projectId = handoffItems.projectId;
+  if (!projectId || handoffItems.busy) return;
+  handoffItems.busy = true;
+  handoffItems.error = null;
+  renderHandoffItems(selectedProject());
+  try {
+    const { closing } = await api(closingPath(projectId, 'owner'), { method: 'POST', json: { key, owner, due } });
+    if (handoffItems.projectId === projectId) handoffItems.data = closing;
+  } catch (error) {
+    if (error instanceof ApiError && ['offline', 'token'].includes(error.code)) handleError(error);
+    if (handoffItems.projectId === projectId) handoffItems.error = error.message;
+  } finally {
+    handoffItems.busy = false;
+    renderHandoffItems(selectedProject());
+    scheduleFrame();
+  }
+}
+
+function renderHandoffItems(project) {
+  const data = project && handoffItems.projectId === project.id ? handoffItems.data : null;
+  const error = $('handoff-items-error');
+  error.hidden = !handoffItems.error;
+  error.textContent = handoffItems.error ?? '';
+  const unowned = $('handoff-unowned');
+  if (!data) {
+    $('handoff-ready').textContent = handoffItems.error ? '' : '読み込んでいます…';
+    $('handoff-deliverables').replaceChildren();
+    $('handoff-open').replaceChildren();
+    $('handoff-not-erasable').replaceChildren();
+    unowned.hidden = true;
+    return;
+  }
+  $('handoff-ready').textContent = readyText(data);
+  $('handoff-deliverables').replaceChildren(...data.deliverables.map(deliverableLine));
+  unowned.hidden = data.unowned === 0;
+  unowned.textContent = data.unowned > 0 ? `持ち主のない未決事項が ${data.unowned} つあります。持ち主を決めなくても渡せますが、渡した先で誰が決めるかが分からなくなります。` : '';
+  $('handoff-open').replaceChildren(
+    ...(data.openItems.length > 0
+      ? data.openItems.map((item, index) => openItemLine(item, index, { prefix: 'handoff', busy: handoffItems.busy, save: saveHandoffOwner }))
+      : [element('li', '記録から見つけた未決事項はありません。')]),
+  );
+  $('handoff-not-erasable').replaceChildren(...(data.notErasable ?? []).map((text) => element('li', text)));
 }
 
 // 版のファイルと会話に戻す。サーバーがビルドし直すので、試す画面は新しいビルドで開き直す
@@ -4974,7 +5150,8 @@ els.projectMenuButton.addEventListener('click', () => setProjectMenu(els.project
 // 表示のメニュー(ui-ux-v2.md の 2.2)。<html> の data-theme、data-motion、data-room を変え、studio.css のトークンが切り替わる。
 // 選んだものはこのブラウザ(localStorage)が覚える。Studio の外には送らない
 const DISPLAY_KEY = 'prototype-studio-display';
-const DISPLAY_DEFAULT = { theme: 'system', motion: 'on', room: 'off' };
+// meetingRoom は会の試作品のときの会議室の大きさ。会では会議室で始め、メニューで戻せる(ui-ux-v2.md の 2.7)
+const DISPLAY_DEFAULT = { theme: 'system', motion: 'on', room: 'off', meetingRoom: 'on' };
 const displayButton = $('display-button');
 const displayMenu = $('display-menu');
 const displayThemes = [...displayMenu.querySelectorAll('input[name="display-theme"]')];
@@ -4988,6 +5165,7 @@ function readDisplay() {
       theme: ['light', 'dark', 'system'].includes(saved.theme) ? saved.theme : DISPLAY_DEFAULT.theme,
       motion: saved.motion === 'off' ? 'off' : 'on',
       room: saved.room === 'on' ? 'on' : 'off',
+      meetingRoom: saved.meetingRoom === 'off' ? 'off' : 'on',
     };
   } catch {
     return { ...DISPLAY_DEFAULT };
@@ -5000,18 +5178,23 @@ function applyDisplay(display) {
   else root.dataset.theme = display.theme;
   if (display.motion === 'off') root.dataset.motion = 'off';
   else delete root.dataset.motion;
-  if (display.room === 'on') root.dataset.room = 'on';
+  // 会の試作品を開いている間は、会の大きさ(meetingRoom)を使う
+  const room = frame.meetingRoom ? display.meetingRoom : display.room;
+  if (room === 'on') root.dataset.room = 'on';
   else delete root.dataset.room;
   for (const input of displayThemes) input.checked = input.value === display.theme;
   displayMotionOff.checked = display.motion === 'off';
-  displayRoom.checked = display.room === 'on';
+  displayRoom.checked = room === 'on';
 }
 
 function changeDisplay() {
+  const saved = readDisplay();
+  const room = displayRoom.checked ? 'on' : 'off';
   const display = {
     theme: displayThemes.find((input) => input.checked)?.value ?? DISPLAY_DEFAULT.theme,
     motion: displayMotionOff.checked ? 'off' : 'on',
-    room: displayRoom.checked ? 'on' : 'off',
+    room: frame.meetingRoom ? saved.room : room,
+    meetingRoom: frame.meetingRoom ? room : saved.meetingRoom,
   };
   applyDisplay(display);
   try {
@@ -5060,7 +5243,7 @@ document.addEventListener('keydown', (event) => {
   } else if (!els.aiMenu.hidden) {
     setAiMenu(false);
     els.aiSwitch.focus();
-  } else if (!els.stageList.hidden && frame.compactOpen) {
+  } else if (frame.compactOpen) {
     setCompact(false);
     els.stageCompact.focus();
   } else if (frame.drawer) {
@@ -6248,7 +6431,7 @@ const MEETING_STATES = {
 };
 const meetingUi = { view: null, projectId: null, record: null, confirming: false, working: false, erased: null, seq: 0 };
 // 会の終わりの画面(view が 'closing')の中身。data はサーバーの closing.js の形
-const closingUi = { data: null, exported: null, busy: false };
+const closingUi = { data: null, exported: null, busy: false, stopped: null };
 const meetingEls = {
   section: $('meeting'),
   heading: $('meeting-heading'),
@@ -6341,7 +6524,9 @@ function renderMeetingFacts(record) {
     ...(sending.outside ? [...meetingFact('送り先', sending.to ?? '不明'), ...meetingFact('料金', sending.cost ?? '不明')] : []),
     ...meetingFact('置き場', `この PC の中だけです。${record.place}`),
     ...meetingFact('見られる人', record.viewers),
-    ...meetingFact('入れないもの', 'お客さんの記録(名前、住所、電話番号、メールアドレス、取引の番号や数字の実物)は入れません。形で見分けて止めますが、漏れることがあります。'),
+    ...meetingFact('題材', 'この会は架空の題材で試します。画面のデータは、すべて架空です。'),
+    ...meetingFact('記録に入れないもの', 'お客さんの記録(名前、住所、電話番号、メールアドレス、取引の番号や数字の実物)は入れません。形で見分けて止めますが、漏れることがあります。'),
+    ...meetingFact('本物の AI', sending.outside ? '同意すると使います(あなたの Claude Code)。同意しないときは、お試しの AI だけで進めます。' : '使いません(お試しの AI だけ。料金はかかりません)。'),
     ...meetingFact('同意しないとき', 'お試しの AI だけで進めます。外の AI には送りません。要点は手で振り分け、設計は決まった案で進めます。料金はかかりません。'),
   );
 }
@@ -6423,14 +6608,29 @@ async function openMeeting(id) {
     if (seq !== meetingUi.seq) return;
     meetingUi.record = meeting;
     renderMeeting();
+    // 帯の 1 文と今の行が書き終わってから測る
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (seq === meetingUi.seq) revealAboveNextBand(meetingEls.state);
+    }));
   } catch (error) {
     if (seq === meetingUi.seq) meetingFailed(error);
   }
 }
 
+// 狭い画面(2.8)では、次の一手の帯が画面の下に固定で重なる。会の始めの中身が帯に隠れていたら、隠れた分だけ送る。
+// 中身の上の端は画面の外に出さない。見出しへのフォーカスは中身を読む前に動くので、送り方が時によって変わるのを、ここでそろえる
+function revealAboveNextBand(element) {
+  if (!window.matchMedia('(max-width: 1023px)').matches || element.hidden) return;
+  const bandTop = els.nextBand.checkVisibility() ? els.nextBand.getBoundingClientRect().top : window.innerHeight;
+  const box = element.getBoundingClientRect();
+  const hidden = box.bottom - bandTop;
+  if (hidden <= 0) return;
+  window.scrollBy({ top: Math.min(hidden, Math.max(0, box.top - 8)), behavior: 'instant' });
+}
+
 function closeMeeting() {
   meetingUi.seq += 1;
-  Object.assign(closingUi, { data: null, exported: null, busy: false });
+  Object.assign(closingUi, { data: null, exported: null, busy: false, stopped: null });
   if (!meetingUi.view) return;
   Object.assign(meetingUi, { view: null, projectId: null, record: null, confirming: false, working: false, erased: null });
   meetingError(null);
@@ -6592,38 +6792,7 @@ function closingSource(item) {
 }
 
 function closingOpenLine(item, index) {
-  const li = element('li');
-  li.dataset.unowned = String(!item.owner);
-  const head = element('p', item.text);
-  const from = element('small', item.owner ? `${item.fromLabel}` : `${item.fromLabel}。持ち主なし`);
-  const form = element('form');
-  form.className = 'closing-owner';
-  const ownerId = `closing-owner-${index}`;
-  const dueId = `closing-due-${index}`;
-  const owner = element('input');
-  owner.type = 'text';
-  owner.id = ownerId;
-  owner.maxLength = 40;
-  owner.autocomplete = 'off';
-  owner.value = item.owner;
-  const due = element('input');
-  due.type = 'date';
-  due.id = dueId;
-  due.value = item.due;
-  const ownerLabel = element('label', '持ち主');
-  ownerLabel.htmlFor = ownerId;
-  const dueLabel = element('label', '期日');
-  dueLabel.htmlFor = dueId;
-  const save = element('button', '決める');
-  save.type = 'submit';
-  save.disabled = closingUi.busy;
-  form.append(ownerLabel, owner, dueLabel, due, save);
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    saveClosingOwner(item.key, owner.value, due.value);
-  });
-  li.append(head, from, form);
-  return li;
+  return openItemLine(item, index, { prefix: 'closing', busy: closingUi.busy, save: saveClosingOwner });
 }
 
 function closingDataView(data) {
@@ -6710,14 +6879,9 @@ function renderClosing() {
   meetingEls.state.dataset.state = allReady ? 'decided' : 'draft';
   unowned.hidden = data.unowned === 0;
   unowned.textContent = data.unowned > 0 ? `持ち主のない未決事項が ${data.unowned} 件あります。` : '';
-  $('closing-deliverables').replaceChildren(...data.deliverables.map((item) => {
-    const li = element('li');
-    li.className = 'closing-row';
-    const mark = element('span', item.statusLabel, 'closing-state');
-    mark.dataset.state = item.status;
-    li.append(element('strong', item.label), mark, element('span', item.note));
-    return li;
-  }));
+  $('closing-ready').textContent = readyText(data);
+  $('closing-deliverables').replaceChildren(...data.deliverables.map(deliverableLine));
+  $('closing-not-erasable').replaceChildren(...(data.notErasable ?? []).map((text) => element('li', text)));
   $('closing-open').replaceChildren(...(data.openItems.length > 0 ? data.openItems.map(closingOpenLine) : [element('li', '会の記録から見つけた未決事項はありません。')]));
   const req = data.requirements;
   $('closing-requirements-state').textContent = req.status === 'none'
@@ -6745,8 +6909,9 @@ function renderClosing() {
   for (const button of [$('closing-export'), $('closing-reload'), $('closing-back')]) button.disabled = closingUi.busy;
   $('closing-export').textContent = closingUi.busy ? '書き出しています…' : '書き出す';
   const exported = $('closing-exported');
-  exported.hidden = !closingUi.exported;
-  if (closingUi.exported) {
+  exported.hidden = !closingUi.exported && !closingUi.stopped;
+  if (closingUi.stopped) exported.replaceChildren(secretStopLine(closingUi.stopped));
+  else if (closingUi.exported) {
     const line = element('p', '書き出しました: ');
     line.append(element('code', closingUi.exported.dir));
     exported.replaceChildren(line);
@@ -6773,7 +6938,7 @@ async function openClosing(id) {
   closeReview();
   meetingUi.seq += 1;
   Object.assign(meetingUi, { view: 'closing', projectId: id, confirming: false, working: false, erased: null });
-  Object.assign(closingUi, { data: null, exported: null, busy: false });
+  Object.assign(closingUi, { data: null, exported: null, busy: false, stopped: null });
   meetingError(null);
   renderMeeting();
   meetingEls.heading.focus();
@@ -6807,6 +6972,7 @@ async function exportClosing() {
   if (!id || closingUi.busy) return;
   const { seq } = meetingUi;
   closingUi.busy = true;
+  closingUi.stopped = null;
   meetingError(null);
   renderMeeting();
   try {
@@ -6822,11 +6988,16 @@ async function exportClosing() {
       // 前の中身のまま
     }
   } catch (error) {
-    if (seq === meetingUi.seq) meetingFailed(error);
+    if (seq !== meetingUi.seq) return;
+    // 秘密らしい文字列で止めた(4.8)。⬢ の形と場所
+    if (error instanceof ApiError && error.code === 'secret' && error.places?.length > 0) closingUi.stopped = error.places;
+    else meetingFailed(error);
   } finally {
     if (seq === meetingUi.seq) {
       closingUi.busy = false;
       renderMeeting();
+      const exported = $('closing-exported');
+      if (!exported.hidden) exported.scrollIntoView({ block: 'nearest' });
     }
   }
 }
@@ -8746,6 +8917,8 @@ function stageState(key, project) {
       return project.previewUrl && project.lastBuild?.ok !== false ? 'done' : 'todo';
     case 'measure':
       return project.firstSteps?.tried ? 'done' : 'todo';
+    case 'show':
+      return shownBefore(project) ? 'done' : 'todo';
     case 'handoff':
       return handoff.projectId === project.id && handoff.last ? 'done' : 'todo';
     default:
@@ -8770,6 +8943,169 @@ function stageButtonContent(button, stage, state) {
   button.replaceChildren(...parts);
 }
 
+// 人に見せたか(段 8 の済み)。このタブで見せ終わったか、「人に見せた状態」の版があるか(show.js が見せるときに保存する)
+function shownBefore(project) {
+  if (!project) return false;
+  if (frame.shown.has(project.id)) return true;
+  return versions.projectId === project.id && Boolean(versions.data?.versions?.some((version) => version.name === '人に見せた状態'));
+}
+
+// ---- 会の帯(ui-ux-v2.md の 2.7) ----
+// 会の試作品では、段の道筋の代わりに 7 つの帯と予定の分を出す。end は帯が終わった印(timeline.js の段の時刻)。
+// 予定の分は 2.7 の仮の値。始めるは、会を用意した時刻から数える
+const MEETING_BANDS = [
+  { key: 'start', name: '始める', plan: 5, end: 'start' },
+  { key: 'listen', name: '聞く、AI が整理する', plan: 20, end: 'organize' },
+  { key: 'review', name: '審査', plan: 8, end: 'review' },
+  { key: 'build', name: '作る', plan: 10, end: 'prototype' },
+  { key: 'show', name: '見せる', plan: 8, end: 'show' },
+  { key: 'fix', name: '直す', plan: 5, end: 'fix' },
+  { key: 'handoff', name: '渡す', plan: 4, end: 'closing' },
+];
+const MEETING_PLAN_MINUTES = MEETING_BANDS.reduce((sum, band) => sum + band.plan, 0);
+// 段の印を、会の帯のあいだ移す先
+const MARK_BANDS = { 'meeting-mark': 'start', 'intent-mark': 'listen', 'organize-mark': 'listen', 'design-mark': 'review', 'review-mark': 'review' };
+const markHomes = new Map(Object.keys(MARK_BANDS).map((id) => [id, $(id).parentElement]));
+
+function isMeeting(project) {
+  return (project?.meeting?.status ?? 'none') !== 'none';
+}
+
+// 会の帯で出すか(9 段で見るを選んでいなければ)
+function bandShown(project) {
+  return isMeeting(project) && !frame.nineStages && !showUi.open;
+}
+
+// 帯ごとの状態と使った分。done は終わった、now は今の帯、skipped は後の帯が先に終わった、todo はまだ
+function meetingBandTimes(project, now = Date.now()) {
+  const marks = project.meeting.marks ?? {};
+  const at = (iso) => (iso ? Date.parse(iso) : null);
+  let begin = at(project.meeting.createdAt) ?? at(marks.start);
+  const lastEnded = MEETING_BANDS.findLastIndex((band) => marks[band.end]);
+  return MEETING_BANDS.map((band, index) => {
+    const end = at(marks[band.end]);
+    let state = 'todo';
+    let usedMs = null;
+    if (end !== null) {
+      state = 'done';
+      usedMs = begin !== null ? Math.max(0, end - begin) : null;
+      begin = end;
+    } else if (index < lastEnded) state = 'skipped';
+    else if (index === lastEnded + 1) {
+      state = 'now';
+      usedMs = begin !== null ? Math.max(0, now - begin) : 0;
+    }
+    const used = usedMs === null ? null : Math.floor(usedMs / 60_000);
+    return { ...band, state, used, over: used !== null && used > band.plan ? used - band.plan : 0 };
+  });
+}
+
+// 作業台に出している画面の帯
+function viewedBand(stage) {
+  if (meetingUi.view === 'closing') return 'handoff';
+  if (meetingUi.view) return 'start';
+  if (stage === 'talk' || stage === 'goal') return 'listen';
+  if (stage === 'design' || stage === 'review') return 'review';
+  if (stage === 'build' || stage === 'measure' || stage === 'quality') return frame.band === 'fix' ? 'fix' : 'build';
+  if (stage === 'show') return 'show';
+  return 'handoff';
+}
+
+// 帯の 1 つ(li)。ボタンと、段の印を移す場所。最初に 1 度だけ作る(段の印を移しても、描き直しで消えないように)
+const bandItems = new Map(
+  MEETING_BANDS.map((band) => {
+    const li = element('li');
+    li.dataset.band = band.key;
+    const button = element('button', '', 'band');
+    button.type = 'button';
+    button.dataset.band = band.key;
+    const marks = element('span', '', 'stage-marks');
+    li.append(button, marks);
+    els.meetingBand.append(li);
+    return [band.key, { li, button, marks }];
+  }),
+);
+
+// 段の印を、会の帯の下か、9 段の道筋の段の下に置く
+function placeMarks(inBand) {
+  for (const [id, band] of Object.entries(MARK_BANDS)) {
+    const mark = $(id);
+    const target = inBand ? bandItems.get(band).marks : markHomes.get(id);
+    if (mark.parentElement !== target) target.append(mark);
+  }
+  // 9 段の道筋に戻すときは、元の順(会、目的、整理)にそろえる
+  if (!inBand) for (const id of ['meeting-mark', 'intent-mark', 'organize-mark']) markHomes.get(id).append($(id));
+}
+
+function renderMeetingBand(project, stage) {
+  const shown = bandShown(project);
+  els.meetingBand.hidden = !shown;
+  document.body.dataset.rail = shown ? 'meeting' : 'stages';
+  els.railToggle.hidden = !isMeeting(project) || showUi.open;
+  els.railToggle.textContent = frame.nineStages ? '会の帯で見る' : '9 段で見る';
+  els.railToggle.setAttribute('aria-pressed', String(frame.nineStages));
+  placeMarks(shown);
+  clearTimeout(frame.bandTimer);
+  if (!shown) return false;
+  const now = Date.now();
+  const times = meetingBandTimes(project, now);
+  const current = viewedBand(stage);
+  for (const band of times) {
+    const { button } = bandItems.get(band.key);
+    button.dataset.state = band.state;
+    const parts = [element('span', band.name, 'band-name')];
+    const minutes = element('span', `${band.used ?? '─'} / ${band.plan} 分`, 'band-minutes');
+    parts.push(minutes);
+    if (band.state === 'done') {
+      const mark = element('span', '✓', 'stage-state');
+      mark.setAttribute('aria-hidden', 'true');
+      parts.push(mark, element('span', '(済み)', 'visually-hidden'));
+    }
+    if (band.state === 'skipped') parts.push(element('span', '(通らなかった)', 'visually-hidden'));
+    // 予定を過ぎても赤くしない。文で言う
+    if (band.over > 0) parts.push(element('span', band.state === 'now' ? `予定を ${band.over} 分過ぎています` : `予定を ${band.over} 分過ぎました`, 'band-over'));
+    button.replaceChildren(...parts);
+    if (band.key === current) button.setAttribute('aria-current', 'step');
+    else button.removeAttribute('aria-current');
+  }
+  const started = Date.parse(project.meeting.createdAt ?? project.meeting.startedAt ?? '');
+  const elapsed = Number.isNaN(started) ? null : Math.max(0, Math.floor((now - started) / 60_000));
+  els.stageCount.textContent = elapsed === null ? `会 ${MEETING_PLAN_MINUTES} 分` : `会 ${elapsed} / ${MEETING_PLAN_MINUTES} 分`;
+  // 1024px より狭いときは、作業台に出している帯を 1 つのボタンにまとめる(2.8)。予定を過ぎたら、ボタンの文でも言う
+  const viewed = times.find((band) => band.key === current);
+  const over = viewed.over > 0 ? `、予定を ${viewed.over} 分${viewed.state === 'now' ? '過ぎています' : '過ぎました'}` : '';
+  els.stageCompact.textContent = `${viewed.name} ${viewed.used ?? '─'} / ${viewed.plan} 分${over} ▾`;
+  els.stageCompact.setAttribute('aria-label', `会の帯: ${MEETING_BANDS.length} つのうち ${viewed.name}、${viewed.used ?? 'まだ'} / ${viewed.plan} 分${over}。押すと ${MEETING_BANDS.length} つの帯の一覧を開きます`);
+  els.stageCompact.setAttribute('aria-controls', 'meeting-band');
+  // 分は押さなくても進む。30 秒ごとに描き直す
+  frame.bandTimer = setTimeout(scheduleFrame, 30_000);
+  return true;
+}
+
+// 会の帯を押したとき。2.7 の表の作業台を開く
+function goBand(key) {
+  const project = selectedProject();
+  setCompact(false);
+  if (!project || !isMeeting(project)) return;
+  if (key === 'start') return openMeeting(project.id);
+  if (key === 'handoff') return openClosing(project.id);
+  const stage = { listen: 'goal', review: 'review', build: 'build', show: 'show', fix: 'build' }[key];
+  goStage(stage);
+  frame.band = key === 'fix' ? 'fix' : null;
+  if (key === 'fix') frame.side = 'maker';
+  renderFrame();
+}
+
+els.meetingBand.addEventListener('click', (event) => {
+  const button = event.target.closest('button.band');
+  if (button) goBand(button.dataset.band);
+});
+els.railToggle.addEventListener('click', () => {
+  frame.nineStages = !frame.nineStages;
+  setCompact(false);
+  renderFrame();
+});
+
 function renderRail(project, current) {
   const stage = stageOf(current);
   for (const button of els.stageList.querySelectorAll('button.stage')) {
@@ -8781,9 +9117,12 @@ function renderRail(project, current) {
     else button.removeAttribute('aria-current');
     button.disabled = !project && key !== 'talk';
   }
-  els.stageCount.textContent = `${stage.num} / ${STAGES.length} 段`;
-  els.stageCompact.textContent = `${stage.num} / ${STAGES.length} ${stage.name} ▾`;
-  els.stageCompact.setAttribute('aria-label', `段の道筋: ${STAGES.length} 段のうち ${stage.num} 段目、${stage.name}。押すと 9 段の一覧を開きます`);
+  if (!renderMeetingBand(project, current)) {
+    els.stageCount.textContent = `${stage.num} / ${STAGES.length} 段`;
+    els.stageCompact.textContent = `${stage.num} / ${STAGES.length} ${stage.name} ▾`;
+    els.stageCompact.setAttribute('aria-label', `段の道筋: ${STAGES.length} 段のうち ${stage.num} 段目、${stage.name}。押すと 9 段の一覧を開きます`);
+    els.stageCompact.setAttribute('aria-controls', 'stage-list');
+  }
   const heading = [element('span', String(stage.num), 'bench-num'), element('span', stage.name, 'bench-name')];
   if (stage.human) {
     const mark = element('span', '●', 'stage-human');
@@ -8861,6 +9200,10 @@ function renderNowLine(project, stage) {
     }
   }
   els.actorOthers.textContent = `ほか ${others} 者`;
+  // お客さんの前(5.4)。会の試作品の間、「データは架空です」を出し続け、開発用の印を出さない
+  const meeting = isMeeting(project);
+  els.fictionMark.hidden = !meeting;
+  els.devAgentMark.hidden = agent?.kind !== 'fake' || meeting;
   // お試しか本物か(2.6)。作る AI か試作品の中の AI のどちらかが本物なら、本物の印にする
   const real = tryRealAi() || Boolean(consent.agreed && agent?.kind === 'claude' && agent.ready);
   els.aiMode.hidden = real;
@@ -8939,7 +9282,11 @@ function nextStep(project, stage) {
     if (meetingUi.view === 'new') return { text: '会の目的を 1 文で書き、会を用意します。題材は架空にします。', button: meetingEls.newSubmit };
     if (meetingUi.view === 'closing') {
       if (closingUi.busy && frame.moved === $('closing-export')) return { text: '成果物を書き出しています。', button: $('closing-export'), keep: true };
-      return { text: '未決事項の持ち主と期日を決めて、成果物を書き出します。', button: firstShown($('closing-export')) };
+      if (closingUi.stopped) return { text: '秘密らしい文字列を試作品から消してから、もう一度書き出します。', button: firstShown($('closing-export')) };
+      // 渡す前に、何が足りないかを 1 文で言う(4.8)。足りないままでも書き出せる
+      const data = closingUi.data;
+      const text = data ? `${lackingSentence(data)}${data.unowned > 0 ? '持ち主と期日を決めてから書き出しますか。' : '成果物を書き出します。'}` : '未決事項の持ち主と期日を決めて、成果物を書き出します。';
+      return { text, button: firstShown($('closing-export')) };
     }
     if (meetingUi.view === 'erased') return { text: '会のデータを消しました。消せないものを読み、閉じます。' };
     const button = firstShown(meetingEls.agree, meetingEls.organize);
@@ -8967,12 +9314,19 @@ function nextStep(project, stage) {
       return { text: `「聞くこと」の 1 つ目を、お客さんに聞きます。${asks[0].text}`, ask: true };
     }
     const button = firstShown($('organize-design'), items === 0 ? organizeEls.run : organizeEls.confirm, organizeEls.run);
-    const text = button === organizeEls.run ? '聞いた要点を打ち、板に整理します。' : button === organizeEls.confirm ? '決める人が板を読み、合っていれば確かめます。' : '板を確かめました。この理解で設計に進みます。';
+    const text = !button ? '聞いた要点を打つと、「整理する」で板に整理できます。' : button === organizeEls.run ? '聞いた要点を打ち、板に整理します。' : button === organizeEls.confirm ? '決める人が板を読み、合っていれば確かめます。' : '板を確かめました。この理解で設計に進みます。';
     return { text, button };
   }
   if (designUi.open) {
     if (designUi.waiting) return { state: 'working', words: { who: '案を出す AI ', doing: '案を作っています', now: '前に選んだ案は、そのまま残っています。', next: '止めるときは、作業台の「止める」を押せます。' } };
     const button = firstShown(designEls.start, designEls.build, designEls.next);
+    // 案をまだ選んでいない段では、おすすめの案を選ぶのを次の一手にする(選ぶのは人。ほかの案は作業台で選べる)
+    const record = designUi.record;
+    if (!button && record?.steps?.length > 0 && !record.thinking) {
+      const step = designCurrent(record);
+      const recommended = !step.chosen ? step.options.find((option) => option.recommended && option.available !== false) : null;
+      if (recommended) return { text: `案を比べて 1 つ選びます。おすすめは「${recommended.title}」です。`, go: { label: 'おすすめの案を選ぶ', run: () => chooseDesign(step.id, recommended.id) } };
+    }
     const text = button === designEls.start ? '問題から画面までの段ごとに、案を並べてもらいます。' : button === designEls.build ? '最後の段まで選びました。この設計で作り、作る前に審査します。' : button === designEls.next ? '案を比べて 1 つ選び、次の段へ進みます。' : '案を選びます。';
     return { text, button };
   }
@@ -9092,12 +9446,20 @@ function nextStepTail(project, stage) {
   if (stage === 'show') {
     if (showUi.open) return showOperatorStep();
     if (showUi.starting && frame.moved === els.showStart) return { text: '見せる画面を用意しています。', button: els.showStart, keep: true };
+    // 見せ終わった後は、渡す段へ。もう一度見せるときは、作業台の「人に見せる」を押す
+    if (shownBefore(project)) return { text: '人に見せました。答えは見せた版に残っています。次は本番開発へ渡します。', go: { label: '渡す段へ進む', run: () => goStage('handoff') } };
     if (shownAtHome(els.showStart)) return { text: '試作品と確かめたい問いだけの画面にして、人に見せます。', button: els.showStart };
     return { text: '保存か、作る AI の作業が終わると、人に見せられます。' };
   }
   if (stage === 'handoff') {
     if (handoff.busy && frame.moved === els.handoffExport) return { text: '渡すフォルダーを作っています。', button: els.handoffExport, keep: true };
-    if (shownAtHome(els.handoffExport)) return { text: '目的、決まったこと、未決事項を書き、本番開発へ渡すフォルダーを作ります。', button: els.handoffExport };
+    if (handoff.stopped) return { text: '秘密らしい文字列を試作品から消してから、もう一度渡します。', button: firstShown(els.handoffExport) };
+    if (handoff.result) return { text: '本番開発へ渡すフォルダーを作りました。場所をコピーして、開発の担当に渡します。', button: firstShown(els.handoffExport) };
+    if (shownAtHome(els.handoffExport)) {
+      // 渡す前に、何が足りないかを 1 文で言う(4.8)。足りないままでも渡せる
+      const data = handoffItems.projectId === project.id ? handoffItems.data : null;
+      return { text: data ? `${lackingSentence(data)}本番開発へ渡すフォルダーを作ります。` : '目的、決まったこと、未決事項を書き、本番開発へ渡すフォルダーを作ります。', button: els.handoffExport };
+    }
     return { text: '保存か、作る AI の作業が終わると、渡すフォルダーを作れます。' };
   }
   return { text: '' };
@@ -9251,6 +9613,12 @@ function renderFrame() {
   if (!frame.ready) return;
   const project = selectedProject();
   const stage = viewedStage();
+  // 会の試作品では、字を会議室の大きさで始める(2.7)
+  if (frame.meetingRoom !== isMeeting(project)) {
+    frame.meetingRoom = isMeeting(project);
+    applyDisplay(readDisplay());
+  }
+  if (stage === 'handoff' && project && handoffItems.projectId !== project.id) loadHandoffItems(project.id);
   renderReverted(project);
   renderRail(project, stage);
   lockDuringShow();
@@ -9279,6 +9647,7 @@ function goStage(key) {
   if (!project && key !== 'talk') return;
   frame.stage = 'build';
   frame.side = 'stage';
+  frame.band = null;
   if (key === 'talk') {
     if (!project) return $('new-project').click();
     const intent = project.intent?.status ?? 'none';
@@ -9311,6 +9680,8 @@ function goStage(key) {
     if (key === 'measure') selectTab(frame.tab);
     // 段 7 に入るたびに、見直しの表を読み直す
     if (key === 'quality') syncQuality(project, { force: true });
+    // 段 9 に入るたびに、渡すものの一覧を読み直す
+    if (key === 'handoff') loadHandoffItems(project.id);
   }
   renderFrame();
   els.benchHeading.focus({ preventScroll: true });

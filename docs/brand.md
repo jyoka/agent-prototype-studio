@@ -16,7 +16,7 @@ Prototype Studio を外に伝えるときの土台です。README の絵、LP �
 - 機能は、名詞の見出しと 2 行の説明のカードで伝える。今できること 14 枚と、作っているもの 4 つ(3 節)。「部品のコードをつなぐ」は jyoka/tasks#427 で作ったので、作っているものから外した。素材をつなぐ機能(トークン、指針、部品のパッケージ)は、LP のカードにせず README の特長に書く
 - 分解の絵は、AI の作りを 1 回のトークで見せ、7 つ目で人が承認する。本物の画面だけを使う(4 節)
 - 「理想の構成」と言わない。出すのは、日付と根拠のある、今日の一番良い推測と書く
-- 見た目は `assets/brand/tokens.css` の CSS の変数で決める。Studio の画面(`src/ui/studio.css`)は 2026-11 に A 製図のトークン([ui-ux-v2.md の 10 節](design/ui-ux-v2.md#10-色字部品の決まり))に移った。`tokens.css`、LP、バナーは UI/UX の 8 枚目で A 製図の色に合わせる(ui-ux-v2.md の 14 節)
+- 見た目は `assets/brand/tokens.css` の CSS の変数で決める。Studio の画面(`src/ui/studio.css`)と同じ A 製図のトークン([ui-ux-v2.md の 10 節](design/ui-ux-v2.md#10-色字部品の決まり))で、2026-11-18 に LP とバナーも移した(5 節)
 - 公開の前に直すものの一覧は 7 節。見本のデータと画面の文は、このカードで直した。docs と ADR は一覧だけにした
 
 ## 1. 1 文
@@ -126,12 +126,12 @@ Studio が何で、何が違うかを 1 文で言い切る。運営者が 2026-1
 | 4 | AI 構成の審査 | エージェントの構成、harness、データと RAG、技術の組の 4 つを読み、欄ごとに承認する。4 つそろうまで作る AI は動かない。<br>構成は固定の流れ、単一エージェント、マスターとサブから選び直せる。承認は AI 構成書(`.studio/reviews/`)に残り、承認の後に構成が変わると関門で止まる。 | AI architecture review | Read the agent setup, harness, data and RAG, and tech stack, and approve each one. The maker AI waits until all four are approved.<br>You can switch between a fixed flow, a single agent, and a master with sub-agents. Approvals stay in the AI architecture record (`.studio/reviews/`), and a later change to the setup stops at a gate. | [usage.md の「AI 構成の審査」](usage.md#ai-構成の審査で-4-つを承認する) | `review` |
 | 5 | データの棚と RAG の判定 | AI が何をどう読むかを棚で見せ、RAG が要るかを判定する。「要らない」とも言う。<br>最初の判定は今日の推測。RAG ありとなしを同じ場面の一覧で回すと、回した結果を根拠に判定し直す。 | Data shelf and RAG check | A shelf shows what the AI reads and how, and checks whether RAG is needed. The answer can be no.<br>The first check is today's guess. Run the same evals with and without RAG, and the check is redone from those results. | [usage.md の「設計の案内」](usage.md#設計の案内6-つの段) | 文字 |
 | 6 | 構成の模擬 | 構成と前提を選ぶと、同じ試作品が別の組み方で話す。模擬のエージェントがツールを自分で選んで呼ぶ。<br>構成はデータで、`app/composition.json` に書く。 | Simulated setups | Pick a setup and assumptions, and the same prototype talks in a different arrangement. A simulated agent picks and calls the tools itself.<br>A setup is data, written in `app/composition.json`. | [design/agent-simulation.md](design/agent-simulation.md) | `sim-choice` |
-| 7 | 守りの層 | どの層の守りが止めたかと、その理由を実行の記録で読む。<br>層はツールの守り、プロンプトの頼み、出口の確かめの 3 つ。1 ターンの要約は試す欄の下、全部は仕組みの引き出しにある。 | Guardrail layers | Read in the trace which guardrail layer stopped a turn, and why.<br>The layers are tool guards, prompt asks, and output checks. A one-turn summary sits under the try pane, and the full trace is under developer details. | [design/agent-simulation.md](design/agent-simulation.md) | `sim-trace` |
+| 7 | 守りの層 | どの層の守りが止めたかと、その理由を実行の記録で読む。<br>層はツールの守り、プロンプトの頼み、出口の確かめの 3 つ。1 ターンの要約は試す欄の下、全部は仕組みの引き出しにある。 | Guardrail layers | Read in the trace which guardrail layer stopped a turn, and why.<br>The layers are tool guards, prompt asks, and output checks. A one-turn summary sits under the try pane, and the full trace is in the how-it-works drawer. | [design/agent-simulation.md](design/agent-simulation.md) | `sim-trace` |
 | 8 | 場面の比較 | 同じ場面の一覧を構成と前提ごとに回し、1 つの表で比べる。<br>試す欄の下の表か、ターミナル(`npm run evals`)で回す。モックの数は形の確かめで、振る舞いの差は実モデルで測る。 | Eval runs | Run the same evals across setups and assumptions, and compare them in one table.<br>Run it from the table under the try pane or in the terminal (`npm run evals`). Mock numbers only check the shape. Differences in behavior need the real model. | [usage.md の「場面を回す」](usage.md#場面を回すnpm-run-evals) | `evals-compare` |
 | 9 | 質の見直し | アクセシビリティ、字と地の差、素材に合うか、場面の結果、費用を 1 つの表で見る。各行に「なぜ大事か」と「直す」が付く。<br>測ったものと AI の判断を分け、見ていない項目は「まだ見ていない」と出す。アクセシビリティは Studio の小さな検査だけ。 | Quality review | See accessibility, text contrast, fit with the design materials, eval results, and cost in one table. Each row says why it matters and how to fix it.<br>Measured items are kept apart from AI judgments, and unchecked items say so. Accessibility uses only a small check built into Studio. | [usage.md の「質の見直し」](usage.md#質の見直し) | `quality` |
-| 10 | 言葉で直す欄 | 試しながら、画面や AI の振る舞いの直したい所を言葉で頼む。<br>作る AI が書けるのは、試作品の `app/` だけ。 | Plain-word edits | While you try the prototype, ask in plain words for changes to the screens or the AI's behavior.<br>The maker AI can write only to the prototype's `app/`. | [usage.md](usage.md) | `try-and-fix` |
+| 10 | 作る AI に頼む | 試しながら、画面や AI の振る舞いの直したい所を、右の「■ 作る AI」の欄に言葉で頼む。<br>作る AI が書けるのは、試作品の `app/` だけ。 | Ask the maker AI | While you try the prototype, ask the maker AI in plain words for changes to the screens or the AI's behavior.<br>The maker AI can write only to the prototype's `app/`. | [usage.md](usage.md) | `try-and-fix` |
 | 11 | 人に見せる | 試作品と確かめたい問いだけの画面にして、相手に触ってもらう。開発の欄は隠れる。<br>問いは目的の文書の成功の印から作り、答えは見せた版に残る。手元の PC で見せる形だけで、公開はしない。 | Showing people | Switch to a screen with only the prototype and the questions to check, and let people try it. The developer panels are hidden.<br>The questions come from the success signs in the purpose document, and the answers stay with the version you showed. It works only on your own PC, with no public sharing. | [usage.md の「人に見せる」](usage.md#人に見せる) | 文字 |
-| 12 | みんなで作る | 見せる画面の場所にコメントを付け、承認したコメントだけを作る AI が直す。反応をいくつ付けても動かない。<br>1 台の PC でみんなで使う形。直した記録、前と後の比べ、元に戻すがある。構成のコメントは審査に戻す。 | Building together | Comment on a place in the showing screen. The maker AI acts only on approved comments, no matter how many reactions there are.<br>A group shares one PC. It keeps a fix record, a before-and-after view, and undo. Architecture comments go back to the review. | [usage.md の「画面へのコメントと承認」](usage.md#画面へのコメントと承認) | 文字 |
+| 12 | みんなで作る | 見せる画面の場所にコメントを付け、承認したコメントだけを作る AI が直す。反応をいくつ付けても動かない。<br>1 台の PC でみんなで使う形。直した記録、前と後の比べ、元に戻すがある。構成のコメントは審査に戻す。お客さんとの 1 時間の会では、上の帯が 7 つの帯と予定の分になり、字が会議室の大きさになる。 | Building together | Comment on a place in the showing screen. The maker AI acts only on approved comments, no matter how many reactions there are.<br>A group shares one PC. It keeps a fix record, a before-and-after view, and undo. Architecture comments go back to the review. In a one-hour customer session, the top bar shows seven blocks with planned minutes, and the text starts at meeting-room size. | [usage.md の「画面へのコメントと承認」](usage.md#画面へのコメントと承認) | 文字 |
 | 13 | 版と引き継ぎ | 良い状態を版として保存し、いつでも戻す。本番開発に渡すものを 1 つのフォルダーに書き出す。<br>ソース、AI の設定、試した会話、証拠の要約が入る。 | Versions and handoff | Save a good state as a version and restore it any time. Export what the production team needs to one folder.<br>It holds the source, AI settings, tried conversations, and an evidence summary. | [handoff.md](handoff.md) | 文字 |
 | 14 | 作るループの関門 | 作る AI が直すたびに、Studio が決まった順に確かめる。落ちたら失敗を返し、2 回まで直させる。<br>順は検査、ビルド、場面、起動、シナリオ。 | Build-loop gates | After each edit by the maker AI, Studio runs its checks in a fixed order. On failure, it sends the result back for up to two fix rounds.<br>The order is checks, build, evals, launch, and scenarios. | [architecture/hld.md](architecture/hld.md) | 文字 |
 
@@ -205,28 +205,31 @@ AI の作りを、1 回のトークで層に分けて見せ、7 つ目で人が�
 
 決まりは [`assets/brand/tokens.css`](../assets/brand/tokens.css) の CSS の変数に書いた。LP(`site/`)、バナー、README の比べる表の画像(`scripts/media/compare-table.js`)が使う。
 
-- Studio の画面: 2026-11(task 432)に、A 製図のトークン([ui-ux-v2.md の 10 節](design/ui-ux-v2.md#10-色字部品の決まり))に移った。画面の色、字、余白、動きの正は ui-ux-v2.md の 10 節で、`test/unit/brand.test.js` が `src/ui/studio.css` と 10.6 の値が同じかを確かめる
-- これから: `tokens.css`、LP、バナーは、UI/UX の 8 枚目で A 製図の名前と値に移す(ui-ux-v2.md の 14 節)。下の表は、それまでの LP とバナーの値
-- 色: 前の画面(task 432 より前)の色の値。画面で値のまま書いていた色(`#eef3fd` など)には名前を付けた
-- ダーク: どの意味の色も、地との差(コントラスト比)が 4.5 以上。試作品(iframe の中)の色は、試作品が決める
+- 正: 色、字、余白、動きの値の正は [ui-ux-v2.md の 10 節](design/ui-ux-v2.md#10-色字部品の決まり)(A 製図)。Studio の画面(`src/ui/studio.css`)と `tokens.css` は、同じ名前と値を使う。`test/unit/brand.test.js` が、`studio.css` と 10.6 が同じ値か、`tokens.css` と `studio.css` が同じ値かを確かめる
+- 移した日: Studio の画面は 2026-11(task 432)。`tokens.css`、LP、バナー、比べる表の画像は 2026-11-18(task 438、UI/UX の 8 枚目)に A 製図の名前と値に移した(ui-ux-v2.md の 14 節)
+- LP だけの名前: 大きな見出し(`--text-hero`)、ゆっくりの動き(`--motion-slow`)、線(`--border`)、影(`--shadow`)、分解の絵の層の色(`--layer-*`)。Studio の画面にない部品のためで、色の値は A 製図のトークンを指す
+- ダーク: どの意味の色も、地との差(コントラスト比)が 4.5 以上(ui-ux-v2.md の 3.7)。試作品(iframe の中)の色は、試作品が決める
 - 切り替え: OS の設定(`prefers-color-scheme`)に従う。`<html data-theme="dark">` か `data-theme="light"` を書くと、OS の設定より優先する
 - 字: OS に入っている字だけを使う(`--font-sans`、`--font-mono`)。リポジトリに入れられる字は入れない。Web フォントは読み込まない
-- 角丸: 4、6、8、12 px と丸(999 px)。画面と見本の会話の枠で使っている値
-- 動き: `--motion-fast`、`--motion-slow`。`prefers-reduced-motion` のときは 0 になる
+- 角: 3 px と 6 px と丸(999 px)。A 製図は角を小さくする
+- 動き: `--motion-quick`、`--motion-base`、`--motion-draw`(と LP の `--motion-slow`)。`prefers-reduced-motion` のときは 0 になる
+- バナーの色: SVG に値のまま書く(外から CSS を読めないため)。値は下の表のライトとダークの色だけを使う(`brand.test.js` が確かめる)
 
 | 変数 | ライト | ダーク | 使う所 |
 |---|---|---|---|
-| `--bg` | `#f6f6f4` | `#161614` | 地 |
-| `--panel` | `#ffffff` | `#1f1f1d` | 板、カード |
-| `--line` | `#d9d9d4` | `#3a3a36` | 線 |
-| `--text` | `#1f1f1d` | `#ecece8` | 字 |
-| `--muted` | `#6b6b66` | `#a3a39c` | 添える字 |
-| `--accent` | `#2459c4` | `#7ea6ff` | 押せる所、トークの層 |
-| `--on-accent` | `#ffffff` | `#161614` | 押せる所の色の上の字(「送る」など) |
-| `--ok` | `#1d7a43` | `#4cc184` | 通った、ツールの層 |
-| `--error` | `#b42318` | `#f97066` | 止めた、失敗、ガードレールの層 |
-| `--warn` | `#c77700` | `#f0a53a` | 気をつける所の線、プロンプトの層 |
-| `--violet` | `#7a3fb4` | `#b48ae6` | AI の設定、エージェントの層 |
+| `--color-bg` | `#F4F5F6` | `#0F1113` | 地 |
+| `--color-surface` | `#FFFFFF` | `#171A1D` | 板、カード |
+| `--color-line` | `#DADDE1` | `#2B3036` | 線 |
+| `--color-text` | `#16181B` | `#E7E9EC` | 字 |
+| `--color-text-muted` | `#535960` | `#A2A9B1` | 添える字 |
+| `--color-accent` | `#1D4FB0` | `#8DB2FF` | 押せる所、トークの層(`--layer-talk` は `--actor-you`) |
+| `--color-on-accent` | `#FFFFFF` | `#0A1733` | 押せる所の色の上の字 |
+| `--color-ok` | `#17703D` | `#6FCF97` | 通った、ツールの層、審査の層 |
+| `--color-danger` | `#B42318` | `#FF8A7A` | 止めた、失敗、ガードレールの層 |
+| `--color-warn` | `#8A5300` | `#E0B15C` | 気をつける所、プロンプトの層 |
+| `--actor-maker` | `#6E3FB8` | `#C3A6F7` | 作る AI、エージェントの層 |
+
+ほかの名前(`--color-surface-sunken`、`--actor-product` など)と値は、ui-ux-v2.md の 10.1 と 10.6 にある。
 
 ## 6. バナー
 

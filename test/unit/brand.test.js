@@ -114,12 +114,43 @@ test('画面(src/ui/)に、前の変数の名前(--bg、--panel など)が残っ
 });
 
 test('tokens.css(LP とバナー)は、ダークの 2 つの塊が同じ値で、ライトの色を全部決める', async () => {
-  // tokens.css は 8 枚目で A 製図の値に移すまで、LP の見た目の決まり(ui-ux-v2.md の 14 節)
   const tokens = await read('assets/brand/tokens.css');
   const light = rootVariables(tokens);
   const media = blockVariables(tokens, ':root:not([data-theme="light"])');
   assert.deepEqual(blockVariables(tokens, ':root[data-theme="dark"]'), media);
   for (const name of Object.keys(media)) assert.ok(name in light, name);
+});
+
+test('tokens.css(LP とバナー)の A 製図のトークンは、画面(studio.css)と同じ名前と値(ライトとダーク)', async () => {
+  // UI/UX の 8 枚目で、LP とバナーを A 製図に移した(ui-ux-v2.md の 14 節)。LP だけの名前(--layer-* など)は足してよい
+  const tokens = await read('assets/brand/tokens.css');
+  const studio = await read('src/ui/studio.css');
+  const studioLight = rootVariables(studio);
+  const tokensLight = rootVariables(tokens);
+  for (const [name, value] of Object.entries(studioLight)) assert.equal(tokensLight[name], value, name);
+  for (const selector of [':root[data-theme="dark"]', ':root:not([data-theme="light"])']) {
+    const dark = blockVariables(tokens, selector);
+    for (const [name, value] of Object.entries(blockVariables(studio, selector))) assert.equal(dark[name], value, `${selector} ${name}`);
+  }
+});
+
+test('LP(site/)と比べる表の画像は、前の変数の名前(--bg、--panel など)を使わず、バナーは A 製図の色だけを使う', async () => {
+  const old = /var\(--(bg|panel|line|text|muted|accent|ok|error|warn|warn-bg|error-bg|accent-bg|on-accent|ok-bg|warn-text|violet|violet-text|violet-bg|text-xs|text-sm|text-md|text-lg|text-xl|radius-sm|radius-md|radius-lg|radius-xl|motion-fast|ease)\)/;
+  for (const file of ['site/site.css', 'scripts/media/compare-table.js', 'assets/brand/tokens.css']) {
+    const lines = (await read(file)).split('\n');
+    const hit = lines.findIndex((line) => old.test(line));
+    assert.equal(hit, -1, `${file}:${hit + 1}: ${lines[hit]}`);
+  }
+  // バナーの色は、10.6 のライトかダークの色のどれか
+  const design = await designTokens();
+  const colorsOf = (vars) => new Set(Object.values(vars).filter((value) => /^#[0-9A-F]{6}$/i.test(value)).map((value) => value.toUpperCase()));
+  const light = colorsOf(rootVariables(design));
+  const dark = colorsOf(blockVariables(design, ':root:not([data-theme="light"])'));
+  for (const [file, allowed] of [['assets/brand/banner-light.svg', light], ['assets/brand/banner-dark.svg', dark]]) {
+    const used = [...(await read(file)).matchAll(/#[0-9a-f]{6}\b/gi)].map((m) => m[0].toUpperCase());
+    assert.ok(used.length > 10, file);
+    for (const color of used) assert.ok(allowed.has(color), `${file}: ${color}`);
+  }
 });
 
 test('tokens.css はダークと動きを止める設定を持ち、バナーと合わせて外から何も読み込まない', async () => {

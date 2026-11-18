@@ -1,137 +1,161 @@
 /*
- * LP(site/)とバナーと README の画像の見た目の決まり(docs/brand.md の「見た目」)。
- * Studio の画面(src/ui/studio.css)は、2026-11 に A 製図のトークン(docs/design/ui-ux-v2.md の 10 節)に移った。
- * このファイルは、UI/UX の 8 枚目で A 製図の名前と値に移す(ui-ux-v2.md の 14 節)。それまでは前の画面の色のまま。
+ * LP(site/)とバナーと README の比べる表の画像の見た目の決まり(docs/brand.md の「見た目」)。
+ * 名前と値は、Studio の画面(src/ui/studio.css)と同じ A 製図のトークン(docs/design/ui-ux-v2.md の 10 節)。
+ * 色と字と余白と動きの値は 10.6 と同じ(test/unit/brand.test.js が、studio.css と同じ値かを確かめる)。
+ * 下の「LP とバナーと比べる表の画像だけの名前」は、Studio の画面にない名前(大きな見出し、影、分解の絵の層の色)。
  * 外から読み込むもの(Web フォント、CDN)は使わない。字は、利用者の OS に入っている字を使う。
  *
- * 使い方: <link rel="stylesheet" href="assets/brand/tokens.css"> を読み、var(--bg) などで使う。
+ * 使い方: <link rel="stylesheet" href="assets/brand/tokens.css"> を読み、var(--color-bg) などで使う。
  * ダークとライトは OS の設定(prefers-color-scheme)に従う。<html data-theme="dark"> か
  * data-theme="light" を書くと、OS の設定より優先する。
  */
 
 :root {
   color-scheme: light;
+  --color-bg: #F4F5F6;
+  --color-surface: #FFFFFF;
+  --color-surface-sunken: #ECEEF0;
+  --color-line: #DADDE1;
+  --color-line-strong: #868C94;
+  --color-text: #16181B;
+  --color-text-muted: #535960;
+  --color-link: #1D4FB0;
+  --color-accent: #1D4FB0;
+  --color-on-accent: #FFFFFF;
+  --color-accent-soft: #E8EEFA;
+  --color-focus: #1D4FB0;
+  --color-ok: #17703D;
+  --color-ok-soft: #E6F2EA;
+  --color-warn: #8A5300;
+  --color-warn-soft: #FBF1E2;
+  --color-danger: #B42318;
+  --color-danger-soft: #FBEAE8;
+  --color-fiction: #8A5300;
+  --actor-you: #1D4FB0;
+  --actor-maker: #6E3FB8;
+  --actor-product: #0B6E6E;
+  --actor-gate: #8A5300;
 
-  /* 色: 地と線と字 */
-  --bg: #f6f6f4;
-  --panel: #ffffff;
-  --line: #d9d9d4;
-  --text: #1f1f1d;
-  --muted: #6b6b66;
-
-  /* 色: 意味のある色 */
-  --accent: #2459c4;
-  --on-accent: #ffffff;
-  --ok: #1d7a43;
-  --error: #b42318;
-  --warn-bg: #fff4e5;
-  --error-bg: #fdecea;
-
-  /* 色: 前の画面で値のまま書いていた色に、名前を付けたもの */
-  --accent-bg: #eef3fd;
-  --ok-bg: #eaf5ee;
-  --warn: #c77700;
-  --warn-text: #8a5300;
-  --violet: #7a3fb4;
-  --violet-text: #5b2c8a;
-  --violet-bg: #f5effb;
-
-  /* 分解の絵の層の色(docs/brand.md の「分解の絵の台本」)。止めた層は --layer-guard で示す */
-  --layer-talk: var(--accent);
-  --layer-agent: var(--violet);
-  --layer-prompt: var(--warn);
-  --layer-tool: var(--ok);
-  --layer-guard: var(--error);
-  --layer-record: var(--muted);
-  /* 7 つ目の層: 人が読んで承認する所(AI 構成の審査)。承認は「通った」の色 */
-  --layer-review: var(--ok);
-
-  /* 字: OS に入っている字だけ。Web フォントは読み込まない */
-  --font-sans: system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", sans-serif;
+  --font-sans: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, "Noto Sans JP", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  --text-xs: 0.8rem;
-  --text-sm: 0.9rem;
-  --text-md: 1rem;
-  --text-lg: 1.25rem;
-  --text-xl: clamp(1.5rem, 4vw, 2.5rem);
+  --font-display: var(--font-sans);
+  --text-1: 0.8125rem;
+  --text-2: 0.875rem;
+  --text-3: 1rem;
+  --text-4: 1.125rem;
+  --text-5: 1.375rem;
+  --text-6: 1.75rem;
+  --text-7: 2.25rem;
   --leading: 1.6;
+  --leading-tight: 1.3;
+  --weight-regular: 400;
+  --weight-bold: 600;
 
-  /* 角丸(前の画面と見本の会話の枠で使っていた値) */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --stroke-hair: 1px;
+  --stroke-mark: 2px;
+  --stroke-focus: 2px;
+  --radius-1: 3px;
+  --radius-2: 6px;
   --radius-pill: 999px;
+  --rail-height: 52px;
+  --drawer-width: 420px;
+  --bench-max: 1040px;
 
-  /* 間 */
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 1rem;
-  --space-4: 1.5rem;
-  --space-5: 2.5rem;
+  --motion-quick: 120ms;
+  --motion-base: 200ms;
+  --motion-draw: 1600ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-linear: linear;
 
-  /* 線と影。影は浮いた部品(開く一覧、ダイアログ)だけに使う */
-  --border: 1px solid var(--line);
-  --shadow: 0 4px 16px rgb(0 0 0 / 0.12);
-
-  /* 動き。prefers-reduced-motion のときは 0 にする(下) */
-  --motion-fast: 150ms;
+  /* ここから下は LP とバナーと比べる表の画像だけの名前(Studio の画面は使わない) */
+  --text-hero: clamp(1.75rem, 4vw, 2.5rem);
   --motion-slow: 400ms;
-  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --border: var(--stroke-hair) solid var(--color-line);
+  --shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+  /* 分解の絵の層の色(docs/brand.md の「分解の絵の台本」)。止めた層は --layer-guard で示す */
+  --layer-talk: var(--actor-you);
+  --layer-agent: var(--actor-maker);
+  --layer-prompt: var(--color-warn);
+  --layer-tool: var(--color-ok);
+  --layer-guard: var(--color-danger);
+  --layer-record: var(--color-text-muted);
+  /* 7 つ目の層: 人が読んで承認する所(AI 構成の審査)。承認は「通った」の色 */
+  --layer-review: var(--color-ok);
 }
 
-/* ダーク。地は黒に寄せすぎず、字との差(コントラスト比)はどの意味の色も 4.5 以上 */
+/* ダーク。下の 2 つの塊は同じ値にする(test/unit/brand.test.js が確かめる) */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #161614;
-  --panel: #1f1f1d;
-  --line: #3a3a36;
-  --text: #ecece8;
-  --muted: #a3a39c;
-  --accent: #7ea6ff;
-  --on-accent: #161614;
-  --ok: #4cc184;
-  --error: #f97066;
-  --warn-bg: #3a2a12;
-  --error-bg: #3d1a17;
-  --accent-bg: #1c2740;
-  --ok-bg: #16301f;
-  --warn: #f0a53a;
-  --warn-text: #f0a53a;
-  --violet: #b48ae6;
-  --violet-text: #c9a8f0;
-  --violet-bg: #2a2038;
+  --color-bg: #0F1113;
+  --color-surface: #171A1D;
+  --color-surface-sunken: #0B0D0F;
+  --color-line: #2B3036;
+  --color-line-strong: #6E757E;
+  --color-text: #E7E9EC;
+  --color-text-muted: #A2A9B1;
+  --color-link: #8DB2FF;
+  --color-accent: #8DB2FF;
+  --color-on-accent: #0A1733;
+  --color-accent-soft: #18233A;
+  --color-focus: #8DB2FF;
+  --color-ok: #6FCF97;
+  --color-ok-soft: #15261C;
+  --color-warn: #E0B15C;
+  --color-warn-soft: #2A2214;
+  --color-danger: #FF8A7A;
+  --color-danger-soft: #2E1A18;
+  --color-fiction: #E0B15C;
+  --actor-you: #8DB2FF;
+  --actor-maker: #C3A6F7;
+  --actor-product: #5FC9C4;
+  --actor-gate: #E0B15C;
   --shadow: 0 4px 16px rgb(0 0 0 / 0.5);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #161614;
-    --panel: #1f1f1d;
-    --line: #3a3a36;
-    --text: #ecece8;
-    --muted: #a3a39c;
-    --accent: #7ea6ff;
-    --on-accent: #161614;
-    --ok: #4cc184;
-    --error: #f97066;
-    --warn-bg: #3a2a12;
-    --error-bg: #3d1a17;
-    --accent-bg: #1c2740;
-    --ok-bg: #16301f;
-    --warn: #f0a53a;
-    --warn-text: #f0a53a;
-    --violet: #b48ae6;
-    --violet-text: #c9a8f0;
-    --violet-bg: #2a2038;
+    --color-bg: #0F1113;
+    --color-surface: #171A1D;
+    --color-surface-sunken: #0B0D0F;
+    --color-line: #2B3036;
+    --color-line-strong: #6E757E;
+    --color-text: #E7E9EC;
+    --color-text-muted: #A2A9B1;
+    --color-link: #8DB2FF;
+    --color-accent: #8DB2FF;
+    --color-on-accent: #0A1733;
+    --color-accent-soft: #18233A;
+    --color-focus: #8DB2FF;
+    --color-ok: #6FCF97;
+    --color-ok-soft: #15261C;
+    --color-warn: #E0B15C;
+    --color-warn-soft: #2A2214;
+    --color-danger: #FF8A7A;
+    --color-danger-soft: #2E1A18;
+    --color-fiction: #E0B15C;
+    --actor-you: #8DB2FF;
+    --actor-maker: #C3A6F7;
+    --actor-product: #5FC9C4;
+    --actor-gate: #E0B15C;
     --shadow: 0 4px 16px rgb(0 0 0 / 0.5);
   }
 }
 
+/* 動きを止める: OS の「視差効果を減らす」 */
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --motion-fast: 0ms;
+    --motion-quick: 0ms;
+    --motion-base: 0ms;
+    --motion-draw: 0ms;
     --motion-slow: 0ms;
   }
 }

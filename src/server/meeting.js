@@ -22,6 +22,11 @@ const FORMAT = 1;
 const MAX_PURPOSE = 200;
 // 消す日の既定(日数)。仮の値(collaboration.md の 7 節)
 export const DEFAULT_DELETE_DAYS = 30;
+// 会のデータを消しても消せないもの。会の終わりと段 9 の渡す(ui-ux-v2.md の 4.8)にも、同じ一覧を出す
+export const NOT_ERASABLE = Object.freeze([
+  '外の AI の送り先に届いた分は、この操作では消せません。API の入出力は既定で 30 日以内に消す、と Anthropic は書いています。サブスクのログインのときの扱いは確かめていません。',
+  '引き継ぎの書き出しを別の場所へ写したものは、消せません。',
+]);
 const ERASING_PREFIX = '.erasing-';
 const ERASING_NAME = /^\.erasing-([a-z0-9-]{1,64})-[0-9a-f]{8}$/;
 // 会の試作品の ID の頭。ID を見れば会と分かるので、記録のファイルが消えても同意の前として扱える
@@ -170,9 +175,17 @@ export class ProjectMeetings {
   // 一覧に載せる短い形
   summary(id) {
     const record = this.records.get(id);
-    if (!record) return { status: 'none', deleteOn: null, overdue: false, updatedAt: null, startedAt: null };
-    // startedAt は会を始めた(同意した)時刻。整理の板の次の一手が、聞く時間が残っているかを見る(ui-ux-v2.md の 4.5)
-    return { status: record.status, deleteOn: record.deleteOn, overdue: isOverdue(record), updatedAt: record.updatedAt ?? null, startedAt: record.status === 'waiting' ? null : record.startedAt ?? record.decidedAt ?? null };
+    if (!record) return { status: 'none', deleteOn: null, overdue: false, updatedAt: null, startedAt: null, createdAt: null };
+    // startedAt は会を始めた(同意した)時刻。整理の板の次の一手が、聞く時間が残っているかを見る(ui-ux-v2.md の 4.5)。
+    // createdAt は会を用意した時刻。会の帯の「始める」の分を、ここから数える(ui-ux-v2.md の 2.7)
+    return {
+      status: record.status,
+      deleteOn: record.deleteOn,
+      overdue: isOverdue(record),
+      updatedAt: record.updatedAt ?? null,
+      startedAt: record.status === 'waiting' ? null : record.startedAt ?? record.decidedAt ?? null,
+      createdAt: record.createdAt ?? null,
+    };
   }
 
   // 消す日を過ぎた会の一覧
@@ -293,10 +306,7 @@ export class ProjectMeetings {
         return { ...row, count: removed.length, names: removed };
       }),
       left,
-      notErased: [
-        '外の AI の送り先に届いた分は、この操作では消せません。API の入出力は既定で 30 日以内に消す、と Anthropic は書いています。サブスクのログインのときの扱いは確かめていません。',
-        '引き継ぎの書き出しを別の場所へ写したものは、消せません。',
-      ],
+      notErased: [...NOT_ERASABLE],
     };
   }
 }

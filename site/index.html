@@ -246,7 +246,7 @@
       </a>
       <h3><span data-lang="ja">守りの層</span><span data-lang="en">Guardrail layers</span></h3>
       <p><span data-lang="ja">どの層の守りが止めたかと、その理由を実行の記録で読む。</span><span data-lang="en">Read in the trace which guardrail layer stopped a turn, and why.</span></p>
-      <p><span data-lang="ja">層はツールの守り、プロンプトの頼み、出口の確かめの 3 つ。1 ターンの要約は試す欄の下、全部は「開発者向けの詳細」にある。</span><span data-lang="en">The layers are tool guards, prompt asks, and output checks. A one-turn summary sits under the try pane, and the full trace is under developer details.</span></p>
+      <p><span data-lang="ja">層はツールの守り、プロンプトの頼み、出口の確かめの 3 つ。1 ターンの要約は試す欄の下、全部は仕組みの引き出しにある。</span><span data-lang="en">The layers are tool guards, prompt asks, and output checks. A one-turn summary sits under the try pane, and the full trace is in the how-it-works drawer.</span></p>
     </li>
     <li class="card">
       <a class="card-shot shot crop crop-evals" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md#場面を回すnpm-run-evals">
@@ -268,11 +268,11 @@
     </li>
     <li class="card">
       <a class="card-shot shot crop crop-try" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/usage.md">
-        <img class="on-light" src="assets/media/try-and-fix-light.png" width="1280" height="800" loading="lazy" alt="言葉で直す欄に依頼を書いたところ" data-en-alt="A request typed in the plain-word edit box">
-        <img class="on-dark" src="assets/media/try-and-fix-dark.png" width="1280" height="800" loading="lazy" alt="言葉で直す欄に依頼を書いたところ" data-en-alt="A request typed in the plain-word edit box">
+        <img class="on-light" src="assets/media/try-and-fix-light.png" width="1280" height="800" loading="lazy" alt="作る AI の欄に依頼を書いたところ" data-en-alt="A request typed in the maker AI pane">
+        <img class="on-dark" src="assets/media/try-and-fix-dark.png" width="1280" height="800" loading="lazy" alt="作る AI の欄に依頼を書いたところ" data-en-alt="A request typed in the maker AI pane">
       </a>
-      <h3><span data-lang="ja">言葉で直す欄</span><span data-lang="en">Plain-word edits</span></h3>
-      <p><span data-lang="ja">試しながら、画面や AI の振る舞いの直したい所を言葉で頼む。</span><span data-lang="en">While you try the prototype, ask in plain words for changes to the screens or the AI's behavior.</span></p>
+      <h3><span data-lang="ja">作る AI に頼む</span><span data-lang="en">Ask the maker AI</span></h3>
+      <p><span data-lang="ja">試しながら、画面や AI の振る舞いの直したい所を、右の「■ 作る AI」の欄に言葉で頼む。</span><span data-lang="en">While you try the prototype, ask the maker AI in plain words for changes to the screens or the AI's behavior.</span></p>
       <p><span data-lang="ja">作る AI が書けるのは、試作品の <code>app/</code> だけ。</span><span data-lang="en">The maker AI can write only to the prototype's <code>app/</code>.</span></p>
     </li>
     <li class="card">
@@ -289,7 +289,7 @@
       </a>
       <h3><span data-lang="ja">みんなで作る</span><span data-lang="en">Building together</span></h3>
       <p><span data-lang="ja">見せる画面の場所にコメントを付け、承認したコメントだけを作る AI が直す。反応をいくつ付けても動かない。</span><span data-lang="en">Comment on a place in the showing screen. The maker AI acts only on approved comments, no matter how many reactions there are.</span></p>
-      <p><span data-lang="ja">1 台の PC でみんなで使う形。直した記録、前と後の比べ、元に戻すがある。構成のコメントは審査に戻す。</span><span data-lang="en">A group shares one PC. It keeps a fix record, a before-and-after view, and undo. Architecture comments go back to the review.</span></p>
+      <p><span data-lang="ja">1 台の PC でみんなで使う形。直した記録、前と後の比べ、元に戻すがある。構成のコメントは審査に戻す。お客さんとの 1 時間の会では、上の帯が 7 つの帯と予定の分になり、字が会議室の大きさになる。</span><span data-lang="en">A group shares one PC. It keeps a fix record, a before-and-after view, and undo. Architecture comments go back to the review. In a one-hour customer session, the top bar shows seven blocks with planned minutes, and the text starts at meeting-room size.</span></p>
     </li>
     <li class="card">
       <a class="card-shot card-type" href="https://github.com/jyoka/agent-prototype-studio/blob/main/docs/handoff.md" aria-label="引き継ぎの docs" data-en-aria-label="Handoff docs">
@@ -370,11 +370,11 @@
         <tr><th scope="col"><span data-lang="ja">したいこと</span><span data-lang="en">To do this</span></th><th scope="col"><span data-lang="ja">操作</span><span data-lang="en">Do this</span></th></tr>
       </thead>
       <tbody>
-        <tr><td><span data-lang="ja">試作品と話す</span><span data-lang="en">Talk to the prototype</span></td><td><span data-lang="ja">「試す」の枠の中の欄に書いて送る</span><span data-lang="en">Type in the box inside "試す" (Try) and send</span></td></tr>
-        <tr><td><span data-lang="ja">画面や AI の振る舞いを変える</span><span data-lang="en">Change the screens or the AI's behavior</span></td><td><span data-lang="ja">「言葉で直す」欄に頼む。本物の AI は同意の後だけ動き、費用がかかる</span><span data-lang="en">Ask in the "言葉で直す" (plain-word edit) box. The real model runs only after you consent, and it costs money</span></td></tr>
+        <tr><td><span data-lang="ja">試作品と話す</span><span data-lang="en">Talk to the prototype</span></td><td><span data-lang="ja">左の「試作品」の枠の中の欄に書いて送る</span><span data-lang="en">Type in the box inside "試作品" (Prototype) on the left and send</span></td></tr>
+        <tr><td><span data-lang="ja">画面や AI の振る舞いを変える</span><span data-lang="en">Change the screens or the AI's behavior</span></td><td><span data-lang="ja">右の「■ 作る AI」の欄に頼む。本物の AI は同意の後だけ動き、費用がかかる</span><span data-lang="en">Ask in the "■ 作る AI" (maker AI) pane on the right. The real model runs only after you consent, and it costs money</span></td></tr>
         <tr><td><span data-lang="ja">料金なしで直す流れを試す</span><span data-lang="en">Try the edit flow at no cost</span></td><td><code>STUDIO_AGENT=fake npm start</code></td></tr>
         <tr><td><span data-lang="ja">今の状態を残す</span><span data-lang="en">Keep the current state</span></td><td><span data-lang="ja">上の帯の「保存」</span><span data-lang="en">"保存" (Save) in the top bar</span></td></tr>
-        <tr><td><span data-lang="ja">ツールと守りの判定を見る</span><span data-lang="en">See tool calls and guardrail verdicts</span></td><td><span data-lang="ja">「その他」→「開発者向けの詳細」の「AI の実行の記録」</span><span data-lang="en">「その他」(More) → 「開発者向けの詳細」(developer details) → 「AI の実行の記録」(AI trace)</span></td></tr>
+        <tr><td><span data-lang="ja">ツールと守りの判定を見る</span><span data-lang="en">See tool calls and guardrail verdicts</span></td><td><span data-lang="ja">今の行の「仕組みを見る」(<kbd>.</kbd> のキー)で開く引き出しの「AI の実行の記録」</span><span data-lang="en">「仕組みを見る」(Show how it works, or the <kbd>.</kbd> key) on the now line → 「AI の実行の記録」(AI trace)</span></td></tr>
         <tr><td><span data-lang="ja">場面を回して比べる</span><span data-lang="en">Run the evals and compare</span></td><td><code>npm run evals -- sample-part-time</code><span data-lang="ja">(Studio を一度起動した後)</span><span data-lang="en"> (after Studio has started once)</span></td></tr>
         <tr><td><span data-lang="ja">ブラウザが開かない</span><span data-lang="en">The browser does not open</span></td><td><span data-lang="ja">ターミナルに出た <code>http://127.0.0.1:4317/#token=…</code> を開く</span><span data-lang="en">Open the <code>http://127.0.0.1:4317/#token=…</code> shown in the terminal</span></td></tr>
         <tr><td><span data-lang="ja">止める</span><span data-lang="en">Stop</span></td><td><span data-lang="ja">ターミナルで Ctrl+C</span><span data-lang="en">Ctrl+C in the terminal</span></td></tr>

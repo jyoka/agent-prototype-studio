@@ -295,6 +295,16 @@ body[data-meeting] .layout, body[data-meeting] .stage-panel { display: none; }
 .closing-state[data-state="draft"] { border-color: var(--color-warn); background: var(--color-warn-soft); color: var(--color-warn); }
 .closing-state[data-state="missing"] { border-color: var(--color-danger); color: var(--color-danger); }
 .closing-open > li[data-unowned="true"] { border-color: var(--color-warn); border-width: 2px; }
+/* 渡すもの(ui-ux-v2.md の 4.8)。そろったものは ✓、足りないものは「!」と文。色だけで分けない */
+.deliverable-mark { display: inline-block; min-width: 1.2em; font-weight: var(--weight-bold); text-align: center; color: var(--color-ok); }
+.closing-row[data-state="draft"] .deliverable-mark, .closing-row[data-state="missing"] .deliverable-mark, .closing-open .deliverable-mark { color: var(--color-warn); }
+.closing-open > li > .deliverable-mark { float: left; margin-right: var(--space-1); }
+.deliverables-count { margin: 0 0 var(--space-2); font-family: var(--font-mono); font-size: var(--text-2); }
+.flag-line::before { content: "! "; font-weight: var(--weight-bold); }
+.flag-line[hidden] { display: none; }
+#handoff-unowned { margin: var(--space-1) 0; color: var(--color-warn); font-weight: var(--weight-bold); }
+.deliverables h4 { margin: var(--space-4) 0 var(--space-1); font-size: var(--text-3); }
+.deliverables h4:first-child { margin-top: var(--space-2); }
 .closing-owner { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-top: 0.3rem; }
 .closing-owner input[type="text"] { flex: 1 1 8rem; min-width: 0; }
 .closing-requirements ul { margin: 0; padding-left: 1.2rem; }
@@ -974,6 +984,7 @@ body[data-intent] .layout, body[data-intent] .stage-panel { display: none; }
 .handoff-form button { align-self: flex-start; margin-top: 0.2rem; }
 .handoff-result { margin: 0.5rem 0 0; padding: 0.4rem 0.6rem; border-radius: var(--radius-1); background: var(--color-ok-soft); }
 .handoff-result[data-kind="failed"] { background: var(--color-danger-soft); color: var(--color-danger); }
+.handoff-result[data-kind="stopped"], #closing-exported:has(.state-line) { padding: var(--space-2) var(--space-3); background: var(--color-surface); border: var(--stroke-mark) solid var(--actor-gate); border-radius: var(--radius-1); }
 .handoff-result[data-kind="last"] { background: transparent; padding: 0; color: var(--color-text-muted); }
 .handoff-result p { margin: 0 0 0.3rem; }
 .handoff-result code { word-break: break-all; }
@@ -1296,6 +1307,35 @@ button.primary:disabled { border-color: var(--color-line-strong); background: va
 .stage-count { flex: none; padding-top: var(--space-1); color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-1); white-space: nowrap; }
 .stage-compact { display: none; }
 
+/* 会の帯(2.7)。会の試作品では、9 段の道筋の代わりに 7 つの帯と予定の分を出す。予定を過ぎても赤くせず、文で言う */
+body[data-rail="meeting"] .stage-list { display: none; }
+.meeting-band { display: flex; flex: 1 1 auto; flex-wrap: wrap; gap: var(--space-1); margin: 0; padding: 0; list-style: none; min-width: 0; }
+.meeting-band[hidden] { display: none; }
+.meeting-band > li { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.meeting-band button.band {
+  display: inline-block;
+  padding: var(--space-1) var(--space-2) 6px;
+  border: 0;
+  border-bottom: var(--stroke-mark) solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+.meeting-band button.band:hover { color: var(--color-text); border-bottom-color: var(--color-line-strong); }
+.meeting-band button.band[data-state="done"], .meeting-band button.band[data-state="now"] { color: var(--color-text); }
+.meeting-band button.band[data-state="now"] .band-minutes { font-weight: var(--weight-bold); }
+.meeting-band button.band[aria-current="step"] { color: var(--color-text); font-weight: var(--weight-bold); border-bottom-color: var(--color-accent); }
+.band-name { margin-right: var(--space-1); }
+.band-minutes { font-family: var(--font-mono); font-size: var(--text-1); white-space: nowrap; }
+.meeting-band .stage-state { margin-left: var(--space-1); }
+/* 予定を過ぎた文は、帯の下の行に出す(帯の幅を広げない) */
+.band-over { display: block; color: var(--color-text); font-size: var(--text-1); font-weight: var(--weight-regular); }
+.rail-toggle { flex: none; padding: 0.1rem var(--space-2); font-size: var(--text-1); white-space: nowrap; }
+.rail-toggle[hidden] { display: none; }
+
 /* 今の行。4 者を形と名前と今の文の組で、いつも同じ位置に出す。働いている者は名前を太くし、文に 2px の下線と流れる線 */
 .now-line {
   display: flex;
@@ -1332,6 +1372,9 @@ button.primary:disabled { border-color: var(--color-line-strong); background: va
 @keyframes actor-flow { from { background-position: 100% 100%; } to { background-position: 0% 100%; } }
 .actor-others { display: none; color: var(--color-text-muted); }
 .now-end { display: flex; flex: none; align-items: center; gap: var(--space-2); margin-left: auto; }
+/* お客さんの前(5.4)。会の試作品の間、今の行に「データは架空です」を出し続ける */
+.fiction-mark { padding: 0 var(--space-2); border: var(--stroke-hair) solid var(--color-fiction); border-radius: var(--radius-1); color: var(--color-fiction); font-size: var(--text-2); white-space: nowrap; }
+.fiction-mark[hidden] { display: none; }
 .ai-mode { white-space: nowrap; color: var(--color-text); }
 .ai-mode[hidden] { display: none; }
 button.ai-mode { padding: 0.1rem var(--space-2); border: var(--stroke-hair) solid var(--color-line-strong); border-radius: var(--radius-pill); background: var(--color-surface); font-size: var(--text-2); cursor: pointer; }
@@ -1402,7 +1445,22 @@ body[data-bench="handoff"] .layout, body[data-bench="note"] .layout { display: n
   body:not([data-compact-open="true"]) .stage-list > li:not(:has(.stage-marks > :not([hidden]))) { display: none; }
   body:not([data-compact-open="true"]) .stage-list button.stage { display: none; }
   .stage-marks { padding-left: 0; }
-  body[data-compact-open="true"] .stage-list {
+  /* 会の帯も同じにまとめる。「聞く、AI が整理する 12 / 20 分 ▾」の 1 つのボタンにし、押すと 7 つの帯を開く */
+  .meeting-band > li { flex-direction: row; align-items: center; }
+  body:not([data-compact-open="true"]) .meeting-band > li:not(:has(.stage-marks > :not([hidden]))) { display: none; }
+  body:not([data-compact-open="true"]) .meeting-band button.band { display: none; }
+  body[data-compact-open="true"] .meeting-band {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    z-index: 12;
+    flex-direction: column;
+    padding: var(--space-2);
+    background: var(--color-surface);
+    border: var(--stroke-hair) solid var(--color-line-strong);
+    border-radius: var(--radius-2);
+  }
+  body[data-compact-open="true"]:not([data-rail="meeting"]) .stage-list {
     position: absolute;
     top: calc(100% + 2px);
     left: 0;
@@ -1425,8 +1483,13 @@ body[data-bench="handoff"] .layout, body[data-bench="note"] .layout { display: n
   body { min-height: 100vh; }
   .frame-body { flex: 1 0 auto; }
 }
+/* 狭い画面では、次の一手の帯を低く保つ。「次の一手」の見出しは読み上げだけにし(帯の aria-label と同じ)、1 文を横いっぱいに使う。
+   ボタンが 1 文の横に入らなければ、下の行の右に回る。横に列を作ると、会議室の大きさで 1 文が 1 行 4 字ほどに折れ、帯が画面の下を埋めるため */
 @media (max-width: 1023px) {
-  .next-band { position: sticky; bottom: 0; z-index: 5; }
+  .next-band { position: sticky; bottom: 0; z-index: 5; flex-wrap: wrap; gap: var(--space-1) var(--space-3); padding: var(--space-1) var(--space-3); }
+  .next-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .next-main { flex: 1 1 14rem; }
+  .next-slot { margin-left: auto; }
 }
 
 /* ---- 段 5〜8 の右の列(ui-ux-v2.md の 2.2、2.4、4.2、4.3) ---- */

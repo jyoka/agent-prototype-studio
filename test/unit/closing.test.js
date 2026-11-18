@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { DELIVERABLES, describeDeliverables, describeOpenItems, describeRequirements, readOwners } from '../../src/server/closing.js';
 import { newFixRecord } from '../../src/server/comments.js';
+import { NOT_ERASABLE } from '../../src/server/meeting.js';
 import { ProjectHandoffs } from '../../src/server/handoff.js';
 import { createMockConnection } from '../../src/server/product-ai/mock.js';
 import { AiSessions } from '../../src/server/product-ai/session.js';
@@ -156,6 +157,10 @@ test('書き出しに 7 つの成果物と直した記録が入る(要件の文�
   assert.deepEqual(manifest.closing.deliverables.map((item) => item.label), ['要件の文書', 'データ設計', '構成の図', 'AI 構成書', '試作品', '場面の一覧', '未決事項']);
   assert.deepEqual(manifest.closing.deliverables.map((item) => item.id), DELIVERABLES.map((item) => item.id));
   for (const item of manifest.closing.deliverables) assert.ok(['ready', 'draft', 'missing'].includes(item.status) && item.note && item.where.length > 0, item.id);
+  // そろった数(画面の「そろった n / 7」)と、消せないもの(ui-ux-v2.md の 4.8)
+  assert.equal(manifest.closing.ready, manifest.closing.deliverables.filter((item) => item.status === 'ready').length);
+  assert.ok(manifest.closing.ready <= manifest.closing.present);
+  assert.deepEqual(manifest.closing.notErasable, [...NOT_ERASABLE]);
   // 1. 要件の文書
   const requirement = manifest.requirements.sections.find((s) => s.id === 'requirement').items;
   assert.equal(manifest.requirements.status, 'confirmed');
