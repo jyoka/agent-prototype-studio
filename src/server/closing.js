@@ -504,6 +504,30 @@ export class ProjectClosings {
     return closing;
   }
 
+  // 共有の場に置く写し(share.js。collaboration.md の 9.4 の「何を同期するか」)。要件の文書、データ設計、場面の一覧、未決事項の文だけ。
+  // 元の要点、直した記録、AI 構成書の中身、試作品の要約(証拠、場面の回し)は入れない。中継のサーバーに置くものを少なくするため
+  async shared(id) {
+    const paths = await this.requireProject(id);
+    const board = await readBoard(paths);
+    const purpose = await describePurpose(paths);
+    const design = await describeDesign(paths);
+    const comments = await readComments(paths);
+    const requirements = describeRequirements({ purpose, board, comments, records: await readFixRecords(path.join(paths.studio, FIX_RECORDS_DIR)) });
+    const openItems = describeOpenItems({ board, purpose, design, review: await describeReview({ paths, appDir: paths.app }), comments, owners: await readOwners(paths) });
+    const data = await describeDataDesign(paths, board);
+    return {
+      requirements: {
+        status: requirements.status,
+        sections: requirements.sections.map((section) => ({ label: section.label, items: section.items.map((item) => ({ text: item.text, guess: item.guess })) })),
+      },
+      dataDesign: data.status === 'chosen' || data.status === 'stale'
+        ? { title: data.title, stale: data.status === 'stale', entities: data.entities.map((entity) => ({ name: entity.name, writer: entity.writer, fields: entity.fields.map(fieldWords) })) }
+        : null,
+      scenes: design.scenes.map((scene) => ({ category: scene.category, text: scene.text })),
+      openItems: openItems.map((item) => ({ text: item.text, from: item.fromLabel, owner: item.owner, due: item.due })),
+    };
+  }
+
   // 未決事項の持ち主と期日を書く。owner が空なら消す。人が押したときだけ呼ぶ。
   // 持ち主は名前か役(進行役、決める人など)。記録らしいもの(電話番号やメールアドレス)は断る
   async setOwner(id, { key, owner, due } = {}) {

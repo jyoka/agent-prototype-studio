@@ -24,7 +24,8 @@ import { createDesignAi, DESIGN_SYSTEM_PROMPT } from './design-ai.js';
 import { ProjectMeetings, removeErasing } from './meeting.js';
 import { CHECKED_RUN, MeetingTimeline } from './timeline.js';
 import { ProjectOrganizes } from './organize.js';
-import { createOrganizeAi, ORGANIZE_SYSTEM_PROMPT } from './organize-ai.js';
+import { ProjectShares, ShareError } from './share.js';
+import { COLUMNS, createOrganizeAi, ORGANIZE_SYSTEM_PROMPT } from './organize-ai.js';
 import { createPreviewHandler } from './preview-server.js';
 import { CLAUDE_CODE_LIMITS, createClaudeCodeConnection } from './product-ai/claude-code.js';
 import { createMockConnection } from './product-ai/mock.js';
@@ -87,6 +88,24 @@ async function listenOrExplain(server, port, host, envName) {
 // env は作る AI とプロダクト内 AI に渡す環境変数。既定は利用者のもの(ADR-0001: そのまま渡し、値は読まない)。
 // scenarioLimits は関門 G6 の時間の上限(build-requests.js の SCENARIO_GATE_LIMITS)。テストで短くするときだけ渡す。
 // onAgentEvent は作る AI に渡した文と stream-json を受け取る関数(BuildRequests と同じ。実機の確かめの記録用)
+// 共有の場に置く整理の板。項目と聞くことの文だけ。元の要点(お客さんの話そのもの)は置かない
+function sharedBoard(view) {
+  return {
+    status: view.status,
+    columns: Object.entries(COLUMNS).map(([id, label]) => ({ id, label })),
+    items: view.items.map((item) => ({ id: item.id, column: item.column, text: item.text, guess: item.guess })),
+    asks: view.asks.map((ask) => ({ kind: ask.kind, text: ask.text })),
+  };
+}
+
+// 参加者の書き込みを板に当てる。足す、直す、消すの 3 つだけ。整理する AI と「確かめた」の印は、進行役の画面でだけ
+function applySharedOp(organizes, id, op) {
+  if (op?.op === 'item-edit' && typeof op.id === 'string' && typeof op.text === 'string') return organizes.editItem(id, { id: op.id, text: op.text });
+  if (op?.op === 'item-add' && typeof op.column === 'string' && typeof op.text === 'string') return organizes.addItem(id, { column: op.column, text: op.text });
+  if (op?.op === 'item-remove' && typeof op.id === 'string') return organizes.removeItem(id, { id: op.id });
+  throw new ShareError(400, 'invalid', 'その書き込みは使えません');
+}
+
 export async function startStudio(config, { log = () => {}, env = process.env, scenarioLimits, onAgentEvent } = {}) {
   try {
     await fs.mkdir(projectsDir(config.home), { recursive: true });
@@ -107,6 +126,8 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   }
 
   const connection = await resolveConnection(config, env);
+  // 共有の場(下で作る)。部品の間で呼び合うので、先に名前だけを置く
+  let shares = null;
   // 本物の AI を使う前の同意。1 つを作る AI と試作品の中の AI で共有する。メモリーにだけ持ち、起動し直すと消える
   const consent = new RealAiConsent();
   const token = createToken();
@@ -134,6 +155,9 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       aiSessions.forgetProject(id);
       firstSteps.forget(id);
     },
+    // 共有の場(share.js)。消す一覧に中継のサーバーの写しを載せ、会のデータを消すときに写しも消す
+    sharing: (id) => shares.isSharing(id),
+    eraseShared: (id) => shares.forget(id),
     log,
   });
   await meetings.load();
@@ -241,7 +265,8 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
   });
   await intents.load();
   // ヒアリングの整理。整理する AI は聞き出す AI と同じ決め方の別の役(organize-ai.js)。使えないときは、人が手で振り分ける
-  const organizes = new ProjectOrganizes({ home: config.home, store, ai: createOrganizeAi({ connection, env }), consent, aiMode: thinkingAiMode, talkGate, log });
+  // 板を書いたら、共有の場の写しを置き直す(共有していなければ何もしない)
+  const organizes = new ProjectOrganizes({ home: config.home, store, ai: createOrganizeAi({ connection, env }), consent, aiMode: thinkingAiMode, talkGate, onWrite: (id) => shares?.changed(id), log });
   await organizes.load();
   // 設計の案内。案を出す AI は聞き出す AI と同じ決め方の別の役(design-ai.js)。使えないときは、Studio の決まった案を出す
   const designs = new ProjectDesigns({
@@ -318,6 +343,20 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     talkGate,
     log,
   });
+  // 共有の場(K7 の 2 枚目、collaboration.md の 9.4)。Studio から中継のサーバーへ外へつなぐだけ。待ち受けは増やさない。
+  // 中継のサーバーに置くのは、整理の板と、要件の文書、データ設計、場面の一覧、未決事項の写しだけ(会の鍵で包む)。
+  // 参加者の書き込みは、人が画面で押したときと同じ口(organizes の editItem など)で板に当てる。記録らしいものは同じに断る
+  shares = new ProjectShares({
+    home: config.home,
+    store,
+    relayUrl: config.relayUrl ?? null,
+    docsOf: async (id) => ({ title: (await store.list()).find((p) => p.id === id)?.title ?? '', board: sharedBoard(organizes.viewOf(id)), ...(await closings.shared(id)) }),
+    apply: (id, op) => applySharedOp(organizes, id, op),
+    gate: talkGate,
+    expiresOf: (id) => meetings.records.get(id)?.deleteOn ?? null,
+    log,
+  });
+  await shares.load();
   const studioServer = http.createServer(
     createStudioHandler({
       store,
@@ -359,6 +398,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
       consent,
       firstSteps,
       hints,
+      shares,
     }),
   );
   servers.push(studioServer);
@@ -391,7 +431,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     }
   } catch (error) {
     await Promise.all(servers.map((server) => new Promise((resolve) => server.close(() => resolve()))));
-    await Promise.all([aiSessions.close(), intents.close(), organizes.close(), designs.close(), sceneRuns.closeAll()]);
+    await Promise.all([aiSessions.close(), intents.close(), organizes.close(), designs.close(), sceneRuns.closeAll(), shares.close()]);
     throw error;
   }
 
@@ -418,6 +458,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     sceneRuns,
     meetings,
     checks,
+    shares,
     observer,
     // 表示中のビルドを観察する。report とスクリーンショットは .studio/observations/<観察の ID>/ に置く。
     // シナリオは、渡さなければ app/ の目録の scenarios(既定は app/scenarios/)から読む。
@@ -429,7 +470,7 @@ export async function startStudio(config, { log = () => {}, env = process.env, s
     },
     async close() {
       // 作る AI と、人の「確かめる」と、応答を待っているプロダクト内 AI と聞き出す AI と整理する AI の Claude Code と、観察器のブラウザを止め、終わるまで待つ
-      await Promise.all([requests.closeAll(), checks.closeAll(), sceneRuns.closeAll(), aiSessions.close(), intents.close(), organizes.close(), designs.close(), observer.close()]);
+      await Promise.all([requests.closeAll(), checks.closeAll(), sceneRuns.closeAll(), aiSessions.close(), intents.close(), organizes.close(), designs.close(), observer.close(), shares.close()]);
       await Promise.all(
         servers.map(
           (server) =>

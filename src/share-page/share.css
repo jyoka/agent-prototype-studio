@@ -1,0 +1,122 @@
+/* 参加者のページ。Studio の画面と同じく、落ち着いた色と読みやすい大きさにする(vision.md の 7 節) */
+:root {
+  color-scheme: light;
+  --text: #1f2328;
+  --muted: #59636e;
+  --line: #d1d9e0;
+  --surface: #f6f8fa;
+  --accent: #0b5cad;
+  --warn: #9a3412;
+  font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+[hidden] { display: none !important; }
+
+body {
+  margin: 0 auto;
+  max-width: 1080px;
+  padding: 16px 20px 48px;
+}
+
+h1 { font-size: 1.4rem; margin: 0 0 4px; }
+h2 { font-size: 1.15rem; margin: 0 0 8px; }
+h3 { font-size: 1rem; margin: 12px 0 4px; }
+
+.muted { color: var(--muted); }
+
+.share-status {
+  border-left: 4px solid var(--line);
+  padding: 4px 10px;
+  background: var(--surface);
+}
+.share-status[data-state="online"] { border-color: #1a7f37; }
+.share-status[data-state="offline"],
+.share-status[data-state="refused"] { border-color: var(--warn); }
+
+.share-gone,
+.share-error {
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.share-section {
+  border-top: 1px solid var(--line);
+  padding: 16px 0;
+}
+
+.share-columns {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.share-column {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.share-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.share-list > li { padding: 4px 0; }
+
+.share-item {
+  border-bottom: 1px solid var(--line);
+}
+.share-item-text { margin: 0; }
+
+.share-badge {
+  display: inline-block;
+  font-size: 0.8rem;
+  border: 1px solid var(--muted);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.share-pending {
+  color: var(--accent);
+  font-size: 0.85rem;
+  margin: 2px 0;
+}
+
+.share-actions,
+.share-line,
+.share-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.share-edit input,
+.share-line input {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+button {
+  font: inherit;
+  padding: 2px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #fff;
+  cursor: pointer;
+}
+button[type="submit"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+input, select {
+  font: inherit;
+  padding: 2px 6px;
+}

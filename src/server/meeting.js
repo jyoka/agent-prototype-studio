@@ -27,6 +27,8 @@ export const NOT_ERASABLE = Object.freeze([
   '外の AI の送り先に届いた分は、この操作では消せません。API の入出力は既定で 30 日以内に消す、と Anthropic は書いています。サブスクのログインのときの扱いは確かめていません。',
   '引き継ぎの書き出しを別の場所へ写したものは、消せません。',
 ]);
+// 中継のサーバーに届かず、写しを消せなかったとき(collaboration.md の 9.4 の「消す」)
+export const RELAY_LEFT = '中継のサーバーの写しは消せませんでした。消す日に中継のサーバーが消します。次に Studio を起動したときにも、消すのをやり直します。';
 const ERASING_PREFIX = '.erasing-';
 const ERASING_NAME = /^\.erasing-([a-z0-9-]{1,64})-[0-9a-f]{8}$/;
 // 会の試作品の ID の頭。ID を見れば会と分かるので、記録のファイルが消えても同意の前として扱える
@@ -100,8 +102,9 @@ export async function removeErasing(home, log = () => {}) {
 
 export class ProjectMeetings {
   // cost() は料金と送り先の文(real-ai.js の describeCost)。sendsOutside は外の AI に送る接続か。
-  // busy(id) は AI の応答を待っているか。forget(id) はほかの部品のメモリーを捨てる
-  constructor({ home, store, consent, sendsOutside = false, cost = () => null, busy = () => false, forget = async () => {}, log = () => {} }) {
+  // busy(id) は AI の応答を待っているか。forget(id) はほかの部品のメモリーを捨てる。
+  // sharing(id) は共有の場に写しを置いているか。eraseShared(id) は中継のサーバーの写しを消す('erased'、'left'、null。share.js の forget)
+  constructor({ home, store, consent, sendsOutside = false, cost = () => null, busy = () => false, forget = async () => {}, sharing = () => false, eraseShared = async () => null, log = () => {} }) {
     this.home = home;
     this.store = store;
     this.consent = consent;
@@ -109,6 +112,8 @@ export class ProjectMeetings {
     this.cost = cost;
     this.busy = busy;
     this.forget = forget;
+    this.sharing = sharing;
+    this.eraseShared = eraseShared;
     this.log = log;
     this.records = new Map();
   }
@@ -265,6 +270,8 @@ export class ProjectMeetings {
       { key: 'checks', label: '確かめた記録', count: (await countEntries(path.join(paths.studio, 'observations'))) + (await countEntries(path.join(paths.studio, 'evals'))) },
       { key: 'talk', label: '聞いた要点、整理の板、目的の文書、設計、人に見せた答え、画面へのコメント、未決事項の持ち主、会の記録', count: await countFilesIn(paths.studio, ['organize.json', 'intent.json', 'design.json', SHOW_FILE, COMMENTS_FILE, CLOSING_FILE, MEETING_FILE]) },
       { key: 'handoffs', label: '引き継ぎの書き出し', count: handoffs.length, names: handoffs.map((dir) => path.basename(dir).replace(/^\./, '')) },
+      // 共有の場の写し(K7)。共有していなければ出さない
+      ...(this.sharing(id) ? [{ key: 'relay', label: '中継のサーバーの写し(暗号文)', count: 1 }] : []),
     ];
   }
 
@@ -279,6 +286,7 @@ export class ProjectMeetings {
     let plan;
     let erasing;
     let handoffs;
+    let shared = null;
     const left = [];
     try {
       if (this.busy(id)) throw new BusyError('AI の応答を待っているところです。終わるか止めるまで待ってください');
@@ -288,6 +296,11 @@ export class ProjectMeetings {
       await fs.rename(paths.root, erasing);
       this.records.delete(id);
       await this.forget(id);
+      // 中継のサーバーの写しも消す。届かなければ、消す日に中継のサーバーが消す。次の起動でも消すのをやり直す(share.js)
+      shared = await this.eraseShared(id).catch((error) => {
+        this.log(`中継のサーバーの写しを消せませんでした: ${id}(${error.message})`);
+        return 'left';
+      });
       // paths.root は、移した後に書き戻されていたときのために、もう一度消す
       for (const target of [erasing, paths.root, ...handoffs]) {
         await fs.rm(target, { recursive: true, force: true, maxRetries: 3 }).catch((error) => this.log(`消せませんでした: ${target}(${error.code ?? error.message})`));
@@ -300,13 +313,13 @@ export class ProjectMeetings {
     this.log(left.length > 0 ? `会のデータの一部を消せませんでした: ${id}` : `会のデータを消しました: ${id}`);
     return {
       // 消せたものだけを出す。置き場が残ったときは、プロジェクトの中のものを消したと言わない
-      erased: (left.some((target) => target === erasing || target === paths.root) ? plan.filter((row) => row.key === 'handoffs') : plan).map((row) => {
+      erased: (left.some((target) => target === erasing || target === paths.root) ? plan.filter((row) => row.key === 'handoffs' || row.key === 'relay') : plan).filter((row) => row.key !== 'relay' || shared === 'erased').map((row) => {
         if (row.key !== 'handoffs') return row;
         const removed = handoffs.filter((dir) => !left.includes(dir)).map((dir) => path.basename(dir).replace(/^\./, ''));
         return { ...row, count: removed.length, names: removed };
       }),
       left,
-      notErased: [...NOT_ERASABLE],
+      notErased: [...(shared === 'left' ? [RELAY_LEFT] : []), ...NOT_ERASABLE],
     };
   }
 }

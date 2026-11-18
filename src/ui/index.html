@@ -487,6 +487,28 @@
     <p class="muted">「この理解で合っている」は、決める人が板を読んでから押します。</p>
     <p id="organize-note" class="intent-note" role="status" hidden></p>
     <p id="organize-error" class="intent-error" role="alert" hidden></p>
+    <!-- その場の共有(collaboration.md の 9.4、K7)。中継のサーバーへは Studio のサーバーがつなぐ。この画面は Studio のサーバーとだけ話す -->
+    <section id="share" class="share-panel" aria-labelledby="share-heading">
+      <h3 id="share-heading">その場の共有</h3>
+      <p id="share-state" class="muted" role="status"></p>
+      <div class="organize-actions">
+        <button type="button" id="share-start" hidden>共有を始める</button>
+        <button type="button" id="share-stop" hidden>共有をやめる(中継のサーバーの写しを消す)</button>
+      </div>
+      <form id="share-invite" class="organize-line" hidden>
+        <label for="share-name">招く人の呼び名</label>
+        <input id="share-name" type="text" maxlength="40" autocomplete="off">
+        <label for="share-role">役</label>
+        <select id="share-role">
+          <option value="participant">参加者(直せる)</option>
+          <option value="viewer">見るだけ</option>
+        </select>
+        <button type="submit">招待のリンクを作る</button>
+      </form>
+      <ul id="share-members" class="organize-list" aria-label="招いた人"></ul>
+      <ul id="share-refused" class="organize-list" aria-label="当てなかった書き込み" hidden></ul>
+      <p id="share-error" class="intent-error" role="alert" hidden></p>
+    </section>
     <div class="organize-body">
       <section class="organize-points" aria-labelledby="organize-points-heading" data-explain="points">
         <h3 id="organize-points-heading">聞き取りの欄</h3>

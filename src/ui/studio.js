@@ -6217,6 +6217,9 @@ function renderOrganize() {
   organizeEls.noAi.hidden = Boolean(board.ai);
   organizeEls.points.replaceChildren(...board.points.map(organizePointItem));
   const pointText = new Map(board.points.map((point) => [point.n, point.text]));
+  // 共有の場で板が書き換わっても、直している欄の入力の位置を崩さない
+  const focused = document.activeElement;
+  const editFocus = focused && organizeEls.columns.contains(focused) && focused.closest('.organize-edit') ? { tag: focused.tagName, start: focused.selectionStart, end: focused.selectionEnd } : null;
   organizeEls.columns.replaceChildren(...Object.entries(ORGANIZE_COLUMNS).map(([column, label]) => {
     const box = element('section', undefined, 'organize-column');
     box.setAttribute('aria-label', label);
@@ -6227,6 +6230,11 @@ function renderOrganize() {
     return box;
   }));
   organizeEls.asks.replaceChildren(...board.asks.map(organizeAskItem));
+  if (editFocus) {
+    const again = organizeEls.columns.querySelector(`.organize-edit ${editFocus.tag.toLowerCase()}`);
+    again?.focus();
+    if (again && editFocus.tag === 'TEXTAREA') again.setSelectionRange(editFocus.start, editFocus.end);
+  }
 }
 
 // サーバーの板を出す。後から来た応答が古ければ捨てる(AI を待つ間も要点を足せるので、順が入れ替わることがある)
@@ -6353,6 +6361,7 @@ async function openOrganize() {
   organizeUi.editDraft = null;
   organizeError(null);
   renderOrganize();
+  openShare(project.id);
   try {
     const { organize } = await api(organizePath(project.id));
     if (seq !== organizeUi.seq) return;
@@ -6366,6 +6375,7 @@ async function openOrganize() {
 function closeOrganize() {
   organizeUi.seq += 1;
   clearTimeout(organizeUi.timer);
+  closeShare();
   if (!organizeUi.open) return;
   if (consent.card?.use === 'organize') consent.card = null;
   organizeUi.open = false;
@@ -6378,6 +6388,158 @@ function closeOrganize() {
   organizeError(null);
   renderOrganize();
 }
+
+// その場の共有(docs/design/collaboration.md の 9.4、K7 の 2 枚目)。サーバーは src/server/share.js。
+// この画面は Studio のサーバーとだけ話す(CSP は変えない)。中継のサーバーへは Studio のサーバーがつなぐ。
+// 共有している間は、参加者が直した板を見せるため、板と共有の状態を読み直す
+const SHARE_POLL_MS = 1500;
+const shareUi = { projectId: null, view: null, seq: 0, timer: null, busy: false };
+const shareEls = {
+  state: $('share-state'),
+  start: $('share-start'),
+  stop: $('share-stop'),
+  invite: $('share-invite'),
+  name: $('share-name'),
+  role: $('share-role'),
+  members: $('share-members'),
+  refused: $('share-refused'),
+  error: $('share-error'),
+};
+const sharePath = (id, action = '') => `/api/projects/${encodeURIComponent(id)}/share${action ? `/${action}` : ''}`;
+const SHARING = ['connecting', 'online', 'offline'];
+
+function shareError(text) {
+  shareEls.error.hidden = !text;
+  shareEls.error.textContent = text ?? '';
+}
+
+function shareStateText(view) {
+  if (!view) return '読み込んでいます…';
+  // 設定の名前(開発の言葉)は画面に出さない。決め方は使い方の文書に書いた
+  if (!view.available) return '中継のサーバーが決まっていないので、共有できません。決め方は、使い方の文書の「その場の共有」にあります。';
+  const synced = view.lastSyncAt ? `最後に合わせた時刻: ${formatTime(view.lastSyncAt)}。` : '';
+  if (view.state === 'online') return `共有しています。中継のサーバーにつながっています。招いた人のブラウザで、整理の板を同時に直せます。${synced}`;
+  if (view.state === 'offline') return `中継のサーバーにつながっていません。この PC では、このまま続けられます。つながると合わせます。${synced}`;
+  if (view.state === 'connecting') return '中継のサーバーにつないでいます…';
+  if (view.state === 'ended') return view.problem ?? '共有は終わりました。';
+  if (view.problem) return `共有していません。${view.problem}。`;
+  return '共有していません。共有を始めると、招いた人のブラウザで整理の板を同時に直せ、要件の文書、データ設計、場面の一覧、未決事項を読めます。中継のサーバーには、会の鍵で包んだ文書だけを置きます。試作品のソースと作る AI の記録は、この PC から出しません。';
+}
+
+function shareMemberItem(member) {
+  const li = element('li', undefined, 'share-member');
+  li.append(element('span', `${member.name}(${member.roleLabel})`));
+  const link = element('input');
+  link.type = 'text';
+  link.readOnly = true;
+  link.value = member.link;
+  link.setAttribute('aria-label', `${member.name}の招待のリンク`);
+  link.addEventListener('focus', () => link.select());
+  li.append(
+    link,
+    smallButton('写す', async () => {
+      try {
+        await navigator.clipboard.writeText(member.link);
+      } catch {
+        link.select();
+        shareError('写せませんでした。リンクの欄を選んで写してください。');
+      }
+    }),
+    smallButton('外す', () => shareAct('remove', { member: member.id })),
+  );
+  return li;
+}
+
+function renderShare() {
+  const view = shareUi.view;
+  shareEls.state.textContent = shareStateText(view);
+  shareEls.state.dataset.state = view?.state ?? 'none';
+  const sharing = SHARING.includes(view?.state);
+  shareEls.start.hidden = !view?.available || sharing;
+  shareEls.start.disabled = shareUi.busy;
+  shareEls.stop.hidden = !sharing;
+  shareEls.stop.disabled = shareUi.busy;
+  shareEls.invite.hidden = !sharing;
+  shareEls.members.replaceChildren(...(sharing ? view.members.map(shareMemberItem) : []));
+  const refused = sharing ? view.refused ?? [] : [];
+  shareEls.refused.hidden = refused.length === 0;
+  shareEls.refused.replaceChildren(...refused.map((r) => element('li', `${r.name}さんの書き込みを当てませんでした: ${r.message}`)));
+}
+
+function applyShare(view) {
+  const before = JSON.stringify(shareUi.view);
+  shareUi.view = view;
+  // 招待のリンクの欄を選んでいる間は、書き直さない(写す途中で選びが外れないように)
+  if (JSON.stringify(view) !== before && !shareEls.members.contains(document.activeElement)) renderShare();
+}
+
+async function pollShare() {
+  clearTimeout(shareUi.timer);
+  const { seq, projectId } = shareUi;
+  if (!projectId) return;
+  try {
+    const { share } = await api(sharePath(projectId));
+    if (seq !== shareUi.seq) return;
+    applyShare(share);
+    // 参加者が直した板を見せる。版が同じなら書き直さない(applyBoard)
+    if (SHARING.includes(share.state) && organizeUi.open && organizeUi.projectId === projectId) {
+      const { organize } = await api(organizePath(projectId));
+      if (seq === shareUi.seq && organizeUi.projectId === projectId) applyBoard(organize);
+    }
+  } catch (error) {
+    if (seq !== shareUi.seq) return;
+    if (!(error instanceof ApiError) || ['offline', 'token'].includes(error.code)) handleError(error);
+  }
+  if (seq === shareUi.seq) shareUi.timer = setTimeout(pollShare, SHARE_POLL_MS);
+}
+
+function openShare(id) {
+  shareUi.seq += 1;
+  shareUi.projectId = id;
+  shareUi.view = null;
+  shareError(null);
+  renderShare();
+  pollShare();
+}
+
+function closeShare() {
+  shareUi.seq += 1;
+  clearTimeout(shareUi.timer);
+  shareUi.projectId = null;
+  shareUi.view = null;
+}
+
+async function shareAct(action, body = {}) {
+  const id = shareUi.projectId;
+  if (!id || shareUi.busy) return null;
+  shareError(null);
+  shareUi.busy = true;
+  renderShare();
+  const { seq } = shareUi;
+  try {
+    const { share } = await api(sharePath(id, action), { method: 'POST', json: body });
+    if (seq === shareUi.seq) applyShare(share);
+    return share;
+  } catch (error) {
+    if (seq === shareUi.seq) shareError(error instanceof ApiError ? error.message : '進められませんでした。');
+    return null;
+  } finally {
+    shareUi.busy = false;
+    if (seq === shareUi.seq) renderShare();
+  }
+}
+
+shareEls.start.addEventListener('click', () => shareAct('start'));
+shareEls.stop.addEventListener('click', () => shareAct('stop'));
+shareEls.invite.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const name = shareEls.name.value.trim();
+  if (!name) {
+    shareError('招く人の呼び名を書いてください。');
+    return;
+  }
+  if (await shareAct('invite', { name, role: shareEls.role.value })) shareEls.name.value = '';
+});
 
 columnOptions(organizeEls.addColumn);
 organizeEls.mark.addEventListener('click', openOrganize);

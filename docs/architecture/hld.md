@@ -11,7 +11,7 @@ Prototype Studio が何でできていて、データがどこを流れるかの
 
 非エンジニアが、AI プロダクトの試作品を言葉で作り、ブラウザで触り、モックと実モデルの両方で試し、本番開発に引き継げるようにします。Studio は利用者の PC で動くローカルのサーバーです。
 
-範囲外: サーバーの公開、複数人での共有、本番の AI の接続、本物のデータ。
+範囲外: サーバーの公開、本番の AI の接続、本物のデータ。複数人での共有は、整理の板などの文書だけを、Studio から中継のサーバーへ外へつなぐ形で作った(下の「その場の共有」。ADR 0004 の段 2)。Studio のサーバーは 127.0.0.1 のままです。
 
 ## 2. システムの文脈
 
@@ -24,6 +24,8 @@ flowchart LR
     fake["偽接続<br/>src/agent/fake-claude.js"]
     claude["Claude Code の CLI<br/>利用者が入れた claude"]
     anthropic[("Anthropic")]
+    relay["中継のサーバー<br/>src/relay/(暗号文を預かって配るだけ)"]
+    others(["招いた人のブラウザ<br/>参加者のページ"])
 
     you -- "操作する" --> browser
     browser -- "API(起動ごとのトークン)" --> studio
@@ -32,6 +34,8 @@ flowchart LR
     studio -- "作る AI<br/>(STUDIO_AGENT=fake のときだけ)" --> fake
     studio -- "作る AI(既定。使えるときだけ)<br/>プロダクト内 AI(切り替えたときだけ)<br/>どちらも同意の後" --> claude
     claude -- "本人のログインで呼ぶ" --> anthropic
+    studio -- "共有しているときだけ外へつなぐ<br/>(会の鍵で包んだ文書)" --> relay
+    others -- "暗号文を送る、受け取る" --> relay
 ```
 
 - Studio が持つ AI は 2 つです。作る AI は試作品のファイルを変えます。プロダクト内 AI は、試作品の中で利用者と話します
@@ -40,6 +44,7 @@ flowchart LR
 - 本物の AI(Claude Code)は、使う前に画面で同意します。同意は 1 つで、作る AI の送信、プロダクト内 AI の切り替え、人の「確かめる」の全部に効きます。Studio のメモリーにだけ持ち、起動し直すと消えます
 - ログインしているかは、Claude Code 自身に聞きます(`claude auth status --json`)。出力から使うのは、ログインしているか(`loggedIn`)と方式(`authMethod`)だけです。他の値(メールアドレスなど)は捨て、画面にも記録にも出しません
 - Studio は資格情報を読みません。Claude Code は、利用者が入れてログインした CLI を、改変せずに子プロセスとして起動します
+- 中継のサーバーへは、`STUDIO_RELAY_URL` を決めて「共有を始める」を押したときだけ、Studio のサーバーから外へつなぎます。外から Studio には入りません。置くのは会の鍵で包んだ文書の写しだけで、作る AI、ビルド、`app/`、版、run の記録は出しません(下の「その場の共有」)
 
 ## 3. 部品
 
@@ -82,7 +87,10 @@ flowchart TB
         closing["会の終わりの成果物と未決事項の持ち主<br/>closing.js"]
         timeline["会の段ごとの時刻<br/>timeline.js"]
         redact["伏せる、秘密を探す<br/>redact.js"]
+        share["その場の共有<br/>share.js(src/share-page/seal.js で包む)"]
     end
+
+    relayServer["中継のサーバー<br/>src/relay/relay-server.js、bin/relay.js<br/>(参加者のページ src/share-page/ も配る)"]
 
     observeEntry["観察の入口<br/>src/server/observe-entry.js observeProject"]
     observer["観察器<br/>src/observer/observe.js、browser.js、<br/>operations.js、scenario.js、audit.js"]
@@ -117,6 +125,11 @@ flowchart TB
     meeting -- "消す" --> handoffs
     api --> organize
     organize -- "読み書き(.studio/organize.json)" --> dotstudio
+    api --> share
+    share -- "参加者の書き込みを当てる、板が変わったら写しを置き直す" --> organize
+    share -- "要件の文書、データ設計、場面の一覧、未決事項の写しを読む" --> closing
+    share -- "読み書き(.studio/share.json)" --> dotstudio
+    share -- "外へつなぐ(暗号文だけ)" --> relayServer
     organize -- "整理する AI(道具なし、cwd は空のフォルダー)" --> cli
     api --> design
     design -- "読み書き(.studio/design.json)" --> dotstudio
@@ -221,6 +234,9 @@ flowchart TB
 | 本物の AI の同意 | `src/server/real-ai.js` | 本物の AI を使う前の同意を、メモリーに 1 つ持つ。作る AI(`BuildRequests.start`、接続が Claude Code のとき)と、プロダクト内 AI の本物の接続への口(`AiSessions.useReal`。切り替えと観察)が、使う前に確かめ、同意の前は `consent-required` で断る。同意のカードの中身(送るもの、送り先、料金の文と上限、「詳しく」)を `/api/real-ai` で返す |
 | 調子の決まり | `src/server/tone.js` | [vision.md の 7 節](../vision.md#7-調子と声)の調子を、AI に渡す決まりの文にしたもの。作る AI(`claude-args.js`)、試作品の中の言い方の係(`product-ai/claude-code.js`)、模擬のエージェント(`sim/agent-claude-code.js`)の決まりに足す。頼みで、守らせる検査はしない |
 | 伏せる | `src/server/redact.js` | 記録と表示の前に、秘密らしい文字列と個人のデータを伏せる。書き出す前に秘密を探す |
+| その場の共有 | `src/server/share.js`、`src/share-page/seal.js` | `/api/projects/<id>/share`(GET は状態と招待のリンク。`start`、`invite`、`remove`、`stop`)。整理の板の画面の「その場の共有」が使う。中継のサーバーに会を作り、会の鍵(AES-256-GCM)と札を `.studio/share.json` に持つ。整理の板(項目と聞くことの文だけ。元の要点は置かない)と、`closing.js` の `shared` が作る要件の文書、データ設計、場面の一覧、未決事項の写しを、会の鍵で包んで置く。板が変わったとき(`ProjectOrganizes` の `onWrite`)と 1 秒ごとに比べ、変わっていれば置き直す。参加者の書き込み(項目を足す、直す、消す)は、人が押したときと同じ口(`addItem`、`editItem`、`removeItem`)で板に当てるので、記録らしいものは同じに断る。当てた番号を覚え、写しに載せたら中継のサーバーから消す。切れたら 0.5〜4 秒の間でつなぎ直し、届いていない書き込みを当て、写しを置き直す。会のデータを消すと中継のサーバーの写しも消し、届かなければ `share-pending.json` に残して次の起動で消し直す |
+| 中継のサーバー | `src/relay/relay-server.js`、`bin/relay.js` | `npm run relay`。暗号文を預かって配るだけ(HTTP と Server-Sent Events。Node の標準の部品だけ)。会の鍵を持たないので中身を読めず、作る AI を動かす口もない。見えるのは会の ID、人の ID、書けるか、暗号文の大きさと時刻、消す日。札は SHA-256 だけを持つ。見るだけの人の書き込みを断る。消す日を過ぎた会は自分で消す。置き場(`RELAY_DATA`)を決めると、止めて起こし直しても続きから配る。テストの中では 127.0.0.1 の空いたポートに起こす |
+| 参加者のページ | `src/share-page/index.html`、`share.js`、`share.css` | 中継のサーバーが `/s/<会の ID>` で配る静的なページ。鍵はリンクのフラグメントにあり、開いたら `sessionStorage` に移してアドレス欄から消す。写しを開いて整理の板と 4 つの文書を出し、参加者の役なら項目を足す、直す、消すを包んで送る。届いていない書き込みは画面に重ねて「送りました」と出し、つながると送る。CSP は `default-src 'none'` と `connect-src 'self'` |
 | 作る AI の接続を選ぶ | `src/server/agent-connection.js` | 起動のときに 1 回、`STUDIO_AGENT`(自動、`claude`、`fake`)から接続を決める。自動と `claude` は、Claude Code を探し、版(`--version`)とログイン(`auth status --json`)を確かめ、結果(使える、ない、古い、ログインしていない)と理由を `/api/projects` の `agent` に出す |
 | 偽接続 | `src/agent/fake-claude.js` | `claude -p` と同じ形の出力を出す偽の CLI。モデルを呼ばない |
 | runtime | `src/runtime/runtime.js` | 試作品に配る。試作品のエラーを画面に知らせ、`window.studio.ai` を配る |
@@ -254,6 +270,10 @@ flowchart TB
 ### ヒアリングを整理する(聞き取りの欄と整理の板)
 
 操作役が要点を打ち(`organize.js` の `addPoint`)、「整理する」を押すと、整理する AI に振り分けをもらいます(`organize-ai.js`)。起動の形は聞き出す AI と同じです(`structured-ai.js`)。「推測」の印は Studio が決めます。今ある要点を指す番号がない項目に付き、AI の返事では消せません。「確かめた」の印は、決める人が「この理解で合っている」を押す `confirm` でだけ `.studio/organize.json` に付き、板が変わると外れます。同意の前と AI を使えないときは整理する AI を呼ばず、人が手で振り分けます。記録らしいものは上の節のとおり板に入れません。決めた理由は [user-journey.md の 7 節](../design/user-journey.md#k1-で決めたことtask-3842026-10-31)にあります。
+
+### その場の共有(整理の板の同時編集)
+
+進行役が整理の板の画面で「共有を始める」を押すと、`share.js` が中継のサーバーに会を作り、人ごとの招待のリンクを作ります。参加者のブラウザは、中継のサーバーから包んだ写しを受け取って開きます。参加者が項目を直すと、包んだ書き込みが中継のサーバーに届き、Studio が受け取って板に当て、新しい写しを置きます。みんなの画面と進行役の画面に出ます。文書の正は進行役の PC の Studio で、合わせ方は項目ごとに後から当てたものが残る形です(Yjs は使わない。理由は [collaboration.md の 9.7](../design/collaboration.md#97-2-枚目で作ったことtask-4292026-11-18))。中継のサーバーに届かない間も、進行役は手元で続けられます。つながり直すと、届いていない書き込みを当て、写しを置き直します。
 
 ### 設計の案内(6 つの段)
 
@@ -409,6 +429,8 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | `projects/<id>/.studio/design.json` | 設計の案内。6 つの段の案(データ設計を含む)、選んだ案、捨てた案、理由、場面の一覧、Studio が書いたファイルの指紋、決めた時刻か飛ばした時刻 | Studio(作る AI と案を出す AI は書けない) |
 | `projects/<id>/.studio/reviews/<審査の ID>/architecture.json`、`files/`、`current.json`、`skipped.json` | AI 構成書。4 つの審査の中身、場面の指紋、項目ごとの指紋、承認した人と時刻と指紋、承認の時刻、関門 GA で止めた印。`files/` は承認した構成のファイルの写し。前の審査は消さない | Studio(作る AI は書けない) |
 | `projects/<id>/.studio/project.json` の `review` | 審査が要るか(`required`)、飛ばしたか(`skipped`)。書いていない試作品は審査なし | Studio |
+| `projects/<id>/.studio/share.json` | その場の共有。中継のサーバーの宛先、会の ID、会の鍵、Studio の札、招いた人(呼び名、役、札)、当てた書き込みの番号と結果 | Studio(作る AI は書けない) |
+| `share-pending.json` | 中継のサーバーに届かず、消せなかった写しの宛先と札。次の起動で消し直す | Studio |
 | `handoffs/` | 引き継ぎの書き出し | Studio |
 | Studio のメモリー | 作業中の会話と状態、実行の記録、作る欄の会話 | Studio(止めると消える) |
 
@@ -425,6 +447,7 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 | Claude Code の CLI(聞き出す AI) | はじめの画面で同意した後、1 文か 1 つの答えを送るたび。`STUDIO_ALLOW_CLAUDE_CODE=0` では呼ばない | 同上。1 回の呼び出しは 90 秒、$0.1 まで。1 文か 1 つの答えで 2 回まで。問いの数は深さごとに 2、4、7 まで |
 | Claude Code の CLI(整理する AI) | 整理の板で同意した後、「整理する」を押すたび。`STUDIO_ALLOW_CLAUDE_CODE=0` では呼ばない | 同上。1 回の呼び出しは 120 秒、$0.3 まで。1 回押して 2 回まで |
 | Claude Code の CLI(案を出す AI) | 設計の案内で同意した後、「案を作る」か「案を作り直す」を押すたび。`STUDIO_ALLOW_CLAUDE_CODE=0` では呼ばない | 同上。1 回の呼び出しは 120 秒、$0.3 まで(仮。実モデルでは測っていない)。1 回押して 2 回まで |
+| 中継のサーバー | `STUDIO_RELAY_URL` を決めて「共有を始める」を押した試作品だけ。包んだ写しを置くのと、参加者の書き込みを受け取る | なし。モデルを呼ばない。手元(テストの中)で起こす。外のサービスは契約していない |
 | Playwright の Chromium(観察器) | 観察するとき。`npm run install:chromium` で入れたもの | なし。モデルを呼ばない。AI の要求は、呼ぶ側が渡す関数に渡す |
 | Claude Code の CLI(プロダクト内 AI) | 画面で同意して切り替えたとき。`STUDIO_ALLOW_CLAUDE_CODE=0` では選べない | 同上。1 ターンは抽出と言い方の 2 種の呼び出し。1 回の呼び出しは 90 秒、$0.1 まで。上限は下の 3 つ |
 
@@ -446,7 +469,7 @@ Claude Code の接続も、抽出と言い方の 2 種の呼び出し(`claude -p
 - [ADR 0001: ローカル実行と隔離の方式](../adr/0001-local-runtime-and-isolation.md)
 - [ADR 0002: 観察器と harness](../adr/0002-observer-and-harness.md)(観察器のブラウザ、観察器の隔離、直すラウンドの回数)
 - [ADR 0003: エージェントの構成を模擬する基盤](../adr/0003-agent-simulation.md)(案。作ったのは構成の形の検査と構成 B の読み替え(sim-1)だけ。設計は [agent-simulation.md](../design/agent-simulation.md))
-- [ADR 0004: 共有の場と、お客さんのデータ](../adr/0004-shared-session-and-customer-data.md)(段 1 は採用、段 2 は未決。まだ作っていない。段 1 は 1 台の PC の中の形なので、段 2 を採るまで、この HLD の「範囲外: 複数人での共有」は変わらない)
+- [ADR 0004: 共有の場と、お客さんのデータ](../adr/0004-shared-session-and-customer-data.md)(段 1 と段 2 を採用。段 2 は文書の同時編集だけを作った(task 429)。招待の 4 つの役と承認は K7 の 3 枚目)
 - [ADR 0005: AI の作りを見せて、人が承認する](../adr/0005-ai-architecture-review.md)(案。審査の画面、AI 構成書、関門 GA は task 422 で作った。設計は [ai-architecture-review.md](../design/ai-architecture-review.md))
 - [初見で分かる画面の設計](../design/ux-redesign.md)
 - [引き継ぎの形](../handoff.md)

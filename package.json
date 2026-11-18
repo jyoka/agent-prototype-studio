@@ -14,6 +14,7 @@
   "scripts": {
     "start": "node bin/studio.js",
     "observe": "node bin/observe.js",
+    "relay": "node bin/relay.js",
     "observe:mcp": "node bin/observe-mcp.js",
     "tools:mcp": "node bin/tools-mcp.js",
     "evals": "node bin/evals.js",
